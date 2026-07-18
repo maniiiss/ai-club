@@ -70,6 +70,13 @@ public class AssistantInternalToolExecutionService {
         validateStateOwnership(state, claims);
 
         String toolCode = normalizeToolCode(request.toolCode());
+        // 业务意图：候选卡片一旦生成就必须等待用户点击确认，不能让模型后续的补充工具调用把卡片覆盖为空。
+        // 用户点击卡片会以新的 selection 请求进入 prepareConversation，并在进入这里前清理旧卡片。
+        if (!state.selectionCards().isEmpty()) {
+            return new AssistantInternalToolExecuteResponse(
+                    assistantFallbackAnswerService.composeSelectionSummary(state.selectionCards())
+            );
+        }
         if (assistantMcpServerService != null && assistantMcpServerService.isExternalToolCode(toolCode)) {
             String slashCommand = state.currentRequest() == null ? "" : state.currentRequest().slashCommand();
             if (!assistantMcpServerService.isToolAllowedForSlashCommand(toolCode, slashCommand)) {

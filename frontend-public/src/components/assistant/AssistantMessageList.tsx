@@ -82,7 +82,14 @@ export const AssistantMessageList = ({
                 'mb-1 text-[11px] font-semibold',
                 message.role === 'user' ? 'text-white/70' : 'text-[var(--color-text-tertiary)]',
               )}>
-                {message.role === 'user' ? '我' : `GitPilot · ${roleName || '协作助手'}`}
+                {message.role === 'user' ? (
+                  <span className="inline-flex items-center gap-1.5">
+                    <span>我</span>
+                    {message.skillLabel && (
+                      <span className="rounded-full border border-white/30 bg-white/15 px-1.5 py-0.5 text-[10px] font-medium text-white">{message.skillLabel}</span>
+                    )}
+                  </span>
+                ) : `GitPilot · ${roleName || '协作助手'}`}
               </div>
               {message.role === 'user' ? (
                 <pre className="whitespace-pre-wrap break-words font-sans text-[13px] leading-6">{message.content || '暂无内容'}</pre>

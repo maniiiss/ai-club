@@ -60,3 +60,10 @@ export interface RequirementAiResult {
 export interface RequirementAiRequest {
   action: string
 }
+
+/** 公众端批量需求 AI 的单条任务创建结果。 */
+export interface BatchRequirementAiOperationResult {
+  taskId: number
+  executionTask: import('@/src/types/execution').ExecutionTaskItem | null
+  errorMessage: string | null
+}

@@ -8,7 +8,7 @@ import type { WorkItem, WorkItemPayload } from '@/src/types/planning'
 
 export const buildWorkItemInlineEditPayload = (
   item: WorkItem,
-  overrides: Pick<Partial<WorkItemPayload>, 'status' | 'priority'>,
+  overrides: Pick<Partial<WorkItemPayload>, 'status' | 'priority' | 'assignee' | 'assigneeUserId' | 'iterationId'>,
 ): WorkItemPayload => ({
   name: item.name,
   workItemType: item.workItemType,
@@ -16,8 +16,8 @@ export const buildWorkItemInlineEditPayload = (
   status: overrides.status ?? item.status,
   priority: overrides.priority ?? item.priority,
   workHours: item.workHours,
-  assignee: item.assignee,
-  assigneeUserId: item.assigneeUserId,
+  assignee: overrides.assignee ?? item.assignee,
+  assigneeUserId: 'assigneeUserId' in overrides ? (overrides.assigneeUserId ?? null) : item.assigneeUserId,
   collaboratorUserIds: item.collaboratorUserIds,
   description: item.description,
   moduleName: item.moduleName || '',
@@ -25,6 +25,6 @@ export const buildWorkItemInlineEditPayload = (
   planEndDate: item.planEndDate,
   projectId: item.projectId,
   agentId: item.agentId,
-  iterationId: item.iterationId,
+  iterationId: 'iterationId' in overrides ? (overrides.iterationId ?? null) : item.iterationId,
   requirementTaskId: item.requirementTaskId,
 })

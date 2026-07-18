@@ -110,3 +110,10 @@ export interface DataChangeAuditItem {
 
 /** 项目内 DataChange 工单分页。 */
 export type DataChangeRequestPage = PageResponse<DataChangeRequestItem>
+
+/** 语义查询运行时协议：前端只展示 DSL 和 SQL 摘要，绝不接收数据库凭据。 */
+export interface SemanticModelItem { id: number; dataSourceId: number; name: string; versionNo: number; status: string; modelConfigId: number | null; draftDefinitionJson: string; publishedDefinitionJson: string }
+export interface SemanticQueryDsl { version: string; semanticModelId: number; measures: string[]; dimensions: string[]; filters: Record<string, unknown>; limit: number }
+export interface QueryInterpretation { requestId: number; status: string; normalizedTerms: string[]; usedConcepts: string[]; clarifications: string[]; dsl: SemanticQueryDsl }
+export interface QueryPreview { requestId: number; previewToken: string; dsl: SemanticQueryDsl; sqlSummary: string; usedDefinitions: string[]; clarifications: string[] }
+export interface QueryExecution { requestId: number; status: string; rows: Array<Record<string, unknown>>; summary: string; sqlSummary: string }

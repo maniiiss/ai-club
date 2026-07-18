@@ -2476,6 +2476,29 @@ export interface DataWorkbenchEntityItem {
   fields: DataWorkbenchFieldItem[]
 }
 
+/** 项目级外部 PostgreSQL 数据源的脱敏管理视图。 */
+export interface DataWorkbenchDataSourceItem {
+  id: number
+  name: string
+  allowedSchemas: string
+  enabled: boolean
+  credentialsConfigured: boolean
+  scannedAt: string | null
+  tables: Array<{ schema: string; table: string; columns: string[] }>
+}
+
+/** 可发布的语义模型；定义 JSON 由管理员维护，运行期只使用已发布版本。 */
+export interface DataWorkbenchSemanticModelItem {
+  id: number
+  dataSourceId: number
+  name: string
+  versionNo: number
+  status: string
+  modelConfigId: number | null
+  draftDefinitionJson: string
+  publishedDefinitionJson: string
+}
+
 export interface DataChangeDsl {
   version: string
   operation: string

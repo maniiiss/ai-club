@@ -12,6 +12,10 @@ import type {
   DataChangeRequestPage,
   DataWorkbenchAppItem,
   DataWorkbenchEntityItem,
+  SemanticModelItem,
+  QueryInterpretation,
+  QueryPreview,
+  QueryExecution,
 } from '@/src/types/dataWorkbench'
 
 /** 获取项目内启用的数据工作台能力。 */
@@ -89,5 +93,23 @@ export const listDataChangeAudits = async (
   const res = await http.get<ApiResponse<DataChangeAuditItem[]>>(
     `/api/data-workbench/data-change/requests/${requestId}/audits`,
   )
+  return unwrap(res)
+}
+
+/** 列出项目已发布语义模型，供自然语言查询选择业务口径。 */
+export const listProjectSemanticModels = async (projectId: number): Promise<SemanticModelItem[]> => {
+  const res = await http.get<ApiResponse<SemanticModelItem[]>>(`/api/data-workbench/projects/${projectId}/semantic-models`)
+  return unwrap(res)
+}
+export const interpretProjectDataQuery = async (projectId: number, payload: { semanticModelId: number; text: string }): Promise<QueryInterpretation> => {
+  const res = await http.post<ApiResponse<QueryInterpretation>>(`/api/data-workbench/projects/${projectId}/data-query/interpret`, payload)
+  return unwrap(res)
+}
+export const previewProjectDataQuery = async (projectId: number, requestId: number): Promise<QueryPreview> => {
+  const res = await http.post<ApiResponse<QueryPreview>>(`/api/data-workbench/projects/${projectId}/data-query/preview`, { requestId })
+  return unwrap(res)
+}
+export const executeProjectDataQuery = async (projectId: number, requestId: number, previewToken: string): Promise<QueryExecution> => {
+  const res = await http.post<ApiResponse<QueryExecution>>(`/api/data-workbench/projects/${projectId}/data-query/execute`, { requestId, previewToken })
   return unwrap(res)
 }

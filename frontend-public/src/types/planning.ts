@@ -134,6 +134,25 @@ export interface WorkItemPayload {
   requirementTaskId?: number | null
 }
 
+/** 公众端批量工作项更新支持的字段。 */
+export type BatchWorkItemUpdateField = 'STATUS' | 'PRIORITY' | 'ASSIGNEE' | 'ITERATION'
+
+/** 由服务端一次接收并逐项执行的批量更新载荷。 */
+export interface BatchWorkItemUpdatePayload {
+  taskIds: number[]
+  field: BatchWorkItemUpdateField
+  value?: string
+  assigneeUserId?: number | null
+  iterationId?: number | null
+}
+
+/** 批量工作项操作的逐项结果，失败项不影响已成功项。 */
+export interface BatchWorkItemOperationResult {
+  taskId: number
+  task: WorkItem | null
+  errorMessage: string | null
+}
+
 /** 工作项查询参数。 */
 export interface WorkItemQuery {
   iterationId?: number

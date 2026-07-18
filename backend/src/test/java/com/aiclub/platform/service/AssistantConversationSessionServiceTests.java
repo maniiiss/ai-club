@@ -467,14 +467,14 @@ class AssistantConversationSessionServiceTests {
 
         service.recordSuccess(
                 session,
-                new AssistantChatRequest("这个项目当前最大的阻塞是什么", "project-iterations", 12L, null, null, null, "conversation-1", null, null),
+                new AssistantChatRequest("这个项目当前最大的阻塞是什么", "project-iterations", 12L, null, null, null, null, null, "conversation-1", null, null, "/文件库"),
                 conversationState,
                 "完整回答内容",
                 debugInfo
         );
         service.recordFailure(
                 session,
-                new AssistantChatRequest("继续分析当前问题", "project-iterations", 12L, null, null, null, "conversation-1", null, null),
+                new AssistantChatRequest("继续分析当前问题", "project-iterations", 12L, null, null, null, null, null, "conversation-1", null, null, "/wiki"),
                 conversationState,
                 "Assistant 助手暂时不可用",
                 debugInfo
@@ -486,9 +486,11 @@ class AssistantConversationSessionServiceTests {
 
         assertThat(persistedMessages).hasSize(4);
         assertThat(persistedMessages.get(0).getRole()).isEqualTo("user");
+        assertThat(persistedMessages.get(0).getContent()).isEqualTo("【文件库】这个项目当前最大的阻塞是什么");
         assertThat(persistedMessages.get(1).getRole()).isEqualTo("assistant");
         assertThat(persistedMessages.get(1).getStatus()).isEqualTo("DONE");
         assertThat(persistedMessages.get(2).getRole()).isEqualTo("user");
+        assertThat(persistedMessages.get(2).getContent()).isEqualTo("【Wiki】继续分析当前问题");
         assertThat(persistedMessages.get(3).getStatus()).isEqualTo("ERROR");
         assertThat(session.getTitle()).isEqualTo("这个项目当前最大的阻塞是什么");
         assertThat(session.getLatestPreview()).isEqualTo("Assistant 助手暂时不可用");

@@ -42,6 +42,8 @@ public class PlatformEnvVarRegistry {
     public static final String KEY_HERMES_SPEECH_TIMEOUT_SECONDS = "PLATFORM_HERMES_SPEECH_TIMEOUT_SECONDS";
     /** GitPilot 外部 MCP 访问目标的管理员白名单。 */
     public static final String KEY_ASSISTANT_EXTERNAL_MCP_ALLOWED_HOSTS = "PLATFORM_ASSISTANT_EXTERNAL_MCP_ALLOWED_HOSTS";
+    /** DataWorkbench 外部 PostgreSQL 连接目标的管理员白名单。 */
+    public static final String KEY_DATA_WORKBENCH_ALLOWED_DB_HOSTS = "PLATFORM_DATA_WORKBENCH_ALLOWED_DB_HOSTS";
     public static final String KEY_HINDSIGHT_API_URL = "HINDSIGHT_API_URL";
     public static final String KEY_HINDSIGHT_API_KEY = "HINDSIGHT_API_KEY";
     public static final String KEY_HERMES_HINDSIGHT_BANK_ID = "HERMES_HINDSIGHT_BANK_ID";
@@ -235,6 +237,14 @@ public class PlatformEnvVarRegistry {
                 "platform.assistant.external-mcp.allowed-hosts",
                 "GitPilot 外部 MCP 访问白名单",
                 "配置可访问的域名、IP 或 CIDR，使用英文逗号分隔；公网 HTTPS 地址无需加入白名单。",
+                false
+        ));
+        // 数据工作台会代替用户建立数据库连接，白名单必须由平台管理员显式维护；空值表示拒绝全部目标。
+        registerAllowlist(new PlatformEnvVarDefinition(
+                KEY_DATA_WORKBENCH_ALLOWED_DB_HOSTS,
+                "platform.data-workbench.allowed-db-hosts",
+                "数据工作台数据库主机白名单",
+                "允许 DataWorkbench 连接的 PostgreSQL 主机名或 IP，使用英文逗号分隔；为空时拒绝保存、测试和扫描数据源。",
                 false
         ));
         registerUrl(new PlatformEnvVarDefinition(

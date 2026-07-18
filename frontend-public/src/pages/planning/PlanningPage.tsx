@@ -2,7 +2,7 @@
  * 计划模块页面。
  * 功能：迭代 CRUD、工作项 CRUD、工作项详情抽屉、列表/看板切换。
  */
-import { useEffect, useState, useCallback, useRef, type FormEvent } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef, type FormEvent } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import {
   Plus, CheckSquare, AlertCircle, FileText, Search,
@@ -13,13 +13,15 @@ import {
 import {
   getIterationBoard, pageProjectWorkItems, listProjectWorkItems, getWorkItemStats,
   createIteration, updateIteration, deleteIteration,
-  createWorkItem, updateWorkItem, deleteWorkItem, getWorkItemDetail,
+  batchDeleteWorkItems, batchUpdateWorkItems, createWorkItem, updateWorkItem, deleteWorkItem, getWorkItemDetail,
   getProjectBurndown, listTaskComments, createTaskComment, pageTaskUpdateRecords,
   getWorkItemLinks, addWorkItemChild, removeWorkItemChild,
   addRelatedWorkItem, removeRelatedWorkItem, addWorkItemTestCase, removeWorkItemTestCase,
   pageProjectTestCases, uploadWorkItemAttachment, deleteWorkItemAttachment, downloadWorkItemAttachment,
 } from '@/src/api/planning'
 import { listUserOptions } from '@/src/api/users'
+import { getMyFeatureCosts } from '@/src/api/credits'
+import { generateBatchRequirementAi } from '@/src/api/requirementAi'
 import type { UserOptionItem } from '@/src/api/users'
 import { MarkdownEditor } from '@/src/components/common/MarkdownEditor'
 import { RequirementAiDialog } from './RequirementAiDialog'
@@ -30,7 +32,8 @@ import { useAuthStore } from '@/src/stores/auth'
 import { REQUIREMENT_TEMPLATE, TASK_TEMPLATE } from '@/src/lib/markdownTemplates'
 import { uploadMarkdownImage } from '@/src/lib/markdownImageUpload'
 import { buildWorkItemInlineEditPayload } from '@/src/lib/planningInlineEditUtils'
-import { buildPlanningWorkItemRoute, buildWorkItemShareUrl } from '@/src/lib/planningShareUtils'
+import { getBatchWorkItemAvailability, toggleAllBatchWorkItemSelection, toggleBatchWorkItemSelection } from '@/src/lib/planningBatchUtils'
+import { buildPlanningIterationRoute, buildPlanningWorkItemRoute, buildWorkItemShareUrl } from '@/src/lib/planningShareUtils'
 import { TASK_TYPE_OPTIONS, isDevelopmentExecutionEntryVisible, isRequirementAiEntryVisible, normalizeTaskType } from '@/src/lib/requirementAiUtils'
 import { isTechnicalDesignEntryVisible } from '@/src/lib/technicalDesignAiUtils'
 import type { IterationBoardItem, IterationItem, WorkItem, WorkItemStats, WorkItemPayload, IterationPayload, BurndownItem, TaskComment, WorkItemLinks, LinkedTestCase } from '@/src/types/planning'
@@ -45,7 +48,7 @@ import { EmptyState } from '@/src/components/common/EmptyState'
 import { Select } from '@/src/components/common/Select'
 import { SlideDrawer, SlideDrawerFooter } from '@/src/components/common/SlideDrawer'
 import { DateRangePicker } from '@/src/components/common/DateRangePicker'
-import { UserAvatar, WorkItemMemberPicker } from '@/src/components/common/AssigneePicker'
+import { AssigneePicker, UserAvatar, WorkItemMemberPicker } from '@/src/components/common/AssigneePicker'
 import { cn, formatDate, formatDateTime, getErrorMessage } from '@/src/lib/utils'
 
 /* ── 常量 ── */
@@ -54,6 +57,20 @@ type WorkItemTypeFilter = '全部' | '需求' | '任务' | '缺陷'
 type ViewMode = 'list' | 'kanban'
 type DetailTab = 'detail' | 'children' | 'related' | 'testCases' | 'attachments'
 type ActivityTab = 'comments' | 'updateRecords'
+type BatchField = 'status' | 'priority' | 'assignee' | 'iteration'
+type BatchDialog = BatchField | 'delete'
+
+type BatchWorkItemChange =
+  | { field: 'status'; value: string }
+  | { field: 'priority'; value: string }
+  | { field: 'assignee'; userId: number | null }
+  | { field: 'iteration'; iterationId: number | null }
+
+interface BatchRequirementAiResult {
+  workItem: WorkItem
+  executionTaskId?: number
+  error?: string
+}
 
 const typeTabs: WorkItemTypeFilter[] = ['全部', '需求', '任务', '缺陷']
 
@@ -111,6 +128,13 @@ const detailTabs: Array<{ key: DetailTab; label: string }> = [
   { key: 'attachments', label: '附件' },
 ]
 
+const batchFieldLabel: Record<BatchField, string> = {
+  status: '状态',
+  priority: '优先级',
+  assignee: '负责人',
+  iteration: '所属迭代',
+}
+
 const getDetailTabCount = (tab: DetailTab, links: WorkItemLinks | null) => {
   if (!links) return 0
   if (tab === 'children') return links.children.length
@@ -125,7 +149,7 @@ const getDetailTabCount = (tab: DetailTab, links: WorkItemLinks | null) => {
    ═══════════════════════════════════════════════ */
 
 export const PlanningPage = () => {
-  const { projectId, workItemId } = useParams<{ projectId: string; workItemId?: string }>()
+  const { projectId, iterationId, workItemId } = useParams<{ projectId: string; iterationId?: string; workItemId?: string }>()
   const [searchParams] = useSearchParams()
   const navigate = useNavigate()
   const canCreateExecution = useAuthStore((state) => state.hasPermission('task:execution:create'))
@@ -146,6 +170,13 @@ export const PlanningPage = () => {
   const [page, setPage] = useState(1)
   const [viewMode, setViewMode] = useState<ViewMode>('list')
   const [inlineEditError, setInlineEditError] = useState<string | null>(null)
+  /** 当前列表页的批量选择；切换列表上下文时清空，避免误操作其他筛选结果。 */
+  const [selectedWorkItemIds, setSelectedWorkItemIds] = useState<Set<number>>(new Set())
+  const [batchFieldDialog, setBatchFieldDialog] = useState<BatchDialog | null>(null)
+  const [batchAiDialogOpen, setBatchAiDialogOpen] = useState(false)
+  const [batchAiResults, setBatchAiResults] = useState<BatchRequirementAiResult[] | null>(null)
+  const [batchSubmitting, setBatchSubmitting] = useState(false)
+  const [batchNotice, setBatchNotice] = useState<string | null>(null)
 
   const [stats, setStats] = useState<WorkItemStats | null>(null)
   const [burndown, setBurndown] = useState<BurndownItem | null>(null)
@@ -184,6 +215,15 @@ export const PlanningPage = () => {
   const projectMemberIds = board?.project?.memberUserIds ?? []
   // 首次请求尚未返回时不能把 null 误判成空列表，否则进入页面会先闪出空状态。
   const showWorkItemLoading = !workItems && !wiError
+  const selectedWorkItems = useMemo(
+    () => workItems?.records.filter((item) => selectedWorkItemIds.has(item.id)) || [],
+    [selectedWorkItemIds, workItems],
+  )
+  const batchAvailability = getBatchWorkItemAvailability(selectedWorkItems)
+  const selectedWorkItemType = selectedWorkItems[0]?.workItemType || null
+  const allSelectedSameType = batchAvailability.hasSameWorkItemType
+  const canBatchRequirementAi = batchAvailability.canRequirementAi
+  const canBatchDelete = batchAvailability.canDelete
 
   const fetchBoard = async () => {
     const requestId = ++boardRequestIdRef.current
@@ -193,13 +233,13 @@ export const PlanningPage = () => {
       if (requestId !== boardRequestIdRef.current) return
       setBoard(data)
       setUserOptions(users)
-      // 业务意图：GitPilot 引用迭代时通过 query 参数恢复目标迭代，避免新标签页只打开计划首页。
-      const requestedIterationId = Number(searchParams.get('iterationId'))
+      // 业务意图：路径中的迭代 ID 优先；同时兼容 GitPilot 已生成的 query 参数链接。
+      const requestedIterationId = Number(iterationId || searchParams.get('iterationId'))
       const requestedIteration = Number.isSafeInteger(requestedIterationId) && requestedIterationId > 0
         ? data.iterations.find((i) => i.id === requestedIterationId)
         : undefined
       const active = requestedIteration || data.iterations.find((i) => i.status === '进行中')
-      if (active && !selectedIteration) setSelectedIteration(active)
+      if (active) setSelectedIteration((current) => current || active)
     } catch (err) {
       if (requestId === boardRequestIdRef.current) setBoardError(getErrorMessage(err))
     } finally {
@@ -245,29 +285,54 @@ export const PlanningPage = () => {
   }, [pid, burndownScope])
 
   useEffect(() => { fetchBoard(); fetchStats() }, [pid])
+  // 地址变化时恢复对应迭代，让浏览器前进、后退和分享链接都能定位到同一迭代。
+  useEffect(() => {
+    if (!board) return
+    const requestedIterationId = Number(iterationId || searchParams.get('iterationId'))
+    if (!Number.isSafeInteger(requestedIterationId) || requestedIterationId <= 0) return
+    const requestedIteration = board.iterations.find((item) => item.id === requestedIterationId)
+    if (requestedIteration) {
+      setSelectedIteration((current) => current !== 'unplanned' && current?.id === requestedIteration.id ? current : requestedIteration)
+    }
+  }, [board, iterationId, searchParams])
   useEffect(() => { fetchBurndown() }, [fetchBurndown])
   // 等迭代列表加载完成并选定迭代后再拉工作项，避免先拉全量再按迭代拉导致闪烁。
   useEffect(() => {
     if (!boardLoading) fetchWorkItems()
   }, [fetchWorkItems, boardLoading])
 
+  // 批量选择只属于当前页的当前筛选上下文；切换后必须丢弃，防止隐藏项被继续提交。
+  useEffect(() => {
+    setSelectedWorkItemIds(new Set())
+    setBatchNotice(null)
+  }, [page, typeFilter, statusFilter, priorityFilter, keyword, selectedIteration, viewMode])
+
   const refreshAll = () => { fetchBoard(); fetchStats() }
 
-  /** 将详情抽屉状态同步到地址栏，便于复制链接或通过浏览器前进后退恢复。 */
-  const syncDetailUrl = (workItemId: number | null) => {
-    navigate(buildPlanningWorkItemRoute(pid, workItemId, searchParams), { replace: true })
+  /** 将迭代与详情抽屉状态同步到地址栏，便于复制链接或通过浏览器前进后退恢复。 */
+  const syncDetailUrl = (workItemId: number | null, targetIterationId: number | null = selectedIteration && selectedIteration !== 'unplanned' ? selectedIteration.id : null) => {
+    const route = workItemId === null
+      ? buildPlanningIterationRoute(pid, targetIterationId, searchParams)
+      : buildPlanningWorkItemRoute(pid, targetIterationId, workItemId, searchParams)
+    navigate(route, { replace: true })
   }
 
-  const handleOpenDetail = async (id: number, options: { pushHistory?: boolean; preserveHistory?: boolean; previousItem?: WorkItem | null } = {}) => {
+  const handleOpenDetail = async (id: number, options: { iterationId?: number | null; pushHistory?: boolean; preserveHistory?: boolean; previousItem?: WorkItem | null } = {}) => {
     if (options.pushHistory && options.previousItem && options.previousItem.id !== id) {
       setDetailNavigationStack((prev) => [...prev, options.previousItem!])
     } else if (!options.pushHistory && !options.preserveHistory) {
       setDetailNavigationStack([])
     }
     openedTaskIdRef.current = id
-    syncDetailUrl(id)
+    const targetIterationId = options.iterationId ?? (selectedIteration && selectedIteration !== 'unplanned' ? selectedIteration.id : null)
+    syncDetailUrl(id, targetIterationId)
     setDetailLoading(true)
-    try { setDetailItem(await getWorkItemDetail(id)) }
+    try {
+      const item = await getWorkItemDetail(id)
+      setDetailItem(item)
+      // 关联工作项可能属于另一迭代，详情加载后以真实归属修正固定链接。
+      if (item.iterationId !== targetIterationId) syncDetailUrl(id, item.iterationId)
+    }
     catch { setDetailItem(null) }
     finally { setDetailLoading(false) }
   }
@@ -277,14 +342,17 @@ export const PlanningPage = () => {
     const requestedWorkItemId = Number(workItemId || searchParams.get('openTaskId'))
     if (boardLoading || !Number.isInteger(requestedWorkItemId) || requestedWorkItemId <= 0 || openedTaskIdRef.current === requestedWorkItemId) return
     openedTaskIdRef.current = requestedWorkItemId
-    void handleOpenDetail(requestedWorkItemId)
+    const requestedIterationId = Number(iterationId)
+    void handleOpenDetail(requestedWorkItemId, {
+      iterationId: Number.isSafeInteger(requestedIterationId) && requestedIterationId > 0 ? requestedIterationId : undefined,
+    })
   }, [boardLoading, searchParams, workItemId])
 
   const handleBackDetail = async () => {
     const previous = detailNavigationStack[detailNavigationStack.length - 1]
     if (!previous) return
     setDetailNavigationStack((prev) => prev.slice(0, -1))
-    syncDetailUrl(previous.id)
+    syncDetailUrl(previous.id, previous.iterationId)
     setDetailLoading(true)
     try { setDetailItem(await getWorkItemDetail(previous.id)) }
     catch { setDetailItem(previous) }
@@ -296,6 +364,16 @@ export const PlanningPage = () => {
     syncDetailUrl(null)
     setDetailItem(null)
     setDetailNavigationStack([])
+  }
+
+  /** 选择迭代时同步固定路径，并关闭可能已打开的工作项详情。 */
+  const handleSelectIteration = (iteration: IterationItem | 'unplanned') => {
+    setSelectedIteration(iteration)
+    setPage(1)
+    openedTaskIdRef.current = null
+    setDetailItem(null)
+    setDetailNavigationStack([])
+    navigate(buildPlanningIterationRoute(pid, iteration === 'unplanned' ? null : iteration.id, searchParams))
   }
 
   const handleDeleteConfirm = async () => {
@@ -318,6 +396,96 @@ export const PlanningPage = () => {
     } catch (err) {
       setInlineEditError(getErrorMessage(err) || '更新工作项失败')
     }
+  }
+
+  const toggleWorkItemSelection = (id: number) => {
+    setSelectedWorkItemIds((current) => toggleBatchWorkItemSelection(current, id))
+  }
+
+  const toggleAllVisibleWorkItems = () => {
+    const visibleItems = workItems?.records || []
+    setSelectedWorkItemIds((current) => toggleAllBatchWorkItemSelection(current, visibleItems.map((item) => item.id)))
+  }
+
+  /** 批量字段更新先回读最新工作项，再以完整载荷覆盖单个目标字段，避免覆盖其他人的并发编辑。 */
+  const submitBatchFieldChange = async (change: BatchWorkItemChange) => {
+    const selectedSnapshot = [...selectedWorkItems]
+    if (selectedSnapshot.length === 0) return
+    setBatchSubmitting(true)
+    setBatchNotice(null)
+    const payload = change.field === 'status'
+      ? { taskIds: selectedSnapshot.map((item) => item.id), field: 'STATUS' as const, value: change.value }
+      : change.field === 'priority'
+        ? { taskIds: selectedSnapshot.map((item) => item.id), field: 'PRIORITY' as const, value: change.value }
+        : change.field === 'assignee'
+          ? { taskIds: selectedSnapshot.map((item) => item.id), field: 'ASSIGNEE' as const, assigneeUserId: change.userId }
+          : { taskIds: selectedSnapshot.map((item) => item.id), field: 'ITERATION' as const, iterationId: change.iterationId }
+    let failedIds = new Set<number>()
+    try {
+      const results = await batchUpdateWorkItems(payload)
+      failedIds = new Set(results.filter((item) => item.errorMessage).map((item) => item.taskId))
+    } catch {
+      failedIds = new Set(selectedSnapshot.map((item) => item.id))
+    }
+    const successCount = selectedSnapshot.length - failedIds.size
+    setSelectedWorkItemIds(failedIds)
+    setBatchNotice(`批量${batchFieldLabel[change.field]}完成：成功 ${successCount} 项，失败 ${failedIds.size} 项${failedIds.size ? '（失败项已保留选中）' : ''}`)
+    setBatchFieldDialog(null)
+    await fetchWorkItems()
+    refreshAll()
+    if (detailItem && !failedIds.has(detailItem.id)) void handleOpenDetail(detailItem.id, { preserveHistory: true, iterationId: detailItem.iterationId })
+    setBatchSubmitting(false)
+  }
+
+  const submitBatchDelete = async () => {
+    const selectedSnapshot = [...selectedWorkItems]
+    if (selectedSnapshot.length === 0) return
+    setBatchSubmitting(true)
+    setBatchNotice(null)
+    let failedIds = new Set<number>()
+    try {
+      const results = await batchDeleteWorkItems(selectedSnapshot.map((item) => item.id))
+      failedIds = new Set(results.filter((item) => item.errorMessage).map((item) => item.taskId))
+    } catch {
+      failedIds = new Set(selectedSnapshot.map((item) => item.id))
+    }
+    const successCount = selectedSnapshot.length - failedIds.size
+    setSelectedWorkItemIds(failedIds)
+    setBatchNotice(`批量删除完成：成功 ${successCount} 项，失败 ${failedIds.size} 项${failedIds.size ? '（失败项已保留选中）' : ''}`)
+    setBatchFieldDialog(null)
+    if (detailItem && !failedIds.has(detailItem.id)) handleCloseDetail()
+    await fetchWorkItems()
+    refreshAll()
+    setBatchSubmitting(false)
+  }
+
+  const submitBatchRequirementAi = async (action: 'STANDARDIZE' | 'BREAKDOWN') => {
+    const selectedSnapshot = [...selectedWorkItems]
+    if (selectedSnapshot.length === 0) return
+    setBatchSubmitting(true)
+    let results: BatchRequirementAiResult[]
+    let failedIds: Set<number>
+    try {
+      const response = await generateBatchRequirementAi(selectedSnapshot.map((item) => item.id), { action })
+      const itemById = new Map(selectedSnapshot.map((item) => [item.id, item]))
+      results = response.map((item) => {
+        if (item.executionTask) {
+          localStorage.setItem(`requirement-ai-execution:${item.taskId}`, JSON.stringify({ executionId: item.executionTask.id, action }))
+        }
+        return {
+          workItem: itemById.get(item.taskId)!,
+          executionTaskId: item.executionTask?.id,
+          error: item.errorMessage || undefined,
+        }
+      })
+      failedIds = new Set(response.filter((item) => item.errorMessage).map((item) => item.taskId))
+    } catch (error) {
+      failedIds = new Set(selectedSnapshot.map((item) => item.id))
+      results = selectedSnapshot.map((item) => ({ workItem: item, error: getErrorMessage(error) || '提交失败' }))
+    }
+    setSelectedWorkItemIds(failedIds)
+    setBatchAiResults(results)
+    setBatchSubmitting(false)
   }
 
   /**
@@ -433,7 +601,7 @@ export const PlanningPage = () => {
               : boardError ? <p className="text-[12px] text-[var(--color-danger)]">{boardError}</p>
               : (
                 <div className="space-y-1">
-                  <button onClick={() => { setSelectedIteration('unplanned'); setPage(1) }}
+                  <button onClick={() => handleSelectIteration('unplanned')}
                     className={cn('w-full flex items-center justify-between rounded-lg px-3 py-2 text-[13px] transition-colors text-left',
                       selectedIteration === 'unplanned' ? 'bg-[var(--color-primary-light)] text-[var(--color-primary)] font-medium' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]')}>
                     <span>未规划</span>
@@ -443,7 +611,7 @@ export const PlanningPage = () => {
                     const isSelected = selectedIteration && selectedIteration !== 'unplanned' && (selectedIteration as IterationItem).id === iter.id
                     return (
                       <div key={iter.id} className={cn('group rounded-lg transition-colors', isSelected ? 'bg-[var(--color-primary-light)] border border-[var(--color-primary)]/15' : 'hover:bg-[var(--color-bg-hover)]')}>
-                        <button onClick={() => { setSelectedIteration(iter); setPage(1) }} className="w-full px-3 py-2.5 text-left">
+                        <button onClick={() => handleSelectIteration(iter)} className="w-full px-3 py-2.5 text-left">
                           <div className="flex items-center justify-between">
                             <span className={cn('text-[13px] font-medium truncate', isSelected ? 'text-[var(--color-primary)]' : 'text-[var(--color-text-primary)]')}>{iter.name}</span>
                             <span className={cn('ml-2 shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium', iterationStatusColor[iter.status] || 'bg-gray-100 text-gray-500')}>{iter.status}</span>
@@ -474,13 +642,11 @@ export const PlanningPage = () => {
               <Select
                 value={selectedIteration === 'unplanned' ? 'unplanned' : String(selectedIteration?.id || '')}
                 onChange={(val) => {
-                  if (val === 'unplanned') {
-                    setSelectedIteration('unplanned')
-                  } else {
+                  if (val === 'unplanned') handleSelectIteration('unplanned')
+                  else {
                     const iter = board.iterations.find((i) => i.id === Number(val))
-                    if (iter) setSelectedIteration(iter)
+                    if (iter) handleSelectIteration(iter)
                   }
-                  setPage(1)
                 }}
                 options={[
                   { value: 'unplanned', label: `未规划 (${board.unplannedCount})` },
@@ -557,6 +723,31 @@ export const PlanningPage = () => {
             </div>
           </div>
 
+          {viewMode === 'list' && selectedWorkItems.length > 0 && (
+            <div className="mb-4 flex flex-col gap-3 rounded-xl border border-[var(--color-primary)]/25 bg-[var(--color-primary-light)]/45 px-4 py-3 shadow-[var(--shadow-xs)] lg:flex-row lg:items-center">
+              <div className="flex items-center gap-2 text-[13px] font-medium text-[var(--color-primary)]">
+                <CheckSquare className="h-4 w-4" />
+                已选 {selectedWorkItems.length} 项
+                <button type="button" onClick={() => setSelectedWorkItemIds(new Set())} className="ml-1 text-[12px] font-normal text-[var(--color-text-tertiary)] hover:text-[var(--color-primary)]">清空</button>
+              </div>
+              <div className="flex flex-wrap items-center gap-2 lg:ml-auto">
+                {allSelectedSameType && <Button size="sm" variant="secondary" onClick={() => setBatchFieldDialog('status')}>改状态</Button>}
+                <Button size="sm" variant="secondary" onClick={() => setBatchFieldDialog('priority')}>改优先级</Button>
+                <Button size="sm" variant="secondary" onClick={() => setBatchFieldDialog('assignee')}>改负责人</Button>
+                <Button size="sm" variant="secondary" onClick={() => setBatchFieldDialog('iteration')}>移至迭代</Button>
+                {canBatchRequirementAi && <Button size="sm" icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => { setBatchAiResults(null); setBatchAiDialogOpen(true) }}>需求 AI</Button>}
+                {canBatchDelete && <Button size="sm" variant="danger" icon={<Trash2 className="h-3.5 w-3.5" />} onClick={() => setBatchFieldDialog('delete')}>删除</Button>}
+              </div>
+            </div>
+          )}
+
+          {batchNotice && (
+            <div className="mb-4 flex items-center justify-between gap-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[12px] text-sky-800">
+              <span>{batchNotice}</span>
+              <button type="button" onClick={() => setBatchNotice(null)} className="text-sky-700 hover:text-sky-900"><X className="h-3.5 w-3.5" /></button>
+            </div>
+          )}
+
            {/* 内容 */}
            <div className="min-h-[240px]">
            {boardError ? <ErrorState description={boardError} onRetry={fetchBoard} />
@@ -565,8 +756,8 @@ export const PlanningPage = () => {
             : !workItems || workItems.records.length === 0
               ? <div className="min-h-[240px] rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)]"><EmptyState title="暂无工作项" description="点击右上角「新建工作项」开始。" icon={<CheckSquare className="h-6 w-6" strokeWidth={1.5} />} /></div>
               : viewMode === 'list'
-                ? <WorkItemTable items={workItems} onOpenDetail={handleOpenDetail} onEdit={(w) => setWiDialog({ open: true, editing: w })} onDelete={(w) => setDeleteConfirm({ type: 'workItem', id: w.id, name: w.name })} onInlineChange={handleInlineWorkItemChange} error={inlineEditError} page={page} totalPages={workItems.totalPages} total={workItems.total} onPageChange={setPage} />
-                : <KanbanBoard items={workItems.records} onOpenDetail={handleOpenDetail} />
+                ? <WorkItemTable items={workItems} selectedIds={selectedWorkItemIds} onToggleSelect={toggleWorkItemSelection} onToggleSelectAll={toggleAllVisibleWorkItems} onOpenDetail={(item) => handleOpenDetail(item.id, { iterationId: item.iterationId })} onEdit={(w) => setWiDialog({ open: true, editing: w })} onDelete={(w) => setDeleteConfirm({ type: 'workItem', id: w.id, name: w.name })} onInlineChange={handleInlineWorkItemChange} error={inlineEditError} page={page} totalPages={workItems.totalPages} total={workItems.total} onPageChange={setPage} />
+                : <KanbanBoard items={workItems.records} onOpenDetail={(item) => handleOpenDetail(item.id, { iterationId: item.iterationId })} />
           }
           </div>
         </div>
@@ -577,6 +768,38 @@ export const PlanningPage = () => {
       {wiDialog.open && <WorkItemDialog projectId={pid} editing={wiDialog.editing} iterationId={selectedIteration && selectedIteration !== 'unplanned' ? selectedIteration.id : undefined} userOptions={userOptions} projectMemberIds={projectMemberIds} onClose={() => setWiDialog({ open: false })} onSaved={(result) => { setWiDialog({ open: false }); refreshAll(); if (result?.autoStandardize && result.item) { setAiAssistantItem(result.item); setAutoRunAction('STANDARDIZE') } }} />}
       {detailItem && <WorkItemDetailDrawer item={detailItem} loading={detailLoading} userOptions={userOptions} canGoBack={detailNavigationStack.length > 0} canCreateExecution={canCreateExecution} onBack={handleBackDetail} onClose={handleCloseDetail} onEdit={() => { openedTaskIdRef.current = null; syncDetailUrl(null); setWiDialog({ open: true, editing: detailItem }); setDetailItem(null); setDetailNavigationStack([]) }} onDelete={(w) => { openedTaskIdRef.current = null; syncDetailUrl(null); setDetailItem(null); setDetailNavigationStack([]); setDeleteConfirm({ type: 'workItem', id: w.id, name: w.name }) }} onRefresh={(id) => handleOpenDetail(id, { preserveHistory: true })} onOpenLinkedWorkItem={(id) => handleOpenDetail(id, { pushHistory: true, previousItem: detailItem })} onOpenAi={() => handleOpenSmartAction(detailItem)} />}
       {deleteConfirm && <DeleteConfirmDialog name={deleteConfirm.name} onCancel={() => setDeleteConfirm(null)} onConfirm={handleDeleteConfirm} />}
+      {batchFieldDialog && batchFieldDialog !== 'delete' && (
+        <BatchWorkItemFieldDialog
+          field={batchFieldDialog}
+          itemCount={selectedWorkItems.length}
+          workItemType={selectedWorkItemType}
+          iterations={board?.iterations || []}
+          userOptions={userOptions}
+          projectMemberIds={projectMemberIds}
+          submitting={batchSubmitting}
+          onClose={() => setBatchFieldDialog(null)}
+          onSubmit={submitBatchFieldChange}
+        />
+      )}
+      {batchFieldDialog === 'delete' && (
+        <BatchDeleteConfirmDialog
+          itemCount={selectedWorkItems.length}
+          submitting={batchSubmitting}
+          onClose={() => setBatchFieldDialog(null)}
+          onConfirm={submitBatchDelete}
+        />
+      )}
+      {batchAiDialogOpen && (
+        <BatchRequirementAiDialog
+          selectedItems={selectedWorkItems}
+          results={batchAiResults}
+          submitting={batchSubmitting}
+          onClose={() => { setBatchAiDialogOpen(false); setBatchAiResults(null) }}
+          onSubmit={submitBatchRequirementAi}
+          onOpenExecution={(id) => navigate(`/projects/${pid}/execution/tasks/${id}`)}
+          onOpenExecutionCenter={() => navigate(`/projects/${pid}/execution`)}
+        />
+      )}
       {aiAssistantItem && isRequirementAiEntryVisible(aiAssistantItem) && <RequirementAiDialog open={true} workItem={aiAssistantItem} userOptions={userOptions} projectMemberIds={projectMemberIds} onClose={() => { setAiAssistantItem(null); setAutoRunAction(null) }} onChanged={() => { if (detailItem?.id === aiAssistantItem.id) handleOpenDetail(aiAssistantItem.id); refreshAll() }} autoRunAction={autoRunAction} />}
       {technicalDesignItem && <TechnicalDesignAiDialog open={true} workItem={technicalDesignItem} onClose={() => setTechnicalDesignItem(null)} onCreated={(executionTask) => { const sourceItem = technicalDesignItem; setTechnicalDesignItem(null); refreshAll(); navigate(`/projects/${executionTask.projectId || sourceItem.projectId}/execution/tasks/${executionTask.id}`) }} />}
       {developmentExecutionItem && <DevelopmentExecutionDialog open={true} workItem={developmentExecutionItem} onClose={() => setDevelopmentExecutionItem(null)} onCreated={(executionTask) => { const sourceItem = developmentExecutionItem; setDevelopmentExecutionItem(null); if (detailItem?.id === sourceItem.id) handleOpenDetail(sourceItem.id, { preserveHistory: true }); refreshAll(); navigate(`/projects/${executionTask.projectId || sourceItem.projectId}/execution/tasks/${executionTask.id}`) }} />}
@@ -588,11 +811,15 @@ export const PlanningPage = () => {
    工作项表格
    ═══════════════════════════════════════════════ */
 
-const WorkItemTable = ({ items, onOpenDetail, onEdit, onDelete, onInlineChange, error, page, totalPages, total, onPageChange }: {
-  items: PageResponse<WorkItem>; onOpenDetail: (id: number) => void; onEdit: (w: WorkItem) => void; onDelete: (w: WorkItem) => void
+const WorkItemTable = ({ items, selectedIds, onToggleSelect, onToggleSelectAll, onOpenDetail, onEdit, onDelete, onInlineChange, error, page, totalPages, total, onPageChange }: {
+  items: PageResponse<WorkItem>; onOpenDetail: (item: WorkItem) => void; onEdit: (w: WorkItem) => void; onDelete: (w: WorkItem) => void
+  selectedIds: Set<number>; onToggleSelect: (id: number) => void; onToggleSelectAll: () => void
   onInlineChange: (item: WorkItem, field: 'status' | 'priority', value: string) => void; error: string | null
   page: number; totalPages: number; total: number; onPageChange: (p: number) => void
-}) => (
+}) => {
+  const allSelected = items.records.length > 0 && items.records.every((item) => selectedIds.has(item.id))
+  const someSelected = items.records.some((item) => selectedIds.has(item.id))
+  return (
   <div className="h-full flex flex-col rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)] overflow-hidden">
     {error && (
       <div className="border-b border-red-100 bg-[var(--color-danger-light)] px-4 py-2 text-[12px] text-[var(--color-danger)]">
@@ -603,6 +830,16 @@ const WorkItemTable = ({ items, onOpenDetail, onEdit, onDelete, onInlineChange, 
       <table className="w-full">
         <thead className="sticky top-0 z-10">
           <tr className="border-b border-[var(--color-border-light)] bg-[var(--color-bg-page)]/80 backdrop-blur-sm">
+            <th className="w-[44px] px-3 py-2 text-center">
+              <input
+                aria-label="选择当前页全部工作项"
+                type="checkbox"
+                checked={allSelected}
+                ref={(node) => { if (node) node.indeterminate = !allSelected && someSelected }}
+                onChange={onToggleSelectAll}
+                className="h-4 w-4 rounded border-[var(--color-border-strong)] text-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+              />
+            </th>
             <th className="px-4 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider">工作项</th>
             <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider w-[70px]">类型</th>
             <th className="px-3 py-2 text-left text-[11px] font-semibold text-[var(--color-text-tertiary)] uppercase tracking-wider w-[80px]">状态</th>
@@ -617,7 +854,16 @@ const WorkItemTable = ({ items, onOpenDetail, onEdit, onDelete, onInlineChange, 
         {items.records.map((item) => {
           const TypeIcon = typeIconMap[item.workItemType] || FileText
           return (
-            <tr key={item.id} className="group hover:bg-[var(--color-bg-hover)]/50 transition-colors cursor-pointer" onClick={() => onOpenDetail(item.id)}>
+            <tr key={item.id} className="group hover:bg-[var(--color-bg-hover)]/50 transition-colors cursor-pointer" onClick={() => onOpenDetail(item)}>
+              <td className="px-3 py-2 text-center" onClick={(event) => event.stopPropagation()}>
+                <input
+                  aria-label={`选择工作项 ${item.name}`}
+                  type="checkbox"
+                  checked={selectedIds.has(item.id)}
+                  onChange={() => onToggleSelect(item.id)}
+                  className="h-4 w-4 rounded border-[var(--color-border-strong)] text-[var(--color-primary)] focus:ring-2 focus:ring-[var(--color-primary)]/20"
+                />
+              </td>
               <td className="px-4 py-2 max-w-0"><div className="flex items-center gap-2 min-w-0">{item.workItemCode && <span className="text-[11px] font-mono text-[var(--color-text-tertiary)] shrink-0">{item.workItemCode}</span>}<span className="text-[13px] font-medium text-[var(--color-text-primary)] truncate">{item.name}</span></div></td>
               <td className="px-3 py-2 whitespace-nowrap"><span className="inline-flex items-center gap-1 text-[12px] text-[var(--color-text-secondary)]"><TypeIcon className="h-3.5 w-3.5 shrink-0" strokeWidth={1.75} />{item.workItemType}</span></td>
               <td className="px-3 py-2 whitespace-nowrap" onClick={(event) => event.stopPropagation()}>
@@ -657,7 +903,8 @@ const WorkItemTable = ({ items, onOpenDetail, onEdit, onDelete, onInlineChange, 
       </div>
     )}
   </div>
-)
+  )
+}
 
 const InlineStatusSelect = ({ item, onChange }: { item: WorkItem; onChange: (value: string) => void }) => {
   const options = statusOptions[item.workItemType] || statusOptions['任务']
@@ -705,7 +952,7 @@ const InlinePrioritySelect = ({ value, onChange }: { value: string; onChange: (v
    看板视图
    ═══════════════════════════════════════════════ */
 
-const KanbanBoard = ({ items, onOpenDetail }: { items: WorkItem[]; onOpenDetail: (id: number) => void }) => {
+const KanbanBoard = ({ items, onOpenDetail }: { items: WorkItem[]; onOpenDetail: (item: WorkItem) => void }) => {
   const grouped = kanbanColumns.reduce<Record<string, WorkItem[]>>((acc, col) => { acc[col] = []; return acc }, {})
   items.forEach((item) => { if (grouped[item.status]) grouped[item.status].push(item) })
 
@@ -721,7 +968,7 @@ const KanbanBoard = ({ items, onOpenDetail }: { items: WorkItem[]; onOpenDetail:
             {grouped[col].map((item) => {
               const TypeIcon = typeIconMap[item.workItemType] || FileText
               return (
-                <button key={item.id} onClick={() => onOpenDetail(item.id)}
+                <button key={item.id} onClick={() => onOpenDetail(item)}
                   className="w-full text-left rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-3 shadow-[var(--shadow-xs)] hover:shadow-[var(--shadow-sm)] transition-shadow">
                   <div className="flex items-center gap-1.5 mb-1.5">
                     <TypeIcon className="h-3.5 w-3.5 text-[var(--color-text-tertiary)]" strokeWidth={1.75} />
@@ -1145,7 +1392,7 @@ const WorkItemDetailDrawer = ({ item, loading, userOptions, canGoBack, canCreate
 
   const handleCopyShareLink = async () => {
     try {
-      await navigator.clipboard.writeText(buildWorkItemShareUrl(window.location, item.projectId, item.id))
+      await navigator.clipboard.writeText(buildWorkItemShareUrl(window.location, item.projectId, item.iterationId, item.id))
       setShareCopied(true)
       window.setTimeout(() => setShareCopied(false), 2000)
     } catch {
@@ -1662,6 +1909,176 @@ const WorkItemMemberSummary = ({
     ) : null}
   </div>
 )
+
+/* ═══════════════════════════════════════════════
+   批量操作对话框
+   ═══════════════════════════════════════════════ */
+
+const BatchWorkItemFieldDialog = ({
+  field,
+  itemCount,
+  workItemType,
+  iterations,
+  userOptions,
+  projectMemberIds,
+  submitting,
+  onClose,
+  onSubmit,
+}: {
+  field: BatchField
+  itemCount: number
+  workItemType: string | null
+  iterations: IterationItem[]
+  userOptions: UserOptionItem[]
+  projectMemberIds: number[]
+  submitting: boolean
+  onClose: () => void
+  onSubmit: (change: BatchWorkItemChange) => Promise<void>
+}) => {
+  const [status, setStatus] = useState('')
+  const [priority, setPriority] = useState('')
+  const [assigneeUserId, setAssigneeUserId] = useState<number | null>(null)
+  const [assigneeChosen, setAssigneeChosen] = useState(false)
+  const [iterationValue, setIterationValue] = useState('')
+  const selectedUser = userOptions.find((item) => item.id === assigneeUserId)
+  const selectedIteration = iterations.find((item) => String(item.id) === iterationValue)
+  const statusChoices = workItemType ? (statusOptions[workItemType] || []) : []
+  const change: BatchWorkItemChange | null = field === 'status' && status
+    ? { field, value: status }
+    : field === 'priority' && priority
+      ? { field, value: priority }
+      : field === 'assignee' && assigneeChosen
+        ? { field, userId: assigneeUserId }
+        : field === 'iteration' && iterationValue
+          ? { field, iterationId: iterationValue === 'unplanned' ? null : Number(iterationValue) }
+          : null
+  const valueLabel = field === 'status' ? status
+    : field === 'priority' ? priority
+      : field === 'assignee' && assigneeChosen ? (selectedUser?.nickname || selectedUser?.username || '未分配')
+        : selectedIteration?.name || (iterationValue === 'unplanned' ? '未规划' : '')
+
+  return (
+    <DialogOverlay onClose={submitting ? () => {} : onClose}>
+      <div className="w-full max-w-md rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-xl)] animate-scaleIn">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-primary)]">批量编辑</p>
+        <h3 className="mt-1 text-[18px] font-bold text-[var(--color-text-primary)]">批量修改{batchFieldLabel[field]}</h3>
+        <p className="mt-1.5 text-[13px] text-[var(--color-text-tertiary)]">将对已选的 {itemCount} 个工作项应用同一设置，其他字段保持不变。</p>
+        <div className="mt-5">
+          {field === 'status' && (
+            <Select value={status} onChange={setStatus} placeholder="选择状态" options={statusChoices.map((value) => ({ value, label: value }))} />
+          )}
+          {field === 'priority' && (
+            <Select value={priority} onChange={setPriority} placeholder="选择优先级" options={['高', '中', '低'].map((value) => ({ value, label: value }))} />
+          )}
+          {field === 'assignee' && (
+            <AssigneePicker value={assigneeUserId} onChange={(value) => { setAssigneeUserId(value); setAssigneeChosen(true) }} userOptions={userOptions} projectMemberIds={projectMemberIds} label="负责人" />
+          )}
+          {field === 'iteration' && (
+            <Select value={iterationValue} onChange={setIterationValue} placeholder="选择迭代" options={[
+              { value: 'unplanned', label: '未规划' },
+              ...iterations.map((item) => ({ value: String(item.id), label: item.name, description: item.status })),
+            ]} />
+          )}
+        </div>
+        {valueLabel && <p className="mt-4 rounded-lg bg-[var(--color-bg-page)] px-3 py-2 text-[12px] text-[var(--color-text-secondary)]">确认后将把 {itemCount} 项的{batchFieldLabel[field]}设为「{valueLabel}」。</p>}
+        <div className="mt-6 flex justify-end gap-2">
+          <Button variant="secondary" disabled={submitting} onClick={onClose}>取消</Button>
+          <Button disabled={!change} loading={submitting} onClick={() => change && void onSubmit(change)}>确认修改</Button>
+        </div>
+      </div>
+    </DialogOverlay>
+  )
+}
+
+const BatchDeleteConfirmDialog = ({ itemCount, submitting, onClose, onConfirm }: {
+  itemCount: number
+  submitting: boolean
+  onClose: () => void
+  onConfirm: () => Promise<void>
+}) => (
+  <DialogOverlay onClose={submitting ? () => {} : onClose}>
+    <div className="w-full max-w-sm rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-xl)] animate-scaleIn text-center">
+      <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--color-danger-light)]"><Trash2 className="h-5 w-5 text-[var(--color-danger)]" /></div>
+      <h3 className="text-[16px] font-semibold text-[var(--color-text-primary)]">确认批量删除</h3>
+      <p className="mt-1.5 text-[13px] text-[var(--color-text-tertiary)]">即将删除 {itemCount} 个工作项。此操作不可撤销，单条权限校验失败的工作项会保留。</p>
+      <div className="mt-5 flex justify-center gap-2">
+        <Button variant="secondary" disabled={submitting} onClick={onClose}>取消</Button>
+        <Button variant="danger" loading={submitting} onClick={() => void onConfirm()}>删除 {itemCount} 项</Button>
+      </div>
+    </div>
+  </DialogOverlay>
+)
+
+const BatchRequirementAiDialog = ({
+  selectedItems,
+  results,
+  submitting,
+  onClose,
+  onSubmit,
+  onOpenExecution,
+  onOpenExecutionCenter,
+}: {
+  selectedItems: WorkItem[]
+  results: BatchRequirementAiResult[] | null
+  submitting: boolean
+  onClose: () => void
+  onSubmit: (action: 'STANDARDIZE' | 'BREAKDOWN') => Promise<void>
+  onOpenExecution: (id: number) => void
+  onOpenExecutionCenter: () => void
+}) => {
+  const [action, setAction] = useState<'STANDARDIZE' | 'BREAKDOWN'>('STANDARDIZE')
+  const [featureCost, setFeatureCost] = useState<number | null>(null)
+  const [costError, setCostError] = useState(false)
+
+  useEffect(() => {
+    let cancelled = false
+    getMyFeatureCosts()
+      .then((costs) => { if (!cancelled) setFeatureCost(costs.REQUIREMENT_AI ?? 0) })
+      .catch(() => { if (!cancelled) setCostError(true) })
+    return () => { cancelled = true }
+  }, [])
+
+  if (results) {
+    const successCount = results.filter((item) => item.executionTaskId).length
+    return (
+      <DialogOverlay onClose={onClose}>
+        <div className="w-full max-w-2xl rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-xl)] animate-scaleIn">
+          <div className="flex items-start justify-between gap-4"><div><p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-primary)]">批量需求 AI</p><h3 className="mt-1 text-[18px] font-bold text-[var(--color-text-primary)]">提交结果</h3><p className="mt-1 text-[13px] text-[var(--color-text-tertiary)]">成功创建 {successCount} 项执行任务，失败 {results.length - successCount} 项。</p></div><button type="button" onClick={onClose} className="rounded-lg p-1 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-hover)]"><X className="h-5 w-5" /></button></div>
+          <div className="mt-5 max-h-[360px] space-y-2 overflow-y-auto pr-1">
+            {results.map((result) => (
+              <div key={result.workItem.id} className="flex items-center justify-between gap-3 rounded-lg border border-[var(--color-border-light)] px-3 py-2.5">
+                <div className="min-w-0"><p className="truncate text-[13px] font-medium text-[var(--color-text-primary)]">{result.workItem.name}</p><p className={cn('mt-0.5 text-[11px]', result.executionTaskId ? 'text-emerald-700' : 'text-[var(--color-danger)]')}>{result.executionTaskId ? `已创建执行任务 #${result.executionTaskId}` : result.error || '提交失败'}</p></div>
+                {result.executionTaskId && <Button size="sm" variant="secondary" onClick={() => onOpenExecution(result.executionTaskId!)}>查看任务</Button>}
+              </div>
+            ))}
+          </div>
+          <p className="mt-4 text-[12px] text-[var(--color-text-tertiary)]">任务完成后，可打开对应需求的单条 AI 助手继续审核和手动写回结果。</p>
+          <div className="mt-5 flex justify-end gap-2"><Button variant="secondary" onClick={onOpenExecutionCenter}>查看执行中心</Button><Button onClick={onClose}>完成</Button></div>
+        </div>
+      </DialogOverlay>
+    )
+  }
+
+  const totalCost = featureCost === null ? null : featureCost * selectedItems.length
+  return (
+    <DialogOverlay onClose={submitting ? () => {} : onClose}>
+      <div className="w-full max-w-md rounded-2xl border border-[var(--color-border)] bg-white p-6 shadow-[var(--shadow-xl)] animate-scaleIn">
+        <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[var(--color-primary)]">批量需求 AI</p>
+        <h3 className="mt-1 text-[18px] font-bold text-[var(--color-text-primary)]">为 {selectedItems.length} 条需求创建 AI 任务</h3>
+        <p className="mt-1.5 text-[13px] text-[var(--color-text-tertiary)]">每条需求都会独立创建后台执行任务并扣除积分，结果不会自动写回需求。</p>
+        <div className="mt-5 grid grid-cols-2 gap-2">
+          {([['STANDARDIZE', '标准化需求', '整理为结构化需求文档'], ['BREAKDOWN', '拆解子任务', '生成可编辑的任务建议']] as const).map(([value, label, description]) => (
+            <button key={value} type="button" onClick={() => setAction(value)} className={cn('rounded-xl border p-3 text-left transition-colors', action === value ? 'border-[var(--color-primary)] bg-[var(--color-primary-light)]/55' : 'border-[var(--color-border)] hover:bg-[var(--color-bg-hover)]')}><p className="text-[13px] font-semibold text-[var(--color-text-primary)]">{label}</p><p className="mt-1 text-[11px] text-[var(--color-text-tertiary)]">{description}</p></button>
+          ))}
+        </div>
+        <div className="mt-4 rounded-lg bg-[var(--color-bg-page)] px-3 py-2.5 text-[12px] text-[var(--color-text-secondary)]">
+          {costError ? '积分价格加载失败，请稍后重试。' : totalCost === null ? '正在加载积分价格…' : <>预计扣除：<strong className="text-[var(--color-text-primary)]">{totalCost}</strong> 积分（{featureCost} × {selectedItems.length}）</>}
+        </div>
+        <div className="mt-6 flex justify-end gap-2"><Button variant="secondary" disabled={submitting} onClick={onClose}>取消</Button><Button disabled={featureCost === null || costError} loading={submitting} icon={<Sparkles className="h-3.5 w-3.5" />} onClick={() => void onSubmit(action)}>确认创建</Button></div>
+      </div>
+    </DialogOverlay>
+  )
+}
 
 /* ═══════════════════════════════════════════════
    删除确认对话框

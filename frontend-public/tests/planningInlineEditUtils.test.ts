@@ -5,7 +5,7 @@ import { buildWorkItemInlineEditPayload } from '../src/lib/planningInlineEditUti
 import type { WorkItem } from '../src/types/planning'
 
 describe('planning inline edit utilities', () => {
-  it('builds a full work item update payload while changing only status or priority', () => {
+  it('builds a full work item update payload while changing only batch-editable fields', () => {
     const item: WorkItem = {
       id: 12,
       workItemCode: 'WI-12',
@@ -59,5 +59,28 @@ describe('planning inline edit utilities', () => {
     })
 
     assert.equal(buildWorkItemInlineEditPayload(item, { priority: '高' }).priority, '高')
+    assert.deepEqual(buildWorkItemInlineEditPayload(item, {
+      assignee: '',
+      assigneeUserId: null,
+      iterationId: null,
+    }), {
+      name: '支付回调冒烟测试',
+      workItemType: '任务',
+      taskType: '测试任务',
+      status: '待开始',
+      priority: '中',
+      workHours: 3,
+      assignee: '',
+      assigneeUserId: null,
+      collaboratorUserIds: [10, 11],
+      description: '覆盖支付回调主路径',
+      moduleName: '支付',
+      planStartDate: '2026-07-01',
+      planEndDate: '2026-07-03',
+      projectId: 5,
+      agentId: 7,
+      iterationId: null,
+      requirementTaskId: 3,
+    })
   })
 })

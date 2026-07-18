@@ -113,4 +113,12 @@ describe('GitPilot 助手工作区布局契约', () => {
     assert.match(references, /iterations/)
     assert.doesNotMatch(messages, /AssistantReferencePreviewDrawer/)
   })
+
+  it('renders专项 Skill markers after the user label', () => {
+    const messages = readFileSync(new URL('../src/components/assistant/AssistantMessageList.tsx', import.meta.url), 'utf8')
+
+    assert.match(messages, /message\.skillLabel/)
+    assert.match(messages, /\{message\.skillLabel\}/)
+    assert.doesNotMatch(messages, /formatAssistantUserQuestion/)
+  })
 })

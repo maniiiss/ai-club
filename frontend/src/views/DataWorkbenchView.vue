@@ -351,6 +351,84 @@
       </div>
     </section>
 
+    <!-- 语义查询治理：项目管理员在此依次登记数据源、扫描元数据、保存语义定义并发布。 -->
+    <section v-if="activeTab === 'semantic'" class="management-list-shell data-workbench-semantic-shell" v-loading="semanticLoading">
+      <div class="data-workbench-semantic-head">
+        <div>
+          <h3>语义查询发布台</h3>
+          <p>发布后的模型才会出现在项目研发页的“数据查询”中；凭据只写入一次，页面不会回显。</p>
+        </div>
+        <el-select v-model="semanticProjectId" placeholder="选择项目" style="width: 260px" @change="loadSemanticAssets">
+          <el-option v-for="project in projectOptions" :key="project.id" :label="project.name" :value="project.id" />
+        </el-select>
+      </div>
+      <div v-if="semanticProjectId" class="data-workbench-semantic-nav" role="tablist" aria-label="语义查询配置模块">
+        <button v-for="item in semanticSections" :key="item.key" type="button" :class="{ active: semanticSection === item.key }" @click="semanticSection = item.key">{{ item.label }}</button>
+      </div>
+      <el-alert v-if="!semanticProjectId" title="请先选择要治理的数据项目" type="info" :closable="false" show-icon />
+      <template v-else>
+        <el-alert v-if="semanticError" :title="semanticError" type="error" :closable="false" show-icon class="data-workbench-semantic-error" />
+        <div class="data-workbench-semantic-grid" :class="{ 'is-single-column': semanticSection === 'source' || semanticSection === 'schema' }">
+          <article v-show="semanticSection === 'source' || semanticSection === 'schema'" class="data-workbench-semantic-card">
+            <div class="data-workbench-semantic-card-head"><div><strong>1. PostgreSQL 数据源与 Schema</strong><span>扫描快照只读；逻辑别名和映射在右侧语义模型维护</span></div></div>
+            <el-form v-show="semanticSection === 'source'" label-position="top" size="small">
+              <el-form-item label="名称"><el-input v-model="sourceForm.name" placeholder="运营分析库" /></el-form-item>
+              <el-form-item label="JDBC URL"><el-input v-model="sourceForm.jdbcUrl" placeholder="jdbc:postgresql://db.example:5432/analytics" /></el-form-item>
+              <el-form-item label="只读账号"><el-input v-model="sourceForm.username" /></el-form-item>
+              <el-form-item label="密码"><el-input v-model="sourceForm.password" type="password" show-password /></el-form-item>
+              <el-form-item label="允许 Schema"><el-input v-model="sourceForm.allowedSchemas" placeholder="public" /></el-form-item>
+              <el-button type="primary" :loading="semanticSaving" @click="saveSemanticSource">保存数据源</el-button>
+            </el-form>
+            <template v-if="semanticSection === 'schema'">
+              <section class="management-list-toolbar data-workbench-schema-list-toolbar">
+                <div class="management-list-toolbar-main">
+                  <div class="management-list-search-shell"><el-icon class="management-list-search-icon"><Search /></el-icon><input v-model="schemaKeyword" class="management-list-search-input" type="text" placeholder="搜索 Schema 或表名..." @keyup.enter="handleSchemaSearch" /></div>
+                  <span class="management-list-toolbar-divider" aria-hidden="true"></span>
+                  <el-select v-model="schemaSourceId" placeholder="选择已扫描数据源" style="width: 240px" @change="handleSchemaSourceChange"><el-option v-for="source in semanticSources" :key="source.id" :label="source.name" :value="source.id" /></el-select>
+                </div>
+                <div class="management-list-toolbar-side"><button class="management-list-toolbar-button" type="button" @click="loadSchemaPage"><el-icon><RefreshRight /></el-icon><span>刷新</span></button></div>
+              </section>
+              <div class="management-list-table-scroll"><table class="management-list-table data-workbench-schema-table"><thead><tr><th class="schema-col-schema">Schema</th><th class="schema-col-name">表名</th><th class="schema-col-count center">字段数</th><th class="schema-col-columns">字段摘要</th></tr></thead><tbody><tr v-for="table in schemaPage.records" :key="table.schema + '.' + table.table" class="management-list-row"><td class="schema-col-schema"><code>{{ table.schema }}</code></td><td class="schema-col-name"><div class="management-list-title">{{ table.table }}</div><div class="management-list-subtitle">{{ table.schema }}.{{ table.table }}</div></td><td class="schema-col-count center"><strong class="data-workbench-affected">{{ table.columns.length }}</strong><span class="data-workbench-affected-unit">字段</span></td><td class="schema-col-columns"><span class="data-workbench-schema-summary">{{ table.columns.join('、') }}</span></td></tr><tr v-if="!schemaPage.records.length"><td colspan="4" class="management-list-empty">暂无扫描表，请先刷新扫描。</td></tr></tbody></table></div>
+              <div class="management-list-footer"><div class="management-list-footer-total">共 <span>{{ schemaPage.total }}</span> 张表</div><div class="management-list-footer-controls"><div class="management-list-page-size management-list-compact-input"><span>每页</span><el-select v-model="schemaPage.size" size="small" style="width: 92px" @change="handleSchemaSizeChange"><el-option :value="10" label="10" /><el-option :value="20" label="20" /><el-option :value="50" label="50" /></el-select><span>条</span></div><div class="management-list-pagination"><button class="management-list-page-button" type="button" :disabled="schemaPage.page <= 1" @click="changeSchemaPage(-1)">上一页</button><span class="management-list-page-text">第 {{ schemaPage.page }} / {{ schemaPage.totalPages || 1 }} 页</span><button class="management-list-page-button" type="button" :disabled="schemaPage.page >= (schemaPage.totalPages || 1)" @click="changeSchemaPage(1)">下一页</button></div></div></div>
+            </template>
+            <div v-show="semanticSection === 'source'" class="data-workbench-semantic-list">
+              <div v-for="source in semanticSources" :key="source.id" class="data-workbench-semantic-list-row">
+                <div class="data-workbench-schema-source"><strong>{{ source.name }}</strong><span>{{ source.allowedSchemas }} · {{ source.scannedAt ? `已扫描 ${source.scannedAt}` : '尚未扫描' }}</span>
+                  <div v-if="semanticSection === 'schema' && source.tables.length" class="data-workbench-schema-tree">
+                    <details v-for="table in source.tables" :key="`${table.schema}.${table.table}`"><summary>{{ table.schema }}.{{ table.table }} <em>{{ table.columns.length }} 字段</em></summary><div class="data-workbench-schema-columns"><code v-for="column in table.columns" :key="column">{{ column }}</code></div></details>
+                  </div>
+                </div>
+                <el-button size="small" :loading="semanticSaving" @click="scanSemanticSource(source.id)">刷新扫描</el-button>
+              </div>
+            </div>
+          </article>
+          <article v-show="semanticSection === 'model' || semanticSection === 'dictionary' || semanticSection === 'policy'" class="data-workbench-semantic-card">
+            <div class="data-workbench-semantic-card-head"><div><strong>2. 逻辑语义映射</strong><span>通过表单配置业务展示，不会修改外部 PostgreSQL 表结构</span></div></div>
+            <el-form label-position="top" size="small">
+              <el-form-item v-show="semanticSection === 'model'" label="模型名称"><el-input v-model="semanticForm.name" placeholder="运营指标口径" /></el-form-item>
+              <el-form-item v-show="semanticSection === 'model'" label="来源数据源"><el-select v-model="semanticForm.dataSourceId" placeholder="先扫描数据源" style="width: 100%"><el-option v-for="source in semanticSources" :key="source.id" :label="source.name" :value="source.id" /></el-select></el-form-item>
+              <el-form-item v-show="semanticSection === 'model'" label="业务表"><el-select v-model="semanticForm.table" filterable placeholder="从扫描结果选择表" style="width: 100%"><el-option v-for="table in selectedSourceTables" :key="`${table.schema}.${table.table}`" :label="`${table.schema}.${table.table}（${table.columns.length} 字段）`" :value="`${table.schema}.${table.table}`" /></el-select></el-form-item>
+              <div v-show="semanticSection === 'model'" class="data-workbench-mapping-section"><div class="data-workbench-mapping-title">业务概念 <el-button link type="primary" @click="addSemanticConcept">添加概念</el-button></div>
+                <div v-for="(concept, index) in semanticForm.concepts" :key="concept.key" class="data-workbench-mapping-row"><el-input v-model="concept.name" placeholder="展示名，如订单数" /><el-input v-model="concept.code" placeholder="编码，如order_count" /><el-select v-model="concept.column" filterable placeholder="物理字段"><el-option v-for="column in selectedTableColumns" :key="column" :label="column" :value="column" /></el-select><el-select v-model="concept.kind"><el-option label="指标" value="MEASURE" /><el-option label="维度" value="DIMENSION" /></el-select><el-select v-if="concept.kind === 'MEASURE'" v-model="concept.aggregation"><el-option v-for="item in aggregationOptions" :key="item" :label="item" :value="item" /></el-select><el-checkbox v-model="concept.sensitive">敏感</el-checkbox><el-button link type="danger" @click="semanticForm.concepts.splice(index, 1)">移除</el-button></div>
+              </div>
+              <div v-show="semanticSection === 'dictionary'" class="data-workbench-mapping-section"><div class="data-workbench-mapping-title">同义词 <el-button link type="primary" @click="semanticForm.synonyms.push({ term: '', concept: '' })">添加</el-button></div><div v-for="(item, index) in semanticForm.synonyms" :key="index" class="data-workbench-mapping-row compact"><el-input v-model="item.term" placeholder="用户表达，如订单量" /><el-select v-model="item.concept" placeholder="归一到概念"><el-option v-for="concept in semanticForm.concepts" :key="concept.key" :label="concept.name || concept.code" :value="concept.code" /></el-select><el-button link type="danger" @click="semanticForm.synonyms.splice(index, 1)">移除</el-button></div></div>
+              <div v-show="semanticSection === 'dictionary'" class="data-workbench-mapping-section"><div class="data-workbench-mapping-title">字典枚举 <el-button link type="primary" @click="semanticForm.enums.push({ concept: '', label: '', value: '' })">添加</el-button></div><div v-for="(item, index) in semanticForm.enums" :key="index" class="data-workbench-mapping-row compact"><el-select v-model="item.concept" placeholder="字段概念"><el-option v-for="concept in semanticForm.concepts" :key="concept.key" :label="concept.name || concept.code" :value="concept.code" /></el-select><el-input v-model="item.label" placeholder="显示值，如已完成" /><el-input v-model="item.value" placeholder="物理值，如DONE" /><el-button link type="danger" @click="semanticForm.enums.splice(index, 1)">移除</el-button></div></div>
+              <div v-show="semanticSection === 'policy'" class="data-workbench-mapping-section"><div class="data-workbench-mapping-title">行级策略 <el-button link type="primary" @click="semanticForm.policies.push({ column: '', context: 'PROJECT_ID' })">添加</el-button></div><div v-for="(item, index) in semanticForm.policies" :key="index" class="data-workbench-mapping-row compact"><el-select v-model="item.column" filterable placeholder="隔离字段"><el-option v-for="column in selectedTableColumns" :key="column" :label="column" :value="column" /></el-select><el-tag>当前项目 ID</el-tag><el-button link type="danger" @click="semanticForm.policies.splice(index, 1)">移除</el-button></div></div>
+              <details class="data-workbench-json-advanced"><summary>高级模式：查看 / 粘贴定义 JSON</summary><el-input v-model="semanticForm.advancedJson" type="textarea" :rows="9" @change="applyAdvancedDefinition" /></details>
+              <el-button type="primary" :loading="semanticSaving" @click="saveSemanticModel">{{ editingSemanticModelId ? '更新草稿' : '保存草稿' }}</el-button>
+              <el-button v-if="editingSemanticModelId" @click="resetSemanticForm">新建模型</el-button>
+            </el-form>
+            <div v-show="semanticSection === 'model'" class="data-workbench-semantic-list">
+              <div v-for="model in semanticModels" :key="model.id" class="data-workbench-semantic-list-row">
+                <div><strong>{{ model.name }} · v{{ model.versionNo }}</strong><span>{{ model.status === 'PUBLISHED' ? '已发布' : '草稿' }}</span></div>
+                <div><el-button size="small" @click="editSemanticModel(model)">编辑</el-button><el-button v-if="model.status !== 'PUBLISHED'" size="small" type="success" :loading="semanticSaving" @click="publishSemanticModel(model.id)">发布</el-button></div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </template>
+    </section>
+
     <!-- 审计详情：展示原始文本 / DSL / before-after 快照。 -->
     <el-dialog v-model="requestDetailVisible" width="920px" class="platform-form-dialog data-workbench-detail-dialog" align-center>
       <template #header>
@@ -661,14 +739,22 @@ import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import {
   approveDataChangeRequest,
   createDataWorkbenchEntity,
+  createDataWorkbenchDataSource,
+  createDataWorkbenchSemanticModel,
   deleteDataWorkbenchEntity,
   executeDataChangeRequest,
   listDataChangeAudits,
   listDataWorkbenchEntities,
+  listDataWorkbenchDataSources,
+  pageDataWorkbenchSourceSchema,
+  listDataWorkbenchSemanticModels,
   pageDataChangeRequests,
   parseDataWorkbenchEntityDraft,
   rejectDataChangeRequest,
   rollbackDataChangeRequest,
+  publishDataWorkbenchSemanticModel,
+  scanDataWorkbenchDataSource,
+  updateDataWorkbenchSemanticModel,
   updateDataWorkbenchEntity
 } from '@/api/access'
 import { useAuthStore } from '@/stores/auth'
@@ -679,17 +765,20 @@ import type {
   DataWorkbenchEntityDraft,
   DataWorkbenchEntityItem,
   DataWorkbenchFieldItem,
+  DataWorkbenchDataSourceItem,
+  DataWorkbenchSemanticModelItem,
   ProjectItem
 } from '@/types/platform'
 import { listProjectOptions } from '@/api/platform'
 
-type TabKey = 'requests' | 'approvals' | 'audit' | 'config' | 'capabilities'
+type TabKey = 'requests' | 'approvals' | 'audit' | 'config' | 'semantic' | 'capabilities'
 
 const authStore = useAuthStore()
 const canApprove = computed(() => authStore.hasPermission('data-workbench:approve'))
 const canExecute = computed(() => authStore.hasPermission('data-workbench:execute'))
 const canRollback = computed(() => authStore.hasPermission('data-workbench:rollback'))
 const canConfig = computed(() => authStore.hasPermission('data-workbench:config'))
+const canSemanticManage = computed(() => authStore.hasPermission('data-workbench:source-manage') || authStore.hasPermission('data-workbench:semantic-manage'))
 
 // Tab 定义：所有列表 Tab 共用请求接口，仅通过筛选参数区分。
 const tabs = [
@@ -697,6 +786,7 @@ const tabs = [
   { key: 'approvals', label: '审批队列' },
   { key: 'audit', label: '执行审计' },
   { key: 'config', label: '实体配置' },
+  { key: 'semantic', label: '语义查询治理' },
   { key: 'capabilities', label: '能力配置' }
 ] as const
 
@@ -776,10 +866,36 @@ const parseSourceType = ref<ParseSourceType>('DDL')
 const parseInput = reactive<Record<ParseSourceType, string>>({ DDL: '', JAVA: '' })
 const parseWarnings = ref<string[]>([])
 const parsing = ref(false)
+const semanticLoading = ref(false)
+const semanticSaving = ref(false)
+const semanticError = ref('')
+const semanticProjectId = ref<number | null>(null)
+const semanticSection = ref<'source' | 'schema' | 'model' | 'dictionary' | 'policy'>('source')
+const semanticSections = [
+  { key: 'source', label: '数据源' }, { key: 'schema', label: 'Schema 浏览' }, { key: 'model', label: '语义模型' }, { key: 'dictionary', label: '词典与同义词' }, { key: 'policy', label: '访问策略' }
+] as const
+const semanticSources = ref<DataWorkbenchDataSourceItem[]>([])
+const semanticModels = ref<DataWorkbenchSemanticModelItem[]>([])
+const schemaSourceId = ref<number | null>(null)
+const schemaKeyword = ref('')
+const schemaPage = reactive({ records: [] as Array<{ schema: string; table: string; columns: string[] }>, total: 0, page: 1, size: 20, totalPages: 1 })
+const sourceForm = reactive({ name: '', jdbcUrl: '', username: '', password: '', allowedSchemas: 'public', enabled: true })
+const editingSemanticModelId = ref<number | null>(null)
+const semanticForm = reactive({
+  name: '', dataSourceId: null as number | null, table: '', concepts: [] as Array<{ key: string; code: string; name: string; column: string; kind: string; aggregation: string; sensitive: boolean }>,
+  synonyms: [] as Array<{ term: string; concept: string }>, enums: [] as Array<{ concept: string; label: string; value: string }>, policies: [] as Array<{ column: string; context: string }>, advancedJson: ''
+})
+const aggregationOptions = ['COUNT', 'COUNT_DISTINCT', 'SUM', 'AVG', 'MIN', 'MAX']
+const selectedSourceTables = computed(() => semanticSources.value.find((item) => item.id === semanticForm.dataSourceId)?.tables || [])
+const selectedTableColumns = computed(() => selectedSourceTables.value.find((item) => `${item.schema}.${item.table}` === semanticForm.table)?.columns || [])
 
 watch(activeTab, () => {
   pagination.page = 1
   reloadActiveTab()
+})
+
+watch(semanticSection, async (section) => {
+  if (section === 'schema' && schemaSourceId.value) await loadSchemaPage()
 })
 
 onMounted(reloadActiveTab)
@@ -787,9 +903,114 @@ onMounted(reloadActiveTab)
 async function reloadActiveTab() {
   if (activeTab.value === 'config') {
     await loadEntities()
+  } else if (activeTab.value === 'semantic') {
+    await ensureProjectOptions()
+    if (semanticProjectId.value) await loadSemanticAssets()
   } else if (isListTab.value) {
     await loadRequests()
   }
+}
+
+async function loadSemanticAssets() {
+  if (!semanticProjectId.value) return
+  semanticLoading.value = true
+  semanticError.value = ''
+  try {
+    const [sources, models] = await Promise.all([listDataWorkbenchDataSources(semanticProjectId.value), listDataWorkbenchSemanticModels(semanticProjectId.value)])
+    semanticSources.value = sources
+    semanticModels.value = models
+    if (!semanticForm.dataSourceId) semanticForm.dataSourceId = sources[0]?.id ?? null
+    if (!schemaSourceId.value) schemaSourceId.value = sources[0]?.id ?? null
+    if (semanticSection.value === 'schema' && schemaSourceId.value) await loadSchemaPage()
+  } catch (error: any) {
+    semanticError.value = error?.response?.data?.message || error?.message || '加载语义查询治理数据失败'
+  } finally {
+    semanticLoading.value = false
+  }
+}
+
+async function loadSchemaPage() {
+  if (!semanticProjectId.value || !schemaSourceId.value) return
+  try {
+    const data = await pageDataWorkbenchSourceSchema(semanticProjectId.value, schemaSourceId.value, { page: schemaPage.page, size: schemaPage.size, keyword: schemaKeyword.value || undefined })
+    schemaPage.records = data.records; schemaPage.total = data.total; schemaPage.page = data.page; schemaPage.totalPages = data.totalPages
+  } catch (error: any) { semanticError.value = error?.response?.data?.message || error?.message || '加载 Schema 列表失败' }
+}
+
+async function handleSchemaSearch() { schemaPage.page = 1; await loadSchemaPage() }
+async function changeSchemaPage(delta: number) { schemaPage.page = Math.max(1, schemaPage.page + delta); await loadSchemaPage() }
+async function handleSchemaSourceChange() { schemaPage.page = 1; schemaKeyword.value = ''; await loadSchemaPage() }
+async function handleSchemaSizeChange() { schemaPage.page = 1; await loadSchemaPage() }
+
+async function saveSemanticSource() {
+  if (!semanticProjectId.value) return
+  semanticSaving.value = true
+  semanticError.value = ''
+  try {
+    await createDataWorkbenchDataSource(semanticProjectId.value, sourceForm)
+    sourceForm.name = ''; sourceForm.jdbcUrl = ''; sourceForm.username = ''; sourceForm.password = ''
+    await loadSemanticAssets(); ElMessage.success('数据源已加密保存，请继续执行 Schema 扫描')
+  } catch (error: any) {
+    semanticError.value = error?.response?.data?.message || error?.message || '保存数据源失败'
+  } finally { semanticSaving.value = false }
+}
+async function scanSemanticSource(id: number) {
+  if (!semanticProjectId.value) return
+  semanticSaving.value = true
+  semanticError.value = ''
+  try { await scanDataWorkbenchDataSource(semanticProjectId.value, id); await loadSemanticAssets(); ElMessage.success('Schema 扫描完成') } catch (error: any) { semanticError.value = error?.response?.data?.message || error?.message || 'Schema 扫描失败' } finally { semanticSaving.value = false }
+}
+async function saveSemanticModel() {
+  if (!semanticProjectId.value || !semanticForm.dataSourceId) return
+  semanticSaving.value = true
+  semanticError.value = ''
+  try {
+    const payload = { dataSourceId: semanticForm.dataSourceId, name: semanticForm.name, definitionJson: buildSemanticDefinition() }
+    if (editingSemanticModelId.value) await updateDataWorkbenchSemanticModel(semanticProjectId.value, editingSemanticModelId.value, payload)
+    else await createDataWorkbenchSemanticModel(semanticProjectId.value, payload)
+    await loadSemanticAssets(); ElMessage.success('语义模型草稿已保存')
+  } catch (error: any) { semanticError.value = error?.response?.data?.message || error?.message || '保存语义模型失败' } finally { semanticSaving.value = false }
+}
+async function publishSemanticModel(id: number) {
+  if (!semanticProjectId.value) return
+  semanticSaving.value = true
+  semanticError.value = ''
+  try { await publishDataWorkbenchSemanticModel(semanticProjectId.value, id); await loadSemanticAssets(); ElMessage.success('语义模型已发布，项目成员现在可以查询') } catch (error: any) { semanticError.value = error?.response?.data?.message || error?.message || '发布语义模型失败' } finally { semanticSaving.value = false }
+}
+
+function addSemanticConcept() {
+  semanticForm.concepts.push({ key: crypto.randomUUID(), code: '', name: '', column: '', kind: 'MEASURE', aggregation: 'COUNT', sensitive: false })
+}
+
+function buildSemanticDefinition() {
+  const synonyms = Object.fromEntries(semanticForm.synonyms.filter((item) => item.term && item.concept).map((item) => [item.term, item.concept]))
+  const enums: Record<string, Record<string, string>> = {}
+  semanticForm.enums.filter((item) => item.concept && item.label && item.value).forEach((item) => { enums[item.concept] ||= {}; enums[item.concept][item.label] = item.value })
+  const definition = { table: semanticForm.table, concepts: semanticForm.concepts.filter((item) => item.code && item.name && item.column).map(({ key, ...item }) => item), synonyms, enums, policies: semanticForm.policies.filter((item) => item.column).map((item) => ({ ...item, context: 'PROJECT_ID' })) }
+  semanticForm.advancedJson = JSON.stringify(definition, null, 2)
+  return semanticForm.advancedJson
+}
+
+function applyAdvancedDefinition() {
+  try { populateSemanticForm(JSON.parse(semanticForm.advancedJson)) } catch (error) { semanticError.value = '高级 JSON 格式不正确，未覆盖当前表单' }
+}
+
+function populateSemanticForm(definition: any) {
+  semanticForm.table = definition?.table || ''
+  semanticForm.concepts = (definition?.concepts || []).map((item: any) => ({ key: crypto.randomUUID(), code: item.code || '', name: item.name || '', column: item.column || '', kind: item.kind || 'MEASURE', aggregation: item.aggregation || 'COUNT', sensitive: Boolean(item.sensitive) }))
+  semanticForm.synonyms = Object.entries(definition?.synonyms || {}).map(([term, concept]) => ({ term, concept: String(concept) }))
+  semanticForm.enums = Object.entries(definition?.enums || {}).flatMap(([concept, values]) => Object.entries(values as Record<string, string>).map(([label, value]) => ({ concept, label, value })))
+  semanticForm.policies = (definition?.policies || []).map((item: any) => ({ column: item.column || '', context: 'PROJECT_ID' }))
+  semanticForm.advancedJson = JSON.stringify(definition || {}, null, 2)
+}
+
+function editSemanticModel(model: DataWorkbenchSemanticModelItem) {
+  editingSemanticModelId.value = model.id; semanticForm.name = model.name; semanticForm.dataSourceId = model.dataSourceId
+  try { populateSemanticForm(JSON.parse(model.draftDefinitionJson || '{}')) } catch (error) { semanticError.value = '当前草稿 JSON 无法解析' }
+}
+
+function resetSemanticForm() {
+  editingSemanticModelId.value = null; semanticForm.name = ''; semanticForm.table = ''; semanticForm.concepts = []; semanticForm.synonyms = []; semanticForm.enums = []; semanticForm.policies = []; semanticForm.advancedJson = ''
 }
 
 /**
@@ -1368,6 +1589,138 @@ function formatJson(value: unknown) {
   letter-spacing: 0.02em;
 }
 
+/* 语义查询治理采用并排工作流，突出“扫描完成后才能发布”的安全顺序。 */
+.data-workbench-semantic-shell {
+  padding: 22px;
+}
+
+.data-workbench-semantic-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 18px;
+}
+
+.data-workbench-semantic-head h3 {
+  margin: 0;
+  font-size: 17px;
+  color: var(--app-text, #0f172a);
+}
+
+.data-workbench-semantic-head p {
+  margin: 6px 0 0;
+  font-size: 13px;
+  color: var(--app-text-muted, #64748b);
+}
+
+.data-workbench-semantic-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 18px;
+  padding: 5px;
+  width: fit-content;
+  border-radius: 10px;
+  background: var(--app-surface-low, #f8fafc);
+}
+
+.data-workbench-semantic-nav button {
+  border: 0;
+  border-radius: 7px;
+  padding: 7px 11px;
+  background: transparent;
+  color: var(--app-text-muted, #64748b);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.data-workbench-semantic-nav button.active {
+  background: #fff;
+  color: var(--app-primary, #4f46e5);
+  box-shadow: 0 1px 4px rgba(15, 23, 42, .1);
+}
+
+.data-workbench-semantic-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.data-workbench-semantic-grid.is-single-column {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.data-workbench-semantic-error {
+  margin-bottom: 16px;
+}
+
+.data-workbench-semantic-card {
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--app-border, #e2e8f0);
+  border-radius: 14px;
+  background: linear-gradient(160deg, rgba(79, 70, 229, 0.045), transparent 46%), var(--app-surface-card, #fff);
+}
+
+.data-workbench-semantic-card-head {
+  margin-bottom: 14px;
+}
+
+.data-workbench-semantic-card-head strong,
+.data-workbench-semantic-list-row strong {
+  display: block;
+  color: var(--app-text, #0f172a);
+  font-size: 14px;
+}
+
+.data-workbench-semantic-card-head span,
+.data-workbench-semantic-list-row span {
+  display: block;
+  margin-top: 4px;
+  color: var(--app-text-soft, #94a3b8);
+  font-size: 12px;
+}
+
+.data-workbench-semantic-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.data-workbench-semantic-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: var(--app-surface-low, #f8fafc);
+}
+
+.data-workbench-schema-source { min-width: 0; flex: 1; }
+.data-workbench-schema-list-toolbar { margin: 0 0 14px; padding: 0 0 14px; border-bottom: 1px solid var(--app-border, #e2e8f0); }
+.data-workbench-schema-table { min-width: 860px; }
+.data-workbench-schema-table .schema-col-schema { width: 150px; }
+.data-workbench-schema-table .schema-col-name { min-width: 210px; width: 28%; }
+.data-workbench-schema-table .schema-col-count { width: 110px; }
+.data-workbench-schema-table .schema-col-columns { min-width: 380px; }
+.data-workbench-schema-summary { display: -webkit-box; overflow: hidden; color: var(--app-text-muted, #64748b); font-family: var(--app-font-mono, monospace); font-size: 12px; line-height: 1.7; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.data-workbench-schema-tree { margin-top: 8px; }
+.data-workbench-schema-tree details { margin-top: 5px; border-left: 2px solid rgba(79, 70, 229, .22); padding-left: 8px; }
+.data-workbench-schema-tree summary { cursor: pointer; color: var(--app-text-muted, #64748b); font-family: var(--app-font-mono, monospace); font-size: 12px; }
+.data-workbench-schema-tree em { margin-left: 5px; color: var(--app-text-soft, #94a3b8); font-family: inherit; font-style: normal; }
+.data-workbench-schema-columns { display: flex; flex-wrap: wrap; gap: 5px; margin: 7px 0 2px; }
+.data-workbench-schema-columns code { font-size: 11px; }
+.data-workbench-mapping-section { margin: 16px 0; padding-top: 12px; border-top: 1px dashed var(--app-border, #e2e8f0); }
+.data-workbench-mapping-title { display: flex; align-items: center; justify-content: space-between; color: var(--app-text-muted, #64748b); font-size: 13px; font-weight: 700; }
+.data-workbench-mapping-row { display: grid; grid-template-columns: 1.05fr 1fr 1fr .86fr .9fr auto auto; gap: 7px; align-items: center; margin-top: 8px; }
+.data-workbench-mapping-row.compact { grid-template-columns: 1fr 1fr 1fr auto; }
+.data-workbench-json-advanced { margin: 14px 0; color: var(--app-text-muted, #64748b); font-size: 12px; }
+.data-workbench-json-advanced summary { cursor: pointer; margin-bottom: 8px; }
+
 /* 审计详情弹窗 */
 .data-workbench-detail-dialog :deep(.el-dialog__body) {
   padding-top: 12px;
@@ -1672,6 +2025,12 @@ function formatJson(value: unknown) {
   .data-workbench-audit-grid {
     grid-template-columns: 1fr;
   }
+
+  .data-workbench-semantic-grid {
+    grid-template-columns: 1fr;
+  }
+  .data-workbench-mapping-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .data-workbench-mapping-row.compact { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 640px) {
@@ -1683,6 +2042,10 @@ function formatJson(value: unknown) {
   .data-workbench-capability-grid {
     grid-template-columns: 1fr;
     padding: 12px;
+  }
+
+  .data-workbench-semantic-head {
+    flex-direction: column;
   }
 }
 </style>

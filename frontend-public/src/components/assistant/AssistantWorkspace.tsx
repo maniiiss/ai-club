@@ -24,6 +24,7 @@ import {
   buildAssistantSessionQuery,
   isDevelopmentExecutionAction,
   markAssistantStreamStopped,
+  resolveAssistantSkillMessage,
   resolveAssistantDoneContent,
   resolveDevelopmentExecutionActionContext,
   shouldIgnoreAssistantStreamEvent,
@@ -74,14 +75,20 @@ const buildSessionPayload = (projectId?: number) => ({
 })
 
 const toLocalMessages = (detail: AssistantConversationDetailItem, feedbackByMessageId: Map<number, AssistantMessageFeedbackSummary> = new Map()): AssistantMessageItem[] =>
-  detail.messages.map((message) => ({
-    id: String(message.id),
-    role: message.role === 'user' ? 'user' : 'assistant',
-    content: message.content,
-    status: message.status === 'error' ? 'error' : 'done',
-    attachments: message.attachments || [],
-    feedback: message.role === 'assistant' ? feedbackByMessageId.get(message.id) || null : undefined,
-  }))
+  detail.messages.map((message) => {
+    const display = message.role === 'user'
+      ? resolveAssistantSkillMessage(message.content)
+      : { content: message.content, skillLabel: null }
+    return {
+      id: String(message.id),
+      role: message.role === 'user' ? 'user' : 'assistant',
+      content: display.content,
+      status: message.status === 'error' ? 'error' : 'done',
+      attachments: message.attachments || [],
+      skillLabel: display.skillLabel,
+      feedback: message.role === 'assistant' ? feedbackByMessageId.get(message.id) || null : undefined,
+    }
+  })
 
 const FEEDBACK_REASON_OPTIONS = [
   ['WRONG_ANSWER', '事实错误'],
@@ -335,9 +342,10 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
     const assistantMessageId = `assistant-${Date.now()}`
     currentStreamingAssistantMessageIdRef.current = assistantMessageId
     const filesForRequest = pendingFiles
+    const localDisplayQuestion = resolveAssistantSkillMessage(displayQuestion, slashCommand)
     setMessages((prev) => [
       ...prev,
-      { id: userMessageId, role: 'user', content: displayQuestion, status: 'done', attachments: filesForRequest.map(buildLocalAttachment) },
+      { id: userMessageId, role: 'user', content: localDisplayQuestion.content, status: 'done', attachments: filesForRequest.map(buildLocalAttachment), skillLabel: localDisplayQuestion.skillLabel },
       { id: assistantMessageId, role: 'assistant', content: '', status: 'streaming', attachments: [] },
     ])
     try {

@@ -29,6 +29,7 @@
 - [GitLab 业主仓库推送](gitlab-owner-repo-push-technical-design-v1.md) - 代码推送到业主 GitLab 仓库
 - [服务器管理设计](server-management-technical-design-v1.md) - 服务器管理模块
 - [DataWorkbench 设计](data-workbench-technical-design-v1.md) - 项目内数据变更工作台
+- [DataWorkbench 语义查询设计](data-workbench-semantic-query-technical-design-v1.md) - 动态 PostgreSQL 数据源、语义层与自然语言只读查询
 - [聊天室设计](chat-room-technical-design-v1.md) - 项目聊天室与房间级 Agent
 
 ### 移动端设计

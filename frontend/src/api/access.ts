@@ -1,5 +1,5 @@
 import { http } from './http'
-import type { ApiResponse, CreditAccountBackfillResult, CreditAccountItem, CreditFeatureConfigItem, CreditGlobalConfigItem, CreditTransactionItem, DashboardShortcutEntryItem, DataChangeAuditItem, DataChangeDsl, DataChangePreviewResult, DataChangeRequestItem, DataPermissionScopeValue, DataWorkbenchEntityItem, DataWorkbenchEntityParseResult, PageResponse, PermissionItem, PlatformEnvVarDetailItem, PlatformEnvVarItem, PlatformToolItem, RepositoryScanRulesetItem, RoleItem, UserItem, UserOptionItem, UserPosition } from '@/types/platform'
+import type { ApiResponse, CreditAccountBackfillResult, CreditAccountItem, CreditFeatureConfigItem, CreditGlobalConfigItem, CreditTransactionItem, DashboardShortcutEntryItem, DataChangeAuditItem, DataChangeDsl, DataChangePreviewResult, DataChangeRequestItem, DataPermissionScopeValue, DataWorkbenchDataSourceItem, DataWorkbenchEntityItem, DataWorkbenchEntityParseResult, DataWorkbenchSemanticModelItem, PageResponse, PermissionItem, PlatformEnvVarDetailItem, PlatformEnvVarItem, PlatformToolItem, RepositoryScanRulesetItem, RoleItem, UserItem, UserOptionItem, UserPosition } from '@/types/platform'
 
 const cleanParams = <T extends object>(params: T) =>
   Object.fromEntries(
@@ -366,6 +366,39 @@ export const deleteDataWorkbenchEntity = async (id: number) => {
  */
 export const parseDataWorkbenchEntityDraft = async (payload: { sourceType: 'DDL' | 'JAVA'; content: string }) => {
   const { data } = await http.post<ApiResponse<DataWorkbenchEntityParseResult>>('/api/data-workbench/config/entities/parse', payload)
+  return data.data
+}
+
+export const listDataWorkbenchDataSources = async (projectId: number) => {
+  const { data } = await http.get<ApiResponse<DataWorkbenchDataSourceItem[]>>(`/api/data-workbench/projects/${projectId}/data-sources`)
+  return data.data
+}
+export const createDataWorkbenchDataSource = async (projectId: number, payload: { name: string; jdbcUrl: string; username: string; password: string; allowedSchemas: string; enabled: boolean }) => {
+  const { data } = await http.post<ApiResponse<DataWorkbenchDataSourceItem>>(`/api/data-workbench/projects/${projectId}/data-sources`, payload)
+  return data.data
+}
+export const scanDataWorkbenchDataSource = async (projectId: number, id: number) => {
+  const { data } = await http.post<ApiResponse<DataWorkbenchDataSourceItem>>(`/api/data-workbench/projects/${projectId}/data-sources/${id}/scan`)
+  return data.data
+}
+export const pageDataWorkbenchSourceSchema = async (projectId: number, id: number, query: { page: number; size: number; keyword?: string }) => {
+  const { data } = await http.get<ApiResponse<PageResponse<{ schema: string; table: string; columns: string[] }>>>(`/api/data-workbench/projects/${projectId}/data-sources/${id}/schema`, { params: cleanParams(query) })
+  return data.data
+}
+export const listDataWorkbenchSemanticModels = async (projectId: number) => {
+  const { data } = await http.get<ApiResponse<DataWorkbenchSemanticModelItem[]>>(`/api/data-workbench/projects/${projectId}/semantic-models`)
+  return data.data
+}
+export const createDataWorkbenchSemanticModel = async (projectId: number, payload: { dataSourceId: number; name: string; definitionJson: string; modelConfigId?: number | null }) => {
+  const { data } = await http.post<ApiResponse<DataWorkbenchSemanticModelItem>>(`/api/data-workbench/projects/${projectId}/semantic-models`, payload)
+  return data.data
+}
+export const updateDataWorkbenchSemanticModel = async (projectId: number, id: number, payload: { dataSourceId: number; name: string; definitionJson: string; modelConfigId?: number | null }) => {
+  const { data } = await http.put<ApiResponse<DataWorkbenchSemanticModelItem>>(`/api/data-workbench/projects/${projectId}/semantic-models/${id}`, payload)
+  return data.data
+}
+export const publishDataWorkbenchSemanticModel = async (projectId: number, id: number) => {
+  const { data } = await http.post<ApiResponse<DataWorkbenchSemanticModelItem>>(`/api/data-workbench/projects/${projectId}/semantic-models/${id}/publish`)
   return data.data
 }
 

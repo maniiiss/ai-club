@@ -85,6 +85,15 @@ public class AssistantConversationSessionService {
     /** 兼容管理端和旧调用方的全部会话过滤标记。 */
     private static final String SESSION_SCOPE_ALL = "ALL";
 
+    /** 专项 Skill 的消息标签；只写入历史兼容前缀，前端回显时转换为独立标签。 */
+    private static final Map<String, String> ASSISTANT_SKILL_LABELS = Map.of(
+            "/文件库", "文件库",
+            "/wiki", "Wiki",
+            "/需求", "需求",
+            "/仓库扫描", "仓库扫描",
+            "/执行任务", "执行任务"
+    );
+
     private final AuthService authService;
     private final UserRepository userRepository;
     private final AssistantConversationSessionRepository assistantConversationSessionRepository;
@@ -763,18 +772,33 @@ public class AssistantConversationSessionService {
         if (defaultString(request.question()).startsWith("【仅当前续答轮次】")) {
             return "已授权，正在基于外部 MCP 结果继续查询。";
         }
+        String question = defaultString(request.question());
         if (request.selection() == null) {
-            return defaultString(request.question());
+            return markAssistantSkillQuestion(question, request.slashCommand());
         }
         String resumeQuestion = hasText(request.selection().resumeQuestion())
                 ? request.selection().resumeQuestion().trim()
-                : defaultString(request.question());
-        return "已确认对象："
+                : question;
+        return markAssistantSkillQuestion("已确认对象："
                 + defaultString(request.selection().entityType())
                 + " #"
                 + request.selection().entityId()
                 + "\n继续处理："
-                + resumeQuestion;
+                + resumeQuestion, request.slashCommand());
+    }
+
+    /**
+     * 只在用户显式选择专项 Skill 时添加历史兼容前缀，普通问答和内部续答保持原文。
+     */
+    private String markAssistantSkillQuestion(String question, String slashCommand) {
+        String normalizedCommand = defaultString(slashCommand).trim().toLowerCase(java.util.Locale.ROOT);
+        String label = normalizedCommand.startsWith("/mcp/")
+                ? "MCP"
+                : ASSISTANT_SKILL_LABELS.get(normalizedCommand);
+        if (!hasText(label) || question.startsWith("【" + label + "】")) {
+            return question;
+        }
+        return "【" + label + "】" + question;
     }
 
     /**

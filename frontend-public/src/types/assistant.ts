@@ -220,6 +220,8 @@ export interface AssistantMessageItem {
   content: string
   status: 'done' | 'streaming' | 'error'
   attachments: AssistantAttachmentItem[]
+  /** 用户显式使用的专项 Skill 标签；仅用于在“我”后渲染来源标签。 */
+  skillLabel?: string | null
   actions?: AssistantActionItem[]
   feedback?: AssistantMessageFeedbackSummary | null
 }

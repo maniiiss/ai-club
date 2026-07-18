@@ -14,6 +14,8 @@ import type {
   TaskComment,
   TaskUpdateRecord,
   WorkItem,
+  BatchWorkItemOperationResult,
+  BatchWorkItemUpdatePayload,
   WorkItemLinks,
   WorkItemPayload,
   WorkItemQuery,
@@ -89,6 +91,18 @@ export const updateWorkItem = async (id: number, payload: WorkItemPayload): Prom
 
 export const deleteWorkItem = async (id: number): Promise<void> => {
   await http.delete<ApiResponse<null>>(`/api/tasks/${id}`)
+}
+
+/** 服务端批量更新入口：一次请求内返回每个工作项的成功或失败结果。 */
+export const batchUpdateWorkItems = async (payload: BatchWorkItemUpdatePayload): Promise<BatchWorkItemOperationResult[]> => {
+  const res = await http.put<ApiResponse<BatchWorkItemOperationResult[]>>('/api/tasks/batch', payload)
+  return unwrap(res)
+}
+
+/** 服务端批量删除入口，单项权限失败不会影响其他工作项。 */
+export const batchDeleteWorkItems = async (taskIds: number[]): Promise<BatchWorkItemOperationResult[]> => {
+  const res = await http.delete<ApiResponse<BatchWorkItemOperationResult[]>>('/api/tasks/batch', { data: { taskIds } })
+  return unwrap(res)
 }
 
 export const getWorkItemLinks = async (id: number): Promise<WorkItemLinks> => {

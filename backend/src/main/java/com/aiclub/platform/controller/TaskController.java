@@ -3,6 +3,7 @@ package com.aiclub.platform.controller;
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.ExecutionTaskSummary;
+import com.aiclub.platform.dto.BatchTaskOperationItem;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.TaskPrdAnalyzeResult;
 import com.aiclub.platform.dto.TaskPrdDetail;
@@ -12,6 +13,8 @@ import com.aiclub.platform.dto.TaskLinksSummary;
 import com.aiclub.platform.dto.TaskSummary;
 import com.aiclub.platform.dto.TaskUpdateRecordSummary;
 import com.aiclub.platform.dto.request.ApplyTaskPrdSuggestionRequest;
+import com.aiclub.platform.dto.request.BatchTaskDeleteRequest;
+import com.aiclub.platform.dto.request.BatchTaskUpdateRequest;
 import com.aiclub.platform.dto.request.CreateExecutionTaskRequest;
 import com.aiclub.platform.dto.request.TaskAgentRunRequest;
 import com.aiclub.platform.dto.request.TaskCommentRequest;
@@ -38,6 +41,8 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 
 @RestController
@@ -232,12 +237,55 @@ public class TaskController {
         return ApiResponse.success(platformStoreService.updateTask(id, request));
     }
 
+    /**
+     * 公众端规划页批量字段更新入口。
+     * 单次 HTTP 请求返回逐项结果；每项继续复用既有工作项校验和更新事务，允许部分成功。
+     */
+    @PutMapping("/batch")
+    @RequirePermission("task:manage")
+    public ApiResponse<List<BatchTaskOperationItem>> batchUpdate(@Valid @RequestBody BatchTaskUpdateRequest request) {
+        List<BatchTaskOperationItem> results = new ArrayList<>();
+        for (Long taskId : new LinkedHashSet<>(request.taskIds())) {
+            try {
+                results.add(new BatchTaskOperationItem(
+                        taskId,
+                        platformStoreService.updateTaskBatchField(taskId, request),
+                        null
+                ));
+            } catch (RuntimeException exception) {
+                results.add(new BatchTaskOperationItem(taskId, null, failureMessage(exception)));
+            }
+        }
+        return ApiResponse.success(results);
+    }
+
 
     @DeleteMapping("/{id}")
     @RequirePermission("task:manage")
     public ApiResponse<Void> delete(@PathVariable Long id) {
         platformStoreService.deleteTask(id);
         return new ApiResponse<>(true, "Deleted successfully", null);
+    }
+
+    /** 批量删除入口，服务端逐项执行权限校验并返回部分成功结果。 */
+    @DeleteMapping("/batch")
+    @RequirePermission("task:manage")
+    public ApiResponse<List<BatchTaskOperationItem>> batchDelete(@Valid @RequestBody BatchTaskDeleteRequest request) {
+        List<BatchTaskOperationItem> results = new ArrayList<>();
+        for (Long taskId : new LinkedHashSet<>(request.taskIds())) {
+            try {
+                platformStoreService.deleteTask(taskId);
+                results.add(new BatchTaskOperationItem(taskId, null, null));
+            } catch (RuntimeException exception) {
+                results.add(new BatchTaskOperationItem(taskId, null, failureMessage(exception)));
+            }
+        }
+        return ApiResponse.success(results);
+    }
+
+    private String failureMessage(RuntimeException exception) {
+        String message = exception.getMessage();
+        return message == null || message.isBlank() ? "操作失败" : message;
     }
 
     @GetMapping("/{id}/agent-runs")

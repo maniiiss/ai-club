@@ -10,6 +10,7 @@ import {
   FileClock,
   FileSearch,
   RefreshCw,
+  Search,
   Send,
   ShieldCheck,
   Wand2,
@@ -29,6 +30,7 @@ import { EmptyState } from '@/src/components/common/EmptyState'
 import { ErrorState } from '@/src/components/common/ErrorState'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { Select } from '@/src/components/common/Select'
+import { SemanticQueryPanel } from './SemanticQueryPanel'
 import { cn, formatDateTime, getErrorMessage } from '@/src/lib/utils'
 import type {
   DataChangeAuditItem,
@@ -39,9 +41,10 @@ import type {
   DataWorkbenchEntityItem,
 } from '@/src/types/dataWorkbench'
 
-type WorkbenchTab = 'change' | 'requests' | 'audits' | 'apps'
+type WorkbenchTab = 'query' | 'change' | 'requests' | 'audits' | 'apps'
 
 const tabs: { key: WorkbenchTab; label: string; icon: typeof Database }[] = [
+  { key: 'query', label: '数据查询', icon: Search },
   { key: 'change', label: '数据变更', icon: Wand2 },
   { key: 'requests', label: '我的请求', icon: FileClock },
   { key: 'audits', label: '执行审计', icon: FileSearch },
@@ -234,6 +237,8 @@ export const DataWorkbenchPanel = ({ projectId }: { projectId: number }) => {
           {actionError || actionMessage}
         </div>
       )}
+
+      {activeTab === 'query' && <SemanticQueryPanel projectId={projectId} />}
 
       {activeTab === 'change' && (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(360px,0.9fr)]">

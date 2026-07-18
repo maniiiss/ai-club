@@ -70,7 +70,10 @@ export const router = createBrowserRouter([
           { index: true, element: <ProjectDetailPage /> },
           { path: 'overview', element: <ProjectDetailPage /> },
           { path: 'planning', element: <PlanningPage /> },
-          // 工作项详情使用路径参数，支持分享后直接打开详情抽屉。
+          // 迭代与工作项使用固定路径，支持复制后直接定位。
+          { path: 'planning/:iterationId', element: <PlanningPage /> },
+          { path: 'planning/:iterationId/:workItemId', element: <PlanningPage /> },
+          // 兼容已生成的旧版工作项分享链接。
           { path: 'planning/work-items/:workItemId', element: <PlanningPage /> },
           { path: 'knowledge', element: <KnowledgePage /> },
           { path: 'development', element: <DevelopmentPage /> },

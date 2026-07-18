@@ -5,6 +5,44 @@ import type {
   AssistantMessageItem,
 } from '@/src/types/assistant'
 
+/** 公众端内置与扩展 Skill 的展示名称。 */
+const ASSISTANT_SKILL_LABELS: Record<string, string> = {
+  '/文件库': '文件库',
+  '/wiki': 'Wiki',
+  '/需求': '需求',
+  '/仓库扫描': '仓库扫描',
+  '/执行任务': '执行任务',
+}
+
+/** 将 Slash Skill 命令转换为用户消息标签；MCP 服务统一显示为 MCP。 */
+export const resolveAssistantSkillLabel = (slashCommand?: string | null): string | null => {
+  const normalizedCommand = slashCommand?.trim() || ''
+  if (!normalizedCommand) return null
+  if (normalizedCommand.toLowerCase().startsWith('/mcp/')) return 'MCP'
+  return ASSISTANT_SKILL_LABELS[normalizedCommand.toLowerCase()] || null
+}
+
+/**
+ * 解析专项 Skill 问题的展示信息。
+ * 业务意图：标识作为“我”后的独立标签展示，不能混入用户实际发送的正文；历史消息中的兼容前缀也在这里剥离。
+ */
+export const resolveAssistantSkillMessage = (
+  question: string,
+  slashCommand?: string | null,
+): { content: string; skillLabel: string | null } => {
+  const normalizedQuestion = question.trim()
+  const markerMatch = normalizedQuestion.match(/^【([^】]+)】/)
+  const markerLabel = markerMatch ? markerMatch[1] : ''
+  const knownMarkerLabel = Object.values(ASSISTANT_SKILL_LABELS).includes(markerLabel) || markerLabel === 'MCP'
+  if (markerMatch && knownMarkerLabel) {
+    return {
+      content: normalizedQuestion.slice(markerMatch[0].length).trimStart(),
+      skillLabel: markerLabel,
+    }
+  }
+  return { content: normalizedQuestion, skillLabel: resolveAssistantSkillLabel(slashCommand) }
+}
+
 /**
  * 根据入口模式生成 Assistant 会话查询条件。
  * 业务意图：项目助手历史必须在后端分页前按项目过滤，避免本地过滤导致分页错乱。

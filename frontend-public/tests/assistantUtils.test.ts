@@ -6,6 +6,8 @@ import {
   computeAssistantActionKey,
   isDevelopmentExecutionAction,
   markAssistantStreamStopped,
+  resolveAssistantSkillMessage,
+  resolveAssistantSkillLabel,
   resolveAssistantDoneContent,
   resolveAssistantDisplayState,
   resolveDevelopmentExecutionActionContext,
@@ -17,6 +19,14 @@ import {
 import type { AssistantMessageItem } from '../src/types/assistant'
 
 describe('Assistant public utilities', () => {
+  it('keeps all专项 Skill markers separate from the user question text', () => {
+    assert.deepEqual(resolveAssistantSkillMessage('我试试', '/文件库'), { content: '我试试', skillLabel: '文件库' })
+    assert.deepEqual(resolveAssistantSkillMessage('【Wiki】查询文档'), { content: '查询文档', skillLabel: 'Wiki' })
+    assert.deepEqual(resolveAssistantSkillMessage('普通问答', null), { content: '普通问答', skillLabel: null })
+    assert.equal(resolveAssistantSkillLabel('/需求'), '需求')
+    assert.equal(resolveAssistantSkillLabel('/mcp/12'), 'MCP')
+  })
+
   it('builds project session queries without leaking unrelated context', () => {
     assert.deepEqual(buildAssistantSessionQuery('project', 8, true, 42), {
       page: 8,

@@ -30,6 +30,7 @@ import com.aiclub.platform.dto.ProjectWorkItemStatsSummary;
 import com.aiclub.platform.dto.TaskCommentSummary;
 import com.aiclub.platform.dto.TaskSummary;
 import com.aiclub.platform.dto.request.AgentRequest;
+import com.aiclub.platform.dto.request.BatchTaskUpdateRequest;
 import com.aiclub.platform.dto.request.IterationRequest;
 import com.aiclub.platform.dto.request.ProjectRequest;
 import com.aiclub.platform.dto.request.TaskCommentRequest;
@@ -1084,6 +1085,55 @@ public class PlatformStoreService {
         return summary;
     }
 
+    /**
+     * 批量操作中的单条字段更新。每次调用独立事务，控制器可安全汇总部分成功结果。
+     * 业务意图：更新接口仍复用完整工作项校验与通知逻辑，避免批量入口绕过关联、成员和更新记录约束。
+     */
+    @Transactional
+    public TaskSummary updateTaskBatchField(Long id, BatchTaskUpdateRequest request) {
+        TaskEntity entity = requireTask(id);
+        String status = entity.getStatus();
+        String priority = entity.getPriority();
+        String assignee = entity.getAssignee();
+        Long assigneeUserId = entity.getAssigneeUser() == null ? null : entity.getAssigneeUser().getId();
+        Long iterationId = entity.getIteration() == null ? null : entity.getIteration().getId();
+
+        switch (request.field()) {
+            case STATUS -> status = requireBatchText(request.value(), "状态", 50);
+            case PRIORITY -> priority = requireBatchText(request.value(), "优先级", 30);
+            case ASSIGNEE -> {
+                assigneeUserId = request.assigneeUserId();
+                assignee = "";
+            }
+            case ITERATION -> iterationId = request.iterationId();
+        }
+
+        TaskRequest fullRequest = new TaskRequest(
+                entity.getName(),
+                entity.getWorkItemType(),
+                status,
+                priority,
+                assignee,
+                assigneeUserId,
+                entity.getCollaborators().stream().map(UserEntity::getId).toList(),
+                entity.getDescription(),
+                entity.getRequirementMarkdown(),
+                entity.getPrototypeUrl(),
+                entity.getModuleName(),
+                entity.isDevPassed(),
+                entity.isTestPassed(),
+                entity.getWorkHours(),
+                entity.getTaskType(),
+                formatDate(entity.getPlanStartDate()),
+                formatDate(entity.getPlanEndDate()),
+                entity.getProject().getId(),
+                entity.getAgent() == null ? null : entity.getAgent().getId(),
+                iterationId,
+                entity.getRequirementTask() == null ? null : entity.getRequirementTask().getId()
+        );
+        return updateTask(id, fullRequest);
+    }
+
 
     @Transactional
     public void deleteTask(Long id) {
@@ -1092,6 +1142,17 @@ public class PlatformStoreService {
         Long projectId = entity.getProject().getId();
         taskRepository.delete(entity);
         knowledgeGraphService.rebuildProjectGraph(projectId);
+    }
+
+    private String requireBatchText(String value, String fieldLabel, int maxLength) {
+        if (!hasText(value)) {
+            throw new IllegalArgumentException(fieldLabel + "不能为空");
+        }
+        String normalized = value.trim();
+        if (normalized.length() > maxLength) {
+            throw new IllegalArgumentException(fieldLabel + "长度不能超过" + maxLength);
+        }
+        return normalized;
     }
 
     private Pageable buildPageable(int page, int size, Sort sort) {
