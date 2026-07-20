@@ -41,6 +41,8 @@ import { Button } from '@/src/components/common/Button'
 import { Select } from '@/src/components/common/Select'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
+import { useGuide } from '@/src/components/guide'
+import { useAuthStore } from '@/src/stores/auth'
 import { cn } from '@/src/lib/utils'
 import { Markdown } from '@/src/components/common/Markdown'
 import { groupExecutionArtifactsByStep } from '@/src/lib/executionArtifactUtils'
@@ -126,6 +128,9 @@ export const ExecutionTaskDetailPage = () => {
   /* 轮询定时器 */
   const pollTimerRef = useRef<number | null>(null)
 
+  const { isCompleted: guideCompleted, startGuide } = useGuide('execution-task-detail')
+  const authUser = useAuthStore((s) => s.user)
+
   const loadTaskDetail = useCallback(async () => {
     try {
       const detail = await getExecutionTaskDetail(tid)
@@ -191,6 +196,17 @@ export const ExecutionTaskDetailPage = () => {
     }
     init()
   }, [tid])
+
+  // 任务详情首次加载完成后自动启动新手引导。
+  // 用派生布尔值做依赖：6 秒轮询只替换 taskDetail/runDetail 对象、不触碰 loading，
+  // 因此该布尔值在首次加载完成后保持稳定，不会导致引导反复触发。
+  const guideDataReady = taskDetail !== null && !error && !loading
+  useEffect(() => {
+    if (!guideCompleted && authUser && guideDataReady) {
+      const timer = setTimeout(() => startGuide(), 500)
+      return () => clearTimeout(timer)
+    }
+  }, [guideCompleted, authUser, guideDataReady, startGuide])
 
   /* 自动轮询 */
   useEffect(() => {
@@ -345,7 +361,7 @@ export const ExecutionTaskDetailPage = () => {
         </button>
 
         <div className="flex items-start justify-between gap-3">
-          <div>
+          <div data-guide-id="task-info">
             <h2 className="text-[22px] font-bold tracking-tight text-[var(--color-text-primary)]">
               {taskDetail.title}
             </h2>
@@ -383,7 +399,7 @@ export const ExecutionTaskDetailPage = () => {
 
         {/* 运行进度 */}
         {taskDetail.runs.length > 0 && (
-          <section className="mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 shadow-[var(--shadow-card)]">
+          <section data-guide-id="task-progress" className="mb-4 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 shadow-[var(--shadow-card)]">
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-[15px] font-semibold text-[var(--color-text-primary)]">运行进度</h3>
             <Select
@@ -474,7 +490,7 @@ export const ExecutionTaskDetailPage = () => {
       {runDetail && (
         <div className="flex-1 min-h-0 grid grid-cols-1 gap-6 lg:grid-cols-2 pb-4">
           {/* 步骤日志 */}
-          <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)] flex flex-col min-h-0">
+          <section data-guide-id="task-steps" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)] flex flex-col min-h-0">
             <div className="shrink-0 px-5 pt-5 pb-3">
               <h3 className="text-[15px] font-semibold text-[var(--color-text-primary)]">步骤日志</h3>
             </div>
@@ -492,7 +508,7 @@ export const ExecutionTaskDetailPage = () => {
           </section>
 
           {/* 执行产物 */}
-          <section className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)] flex flex-col min-h-0">
+          <section data-guide-id="task-artifacts" className="rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] shadow-[var(--shadow-card)] flex flex-col min-h-0">
             <div className="shrink-0 px-5 pt-5 pb-3">
               <h3 className="text-[15px] font-semibold text-[var(--color-text-primary)]">
                 执行产物 ({displayArtifacts.length})

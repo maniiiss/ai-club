@@ -55,7 +55,7 @@ export const AssistantMessageList = ({
   onSuggestion,
   onFeedback,
 }: AssistantMessageListProps) => (
-  <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4 sm:px-5">
+  <div data-guide-id="assistant-message-area" className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-4 sm:px-5">
     {messages.length === 0 ? (
       <div className="m-auto max-w-lg text-center">
         <div className="text-[12px] font-semibold uppercase text-[var(--color-primary)]">GitPilot</div>

@@ -152,7 +152,7 @@ export const AssistantComposer = ({
   }
 
   return (
-    <footer className="flex-shrink-0 border-t border-[var(--color-border-light)] bg-white p-3">
+    <footer data-guide-id="assistant-composer" className="flex-shrink-0 border-t border-[var(--color-border-light)] bg-white p-3">
       <input
         ref={fileInputRef}
         type="file"

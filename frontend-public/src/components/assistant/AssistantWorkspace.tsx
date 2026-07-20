@@ -594,6 +594,7 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
       <div ref={moreMenuRef} className="relative">
         <button
           type="button"
+          data-guide-id="assistant-more-menu"
           title="更多助手选项"
           aria-label="更多助手选项"
           aria-expanded={moreMenuOpen}

@@ -22,6 +22,8 @@ import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
 import { Button } from '@/src/components/common/Button'
 import { ProjectMemberDrawer } from '@/src/components/projects/ProjectMemberDrawer'
+import { useGuide } from '@/src/components/guide'
+import { useAuthStore } from '@/src/stores/auth'
 import { cn, getInitials } from '@/src/lib/utils'
 
 const modules = [
@@ -77,6 +79,8 @@ export const ProjectDetailPage = () => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [memberDrawerOpen, setMemberDrawerOpen] = useState(false)
+  const { isCompleted: guideCompleted, startGuide } = useGuide('project-detail')
+  const authUser = useAuthStore((s) => s.user)
 
   useEffect(() => {
     const fetchProject = async () => {
@@ -94,6 +98,14 @@ export const ProjectDetailPage = () => {
     if (pid > 0) fetchProject()
   }, [pid])
 
+  // 首次加载完成后自动启动新手引导（每个页面只弹一次，跳过/完成后不再打扰）
+  useEffect(() => {
+    if (!guideCompleted && authUser && !loading && !error) {
+      const timer = setTimeout(() => startGuide(), 500)
+      return () => clearTimeout(timer)
+    }
+  }, [guideCompleted, authUser, loading, error, startGuide])
+
   if (loading) return <LoadingSpinner fullscreen text="加载项目详情…" />
   if (error) return <ErrorState title="加载失败" description={error} />
 
@@ -101,7 +113,10 @@ export const ProjectDetailPage = () => {
     <div className="h-full overflow-y-auto animate-fadeIn">
       {/* 项目头部信息 */}
       {project && (
-        <div className="mb-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-6 shadow-[var(--shadow-card)]">
+        <div
+          data-guide-id="project-detail-header"
+          className="mb-6 rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-6 shadow-[var(--shadow-card)]"
+        >
           <div className="flex items-start gap-4">
             <div className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-xl bg-[var(--color-primary-light)] text-[20px] font-bold text-[var(--color-primary)]">
               {getInitials(project.name)}
@@ -177,7 +192,7 @@ export const ProjectDetailPage = () => {
         选择一个模块开始使用项目能力
       </p>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div data-guide-id="project-detail-modules" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {modules.map((mod) => (
           <Link
             key={mod.path}

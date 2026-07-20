@@ -6,7 +6,12 @@ import { GUIDE_PAGE_KEYS, getAllGuidePageKeys } from '../src/components/guide/gu
 
 describe('public onboarding guide keys', () => {
   it('uses chat and development as the only assistant/development guide page keys', () => {
-    assert.deepEqual(GUIDE_PAGE_KEYS, ['dashboard', 'projects', 'chat', 'development'])
+    assert.deepEqual(GUIDE_PAGE_KEYS, [
+      'dashboard', 'projects', 'chat', 'development',
+      'project-detail', 'planning', 'knowledge', 'testing',
+      'test-plan-detail', 'execution', 'execution-task-detail',
+      'assistant',
+    ])
     assert.deepEqual(getAllGuidePageKeys(), GUIDE_PAGE_KEYS)
     const pageKeys: readonly string[] = GUIDE_PAGE_KEYS
     assert.equal(pageKeys.includes('ai-assistant'), false)

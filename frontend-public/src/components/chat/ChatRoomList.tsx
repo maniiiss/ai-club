@@ -50,7 +50,7 @@ export const ChatRoomList = ({
       <div className="border-b border-[var(--color-border-light)] p-3">
         <div className="mb-3 flex items-center justify-between gap-2">
           <div>
-            <h1 className="text-[18px] font-bold text-[var(--color-text-primary)]">聊天室</h1>
+            <h1 className="text-[18px] font-bold text-[var(--color-text-primary)]">Hearths · 围炉</h1>
           </div>
           <Button
             size="sm"

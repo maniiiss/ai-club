@@ -46,6 +46,8 @@ import { EmptyState } from '@/src/components/common/EmptyState'
 import { cn, formatDate } from '@/src/lib/utils'
 import { DateRangePicker } from '@/src/components/common/DateRangePicker'
 import { Select } from '@/src/components/common/Select'
+import { useGuide } from '@/src/components/guide'
+import { useAuthStore } from '@/src/stores/auth'
 
 const statusColorMap: Record<string, string> = {
   '草稿': 'bg-gray-100 text-gray-600',
@@ -166,6 +168,9 @@ const TestPlansPanel = () => {
   /* 状态切换 */
   const [statusUpdatingId, setStatusUpdatingId] = useState<number | null>(null)
 
+  const { isCompleted: guideCompleted, startGuide } = useGuide('testing')
+  const authUser = useAuthStore((s) => s.user)
+
   const fetchPlans = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -187,6 +192,14 @@ const TestPlansPanel = () => {
   useEffect(() => {
     fetchPlans()
   }, [fetchPlans])
+
+  // 测试计划首次加载完成后自动启动新手引导
+  useEffect(() => {
+    if (!guideCompleted && authUser && !loading && !error) {
+      const timer = setTimeout(() => startGuide(), 500)
+      return () => clearTimeout(timer)
+    }
+  }, [guideCompleted, authUser, loading, error, startGuide])
 
   const handleOpenDetail = (planId: number) => {
     navigate(`/projects/${projectId}/testing/test-plans/${planId}`)
@@ -240,6 +253,7 @@ const TestPlansPanel = () => {
     <div>
       <div className="mb-4 flex items-center gap-3">
         <Input
+          data-guide-id="testing-search"
           size="sm"
           adaptiveIcon
           wrapperClassName="min-w-0 max-w-xs flex-1"
@@ -252,6 +266,7 @@ const TestPlansPanel = () => {
             }}
         />
         <Button
+          data-guide-id="testing-create"
           size="sm"
           icon={<Plus className="h-4 w-4" />}
           onClick={() => {
@@ -275,7 +290,7 @@ const TestPlansPanel = () => {
         />
       ) : (
         <>
-          <div className="space-y-3">
+          <div data-guide-id="testing-plan-list" className="space-y-3">
             {plans.records.map((plan) => (
               <div
                 key={plan.id}
@@ -651,6 +666,9 @@ const ExecutionCenterPanel = () => {
   const [keyword, setKeyword] = useState('')
   const [page, setPage] = useState(1)
 
+  const { isCompleted: guideCompleted, startGuide } = useGuide('execution')
+  const authUser = useAuthStore((s) => s.user)
+
   /* 筛选 */
   const [filterStatus, setFilterStatus] = useState('')
   const [filterScenario, setFilterScenario] = useState('')
@@ -692,6 +710,16 @@ const ExecutionCenterPanel = () => {
   useEffect(() => {
     fetchTasks()
   }, [fetchTasks])
+
+  // 执行任务首次加载完成后自动启动新手引导。
+  // 用派生布尔值做依赖：轮询每 8 秒替换 tasks 对象，若直接依赖 tasks 会导致引导反复触发。
+  const guideDataReady = tasks !== null && !error
+  useEffect(() => {
+    if (!guideCompleted && authUser && guideDataReady) {
+      const timer = setTimeout(() => startGuide(), 500)
+      return () => clearTimeout(timer)
+    }
+  }, [guideCompleted, authUser, guideDataReady, startGuide])
 
   /* 自动轮询：当存在运行中或待执行任务时每 8 秒刷新。 */
   useEffect(() => {
@@ -752,7 +780,7 @@ const ExecutionCenterPanel = () => {
     <div>
       {/* 统计卡片 */}
       {stats && (
-        <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div data-guide-id="execution-stats" className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Card title="总计">
             <p className="text-[28px] font-bold text-[var(--color-text-primary)]">{stats.totalCount}</p>
           </Card>
@@ -769,7 +797,7 @@ const ExecutionCenterPanel = () => {
       )}
 
       {/* 搜索和筛选 */}
-      <div className="mb-4 flex items-center gap-3">
+      <div data-guide-id="execution-toolbar" className="mb-4 flex items-center gap-3">
         <Input
           size="sm"
           adaptiveIcon
@@ -859,7 +887,7 @@ const ExecutionCenterPanel = () => {
         />
       ) : (
         <>
-          <div className="space-y-2">
+          <div data-guide-id="execution-task-list" className="space-y-2">
             {tasks.records.map((task) => (
               <div
                 key={task.id}

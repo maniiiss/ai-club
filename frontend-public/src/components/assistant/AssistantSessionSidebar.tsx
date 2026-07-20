@@ -60,7 +60,7 @@ export const AssistantSessionSidebar = ({
   const searching = searchQuery.trim().length > 0
 
   return (
-    <aside className="flex h-full min-h-0 w-full flex-col border-r border-[var(--color-border-light)] bg-[var(--color-bg-sidebar)] md:w-[280px]">
+    <aside data-guide-id="assistant-session-sidebar" className="flex h-full min-h-0 w-full flex-col border-r border-[var(--color-border-light)] bg-[var(--color-bg-sidebar)] md:w-[280px]">
       <div className="flex-shrink-0 space-y-2 border-b border-[var(--color-border-light)] p-3">
         <div className="flex items-center gap-2">
           <Button

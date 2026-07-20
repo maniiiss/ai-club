@@ -14,13 +14,17 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** 验证外部 MCP Streamable HTTP 握手、工具发现和工具调用协议。 */
 class ExternalMcpClientTests {
 
     private HttpServer server;
+    private final AtomicInteger toolCallCount = new AtomicInteger();
+    private boolean failToolCall;
 
     @AfterEach
     void tearDown() {
@@ -58,6 +62,21 @@ class ExternalMcpClientTests {
         assertThat(result).isEqualTo("查询结果");
     }
 
+    /** 工具调用失败后不得切换传输协议重试，避免远端写工具被重复执行。 */
+    @Test
+    void shouldNotRetryToolCallAfterTheHandshakeSucceeded() throws Exception {
+        ObjectMapper objectMapper = new ObjectMapper();
+        failToolCall = true;
+        startServer(objectMapper);
+        ExternalMcpClient client = new ExternalMcpClient(objectMapper, 1000, 5000, "localhost");
+
+        assertThatThrownBy(() -> client.call("http://localhost:" + server.getAddress().getPort() + "/mcp",
+                "AUTO", "NONE", "", "update", Map.of()))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("HTTP 500");
+        assertThat(toolCallCount).hasValue(1);
+    }
+
     private void startServer(ObjectMapper objectMapper) throws IOException {
         server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/mcp", exchange -> handle(exchange, objectMapper));
@@ -73,6 +92,12 @@ class ExternalMcpClientTests {
         } else if ("tools/list".equals(method)) {
             body = "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"tools\":[{\"name\":\"search\",\"description\":\"搜索\",\"inputSchema\":{\"type\":\"object\"},\"annotations\":{\"readOnlyHint\":true}},{\"name\":\"update\",\"description\":\"更新\",\"inputSchema\":{\"type\":\"object\"}}]}}";
         } else if ("tools/call".equals(method)) {
+            toolCallCount.incrementAndGet();
+            if (failToolCall) {
+                exchange.sendResponseHeaders(500, -1);
+                exchange.close();
+                return;
+            }
             body = "{\"jsonrpc\":\"2.0\",\"id\":3,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"查询结果\"}]}}";
         } else {
             body = "{}";

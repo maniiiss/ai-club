@@ -104,17 +104,18 @@ public class ExternalMcpClient {
                        String toolName,
                        Map<String, Object> arguments) {
         URI endpoint = validateEndpoint(endpointUrl);
+        RpcConnection connection;
         try {
-            RpcConnection connection = initialize(endpoint, authType, credential);
-            return callOnConnection(connection, authType, credential, toolName, arguments);
+            connection = initialize(endpoint, authType, credential);
         } catch (RuntimeException firstFailure) {
+            // 仅允许在 MCP 握手失败时切换传输协议；工具调用失败后禁止重试，避免远端写操作被执行两次。
             if (!"AUTO".equals(normalize(transport, "AUTO")) && !"SSE".equals(normalize(transport, "AUTO"))) {
                 throw firstFailure;
             }
             URI sseMessageEndpoint = resolveSseMessageEndpoint(endpoint, authType, credential);
-            RpcConnection connection = initialize(sseMessageEndpoint, authType, credential);
-            return callOnConnection(connection, authType, credential, toolName, arguments);
+            connection = initialize(sseMessageEndpoint, authType, credential);
         }
+        return callOnConnection(connection, authType, credential, toolName, arguments);
     }
 
     private String callOnConnection(RpcConnection connection,

@@ -110,9 +110,19 @@ class AuthServiceTests {
             UserEntity user = userWithProjectViewOnly();
             when(userRepository.findWithDetailsById(5L)).thenReturn(Optional.of(user));
 
-            authService.updateGuideStatus(List.of("dashboard", "projects", "chat", "development"));
+            authService.updateGuideStatus(List.of(
+                    "dashboard", "projects", "chat", "development",
+                    "project-detail", "planning", "knowledge", "testing",
+                    "test-plan-detail", "execution", "execution-task-detail",
+                    "assistant"
+            ));
 
-            assertThat(user.getGuideCompleted()).isEqualTo("dashboard,projects,chat,development");
+            assertThat(user.getGuideCompleted()).isEqualTo(
+                    "dashboard,projects,chat,development,"
+                            + "project-detail,planning,knowledge,testing,"
+                            + "test-plan-detail,execution,execution-task-detail,"
+                            + "assistant"
+            );
             verify(userRepository).save(user);
         } finally {
             AuthContextHolder.clear();

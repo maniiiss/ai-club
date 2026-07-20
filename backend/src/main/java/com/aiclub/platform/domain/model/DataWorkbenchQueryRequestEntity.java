@@ -9,7 +9,13 @@ public class DataWorkbenchQueryRequestEntity {
  @Id @GeneratedValue(strategy=GenerationType.IDENTITY) private Long id;
  @ManyToOne(fetch=FetchType.LAZY) @JoinColumn(name="project_id", nullable=false) private ProjectEntity project;
  @ManyToOne(fetch=FetchType.LAZY) @JoinColumn(name="semantic_model_id", nullable=false) private DataWorkbenchSemanticModelEntity semanticModel;
+ @ManyToOne(fetch=FetchType.LAZY) @JoinColumn(name="data_source_id", nullable=false) private DataWorkbenchDataSourceEntity dataSource;
  @ManyToOne(fetch=FetchType.LAZY) @JoinColumn(name="requester_user_id") private UserEntity requesterUser;
+ /** 解释时固定的语义、Schema 和数据源版本，预览与执行只使用这份快照。 */
+ @Column(name="semantic_version_no",nullable=false) private int semanticVersionNo;
+ @Column(name="data_source_version",nullable=false) private long dataSourceVersion;
+ @Column(name="definition_snapshot_json",nullable=false,columnDefinition="TEXT") private String definitionSnapshotJson="{}";
+ @Column(name="schema_snapshot_json",nullable=false,columnDefinition="TEXT") private String schemaSnapshotJson="{}";
  @Column(name="original_text",nullable=false,columnDefinition="TEXT") private String originalText="";
  @Column(name="interpretation_json",nullable=false,columnDefinition="TEXT") private String interpretationJson="{}";
  @Column(name="dsl_json",nullable=false,columnDefinition="TEXT") private String dslJson="{}";
@@ -21,6 +27,6 @@ public class DataWorkbenchQueryRequestEntity {
  @Column(name="executed_at") private LocalDateTime executedAt;
  @Column(name="created_at",nullable=false) private LocalDateTime createdAt; @Column(name="updated_at",nullable=false) private LocalDateTime updatedAt;
  @PrePersist void create(){createdAt=updatedAt=LocalDateTime.now();} @PreUpdate void update(){updatedAt=LocalDateTime.now();}
- public Long getId(){return id;} public void setProject(ProjectEntity v){project=v;} public ProjectEntity getProject(){return project;} public void setSemanticModel(DataWorkbenchSemanticModelEntity v){semanticModel=v;} public DataWorkbenchSemanticModelEntity getSemanticModel(){return semanticModel;} public void setRequesterUser(UserEntity v){requesterUser=v;} public UserEntity getRequesterUser(){return requesterUser;}
+ public Long getId(){return id;} public void setProject(ProjectEntity v){project=v;} public ProjectEntity getProject(){return project;} public void setSemanticModel(DataWorkbenchSemanticModelEntity v){semanticModel=v;} public DataWorkbenchSemanticModelEntity getSemanticModel(){return semanticModel;} public void setDataSource(DataWorkbenchDataSourceEntity v){dataSource=v;} public DataWorkbenchDataSourceEntity getDataSource(){return dataSource;} public void setRequesterUser(UserEntity v){requesterUser=v;} public UserEntity getRequesterUser(){return requesterUser;} public int getSemanticVersionNo(){return semanticVersionNo;} public void setSemanticVersionNo(int v){semanticVersionNo=v;} public long getDataSourceVersion(){return dataSourceVersion;} public void setDataSourceVersion(long v){dataSourceVersion=v;} public String getDefinitionSnapshotJson(){return definitionSnapshotJson;} public void setDefinitionSnapshotJson(String v){definitionSnapshotJson=v;} public String getSchemaSnapshotJson(){return schemaSnapshotJson;} public void setSchemaSnapshotJson(String v){schemaSnapshotJson=v;}
  public void setOriginalText(String v){originalText=v;} public String getOriginalText(){return originalText;} public void setInterpretationJson(String v){interpretationJson=v;} public String getInterpretationJson(){return interpretationJson;} public void setDslJson(String v){dslJson=v;} public String getDslJson(){return dslJson;} public void setPreviewToken(String v){previewToken=v;} public String getPreviewToken(){return previewToken;} public void setSqlSummary(String v){sqlSummary=v;} public String getSqlSummary(){return sqlSummary;} public void setResultSummary(String v){resultSummary=v;} public String getResultSummary(){return resultSummary;} public void setStatus(String v){status=v;} public String getStatus(){return status;} public void setErrorMessage(String v){errorMessage=v;} public void setExecutedAt(LocalDateTime v){executedAt=v;}
 }

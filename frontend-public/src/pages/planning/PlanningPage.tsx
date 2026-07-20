@@ -29,6 +29,7 @@ import { DevelopmentExecutionDialog } from './DevelopmentExecutionDialog'
 import { TechnicalDesignAiDialog } from './TechnicalDesignAiDialog'
 import { WorkItemUpdateTimeline } from '@/src/components/planning/WorkItemUpdateTimeline'
 import { useAuthStore } from '@/src/stores/auth'
+import { useGuide } from '@/src/components/guide'
 import { REQUIREMENT_TEMPLATE, TASK_TEMPLATE } from '@/src/lib/markdownTemplates'
 import { uploadMarkdownImage } from '@/src/lib/markdownImageUpload'
 import { getBatchWorkItemAvailability, toggleAllBatchWorkItemSelection, toggleBatchWorkItemSelection } from '@/src/lib/planningBatchUtils'
@@ -168,6 +169,7 @@ export const PlanningPage = () => {
   const navigate = useNavigate()
   const canCreateExecution = useAuthStore((state) => state.hasPermission('task:execution:create'))
   const currentUser = useAuthStore((state) => state.user)
+  const { isCompleted: guideCompleted, startGuide } = useGuide('planning')
   const pid = Number(projectId)
 
   const [board, setBoard] = useState<IterationBoardItem | null>(null)
@@ -338,6 +340,17 @@ export const PlanningPage = () => {
   useEffect(() => {
     if (!boardLoading) fetchWorkItems()
   }, [fetchWorkItems, boardLoading])
+
+  // 迭代与工作项首次加载完成后自动启动新手引导；
+  // 用派生布尔值做依赖，避免筛选/翻页替换 workItems 对象时反复触发。
+  // 深链自动打开详情抽屉时先不弹，等抽屉关闭后再启动。
+  const guideDataReady = !boardLoading && !boardError && workItems !== null && !wiError
+  useEffect(() => {
+    if (!guideCompleted && currentUser && guideDataReady && !detailItem) {
+      const timer = setTimeout(() => startGuide(), 500)
+      return () => clearTimeout(timer)
+    }
+  }, [guideCompleted, currentUser, guideDataReady, detailItem, startGuide])
 
   // 批量选择只属于当前页的当前筛选上下文；切换后必须丢弃，防止隐藏项被继续提交。
   useEffect(() => {
@@ -772,7 +785,7 @@ export const PlanningPage = () => {
 
       <div className="flex-1 flex gap-5 overflow-hidden">
         {/* 左侧：迭代列表 */}
-        <div className="hidden lg:flex lg:flex-col w-[260px] shrink-0 overflow-y-auto">
+        <div data-guide-id="planning-iterations" className="hidden lg:flex lg:flex-col w-[260px] shrink-0 overflow-y-auto">
           <div>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-[13px] font-semibold text-[var(--color-text-primary)]">迭代</h3>
@@ -844,7 +857,7 @@ export const PlanningPage = () => {
           {/* 工具栏 */}
           <div className="flex-shrink-0 mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex items-center gap-2 flex-wrap">
-              <div className="flex gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-1 shadow-[var(--shadow-xs)]">
+              <div data-guide-id="planning-type-tabs" className="flex gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-1 shadow-[var(--shadow-xs)]">
                 {typeTabs.map((tab) => (
                   <button key={tab} onClick={() => { setTypeFilter(tab); setStatusFilter(''); setPage(1) }}
                     className={cn('rounded-md px-3 py-1.5 text-[12.5px] font-medium transition-all duration-150',
@@ -953,7 +966,7 @@ export const PlanningPage = () => {
                 )}
               </div>
               {/* 视图切换 */}
-              <div className="flex rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-0.5 shadow-[var(--shadow-xs)]">
+              <div data-guide-id="planning-view-switch" className="flex rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-0.5 shadow-[var(--shadow-xs)]">
                 <button onClick={() => setViewMode('list')} className={cn('rounded-md p-1.5 transition-colors', viewMode === 'list' ? 'bg-[var(--color-bg-hover)] text-[var(--color-text-primary)]' : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]')}><LayoutList className="h-4 w-4" /></button>
                 <button onClick={() => setViewMode('kanban')} className={cn('rounded-md p-1.5 transition-colors', viewMode === 'kanban' ? 'bg-[var(--color-bg-hover)] text-[var(--color-text-primary)]' : 'text-[var(--color-text-tertiary)] hover:text-[var(--color-text-primary)]')}><LayoutGrid className="h-4 w-4" /></button>
               </div>
@@ -964,7 +977,7 @@ export const PlanningPage = () => {
                 <input type="text" placeholder="搜索…" value={keyword} onChange={(e) => { setKeyword(e.target.value); setPage(1) }}
                   className="h-8 w-full rounded-lg border border-[var(--color-border-strong)] bg-white pl-9 pr-3 text-[13px] placeholder:text-[var(--color-text-placeholder)] focus:border-[var(--color-primary)] focus:outline-none focus:ring-2 focus:ring-[var(--color-primary)]/20" />
               </div>
-              <Button size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setWiDialog({ open: true })}>新建工作项</Button>
+              <Button data-guide-id="planning-create" size="sm" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setWiDialog({ open: true })}>新建工作项</Button>
             </div>
            </div>
 

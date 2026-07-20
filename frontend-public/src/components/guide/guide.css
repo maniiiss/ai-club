@@ -104,14 +104,30 @@
   display: none !important;
 }
 
-/* 自定义底部区域：倒计时 + 跳过按钮 */
+/* 自定义底部区域：倒计时 + 步骤进度 + 跳过按钮 */
 .guide-custom-footer {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 8px 20px 12px;
   border-top: 1px solid var(--color-border-light, #f3f4f6);
   margin-top: 0;
+}
+
+/* 挪入底栏的步骤进度（如 "1/4"）：绝对定位居中，不受两侧倒计时与跳过按钮宽度影响；
+   tabular-nums 避免步数变化时数字宽度抖动 */
+.guide-custom-footer .driver-popover-progress-text {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 8px;
+  border-radius: 999px;
+  background-color: var(--color-bg-hover, #f3f4f6);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.5px;
+  line-height: 16px;
+  user-select: none;
 }
 
 .guide-countdown {

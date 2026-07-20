@@ -107,7 +107,7 @@ export const ChatRoomDialog = ({ onClose, onCreated }: ChatRoomDialogProps) => {
       <div className="relative z-10 flex max-h-[88vh] w-full max-w-2xl flex-col rounded-2xl border border-[var(--color-border)] bg-white shadow-[var(--shadow-xl)] animate-scaleIn">
         <div className="flex items-center justify-between border-b border-[var(--color-border-light)] px-5 py-4">
           <div>
-            <h2 className="text-[18px] font-bold text-[var(--color-text-primary)]">创建聊天室</h2>
+            <h2 className="text-[18px] font-bold text-[var(--color-text-primary)]">创建围炉</h2>
             <p className="text-[12px] text-[var(--color-text-tertiary)]">选择项目上下文，或建立全局邀请制协作空间。</p>
           </div>
           <button

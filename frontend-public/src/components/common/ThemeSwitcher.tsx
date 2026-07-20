@@ -56,7 +56,10 @@ export const ThemeSwitcher = () => {
       >
         <div
           className="h-4 w-4 rounded-full ring-2 ring-white shadow-sm"
-          style={{ backgroundColor: currentPreset?.swatch || '#2f6bff' }}
+          style={{
+            // 与主题选择器一致：对角渐变展示主色与背景基色，纯白、曜石黑一眼可辨
+            background: `linear-gradient(135deg, ${currentPreset?.swatch || '#2f6bff'} 0 48%, ${currentPreset?.light || '#dce5ec'} 48% 100%)`,
+          }}
         />
         <span className="hidden sm:inline text-[var(--color-text-secondary)] text-[12px]">
           {currentPreset?.label || '主题'}
@@ -87,18 +90,19 @@ export const ThemeSwitcher = () => {
                 >
                   <div
                     className={cn(
-                      'h-7 w-7 rounded-full shadow-sm transition-transform duration-150',
+                      'h-7 w-7 rounded-full border border-[var(--color-border-strong)] shadow-sm transition-transform duration-150',
                       'group-hover:scale-110',
                       isSelected && 'ring-2 ring-offset-2',
                     )}
                     style={{
-                      backgroundColor: preset.swatch,
+                      // 对角渐变同时展示主题主色与实际背景基色，避免纯白、曜石黑的预览色块与真实主题脱节
+                      background: `linear-gradient(135deg, ${preset.swatch} 0 48%, ${preset.light} 48% 100%)`,
                       ...(isSelected ? { boxShadow: `0 0 0 2px white, 0 0 0 4px ${preset.swatch}` } : {}),
                     }}
                   >
                     {isSelected && (
                       <div className="flex h-full w-full items-center justify-center">
-                        <Check className="h-3.5 w-3.5 text-white" strokeWidth={3} />
+                        <Check className="h-3.5 w-3.5 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)]" strokeWidth={3} />
                       </div>
                     )}
                   </div>

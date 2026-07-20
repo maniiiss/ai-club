@@ -202,9 +202,16 @@ public class AuthService {
         return currentUserInfo;
     }
 
-    /** 合法引导页面 key 白名单。 */
+    /**
+     * 合法引导页面 key 白名单。
+     * 与公众端 frontend-public/src/components/guide/guideSteps.ts 的 GUIDE_PAGE_KEYS 一一对应，
+     * 新增引导页面时两处必须同步修改。
+     */
     private static final java.util.Set<String> VALID_GUIDE_KEYS = java.util.Set.of(
-            "dashboard", "projects", "chat", "development"
+            "dashboard", "projects", "chat", "development",
+            "project-detail", "planning", "knowledge", "testing",
+            "test-plan-detail", "execution", "execution-task-detail",
+            "assistant"
     );
 
     /** 更新当前用户的新手引导完成状态。 */

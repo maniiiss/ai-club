@@ -101,7 +101,7 @@ public class RuntimeScenarioDefaultService {
     private static Map<String, ScenarioDefinition> definitions() {
         Map<String, ScenarioDefinition> result = new LinkedHashMap<>();
         result.put(SCENARIO_ASSISTANT, new ScenarioDefinition(SCENARIO_ASSISTANT, "GitPilot 助手", "HERMES_LEGACY", Set.of(RuntimeCapability.CHAT)));
-        result.put(SCENARIO_CHAT_ROOM, new ScenarioDefinition(SCENARIO_CHAT_ROOM, "聊天室 Agent", "HERMES_LEGACY", Set.of(RuntimeCapability.CHAT)));
+        result.put(SCENARIO_CHAT_ROOM, new ScenarioDefinition(SCENARIO_CHAT_ROOM, "Hearths Agent", "HERMES_LEGACY", Set.of(RuntimeCapability.CHAT)));
         result.put(SCENARIO_DEVELOPMENT_IMPLEMENTATION, new ScenarioDefinition(
                 SCENARIO_DEVELOPMENT_IMPLEMENTATION, "开发实现", "CODEX_CLI",
                 Set.of(RuntimeCapability.STREAM_EVENTS, RuntimeCapability.PLAN, RuntimeCapability.IMPLEMENT,

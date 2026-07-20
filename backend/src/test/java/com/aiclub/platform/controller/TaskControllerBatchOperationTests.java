@@ -1,6 +1,7 @@
 package com.aiclub.platform.controller;
 
 import com.aiclub.platform.dto.BatchTaskOperationItem;
+import com.aiclub.platform.dto.TaskSummary;
 import com.aiclub.platform.dto.request.BatchTaskDeleteRequest;
 import com.aiclub.platform.dto.request.BatchTaskUpdateRequest;
 import com.aiclub.platform.dto.request.TaskInlineUpdateRequest;
@@ -28,8 +29,10 @@ class TaskControllerBatchOperationTests {
         TaskController controller = controller(platformStoreService);
         BatchTaskUpdateRequest request = new BatchTaskUpdateRequest(
                 List.of(11L, 12L), BatchTaskUpdateRequest.Field.PRIORITY, "高", null, null);
-        when(platformStoreService.updateTaskBatchField(11L, request)).thenReturn(null);
-        when(platformStoreService.updateTaskBatchField(12L, request)).thenThrow(new IllegalArgumentException("工作项不可更新"));
+        TaskSummary updatedTask = mock(TaskSummary.class);
+        when(updatedTask.projectId()).thenReturn(9L);
+        when(platformStoreService.updateTaskBatchFieldWithoutGraph(11L, request)).thenReturn(updatedTask);
+        when(platformStoreService.updateTaskBatchFieldWithoutGraph(12L, request)).thenThrow(new IllegalArgumentException("工作项不可更新"));
 
         List<BatchTaskOperationItem> results = controller.batchUpdate(request).data();
 
@@ -38,8 +41,28 @@ class TaskControllerBatchOperationTests {
         assertThat(results.get(0).errorMessage()).isNull();
         assertThat(results.get(1).taskId()).isEqualTo(12L);
         assertThat(results.get(1).errorMessage()).isEqualTo("工作项不可更新");
-        verify(platformStoreService).updateTaskBatchField(11L, request);
-        verify(platformStoreService).updateTaskBatchField(12L, request);
+        verify(platformStoreService).updateTaskBatchFieldWithoutGraph(11L, request);
+        verify(platformStoreService).updateTaskBatchFieldWithoutGraph(12L, request);
+        verify(platformStoreService).rebuildProjectGraphs(java.util.Set.of(9L));
+    }
+
+    /** 同一项目的多个工作项成功更新后，知识图谱只重建一次。 */
+    @Test
+    void shouldRebuildKnowledgeGraphOnceForSameProjectBatch() {
+        PlatformStoreService platformStoreService = mock(PlatformStoreService.class);
+        TaskController controller = controller(platformStoreService);
+        BatchTaskUpdateRequest request = new BatchTaskUpdateRequest(
+                List.of(11L, 12L), BatchTaskUpdateRequest.Field.STATUS, "进行中", null, null);
+        TaskSummary firstTask = mock(TaskSummary.class);
+        TaskSummary secondTask = mock(TaskSummary.class);
+        when(firstTask.projectId()).thenReturn(9L);
+        when(secondTask.projectId()).thenReturn(9L);
+        when(platformStoreService.updateTaskBatchFieldWithoutGraph(11L, request)).thenReturn(firstTask);
+        when(platformStoreService.updateTaskBatchFieldWithoutGraph(12L, request)).thenReturn(secondTask);
+
+        controller.batchUpdate(request);
+
+        verify(platformStoreService).rebuildProjectGraphs(java.util.Set.of(9L));
     }
 
     @Test

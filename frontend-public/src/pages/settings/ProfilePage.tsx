@@ -372,17 +372,18 @@ export const ProfilePage = () => {
               >
                 <div
                   className={cn(
-                    'h-8 w-8 rounded-full shadow-sm transition-transform duration-150',
+                    'h-8 w-8 rounded-full border border-[var(--color-border-strong)] shadow-sm transition-transform duration-150',
                     'group-hover:scale-110',
                   )}
                   style={{
-                    backgroundColor: preset.swatch,
+                    // 对角渐变同时展示主题主色与实际背景基色，避免纯白、曜石黑的预览色块与真实主题脱节
+                    background: `linear-gradient(135deg, ${preset.swatch} 0 48%, ${preset.light} 48% 100%)`,
                     ...(isSelected ? { boxShadow: `0 0 0 2px white, 0 0 0 4px ${preset.swatch}` } : {}),
                   }}
                 >
                   {isSelected && (
                     <div className="flex h-full w-full items-center justify-center">
-                      <Check className="h-4 w-4 text-white" strokeWidth={3} />
+                      <Check className="h-4 w-4 text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.55)]" strokeWidth={3} />
                     </div>
                   )}
                 </div>

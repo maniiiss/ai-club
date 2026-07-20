@@ -26,6 +26,8 @@ public class DataWorkbenchDataSourceEntity {
     @Column(name = "username_ciphertext", nullable = false, columnDefinition = "TEXT") private String usernameCiphertext = "";
     @Column(name = "password_ciphertext", nullable = false, columnDefinition = "TEXT") private String passwordCiphertext = "";
     @Column(name = "allowed_schemas", nullable = false, length = 1000) private String allowedSchemas = "public";
+    /** 数据源连接或 Schema 配置版本；版本变化会让已生成的查询快照失效。 */
+    @Column(name = "config_version", nullable = false) private long configVersion = 1L;
     @Column(nullable = false) private boolean enabled = true;
     @Column(name = "schema_snapshot_json", nullable = false, columnDefinition = "TEXT") private String schemaSnapshotJson = "{}";
     @Column(name = "schema_scanned_at") private LocalDateTime schemaScannedAt;
@@ -36,6 +38,6 @@ public class DataWorkbenchDataSourceEntity {
     public Long getId(){return id;} public ProjectEntity getProject(){return project;} public void setProject(ProjectEntity v){project=v;}
     public String getName(){return name;} public void setName(String v){name=v;} public String getJdbcUrlCiphertext(){return jdbcUrlCiphertext;} public void setJdbcUrlCiphertext(String v){jdbcUrlCiphertext=v;}
     public String getUsernameCiphertext(){return usernameCiphertext;} public void setUsernameCiphertext(String v){usernameCiphertext=v;} public String getPasswordCiphertext(){return passwordCiphertext;} public void setPasswordCiphertext(String v){passwordCiphertext=v;}
-    public String getAllowedSchemas(){return allowedSchemas;} public void setAllowedSchemas(String v){allowedSchemas=v;} public boolean isEnabled(){return enabled;} public void setEnabled(boolean v){enabled=v;}
+    public String getAllowedSchemas(){return allowedSchemas;} public void setAllowedSchemas(String v){allowedSchemas=v;} public long getConfigVersion(){return configVersion;} public void setConfigVersion(long v){configVersion=v;} public boolean isEnabled(){return enabled;} public void setEnabled(boolean v){enabled=v;}
     public String getSchemaSnapshotJson(){return schemaSnapshotJson;} public void setSchemaSnapshotJson(String v){schemaSnapshotJson=v;} public LocalDateTime getSchemaScannedAt(){return schemaScannedAt;} public void setSchemaScannedAt(LocalDateTime v){schemaScannedAt=v;}
 }

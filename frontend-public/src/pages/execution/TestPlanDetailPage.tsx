@@ -30,6 +30,8 @@ import { Input } from '@/src/components/common/Input'
 import { Select } from '@/src/components/common/Select'
 import { LoadingSpinner } from '@/src/components/common/LoadingSpinner'
 import { ErrorState } from '@/src/components/common/ErrorState'
+import { useGuide } from '@/src/components/guide'
+import { useAuthStore } from '@/src/stores/auth'
 import { cn, formatDate } from '@/src/lib/utils'
 
 const statusColorMap: Record<string, string> = {
@@ -136,6 +138,9 @@ export const TestPlanDetailPage = () => {
   const [automationVisible, setAutomationVisible] = useState(false)
   const [automationLoading, setAutomationLoading] = useState(false)
 
+  const { isCompleted: guideCompleted, startGuide } = useGuide('test-plan-detail')
+  const authUser = useAuthStore((s) => s.user)
+
   const loadPlan = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -174,6 +179,16 @@ export const TestPlanDetailPage = () => {
   useEffect(() => {
     loadPlan()
   }, [loadPlan])
+
+  // 计划详情首次加载完成后自动启动新手引导；
+  // 用派生布尔值做依赖，避免保存等操作重新置 loading 时反复触发
+  const guideDataReady = plan !== null && !error
+  useEffect(() => {
+    if (!guideCompleted && authUser && guideDataReady) {
+      const timer = setTimeout(() => startGuide(), 500)
+      return () => clearTimeout(timer)
+    }
+  }, [guideCompleted, authUser, guideDataReady, startGuide])
 
   /* 过滤和分页 */
   const filteredCases = useMemo(() => {
@@ -296,7 +311,7 @@ export const TestPlanDetailPage = () => {
         </button>
 
         <div className="flex items-start justify-between gap-3">
-          <div>
+          <div data-guide-id="plan-info">
             <h2 className="text-[22px] font-bold tracking-tight text-[var(--color-text-primary)]">
               {plan.name}
             </h2>
@@ -311,7 +326,7 @@ export const TestPlanDetailPage = () => {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" icon={<Play className="h-3.5 w-3.5" />} onClick={() => setAutomationVisible(true)}>
+            <Button data-guide-id="plan-automation" variant="secondary" size="sm" icon={<Play className="h-3.5 w-3.5" />} onClick={() => setAutomationVisible(true)}>
               自动化测试
             </Button>
             <Button size="sm" icon={<Save className="h-3.5 w-3.5" />} onClick={handleSave} loading={saving}>
@@ -352,7 +367,7 @@ export const TestPlanDetailPage = () => {
       </div>
 
       {/* 用例列表 */}
-      <div className="mb-4 flex items-center gap-3">
+      <div data-guide-id="plan-case-toolbar" className="mb-4 flex items-center gap-3">
         <Input
           size="sm"
           adaptiveIcon
@@ -379,7 +394,7 @@ export const TestPlanDetailPage = () => {
         </div>
       ) : (
         <>
-          <div className="space-y-2">
+          <div data-guide-id="plan-case-list" className="space-y-2">
             {pagedCases.map((tc) => {
               const absoluteIndex = cases.indexOf(tc)
               return (

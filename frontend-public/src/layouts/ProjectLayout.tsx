@@ -13,6 +13,7 @@ import { ErrorState } from '@/src/components/common/ErrorState'
 import { SlideDrawer } from '@/src/components/common/SlideDrawer'
 import { AssistantWorkspace } from '@/src/components/assistant/AssistantWorkspace'
 import { useAuthStore } from '@/src/stores/auth'
+import { useGuide } from '@/src/components/guide'
 
 export const ProjectLayout = () => {
   const { projectId } = useParams<{ projectId: string }>()
@@ -22,6 +23,8 @@ export const ProjectLayout = () => {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [assistantOpen, setAssistantOpen] = useState(false)
+  const { isCompleted: guideCompleted, startGuide } = useGuide('assistant')
+  const authUser = useAuthStore((s) => s.user)
 
   const fetchProject = async () => {
     if (!projectId) return
@@ -40,6 +43,18 @@ export const ProjectLayout = () => {
   useEffect(() => {
     fetchProject()
   }, [projectId])
+
+  // 首次打开助手抽屉时自动启动新手引导。
+  // 工作区内的引导锚点（会话侧栏、对话区、输入区等）随抽屉懒挂载，
+  // 必须等抽屉打开、工作区渲染完成后再启动，否则锚点不在 DOM 中会被步骤过滤掉。
+  // 触发时机选在抽屉首次打开而非进入项目页自动弹出：
+  // 各项目子页面自带页面级引导，若布局层同时自动弹出会出现两个引导遮罩叠加。
+  useEffect(() => {
+    if (assistantOpen && !guideCompleted && authUser && canUseAssistant) {
+      const timer = setTimeout(() => startGuide(), 500)
+      return () => clearTimeout(timer)
+    }
+  }, [assistantOpen, guideCompleted, authUser, canUseAssistant, startGuide])
 
   if (loading) {
     return <LoadingSpinner fullscreen text="加载项目信息…" />

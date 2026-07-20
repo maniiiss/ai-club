@@ -29,6 +29,8 @@ import type {
 } from '@/src/types/knowledge'
 import { KnowledgeGraphView } from '@/src/components/knowledge/KnowledgeGraphView'
 import { ApiStudioPanel } from './ApiStudioPanel'
+import { useGuide } from '@/src/components/guide'
+import { useAuthStore } from '@/src/stores/auth'
 import { Button } from '@/src/components/common/Button'
 import { Input } from '@/src/components/common/Input'
 import { Select } from '@/src/components/common/Select'
@@ -50,7 +52,7 @@ export const KnowledgePage = () => {
 
   return (
     <div className="h-full flex flex-col overflow-hidden animate-fadeIn">
-      <div className="flex-shrink-0 mb-6 flex gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-1 shadow-[var(--shadow-xs)] w-fit">
+      <div className="flex-shrink-0 mb-6 flex gap-1 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-card)] p-1 shadow-[var(--shadow-xs)] w-fit" data-guide-id="knowledge-tabs">
         {tabs.map((tab) => (
           <button key={tab.key} onClick={() => setActiveTab(tab.key)}
             className={cn('flex items-center gap-1.5 rounded-md px-3.5 py-1.5 text-[13px] font-medium transition-all duration-150 cursor-pointer',
@@ -120,6 +122,11 @@ const WikiPanel = () => {
   // 移动端目录树展开状态
   const [mobileTreeOpen, setMobileTreeOpen] = useState(false)
 
+  // 新手引导挂在 WikiPanel 内：空间列表的 loading/error 在这里，
+  // 等首次加载完成后再启动，避免引导步骤被加载占位态过滤掉
+  const { isCompleted: guideCompleted, startGuide } = useGuide('knowledge')
+  const authUser = useAuthStore((s) => s.user)
+
   const fetchSpaces = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -135,6 +142,14 @@ const WikiPanel = () => {
   useEffect(() => {
     fetchSpaces()
   }, [fetchSpaces])
+
+  // Wiki 空间首次加载完成后自动启动新手引导
+  useEffect(() => {
+    if (!guideCompleted && authUser && !loading && !error) {
+      const timer = setTimeout(() => startGuide(), 500)
+      return () => clearTimeout(timer)
+    }
+  }, [guideCompleted, authUser, loading, error, startGuide])
 
   const handleCreateSpace = async (payload: WikiSpacePayload) => {
     const created = await createProjectWikiSpace(pid, payload)
@@ -330,11 +345,11 @@ const WikiPanel = () => {
               </div>
               <h3 className="mt-4 text-[16px] font-semibold text-[var(--color-text-primary)]">暂无项目 Wiki</h3>
               <p className="mt-1 max-w-md text-[13px] leading-6 text-[var(--color-text-tertiary)]">为当前项目初始化一个 Wiki 空间后，可以在这里维护目录、页面和导入文档。</p>
-              <Button className="mt-5" icon={<Plus className="h-4 w-4" />} onClick={() => setSpaceDialogOpen(true)}>初始化项目 Wiki</Button>
+              <Button data-guide-id="knowledge-init-space" className="mt-5" icon={<Plus className="h-4 w-4" />} onClick={() => setSpaceDialogOpen(true)}>初始化项目 Wiki</Button>
             </div>
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          <div data-guide-id="knowledge-space-list" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
             {spaces.map((space) => (
               <button key={space.id} onClick={() => handleSelectSpace(space)}
                 className="group text-left rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-card)] p-5 transition-colors duration-200 hover:border-[var(--color-primary)]/40 cursor-pointer">

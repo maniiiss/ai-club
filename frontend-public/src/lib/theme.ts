@@ -10,7 +10,7 @@ export interface ThemePreset {
   description: string
   /** 主题主色，用于色块预览和交互强调。 */
   swatch: string
-  /** 主题浅色背景值。 */
+  /** 主题背景基色，用于预览色块的另一半底色（深色主题下为深色）。 */
   light: string
   accent: string
 }

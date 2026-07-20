@@ -390,13 +390,13 @@ export const ChatPage = () => {
             />
           </>
         ) : loadingRooms ? (
-          <LoadingSpinner fullscreen text="加载聊天室..." />
+          <LoadingSpinner fullscreen text="加载围炉..." />
         ) : (
           <div className="flex flex-1 flex-col items-center justify-center px-6 text-center">
             <Bot className="mb-3 h-10 w-10 text-[var(--color-text-tertiary)]" strokeWidth={1.5} />
-            <p className="text-[16px] font-semibold text-[var(--color-text-primary)]">选择或创建一个聊天室</p>
+            <p className="text-[16px] font-semibold text-[var(--color-text-primary)]">选择或创建一个围炉</p>
             <Button className="mt-4" size="sm" onClick={() => setDialogOpen(true)}>
-              创建聊天室
+              创建围炉
             </Button>
           </div>
         )}
@@ -500,7 +500,7 @@ const ChatHeader = ({
   <div className="border-b border-[var(--color-border-light)] px-4 py-3 sm:px-5">
     <div className="flex flex-wrap items-center justify-between gap-3">
       <div className="min-w-0">
-        <h2 className="truncate text-[17px] font-bold text-[var(--color-text-primary)]">{room?.title || '聊天室'}</h2>
+        <h2 className="truncate text-[17px] font-bold text-[var(--color-text-primary)]">{room?.title || '围炉'}</h2>
         <div className="mt-1 flex flex-wrap items-center gap-2 text-[12px] text-[var(--color-text-tertiary)]">
           <span className="inline-flex items-center gap-1">
             <Circle className={cn('h-2.5 w-2.5 fill-current', socketState === 'connected' ? 'text-emerald-500' : socketState === 'connecting' ? 'text-amber-500' : 'text-gray-400')} />

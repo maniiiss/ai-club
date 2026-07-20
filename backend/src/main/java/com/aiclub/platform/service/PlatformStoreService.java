@@ -78,6 +78,7 @@ import java.time.temporal.ChronoUnit;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -1055,6 +1056,14 @@ public class PlatformStoreService {
 
     @Transactional
     public TaskSummary updateTask(Long id, TaskRequest request) {
+        return updateTaskInternal(id, request, true);
+    }
+
+    /**
+     * 执行工作项更新的内部实现。
+     * 批量更新会先完成所有工作项事务，最后统一重建受影响项目的知识图谱，避免一次批量操作重复构建。
+     */
+    private TaskSummary updateTaskInternal(Long id, TaskRequest request, boolean rebuildKnowledgeGraph) {
         TaskEntity entity = requireTask(id);
         Map<String, TaskUpdateRecordService.FieldSnapshot> previousEditableFields = taskUpdateRecordService.captureEditableFields(entity);
         Long previousAssigneeUserId = entity.getAssigneeUser() == null ? null : entity.getAssigneeUser().getId();
@@ -1112,7 +1121,9 @@ public class PlatformStoreService {
         if (taskUpdateRecordService != null) {
             taskUpdateRecordService.recordChanges(saved, previousEditableFields, TaskUpdateRecordSource.MANUAL);
         }
-        knowledgeGraphService.rebuildProjectGraph(project.getId());
+        if (rebuildKnowledgeGraph) {
+            knowledgeGraphService.rebuildProjectGraph(project.getId());
+        }
         return summary;
     }
 
@@ -1174,6 +1185,20 @@ public class PlatformStoreService {
      */
     @Transactional
     public TaskSummary updateTaskBatchField(Long id, BatchTaskUpdateRequest request) {
+        return updateTaskBatchFieldInternal(id, request, true);
+    }
+
+    /**
+     * 批量更新专用的单条字段更新入口，保留逐项独立事务和部分成功语义，但暂不触发知识图谱重建。
+     * 图谱由批量请求完成后按项目去重统一重建。
+     */
+    @Transactional
+    public TaskSummary updateTaskBatchFieldWithoutGraph(Long id, BatchTaskUpdateRequest request) {
+        return updateTaskBatchFieldInternal(id, request, false);
+    }
+
+    private TaskSummary updateTaskBatchFieldInternal(Long id, BatchTaskUpdateRequest request,
+                                                      boolean rebuildKnowledgeGraph) {
         TaskEntity entity = requireTask(id);
         String status = entity.getStatus();
         String priority = entity.getPriority();
@@ -1214,7 +1239,18 @@ public class PlatformStoreService {
                 iterationId,
                 entity.getRequirementTask() == null ? null : entity.getRequirementTask().getId()
         );
-        return updateTask(id, fullRequest);
+        return updateTaskInternal(id, fullRequest, rebuildKnowledgeGraph);
+    }
+
+    /** 批量更新结束后按项目去重重建知识图谱，避免同一项目被重复构建。 */
+    public void rebuildProjectGraphs(Collection<Long> projectIds) {
+        if (projectIds == null) {
+            return;
+        }
+        projectIds.stream()
+                .filter(Objects::nonNull)
+                .distinct()
+                .forEach(knowledgeGraphService::rebuildProjectGraph);
     }
 
 

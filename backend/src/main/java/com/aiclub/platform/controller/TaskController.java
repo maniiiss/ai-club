@@ -255,17 +255,23 @@ public class TaskController {
     @RequirePermission("task:manage")
     public ApiResponse<List<BatchTaskOperationItem>> batchUpdate(@Valid @RequestBody BatchTaskUpdateRequest request) {
         List<BatchTaskOperationItem> results = new ArrayList<>();
+        LinkedHashSet<Long> affectedProjectIds = new LinkedHashSet<>();
         for (Long taskId : new LinkedHashSet<>(request.taskIds())) {
             try {
+                TaskSummary updatedTask = platformStoreService.updateTaskBatchFieldWithoutGraph(taskId, request);
+                if (updatedTask != null) {
+                    affectedProjectIds.add(updatedTask.projectId());
+                }
                 results.add(new BatchTaskOperationItem(
                         taskId,
-                        platformStoreService.updateTaskBatchField(taskId, request),
+                        updatedTask,
                         null
                 ));
             } catch (RuntimeException exception) {
                 results.add(new BatchTaskOperationItem(taskId, null, failureMessage(exception)));
             }
         }
+        platformStoreService.rebuildProjectGraphs(affectedProjectIds);
         return ApiResponse.success(results);
     }
 
