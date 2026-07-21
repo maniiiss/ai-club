@@ -3,6 +3,7 @@ package com.aiclub.platform.security;
 import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.service.AuthService;
+import com.aiclub.platform.service.GitPilotCliService;
 import com.aiclub.platform.service.InternalServiceAuthenticator;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,13 +22,16 @@ public class AuthInterceptor implements HandlerInterceptor {
 
     private final AuthService authService;
     private final InternalServiceAuthenticator internalServiceAuthenticator;
+    private final GitPilotCliService gitPilotCliService;
     private final ObjectMapper objectMapper;
 
     public AuthInterceptor(AuthService authService,
                            InternalServiceAuthenticator internalServiceAuthenticator,
+                           GitPilotCliService gitPilotCliService,
                            ObjectMapper objectMapper) {
         this.authService = authService;
         this.internalServiceAuthenticator = internalServiceAuthenticator;
+        this.gitPilotCliService = gitPilotCliService;
         this.objectMapper = objectMapper;
     }
 
@@ -43,6 +47,8 @@ public class AuthInterceptor implements HandlerInterceptor {
         }
 
         String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
+        String rawAuthorization = gitPilotCliService.normalizeAuthorization(authHeader);
+        String rawModelSession = request.getHeader("x-api-key");
         if (isInternalActuatorPath(requestUri) && authHeader != null && !authHeader.isBlank()) {
             try {
                 internalServiceAuthenticator.requireAuthorized(authHeader, request.getRemoteAddr());
@@ -51,14 +57,23 @@ public class AuthInterceptor implements HandlerInterceptor {
                 // 若不是内部服务 Token，则继续按普通登录态校验。
             }
         }
-        if (authHeader == null || authHeader.isBlank()) {
+        boolean modelProxyRequest = requestUri.startsWith("/api/cli/model-sessions/")
+                && gitPilotCliService.isModelSessionToken(rawAuthorization.isBlank() ? rawModelSession : rawAuthorization);
+        boolean cliRequest = requestUri.startsWith("/api/cli/") && gitPilotCliService.isCliToken(rawAuthorization);
+        if ((authHeader == null || authHeader.isBlank()) && !modelProxyRequest) {
             writeJson(response, HttpStatus.UNAUTHORIZED, "Not logged in or session expired");
             return false;
         }
 
         AuthContext authContext;
         try {
-            authContext = authService.authenticate(authHeader);
+            if (modelProxyRequest) {
+                authContext = gitPilotCliService.authenticateModelSession(rawAuthorization.isBlank() ? rawModelSession : rawAuthorization);
+            } else if (cliRequest) {
+                authContext = gitPilotCliService.authenticateCliToken(rawAuthorization);
+            } else {
+                authContext = authService.authenticate(authHeader);
+            }
         } catch (RuntimeException ex) {
             writeJson(response, HttpStatus.UNAUTHORIZED, ex.getMessage());
             return false;
@@ -93,6 +108,8 @@ public class AuthInterceptor implements HandlerInterceptor {
         // 登录、注册、健康检查等接口需要允许匿名访问，否则未登录用户无法完成注册和登录流程。
         return requestUri.startsWith("/api/auth/login")
                 || requestUri.startsWith("/api/auth/register")
+                || requestUri.startsWith("/api/cli/device/authorizations") && !requestUri.endsWith("/approve")
+                || requestUri.startsWith("/api/cli/device/token")
                 || requestUri.startsWith("/api/cicd/public/")
                 || requestUri.startsWith("/api/gitlab/public/")
                 || requestUri.startsWith("/api/common/public-files/")

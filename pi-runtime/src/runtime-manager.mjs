@@ -1,5 +1,5 @@
-import { Agent } from '@mariozechner/pi-agent-core'
-import { getModel, getModels, streamSimple } from '@mariozechner/pi-ai'
+import { getModel, getModels } from '@mariozechner/pi-ai'
+import { createPiAgent } from '@aiclub/gitpilot-agent-core'
 import { createPlatformTools } from './agent-tools.mjs'
 
 const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh'])
@@ -128,23 +128,15 @@ export class RuntimeManager {
     const toolContract = this.#toolContract(request)
     const allowedTools = toolContract.policy.allowedToolCodes
     const sessionToken = toolContract.policy.sessionToken || request.sessionToken || request.profileSnapshot?.sessionToken || ''
-    const agent = new Agent({
+    const agent = createPiAgent({
       sessionId,
-      toolExecution: 'sequential',
-      // pi-agent-core 不把 maxTokens 放在 AgentState 中，必须在底层 stream 调用处注入平台快照预算。
-      streamFn: (streamModel, streamContext, streamOptions) => streamSimple(
-        streamModel,
-        streamContext,
-        { ...streamOptions, maxTokens: maxOutputTokens },
-      ),
+      model,
+      systemPrompt,
+      initialMessages: messages,
+      maxOutputTokens,
       getApiKey: async (name) => process.env[`PI_RUNTIME_${String(name).toUpperCase()}_API_KEY`] || process.env.PI_RUNTIME_API_KEY,
-      initialState: {
-        model,
-        thinkingLevel: normalizeThinkingLevel(request.thinkingLevel || request.profileSnapshot?.thinkingLevel || this.thinkingLevel),
-        systemPrompt,
-        messages,
-        tools: createPlatformTools({ executeTool: this.executeTool, sessionToken, tools: toolContract.tools, allowedTools }),
-        },
+      thinkingLevel: request.thinkingLevel || request.profileSnapshot?.thinkingLevel || this.thinkingLevel,
+      tools: createPlatformTools({ executeTool: this.executeTool, sessionToken, tools: toolContract.tools, allowedTools }),
       transformContext: async (nextMessages) => this.#transformContext(nextMessages, request),
       beforeToolCall: async (context) => {
         // Pi 的预检只用于提前拒绝明显不允许的调用，backend 仍会再次鉴权。
@@ -155,11 +147,9 @@ export class RuntimeManager {
         return undefined
       },
       afterToolCall: async () => undefined,
-    })
-
-    // 通过 Agent 事件统一转发文本、工具和生命周期，不把 Pi 原始事件直接暴露给前端。
-    agent.subscribe(async (event) => {
-      await this.#mapEvent(event, { runId, sessionId }, eventSink)
+      onEvent: async (event) => {
+        await this.#mapEvent(event, { runId, sessionId }, eventSink)
+      },
     })
     return agent
   }

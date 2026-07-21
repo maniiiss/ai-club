@@ -10,6 +10,7 @@ import { ProjectLayout } from '@/src/layouts/ProjectLayout'
 
 import { LoginPage } from '@/src/pages/auth/LoginPage'
 import { RegisterPage } from '@/src/pages/auth/RegisterPage'
+import { CliDeviceAuthorizationPage } from '@/src/pages/auth/CliDeviceAuthorizationPage'
 import { DashboardPage } from '@/src/pages/dashboard/DashboardPage'
 import { ProjectsPage } from '@/src/pages/projects/ProjectsPage'
 import { ProjectDetailPage } from '@/src/pages/projects/ProjectDetailPage'
@@ -36,6 +37,7 @@ export const router = createBrowserRouter([
     children: [
       { path: '/login', element: <LoginPage /> },
       { path: '/register', element: <RegisterPage /> },
+      { path: '/cli/device', element: <CliDeviceAuthorizationPage /> },
     ],
   },
 

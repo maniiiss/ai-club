@@ -72,6 +72,16 @@ management:
 platform:
   code-processing:
     base-url: http://localhost:9000
+  gitpilot:
+    cli:
+      enabled: ${PLATFORM_GITPILOT_CLI_ENABLED:true}
+      device-code-ttl-seconds: ${PLATFORM_GITPILOT_CLI_DEVICE_CODE_TTL_SECONDS:600}
+      poll-interval-seconds: ${PLATFORM_GITPILOT_CLI_POLL_INTERVAL_SECONDS:5}
+      token-ttl-days: ${PLATFORM_GITPILOT_CLI_TOKEN_TTL_DAYS:30}
+      model-session-ttl-seconds: ${PLATFORM_GITPILOT_CLI_MODEL_SESSION_TTL_SECONDS:900}
+      model-proxy-timeout-seconds: ${PLATFORM_GITPILOT_CLI_MODEL_PROXY_TIMEOUT_SECONDS:180}
+      model-proxy-max-request-bytes: ${PLATFORM_GITPILOT_CLI_MODEL_PROXY_MAX_REQUEST_BYTES:4194304}
+      public-base-url: ${PLATFORM_GITPILOT_CLI_PUBLIC_BASE_URL:${PLATFORM_FRONTEND_PUBLIC_BASE_URL:http://localhost:3000}}
   gitnexus:
     enabled: ${PLATFORM_GITNEXUS_ENABLED:true}
     ui-public-base-url: ${PLATFORM_GITNEXUS_UI_PUBLIC_BASE_URL:}
