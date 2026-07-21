@@ -27,3 +27,5 @@ __pycache__/
 # 数据库备份文件（大文件，不纳入版本管理）
 database/backups/*.sql
 nul
+
+*.tar
