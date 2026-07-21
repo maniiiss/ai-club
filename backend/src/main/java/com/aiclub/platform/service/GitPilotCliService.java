@@ -37,6 +37,20 @@ public class GitPilotCliService {
 
     public static final String SCOPE_MODEL_READ = "cli:model:read";
     public static final String SCOPE_MODEL_INVOKE = "cli:model:invoke";
+    public static final String SCOPE_PROJECT_READ = "cli:project:read";
+    public static final String SCOPE_PLATFORM_TOOL_EXECUTE = "cli:platform-tool:execute";
+    public static final String SCOPE_CLOUD_CODING_CREATE = "cli:cloud-coding:create";
+    public static final String SCOPE_CLOUD_CODING_READ = "cli:cloud-coding:read";
+    public static final String SCOPE_CLOUD_CODING_CANCEL = "cli:cloud-coding:cancel";
+    private static final List<String> DEFAULT_TOKEN_SCOPES = List.of(
+            SCOPE_MODEL_READ,
+            SCOPE_MODEL_INVOKE,
+            SCOPE_PROJECT_READ,
+            SCOPE_PLATFORM_TOOL_EXECUTE,
+            SCOPE_CLOUD_CODING_CREATE,
+            SCOPE_CLOUD_CODING_READ,
+            SCOPE_CLOUD_CODING_CANCEL
+    );
     private static final String CLI_TOKEN_PREFIX = "gpt_";
     private static final String MODEL_SESSION_PREFIX = "gms_";
     private static final String DEVICE_KEY_PREFIX = "gitpilot:cli:device:";
@@ -110,14 +124,14 @@ public class GitPilotCliService {
         entity.setUserId(state.userId());
         entity.setTokenHash(hash(token));
         entity.setTokenPrefix(token.substring(0, Math.min(16, token.length())));
-        entity.setScopesJson(writeJson(List.of(SCOPE_MODEL_READ, SCOPE_MODEL_INVOKE)));
+        entity.setScopesJson(writeJson(DEFAULT_TOKEN_SCOPES));
         entity.setClientVersion(state.clientVersion());
         entity.setExpiresAt(expiresAt);
         accessTokenRepository.save(entity);
         redis.delete(DEVICE_KEY_PREFIX + trim(deviceCode));
         redis.delete(USER_CODE_KEY_PREFIX + state.userCode());
         CurrentUserInfo user = authService.currentUserById(state.userId());
-        return new DeviceTokenPoll(DeviceTokenStatus.APPROVED, new CliTokenResponse(token, expiresAt.toString(), user, List.of(SCOPE_MODEL_READ, SCOPE_MODEL_INVOKE)));
+        return new DeviceTokenPoll(DeviceTokenStatus.APPROVED, new CliTokenResponse(token, expiresAt.toString(), user, DEFAULT_TOKEN_SCOPES));
     }
 
     /** 校验 CLI Token 并按数据库最新权限构造 AuthContext。 */
@@ -138,6 +152,16 @@ public class GitPilotCliService {
         if (entity.getRevokedAt() != null || entity.getExpiresAt().isBefore(LocalDateTime.now())) throw new UnauthorizedException("CLI Token 已过期或已撤销");
         List<String> scopes = readJson(entity.getScopesJson(), new TypeReference<>() {});
         if (!scopes.contains(scope)) throw new com.aiclub.platform.exception.ForbiddenException("CLI Token 缺少 scope: " + scope);
+    }
+
+    /** Cloud Coding REST 尚未在 P0 开放；未来入口必须先通过统一功能开关。 */
+    public void requireCloudCodingEnabled() {
+        if (!properties.cloudCodingEnabled() || !properties.cloudCodingCliEnabled()) {
+            throw new com.aiclub.platform.exception.ForbiddenException("Cloud Coding 功能已关闭");
+        }
+        if (!"CONTAINER".equals(properties.cloudCodingWorkerMode())) {
+            throw new IllegalStateException("Cloud Coding 公众入口必须使用 CONTAINER Worker");
+        }
     }
 
     /** 撤销当前 CLI Token，幂等处理重复退出。 */

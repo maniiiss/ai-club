@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
-import { access, readFile, realpath, writeFile } from 'node:fs/promises'
-import { isAbsolute, relative, resolve, sep } from 'node:path'
+import { access, lstat, readFile, realpath, writeFile } from 'node:fs/promises'
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path'
 import { promisify } from 'node:util'
 import { Type } from 'typebox'
 
@@ -11,13 +11,30 @@ const isInside = (root: string, target: string) => {
   return rel === '' || (!rel.startsWith(`..${sep}`) && rel !== '..' && !isAbsolute(rel))
 }
 
-const resolveRepoPath = async (repoRoot: string, input: string, mustExist = false) => {
+/** 校验目标或最近存在的父目录，防止写入路径通过符号链接跳出仓库。 */
+export const resolveRepoPath = async (repoRoot: string, input: string, mustExist = false) => {
   const candidate = resolve(repoRoot, input || '.')
   if (!isInside(repoRoot, candidate)) throw new Error('本地工具只能访问当前仓库目录')
+
   if (mustExist) {
     const existing = await realpath(candidate)
     if (!isInside(repoRoot, existing)) throw new Error('路径符号链接指向仓库外，已拒绝访问')
     return existing
+  }
+
+  let current = candidate
+  while (true) {
+    try {
+      await lstat(current)
+      const existing = await realpath(current)
+      if (!isInside(repoRoot, existing)) throw new Error('路径符号链接指向仓库外，已拒绝访问')
+      break
+    } catch (error: any) {
+      if (error?.code !== 'ENOENT') throw error
+      const parent = dirname(current)
+      if (parent === current) break
+      current = parent
+    }
   }
   return candidate
 }

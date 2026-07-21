@@ -2,13 +2,17 @@
   "name": "@aiclub/gitpilot-agent-core",
   "version": "0.1.0",
   "private": true,
+  "scripts": {
+    "pack:artifact": "node -e \"require('node:fs').mkdirSync('../../.artifacts',{recursive:true})\" && npm pack --pack-destination ../../.artifacts"
+  },
   "type": "module",
   "types": "./src/index.d.ts",
   "exports": {
     ".": {
       "types": "./src/index.d.ts",
       "import": "./src/index.mjs"
-    }
+    },
+    "./protocol/handoff-session-envelope-v1.schema.json": "./protocol/handoff-session-envelope-v1.schema.json"
   },
   "dependencies": {
     "@mariozechner/pi-agent-core": "0.73.1",

@@ -17,6 +17,7 @@ APITOKEN.md
 .gitnexus
 .scan-workspace
 .docker-config-temp
+.artifacts/
 .scripts/__pycache__
 __pycache__/
 *.pyc

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { createInterface } from 'node:readline/promises'
 import { randomUUID } from 'node:crypto'
+import { basename } from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { createPiAgent, resolvePiModel } from '@aiclub/gitpilot-agent-core'
@@ -8,8 +9,9 @@ import { createDeviceAuthorization, createModelSession, getCurrentUser, listMode
 import { loadConfig, loadRegisteredConfig, normalizePlatformUrl, saveConfig } from './config.js'
 import { deleteCliToken, readCliToken, saveCliToken } from './credentials.js'
 import { createLocalTools } from './local-tools.js'
-import { printPiEvent } from './output.js'
+import { printAgentEvent, printGitPilotBanner } from './output.js'
 import { loadSession, saveSession } from './session-store.js'
+import { filterMenuItems, TerminalUi, type TerminalMenuItem } from './terminal-ui.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -59,7 +61,7 @@ const models = async () => {
   for (const model of result) console.log(`${model.id}\t${model.name}\t${model.provider}\t${model.modelName}${model.description ? `\t${model.description}` : ''}`)
 }
 
-const createAgentRun = async (instruction: string, selectedModelId?: number, sessionId = `pi-session-${randomUUID()}`) => {
+const createAgentRun = async (instruction: string, selectedModelId?: number, sessionId = `gitpilot-session-${randomUUID()}`) => {
   const config = await loadRegisteredConfig()
   const token = await requireToken(config.platformUrl)
   const availableModels = await listModels(config, token)
@@ -71,6 +73,7 @@ const createAgentRun = async (instruction: string, selectedModelId?: number, ses
   const modelSession = await createModelSession(config, token, modelConfigId)
   const existing = await loadSession(sessionId)
   const model = resolvePiModel(selected.provider.toLowerCase(), selected.modelName, modelSession.proxyBaseUrl)
+  let lastStreamError: string | undefined
   const agent = createPiAgent({
     sessionId,
     model,
@@ -81,33 +84,152 @@ const createAgentRun = async (instruction: string, selectedModelId?: number, ses
     // 模型 session 只在当前进程使用，绝不写入会话 JSON 或日志。
     getApiKey: async () => modelSession.accessToken,
     tools: createLocalTools(process.cwd()),
-    onEvent: async (event: any) => printPiEvent(event),
+    onEvent: async (event: any) => {
+      const normalized = printAgentEvent(event)
+      if (normalized?.eventType === 'STREAM_ERROR') {
+        lastStreamError = normalized.payload.errorMessage || '模型流返回错误'
+      }
+    },
   })
-  return { agent, modelConfigId, sessionId }
+  return {
+    agent,
+    modelConfigId,
+    sessionId,
+    modelLabel: `${selected.name} · ${selected.provider}/${selected.modelName}`,
+    platformUrl: config.platformUrl,
+    consumeStreamError: () => {
+      const error = lastStreamError
+      lastStreamError = undefined
+      return error
+    },
+  }
+}
+
+const PROMPT_TIMEOUT_MS = 120_000
+
+/** 执行一轮 Agent 对话并统一处理流错误、Promise 错误和超时。 */
+const promptWithTimeout = async (run: Awaited<ReturnType<typeof createAgentRun>>, instruction: string) => {
+  run.consumeStreamError()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      run.agent.prompt(instruction),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => {
+          try { run.agent.abort() } catch { /* Agent 已结束时无需重复处理取消 */ }
+          reject(new Error('模型响应超时，请输入 /models 切换模型后重试'))
+        }, PROMPT_TIMEOUT_MS)
+      }),
+    ])
+    const streamError = run.consumeStreamError()
+    if (streamError) throw new Error(streamError)
+  } catch (error) {
+    const streamError = run.consumeStreamError()
+    if (streamError) throw new Error(streamError)
+    throw error
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 const execute = async (instruction: string, modelId?: number) => {
   const run = await createAgentRun(instruction, modelId)
-  await run.agent.prompt(instruction)
+  await promptWithTimeout(run, instruction)
   process.stdout.write('\n')
   await saveSession(run.sessionId, run.modelConfigId, run.agent.state.messages)
 }
 
-const interactive = async (modelId?: number) => {
-  const run = await createAgentRun('', modelId)
-  console.log('GitPilot Pi 已启动。输入 exit 或 Ctrl+C 退出。')
+const interactiveCommands = [
+  { value: '/models', label: '/models', description: '切换模型' },
+  { value: '/status', label: '/status', description: '查看当前状态' },
+  { value: '/clear', label: '/clear', description: '清空当前对话' },
+  { value: '/help', label: '/help', description: '查看命令帮助' },
+  { value: '/exit', label: '/exit', description: '退出 GitPilot' },
+] as const
+
+const printInteractiveCommandMenu = () => {
+  console.log('\nGitPilot commands')
+  for (const item of interactiveCommands) console.log(`  ${item.value.padEnd(10)} ${item.description}`)
+  console.log('  Type a command and press Enter.')
+}
+
+const getCommandMenuItems = (buffer: string): TerminalMenuItem[] => filterMenuItems(buffer, interactiveCommands)
+
+const selectInteractiveModel = async (currentRun: Awaited<ReturnType<typeof createAgentRun>>) => {
+  const config = await loadRegisteredConfig()
+  const token = await requireToken(config.platformUrl)
+  const availableModels = await listModels(config, token)
+  if (availableModels.length === 0) {
+    console.log('平台当前没有可用模型。')
+    return currentRun
+  }
+
+  console.log('\nModels')
+  availableModels.forEach((model, index) => {
+    const current = model.id === currentRun.modelConfigId ? ' (current)' : ''
+    console.log(`  ${index + 1}. ${model.name} · ${model.provider}/${model.modelName}${current}`)
+  })
+  // 只在模型选择期间创建 readline，避免它与主循环 raw mode 同时监听 stdin。
   const readline = createInterface({ input: process.stdin, output: process.stdout })
+  let selectedInput = ''
   try {
-    while (true) {
-      const input = (await readline.question('\n> ')).trim()
-      if (!input) continue
-      if (['exit', 'quit', '退出'].includes(input.toLowerCase())) break
-      await run.agent.prompt(input)
-      process.stdout.write('\n')
-      await saveSession(run.sessionId, run.modelConfigId, run.agent.state.messages)
-    }
+    selectedInput = (await readline.question('Select model number (Enter to cancel) › ')).trim()
   } finally {
     readline.close()
+  }
+  if (!selectedInput) return currentRun
+  const selectedIndex = Number(selectedInput) - 1
+  const selected = Number.isInteger(selectedIndex) ? availableModels[selectedIndex] : undefined
+  if (!selected) {
+    console.log('Invalid model selection.')
+    return currentRun
+  }
+  if (selected.id === currentRun.modelConfigId) {
+    console.log(`已在使用模型：${selected.name}`)
+    return currentRun
+  }
+
+  await saveSession(currentRun.sessionId, currentRun.modelConfigId, currentRun.agent.state.messages)
+  const nextRun = await createAgentRun('', selected.id, currentRun.sessionId)
+  console.log(`\n已切换模型：${selected.name}`)
+  printGitPilotBanner({ model: nextRun.modelLabel, platformUrl: nextRun.platformUrl, workspace: basename(process.cwd()) })
+  return nextRun
+}
+
+const interactive = async (modelId?: number) => {
+  let run = await createAgentRun('', modelId)
+  printGitPilotBanner({ model: run.modelLabel, platformUrl: run.platformUrl, workspace: basename(process.cwd()) })
+  const terminalUi = new TerminalUi()
+  while (true) {
+    const input = (await terminalUi.readLine('\n❯ ', getCommandMenuItems)).trim()
+    if (!input) continue
+    const command = input.split(/\s+/, 1)[0].toLowerCase()
+    if (input === '/' || command === '/help') {
+      printInteractiveCommandMenu()
+      continue
+    }
+    if (command === '/models') {
+      run = await selectInteractiveModel(run)
+      continue
+    }
+    if (command === '/status') {
+      console.log(`\nModel: ${run.modelLabel}`)
+      console.log(`Platform: ${run.platformUrl}`)
+      continue
+    }
+    if (command === '/clear') {
+      run.agent.reset()
+      console.log('\n当前对话已清空。')
+      continue
+    }
+    if (['/exit', 'exit', 'quit', '退出'].includes(command)) break
+    try {
+      await promptWithTimeout(run, input)
+      await saveSession(run.sessionId, run.modelConfigId, run.agent.state.messages)
+    } catch (error) {
+      console.error(`\n[error] ${error instanceof Error ? error.message : String(error)}`)
+      console.log('可以输入 /models 切换模型，或直接继续输入新的指令。')
+    }
   }
 }
 

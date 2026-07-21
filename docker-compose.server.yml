@@ -364,8 +364,8 @@ services:
 
   pi-runtime:
     build:
-      context: ./pi-runtime
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: pi-runtime/Dockerfile
     image: ${PI_RUNTIME_IMAGE:-git-ai-club-pi-runtime:latest}
     container_name: git-ai-club-server-pi-runtime
     restart: unless-stopped

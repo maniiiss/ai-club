@@ -1053,6 +1053,9 @@ GitPilot CLI 本地 Pi MVP 已形成独立的本地执行平面：
 - CLI 读取 `/api/cli/models` 的启用 CHAT 模型，通过短期 model session 调用 backend 模型代理；平台模型 API Key、真实上游地址和完整请求审计留在 backend。
 - backend `/api/cli/model-sessions/{id}` 只开放 Chat Completions 与 Anthropic Messages 两个固定协议路径，禁止把短期 session 变成任意 URL 代理。
 - 该 MVP 尚未接入项目关联、Git 快照、handoff 分支和 Cloud Coding 工作区；后续接力仍需遵循 `gitpilot-cli-cloud-coding-handoff-technical-design-v1.md` 的本地零污染和 Sandbox Worker 边界。
+- P0 已建立共享 `packages/gitpilot-agent-core` 边界：开发期 CLI/`pi-runtime` 使用仓库 `file:` 依赖，Docker/发行包使用固定版本 `.tgz`；Docker build context 必须覆盖仓库根目录，不能通过宿主机路径读取包。
+- P0 的 CLI Git 快照使用独立 `GIT_INDEX_FILE`、`git write-tree` 和 `git commit-tree`，不修改当前 HEAD、branch、真实 index 或工作区；成功、失败、取消均清理临时 index 和凭据，前后 Git 状态指纹必须一致。
+- P0 已冻结 `HandoffSessionEnvelope v1` Schema/限制/敏感字段拒绝规则、CLI scope 和 `cloud-coding-sandbox-v1`。Cloud Coding 默认关闭，公众发布门槛为 `CONTAINER` Worker；Session 表、云端 REST 和公众端仍属于 P1。
 
 ## 8. 当前存在的架构边界
 

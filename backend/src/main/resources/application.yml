@@ -82,6 +82,14 @@ platform:
       model-proxy-timeout-seconds: ${PLATFORM_GITPILOT_CLI_MODEL_PROXY_TIMEOUT_SECONDS:180}
       model-proxy-max-request-bytes: ${PLATFORM_GITPILOT_CLI_MODEL_PROXY_MAX_REQUEST_BYTES:4194304}
       public-base-url: ${PLATFORM_GITPILOT_CLI_PUBLIC_BASE_URL:${PLATFORM_FRONTEND_PUBLIC_BASE_URL:http://localhost:3000}}
+  cloud-coding:
+    # P0 只冻结协议和安全边界，Cloud Coding Session/REST 在 P1 实现前保持关闭。
+    enabled: ${PLATFORM_CLOUD_CODING_ENABLED:false}
+    cli-enabled: ${PLATFORM_CLOUD_CODING_CLI_ENABLED:false}
+    worker-mode: ${PLATFORM_CLOUD_CODING_WORKER_MODE:LOCAL_PROCESS}
+    forbidden-file-globs: ${PLATFORM_CLOUD_CODING_FORBIDDEN_FILE_GLOBS:.env,.env.*,**/*.pem,**/*.key,**/*.p12,**/*.pfx}
+    max-active-sessions-per-user: ${PLATFORM_CLOUD_CODING_MAX_ACTIVE_SESSIONS_PER_USER:3}
+    workspace-ttl-hours: ${PLATFORM_CLOUD_CODING_WORKSPACE_TTL_HOURS:24}
   gitnexus:
     enabled: ${PLATFORM_GITNEXUS_ENABLED:true}
     ui-public-base-url: ${PLATFORM_GITNEXUS_UI_PUBLIC_BASE_URL:}

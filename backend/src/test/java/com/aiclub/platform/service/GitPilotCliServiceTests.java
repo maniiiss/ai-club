@@ -11,11 +11,31 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /** 验证 CLI 模型目录只暴露安全摘要，不把平台模型凭据带出 backend。 */
 class GitPilotCliServiceTests {
+
+    @Test
+    void shouldKeepCloudCodingClosedAndUseLocalProcessOnlyAsDevelopmentDefault() {
+        GitPilotCliProperties properties = new GitPilotCliProperties(true, 600, 5, 30, 900, 180, 4194304, "http://localhost:3000");
+
+        assertThat(properties.cloudCodingEnabled()).isFalse();
+        assertThat(properties.cloudCodingCliEnabled()).isFalse();
+        assertThat(properties.cloudCodingWorkerMode()).isEqualTo("LOCAL_PROCESS");
+        assertThat(properties.cloudCodingMaxActiveSessionsPerUser()).isEqualTo(3);
+        assertThat(properties.cloudCodingWorkspaceTtlHours()).isEqualTo(24);
+    }
+
+    @Test
+    void shouldRejectPublicCloudCodingWithLocalProcessWorker() {
+        assertThatThrownBy(() -> new GitPilotCliProperties(true, 600, 5, 30, 900, 180, 4194304,
+                "http://localhost:3000", true, true, "LOCAL_PROCESS", ".env", 3, 24))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("CONTAINER");
+    }
 
     @Test
     void shouldExposeOnlyEnabledChatModelSummaries() {
