@@ -29,3 +29,6 @@ database/backups/*.sql
 nul
 
 *.tar
+
+# 前端构建依赖缓存（Vite 预构建产物，不纳入版本管理）
+frontend-public/.vite/
