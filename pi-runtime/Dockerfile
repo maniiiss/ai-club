@@ -1,10 +1,10 @@
-FROM node:20-bookworm-slim AS agent-core-package
+FROM node:22-bookworm-slim AS agent-core-package
 
 WORKDIR /build
 COPY packages/gitpilot-agent-core ./packages/gitpilot-agent-core
 RUN mkdir -p /out && npm pack --pack-destination /out ./packages/gitpilot-agent-core
 
-FROM node:20-bookworm-slim
+FROM node:22-bookworm-slim
 
 WORKDIR /app
 COPY pi-runtime/package.json ./

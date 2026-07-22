@@ -1,5 +1,5 @@
-import { Agent } from '@mariozechner/pi-agent-core'
-import { getModel, getModels, streamSimple } from '@mariozechner/pi-ai'
+import { Agent } from '@earendil-works/pi-agent-core'
+import { getModel, getModels, streamSimple } from '@earendil-works/pi-ai/compat'
 
 export const GITPILOT_AGENT_CORE_VERSION = '0.1.0'
 export const HANDOFF_PROTOCOL_VERSION = 'v1'
