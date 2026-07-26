@@ -127,9 +127,9 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 		// Header
 		this.addChild(new DynamicBorder());
 		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.fg("accent", theme.bold("Model Configuration")), 0, 0));
+		this.addChild(new Text(theme.fg("accent", theme.bold("模型配置")), 0, 0));
 		this.addChild(
-			new Text(theme.fg("muted", `Session-only. ${keyText("app.models.save")} to save to settings.`), 0, 0),
+			new Text(theme.fg("muted", `仅本次会话。${keyText("app.models.save")} 保存到设置。`), 0, 0),
 		);
 		this.addChild(new Spacer(1));
 
@@ -165,18 +165,18 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 	private getFooterText(): string {
 		const enabledCount = this.enabledIds?.length ?? this.allIds.length;
 		const allEnabled = this.enabledIds === null;
-		const countText = allEnabled ? "all enabled" : `${enabledCount}/${this.allIds.length} enabled`;
+		const countText = allEnabled ? "全部启用" : `${enabledCount}/${this.allIds.length} 已启用`;
 		const parts = [
-			`${keyText("tui.select.confirm")} toggle`,
-			`${keyText("app.models.enableAll")} all`,
-			`${keyText("app.models.clearAll")} clear`,
-			`${keyText("app.models.toggleProvider")} provider`,
-			`${keyText("app.models.reorderUp")}/${keyText("app.models.reorderDown")} reorder`,
-			`${keyText("app.models.save")} save`,
+			`${keyText("tui.select.confirm")} 切换`,
+			`${keyText("app.models.enableAll")} 全部`,
+			`${keyText("app.models.clearAll")} 清除`,
+			`${keyText("app.models.toggleProvider")} 提供商`,
+			`${keyText("app.models.reorderUp")}/${keyText("app.models.reorderDown")} 重排`,
+			`${keyText("app.models.save")} 保存`,
 			countText,
 		];
 		return this.isDirty
-			? theme.fg("dim", `  ${parts.join(" · ")} `) + theme.fg("warning", "(unsaved)")
+			? theme.fg("dim", `  ${parts.join(" · ")} `) + theme.fg("warning", "（未保存）")
 			: theme.fg("dim", `  ${parts.join(" · ")}`);
 	}
 
@@ -201,7 +201,7 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 		this.listContainer.clear();
 
 		if (this.filteredItems.length === 0) {
-			this.listContainer.addChild(new Text(theme.fg("muted", "  No matching models"), 0, 0));
+			this.listContainer.addChild(new Text(theme.fg("muted", "  无匹配的模型"), 0, 0));
 			return;
 		}
 
@@ -216,7 +216,7 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 			const item = this.filteredItems[i]!;
 			const isSelected = i === this.selectedIndex;
 			const prefix = isSelected ? theme.fg("accent", "→ ") : "  ";
-			const modelText = isSelected ? theme.fg("accent", item.model.id) : item.model.id;
+			const modelText = isSelected ? theme.fg("accent", item.model.name || item.model.id) : (item.model.name || item.model.id);
 			const providerBadge = theme.fg("muted", ` [${item.model.provider}]`);
 			const status = allEnabled ? "" : item.enabled ? theme.fg("success", " ✓") : theme.fg("dim", " ✗");
 			this.listContainer.addChild(new Text(`${prefix}${modelText}${providerBadge}${status}`, 0, 0));
@@ -232,7 +232,7 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 		if (this.filteredItems.length > 0) {
 			const selected = this.filteredItems[this.selectedIndex];
 			this.listContainer.addChild(new Spacer(1));
-			this.listContainer.addChild(new Text(theme.fg("muted", `  Model Name: ${selected.model.name}`), 0, 0));
+				this.listContainer.addChild(new Text(theme.fg("muted", `  模型名称：${selected.model.name}`), 0, 0));
 		}
 	}
 

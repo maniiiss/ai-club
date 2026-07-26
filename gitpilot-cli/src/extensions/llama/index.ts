@@ -130,7 +130,7 @@ export default function llamaExtension(pi: ExtensionAPI): void {
 		const selected = await ui.searchModels((query, signal) => huggingFace.search(query, signal));
 		if (!selected) return;
 		const parsed = parseHuggingFaceModel(selected);
-		ui.showStatus("Loading model details", parsed.repository);
+		ui.showStatus("正在加载模型详情", parsed.repository);
 		const details = await huggingFace.details(parsed.repository);
 		if (details.gated) {
 			const approval = details.gated === "manual" ? "Manual approval is required" : "Accept the access terms";

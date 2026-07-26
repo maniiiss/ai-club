@@ -2,9 +2,11 @@ package com.aiclub.platform.controller;
 
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.CurrentUserInfo;
+import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.cli.CliDtos;
 import com.aiclub.platform.security.AuthContextHolder;
 import com.aiclub.platform.service.GitPilotCliService;
+import com.aiclub.platform.service.PlatformStoreService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
@@ -24,9 +27,11 @@ import java.util.List;
 public class GitPilotCliController {
 
     private final GitPilotCliService cliService;
+    private final PlatformStoreService platformStoreService;
 
-    public GitPilotCliController(GitPilotCliService cliService) {
+    public GitPilotCliController(GitPilotCliService cliService, PlatformStoreService platformStoreService) {
         this.cliService = cliService;
+        this.platformStoreService = platformStoreService;
     }
 
     @PostMapping("/device/authorizations")
@@ -73,6 +78,24 @@ public class GitPilotCliController {
         String token = AuthContextHolder.get().orElseThrow().token();
         cliService.requireScope(token, GitPilotCliService.SCOPE_MODEL_READ);
         return ApiResponse.success(cliService.listModels());
+    }
+
+    /**
+     * 列出当前 CLI 用户负责的需求（workItemType=需求），供 /requirement 命令使用。
+     * 复用 gpt_ token 认证与 scope 校验，负责人取当前登录用户，绕过项目可见性以覆盖“分配给我但未参与的项目”。
+     */
+    @GetMapping("/tasks")
+    public ApiResponse<PageResponse<CliDtos.CliTaskSummary>> myTasks(
+            @RequestParam(defaultValue = "1") int page,
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String priority,
+            @RequestParam(required = false) Long projectId,
+            @RequestParam(required = false) String keyword) {
+        var ctx = AuthContextHolder.get().orElseThrow();
+        cliService.requireScope(ctx.token(), GitPilotCliService.SCOPE_TASK_READ);
+        Long me = ctx.userId();
+        return ApiResponse.success(platformStoreService.pageMyRequirementTasks(me, page, size, status, priority, projectId, keyword));
     }
 
     @PostMapping("/model-sessions")

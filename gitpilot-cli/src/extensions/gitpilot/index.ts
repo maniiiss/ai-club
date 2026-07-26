@@ -6,8 +6,8 @@
 import type { ExtensionAPI } from "../../core/extensions/types.ts";
 import { getPlatformUrl } from "./config.ts";
 import { loadCliToken } from "./credentials.ts";
-import { platformAuthExtension } from "./platform-auth.ts";
 import { platformModelExtension } from "./platform-model.ts";
+import { registerRequirementCommand } from "./requirement-command.ts";
 
 export default function gitpilotPlatformExtension(pi: ExtensionAPI): void {
 	// 启动时若已登录，把 gpt_ token 装入进程缓存与 GITPILOT_CLI_TOKEN，
@@ -15,6 +15,9 @@ export default function gitpilotPlatformExtension(pi: ExtensionAPI): void {
 	const platformUrl = getPlatformUrl();
 	if (platformUrl) void loadCliToken(platformUrl);
 
-	platformAuthExtension(pi);
+	// 平台认证（设备授权）已并入 provider 的 oauth.login，复用 Pi 原生 /login /logout。
 	platformModelExtension(pi);
+
+	// 注册 /requirement 命令：列出负责人是我的需求并驱动 AI 设计开发。
+	registerRequirementCommand(pi);
 }

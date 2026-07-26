@@ -42,6 +42,8 @@ public class GitPilotCliService {
     public static final String SCOPE_CLOUD_CODING_CREATE = "cli:cloud-coding:create";
     public static final String SCOPE_CLOUD_CODING_READ = "cli:cloud-coding:read";
     public static final String SCOPE_CLOUD_CODING_CANCEL = "cli:cloud-coding:cancel";
+    /** /requirement 命令读取负责人是自己的需求列表所需权限范围。 */
+    public static final String SCOPE_TASK_READ = "cli:task:read";
     private static final List<String> DEFAULT_TOKEN_SCOPES = List.of(
             SCOPE_MODEL_READ,
             SCOPE_MODEL_INVOKE,
@@ -49,7 +51,8 @@ public class GitPilotCliService {
             SCOPE_PLATFORM_TOOL_EXECUTE,
             SCOPE_CLOUD_CODING_CREATE,
             SCOPE_CLOUD_CODING_READ,
-            SCOPE_CLOUD_CODING_CANCEL
+            SCOPE_CLOUD_CODING_CANCEL,
+            SCOPE_TASK_READ
     );
     private static final String CLI_TOKEN_PREFIX = "gpt_";
     private static final String MODEL_SESSION_PREFIX = "gms_";
@@ -179,7 +182,7 @@ public class GitPilotCliService {
         return modelConfigService.listEnabledOptions(ModelConfigService.MODEL_TYPE_CHAT).stream()
                 .filter(item -> Boolean.TRUE.equals(item.enabled()))
                 .filter(item -> "OPENAI".equalsIgnoreCase(item.provider()) || "ANTHROPIC".equalsIgnoreCase(item.provider()))
-                .map(item -> new CliModelSummary(item.id(), item.name(), item.provider(), item.modelName(), item.description(), item.openaiApiMode()))
+                .map(item -> new CliModelSummary(item.id(), item.name(), item.provider(), item.modelName(), item.description(), item.openaiApiMode(), item.contextLength(), item.maxOutputTokens()))
                 .toList();
     }
 

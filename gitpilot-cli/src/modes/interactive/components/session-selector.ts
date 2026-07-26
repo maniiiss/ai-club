@@ -39,13 +39,13 @@ function formatSessionDate(date: Date): string {
 	const diffHours = Math.floor(diffMs / 3600000);
 	const diffDays = Math.floor(diffMs / 86400000);
 
-	if (diffMins < 1) return "now";
-	if (diffMins < 60) return `${diffMins}m`;
-	if (diffHours < 24) return `${diffHours}h`;
-	if (diffDays < 7) return `${diffDays}d`;
-	if (diffDays < 30) return `${Math.floor(diffDays / 7)}w`;
-	if (diffDays < 365) return `${Math.floor(diffDays / 30)}mo`;
-	return `${Math.floor(diffDays / 365)}y`;
+	if (diffMins < 1) return "刚刚";
+	if (diffMins < 60) return `${diffMins}分`;
+	if (diffHours < 24) return `${diffHours}时`;
+	if (diffDays < 7) return `${diffDays}天`;
+	if (diffDays < 30) return `${Math.floor(diffDays / 7)}周`;
+	if (diffDays < 365) return `${Math.floor(diffDays / 30)}月`;
+	return `${Math.floor(diffDays / 365)}年`;
 }
 
 function canonicalizePath(path: string | undefined): string | undefined {
@@ -128,23 +128,23 @@ class SessionSelectorHeader implements Component {
 	invalidate(): void {}
 
 	render(width: number): string[] {
-		const title = this.scope === "current" ? "Resume Session (Current Folder)" : "Resume Session (All)";
+		const title = this.scope === "current" ? "恢复会话（当前文件夹）" : "恢复会话（全部）";
 		const leftText = theme.bold(title);
 
-		const sortLabel = this.sortMode === "threaded" ? "Threaded" : this.sortMode === "recent" ? "Recent" : "Fuzzy";
-		const sortText = theme.fg("muted", "Sort: ") + theme.fg("accent", sortLabel);
+		const sortLabel = this.sortMode === "threaded" ? "树形" : this.sortMode === "recent" ? "最近" : "模糊";
+		const sortText = theme.fg("muted", "排序：") + theme.fg("accent", sortLabel);
 
-		const nameLabel = this.nameFilter === "all" ? "All" : "Named";
-		const nameText = theme.fg("muted", "Name: ") + theme.fg("accent", nameLabel);
+		const nameLabel = this.nameFilter === "all" ? "全部" : "已命名";
+		const nameText = theme.fg("muted", "名称：") + theme.fg("accent", nameLabel);
 
 		let scopeText: string;
 		if (this.loading) {
 			const progressText = this.loadProgress ? `${this.loadProgress.loaded}/${this.loadProgress.total}` : "...";
-			scopeText = `${theme.fg("muted", "○ Current Folder | ")}${theme.fg("accent", `Loading ${progressText}`)}`;
+			scopeText = `${theme.fg("muted", "○ 当前文件夹 | ")}${theme.fg("accent", `加载中 ${progressText}`)}`;
 		} else if (this.scope === "current") {
-			scopeText = `${theme.fg("accent", "◉ Current Folder")}${theme.fg("muted", " | ○ All")}`;
+			scopeText = `${theme.fg("accent", "◉ 当前文件夹")}${theme.fg("muted", " | ○ 全部")}`;
 		} else {
-			scopeText = `${theme.fg("muted", "○ Current Folder | ")}${theme.fg("accent", "◉ All")}`;
+			scopeText = `${theme.fg("muted", "○ 当前文件夹 | ")}${theme.fg("accent", "◉ 全部")}`;
 		}
 
 		const rightText = truncateToWidth(`${scopeText}  ${nameText}  ${sortText}`, width, "");
@@ -156,7 +156,7 @@ class SessionSelectorHeader implements Component {
 		let hintLine1: string;
 		let hintLine2: string;
 		if (this.confirmingDeletePath !== null) {
-			const confirmHint = `Delete session? ${keyHint("tui.select.confirm", "confirm")} · ${keyHint("tui.select.cancel", "cancel")}`;
+			const confirmHint = `删除会话？${keyHint("tui.select.confirm", "确认")} · ${keyHint("tui.select.cancel", "取消")}`;
 			hintLine1 = theme.fg("error", truncateToWidth(confirmHint, width, "…"));
 			hintLine2 = "";
 		} else if (this.statusMessage) {
@@ -164,18 +164,18 @@ class SessionSelectorHeader implements Component {
 			hintLine1 = theme.fg(color, truncateToWidth(this.statusMessage.message, width, "…"));
 			hintLine2 = "";
 		} else {
-			const pathState = this.showPath ? "(on)" : "(off)";
+			const pathState = this.showPath ? "(开)" : "(关)";
 			const sep = theme.fg("muted", " · ");
 			const hint1 =
-				keyHint("tui.input.tab", "scope") + sep + theme.fg("muted", 're:<pattern> regex · "phrase" exact');
+				keyHint("tui.input.tab", "范围") + sep + theme.fg("muted", 're:<模式> 正则 · "短语" 精确');
 			const hint2Parts = [
-				keyHint("app.session.toggleSort", "sort"),
-				keyHint("app.session.toggleNamedFilter", "named"),
-				keyHint("app.session.delete", "delete"),
-				keyHint("app.session.togglePath", `path ${pathState}`),
+				keyHint("app.session.toggleSort", "排序"),
+				keyHint("app.session.toggleNamedFilter", "已命名"),
+				keyHint("app.session.delete", "删除"),
+				keyHint("app.session.togglePath", `路径 ${pathState}`),
 			];
 			if (this.showRenameHint) {
-				hint2Parts.push(keyHint("app.session.rename", "rename"));
+				hint2Parts.push(keyHint("app.session.rename", "重命名"));
 			}
 			const hint2 = hint2Parts.join(sep);
 			hintLine1 = truncateToWidth(hint1, width, "…");
@@ -397,7 +397,7 @@ class SessionList implements Component, Focusable {
 
 		// Prevent deleting current session
 		if (this.isCurrentSessionPath(selected.session.path)) {
-			this.onError?.("Cannot delete the currently active session");
+			this.onError?.("无法删除当前活跃会话");
 			return;
 		}
 
@@ -423,16 +423,16 @@ class SessionList implements Component, Focusable {
 			if (this.nameFilter === "named") {
 				const toggleKey = keyText("app.session.toggleNamedFilter");
 				if (this.showCwd) {
-					emptyMessage = `  No named sessions found. Press ${toggleKey} to show all.`;
+					emptyMessage = `  未找到已命名会话。按 ${toggleKey} 显示全部。`;
 				} else {
-					emptyMessage = `  No named sessions in current folder. Press ${toggleKey} to show all, or Tab to view all.`;
+					emptyMessage = `  当前文件夹无已命名会话。按 ${toggleKey} 显示全部，或按 Tab 查看全部。`;
 				}
 			} else if (this.showCwd) {
 				// "All" scope - no sessions anywhere that match filter
-				emptyMessage = "  No sessions found";
+				emptyMessage = "  未找到会话";
 			} else {
 				// "Current folder" scope - hint to try "all"
-				emptyMessage = "  No sessions in current folder. Press Tab to view all.";
+				emptyMessage = "  当前文件夹无会话。按 Tab 查看全部。";
 			}
 			lines.push(theme.fg("muted", truncateToWidth(emptyMessage, width, "…")));
 			return lines;
@@ -844,12 +844,12 @@ export class SessionSelectorComponent extends Container implements Focusable {
 				const showCwd = this.scope === "all";
 				this.sessionList.setSessions(sessions, showCwd);
 
-				const msg = result.method === "trash" ? "Session moved to trash" : "Session deleted";
+				const msg = result.method === "trash" ? "会话已移至回收站" : "会话已删除";
 				this.header.setStatusMessage({ type: "info", message: msg }, 2000);
 				await this.refreshSessionsAfterMutation();
 			} else {
-				const errorMessage = result.error ?? "Unknown error";
-				this.header.setStatusMessage({ type: "error", message: `Failed to delete: ${errorMessage}` }, 3000);
+				const errorMessage = result.error ?? "未知错误";
+				this.header.setStatusMessage({ type: "error", message: `删除失败：${errorMessage}` }, 3000);
 			}
 
 			this.requestRender();
@@ -870,13 +870,13 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		this.renameInput.focused = true;
 
 		const panel = new Container();
-		panel.addChild(new Text(theme.bold("Rename Session"), 1, 0));
+		panel.addChild(new Text(theme.bold("重命名会话"), 1, 0));
 		panel.addChild(new Spacer(1));
 		panel.addChild(this.renameInput);
 		panel.addChild(new Spacer(1));
 		panel.addChild(
 			new Text(
-				theme.fg("muted", `${keyText("tui.select.confirm")} to save · ${keyText("tui.select.cancel")} to cancel`),
+				theme.fg("muted", `${keyText("tui.select.confirm")} 保存 · ${keyText("tui.select.cancel")} 取消`),
 				1,
 				0,
 			),
@@ -972,7 +972,7 @@ export class SessionSelectorComponent extends Container implements Focusable {
 
 			const message = err instanceof Error ? err.message : String(err);
 			this.header.setLoading(false);
-			this.header.setStatusMessage({ type: "error", message: `Failed to load sessions: ${message}` }, 4000);
+			this.header.setStatusMessage({ type: "error", message: `加载会话失败：${message}` }, 4000);
 
 			if (reason === "initial") {
 				this.sessionList.setSessions([], showCwd);

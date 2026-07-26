@@ -49,7 +49,7 @@ import { handleConfigCommand, handlePackageCommand } from "./package-manager-cli
 import { isLocalPath, normalizePath, resolvePath } from "./utils/paths.ts";
 import { cleanupWindowsSelfUpdateQuarantine } from "./utils/windows-self-update.ts";
 
-const EXTENSION_LOAD_FAILURE_HINT = 'Hint: Start without extensions using "gitpilot -ne".';
+const EXTENSION_LOAD_FAILURE_HINT = '提示：使用 "gitpilot -ne" 在不加载扩展的情况下启动。';
 
 /**
  * Read all content from piped stdin.
@@ -80,14 +80,14 @@ function collectSettingsDiagnostics(
 ): AgentSessionRuntimeDiagnostic[] {
 	return settingsManager.drainErrors().map(({ scope, error }) => ({
 		type: "warning",
-		message: `(${context}, ${scope} settings) ${error.message}`,
+		message: `(${context}，${scope} 设置) ${error.message}`,
 	}));
 }
 
 function reportDiagnostics(diagnostics: readonly AgentSessionRuntimeDiagnostic[]): void {
 	for (const diagnostic of diagnostics) {
 		const color = diagnostic.type === "error" ? chalk.red : diagnostic.type === "warning" ? chalk.yellow : chalk.dim;
-		const prefix = diagnostic.type === "error" ? "Error: " : diagnostic.type === "warning" ? "Warning: " : "";
+		const prefix = diagnostic.type === "error" ? "错误：" : diagnostic.type === "warning" ? "警告：" : "";
 		console.error(color(`${prefix}${diagnostic.message}`));
 	}
 }
@@ -213,7 +213,7 @@ function validateForkFlags(parsed: Args): void {
 	].filter((flag): flag is string => flag !== undefined);
 
 	if (conflictingFlags.length > 0) {
-		console.error(chalk.red(`Error: --fork cannot be combined with ${conflictingFlags.join(", ")}`));
+		console.error(chalk.red(`错误：--fork 不能与 ${conflictingFlags.join(", ")} 组合使用`));
 		process.exit(1);
 	}
 }
@@ -228,7 +228,7 @@ function validateSessionIdFlags(parsed: Args): void {
 	].filter((flag): flag is string => flag !== undefined);
 
 	if (conflictingFlags.length > 0) {
-		console.error(chalk.red(`Error: --session-id cannot be combined with ${conflictingFlags.join(", ")}`));
+		console.error(chalk.red(`错误：--session-id 不能与 ${conflictingFlags.join(", ")} 组合使用`));
 		process.exit(1);
 	}
 
@@ -236,7 +236,7 @@ function validateSessionIdFlags(parsed: Args): void {
 		assertValidSessionId(parsed.sessionId);
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
-		console.error(chalk.red(`Error: ${message}`));
+		console.error(chalk.red(`错误：${message}`));
 		process.exit(1);
 	}
 }
@@ -246,7 +246,7 @@ function openSessionOrExit(path: string, sessionDir?: string): SessionManager {
 		return SessionManager.open(path, sessionDir);
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
-		console.error(chalk.red(`Error: ${message}`));
+		console.error(chalk.red(`错误：${message}`));
 		process.exit(1);
 	}
 }
@@ -256,7 +256,7 @@ function forkSessionOrExit(sourcePath: string, cwd: string, sessionDir?: string,
 		return SessionManager.forkFrom(sourcePath, cwd, sessionDir, { id: sessionId });
 	} catch (error: unknown) {
 		const message = error instanceof Error ? error.message : String(error);
-		console.error(chalk.red(`Error: ${message}`));
+		console.error(chalk.red(`错误：${message}`));
 		process.exit(1);
 	}
 }
@@ -275,7 +275,7 @@ async function createSessionManager(
 		if (parsed.sessionId) {
 			const existingTarget = await findLocalSessionByExactId(parsed.sessionId, cwd, sessionDir);
 			if (existingTarget) {
-				console.error(chalk.red(`Session already exists with id '${parsed.sessionId}'`));
+				console.error(chalk.red(`已存在 ID 为 '${parsed.sessionId}' 的会话`));
 				process.exit(1);
 			}
 		}
@@ -289,7 +289,7 @@ async function createSessionManager(
 				return forkSessionOrExit(resolved.path, cwd, sessionDir, parsed.sessionId);
 
 			case "not_found":
-				console.error(chalk.red(`No session found matching '${resolved.arg}'`));
+				console.error(chalk.red(`未找到匹配 '${resolved.arg}' 的会话`));
 				process.exit(1);
 		}
 	}
@@ -303,17 +303,17 @@ async function createSessionManager(
 				return openSessionOrExit(resolved.path, sessionDir);
 
 			case "global": {
-				console.log(chalk.yellow(`Session found in different project: ${resolved.cwd}`));
-				const shouldFork = await promptConfirm("Fork this session into current directory?");
+				console.log(chalk.yellow(`在其他项目中找到会话：${resolved.cwd}`));
+				const shouldFork = await promptConfirm("将此会话分叉到当前目录？");
 				if (!shouldFork) {
-					console.log(chalk.dim("Aborted."));
+					console.log(chalk.dim("已取消。"));
 					process.exit(0);
 				}
 				return forkSessionOrExit(resolved.path, cwd, sessionDir);
 			}
 
 			case "not_found":
-				console.error(chalk.red(`No session found matching '${resolved.arg}'`));
+				console.error(chalk.red(`未找到匹配 '${resolved.arg}' 的会话`));
 				process.exit(1);
 		}
 	}
@@ -326,7 +326,7 @@ async function createSessionManager(
 				settingsManager,
 			);
 			if (!selectedPath) {
-				console.log(chalk.dim("No session selected"));
+				console.log(chalk.dim("未选择会话"));
 				process.exit(0);
 			}
 			return SessionManager.open(selectedPath, sessionDir);
@@ -346,7 +346,7 @@ async function createSessionManager(
 		}
 		console.error(
 			chalk.yellow(
-				`Warning: No project session found with id '${parsed.sessionId}'; creating a new session with that id.`,
+				`警告：未找到 ID 为 '${parsed.sessionId}' 的项目会话；将使用该 ID 创建新会话。`,
 			),
 		);
 	}
@@ -461,8 +461,8 @@ async function promptForMissingSessionCwd(
 	settingsManager: SettingsManager,
 ): Promise<string | undefined> {
 	return showStartupSelector(settingsManager, formatMissingSessionCwdPrompt(issue), [
-		{ label: "Continue", value: issue.fallbackCwd },
-		{ label: "Cancel", value: undefined },
+		{ label: "继续", value: issue.fallbackCwd },
+		{ label: "取消", value: undefined },
 	]);
 }
 
@@ -510,7 +510,7 @@ export async function main(args: string[], options?: MainOptions) {
 	if (parsed.diagnostics.length > 0) {
 		for (const d of parsed.diagnostics) {
 			const color = d.type === "error" ? chalk.red : chalk.yellow;
-			console.error(color(`${d.type === "error" ? "Error" : "Warning"}: ${d.message}`));
+			console.error(color(`${d.type === "error" ? "错误" : "警告"}：${d.message}`));
 		}
 		if (parsed.diagnostics.some((d) => d.type === "error")) {
 			process.exit(1);
@@ -529,11 +529,11 @@ export async function main(args: string[], options?: MainOptions) {
 			const outputPath = parsed.messages.length > 0 ? parsed.messages[0] : undefined;
 			result = await exportFromFile(parsed.export, outputPath);
 		} catch (error: unknown) {
-			const message = error instanceof Error ? error.message : "Failed to export session";
-			console.error(chalk.red(`Error: ${message}`));
+			const message = error instanceof Error ? error.message : "导出会话失败";
+			console.error(chalk.red(`错误：${message}`));
 			process.exit(1);
 		}
-		console.log(`Exported to: ${result}`);
+		console.log(`已导出到：${result}`);
 		process.exit(0);
 	}
 
@@ -544,7 +544,7 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	if (parsed.mode === "rpc" && parsed.fileArgs.length > 0) {
-		console.error(chalk.red("Error: @file arguments are not supported in RPC mode"));
+		console.error(chalk.red("错误：RPC 模式不支持 @file 参数"));
 		process.exit(1);
 	}
 
@@ -556,7 +556,7 @@ export async function main(args: string[], options?: MainOptions) {
 	time("runMigrations");
 
 	const startupSettingsManager = SettingsManager.create(cwd, agentDir);
-	reportDiagnostics(collectSettingsDiagnostics(startupSettingsManager, "startup session lookup"));
+	reportDiagnostics(collectSettingsDiagnostics(startupSettingsManager, "启动会话查找"));
 
 	// Experimental first-time setup: theme choice and analytics opt-in.
 	// Runs before any runtime services are created so the chosen settings apply everywhere.
@@ -592,7 +592,7 @@ export async function main(args: string[], options?: MainOptions) {
 	if (parsed.name !== undefined) {
 		const name = parsed.name.trim();
 		if (!name) {
-			console.error(chalk.red("Error: --name requires a non-empty value"));
+			console.error(chalk.red("错误：--name 需要非空值"));
 			process.exit(1);
 		}
 		sessionManager.appendSessionInfo(name);
@@ -679,10 +679,10 @@ export async function main(args: string[], options?: MainOptions) {
 		const diagnostics: AgentSessionRuntimeDiagnostic[] = [
 			...projectTrustDiagnostics,
 			...services.diagnostics,
-			...collectSettingsDiagnostics(settingsManager, "runtime creation"),
+			...collectSettingsDiagnostics(settingsManager, "运行时创建"),
 			...resourceLoader.getExtensions().errors.map(({ path, error }) => ({
 				type: "error" as const,
-				message: `Failed to load extension "${path}": ${error}`,
+				message: `加载扩展 "${path}" 失败：${error}`,
 			})),
 		];
 
@@ -706,7 +706,7 @@ export async function main(args: string[], options?: MainOptions) {
 			if (!sessionOptions.model) {
 				diagnostics.push({
 					type: "error",
-					message: "--api-key requires a model to be specified via --model, --provider/--model, or --models",
+					message: "--api-key 需要通过 --model、--provider/--model 或 --models 指定模型",
 				});
 			} else {
 				await modelRuntime.setRuntimeApiKey(sessionOptions.model.provider, parsed.apiKey, { allowNetwork: false });
@@ -790,7 +790,7 @@ export async function main(args: string[], options?: MainOptions) {
 	time("resolveModelScope");
 	reportDiagnostics(runtime.diagnostics);
 	if (runtime.diagnostics.some((diagnostic) => diagnostic.type === "error")) {
-		if (runtime.diagnostics.some((diagnostic) => diagnostic.message.includes("Failed to load extension"))) {
+		if (runtime.diagnostics.some((diagnostic) => diagnostic.message.includes("加载扩展"))) {
 			console.error(chalk.yellow(EXTENSION_LOAD_FAILURE_HINT));
 		}
 		process.exit(1);
@@ -804,7 +804,7 @@ export async function main(args: string[], options?: MainOptions) {
 
 	const startupBenchmark = isTruthyEnvFlag(process.env.PI_STARTUP_BENCHMARK);
 	if (startupBenchmark && appMode !== "interactive") {
-		console.error(chalk.red("Error: PI_STARTUP_BENCHMARK only supports interactive mode"));
+		console.error(chalk.red("错误：PI_STARTUP_BENCHMARK 仅支持交互模式"));
 		process.exit(1);
 	}
 

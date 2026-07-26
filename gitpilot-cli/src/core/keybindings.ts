@@ -63,146 +63,146 @@ declare module "@earendil-works/pi-tui" {
 
 export const KEYBINDINGS = {
 	...TUI_KEYBINDINGS,
-	"app.interrupt": { defaultKeys: "escape", description: "Cancel or abort" },
-	"app.clear": { defaultKeys: "ctrl+c", description: "Clear editor" },
-	"app.exit": { defaultKeys: "ctrl+d", description: "Exit when editor is empty" },
+	"app.interrupt": { defaultKeys: "escape", description: "取消或中止" },
+	"app.clear": { defaultKeys: "ctrl+c", description: "清空编辑器" },
+	"app.exit": { defaultKeys: "ctrl+d", description: "编辑器为空时退出" },
 	"app.suspend": {
 		defaultKeys: process.platform === "win32" ? [] : "ctrl+z",
-		description: "Suspend to background",
+		description: "挂起到后台",
 	},
 	"app.thinking.cycle": {
 		defaultKeys: "shift+tab",
-		description: "Cycle thinking level",
+		description: "切换思考级别",
 	},
 	"app.model.cycleForward": {
 		defaultKeys: "ctrl+p",
-		description: "Cycle to next model",
+		description: "切换到下一个模型",
 	},
 	"app.model.cycleBackward": {
 		defaultKeys: "shift+ctrl+p",
-		description: "Cycle to previous model",
+		description: "切换到上一个模型",
 	},
-	"app.model.select": { defaultKeys: "ctrl+l", description: "Open model selector" },
-	"app.tools.expand": { defaultKeys: "ctrl+o", description: "Toggle tool output" },
+	"app.model.select": { defaultKeys: "ctrl+l", description: "打开模型选择器" },
+	"app.tools.expand": { defaultKeys: "ctrl+o", description: "切换工具输出" },
 	"app.thinking.toggle": {
 		defaultKeys: "ctrl+t",
-		description: "Toggle thinking blocks",
+		description: "切换思考块显示",
 	},
 	"app.session.toggleNamedFilter": {
 		defaultKeys: "ctrl+n",
-		description: "Toggle named session filter",
+		description: "切换命名会话过滤",
 	},
 	"app.editor.external": {
 		defaultKeys: "ctrl+g",
-		description: "Open external editor",
+		description: "打开外部编辑器",
 	},
 	"app.message.copy": {
 		defaultKeys: "ctrl+x",
-		description: "Copy message to clipboard",
+		description: "复制消息到剪贴板",
 	},
 	"app.message.followUp": {
 		defaultKeys: "alt+enter",
-		description: "Queue follow-up message",
+		description: "排队跟进消息",
 	},
 	"app.message.dequeue": {
 		defaultKeys: "alt+up",
-		description: "Restore queued messages",
+		description: "恢复排队消息",
 	},
 	"app.clipboard.pasteImage": {
 		defaultKeys: process.platform === "win32" ? "alt+v" : "ctrl+v",
-		description: "Paste image from clipboard (text fallback)",
+		description: "从剪贴板粘贴图片（文本回退）",
 	},
-	"app.session.new": { defaultKeys: [], description: "Start a new session" },
-	"app.session.tree": { defaultKeys: [], description: "Open session tree" },
-	"app.session.fork": { defaultKeys: [], description: "Fork current session" },
-	"app.session.resume": { defaultKeys: [], description: "Resume a session" },
+	"app.session.new": { defaultKeys: [], description: "开始新会话" },
+	"app.session.tree": { defaultKeys: [], description: "打开会话树" },
+	"app.session.fork": { defaultKeys: [], description: "分叉当前会话" },
+	"app.session.resume": { defaultKeys: [], description: "恢复会话" },
 	"app.tree.foldOrUp": {
 		defaultKeys: process.platform === "darwin" ? ["alt+left", "ctrl+left"] : ["ctrl+left", "alt+left"],
-		description: "Fold tree branch or move up",
+		description: "折叠树分支或上移",
 	},
 	"app.tree.unfoldOrDown": {
 		defaultKeys: process.platform === "darwin" ? ["alt+right", "ctrl+right"] : ["ctrl+right", "alt+right"],
-		description: "Unfold tree branch or move down",
+		description: "展开树分支或下移",
 	},
 	"app.tree.editLabel": {
 		defaultKeys: "shift+l",
-		description: "Edit tree label",
+		description: "编辑树标签",
 	},
 	"app.tree.toggleLabelTimestamp": {
 		defaultKeys: "shift+t",
-		description: "Toggle tree label timestamps",
+		description: "切换树标签时间戳",
 	},
 	"app.session.togglePath": {
 		defaultKeys: "ctrl+p",
-		description: "Toggle session path display",
+		description: "切换会话路径显示",
 	},
 	"app.session.toggleSort": {
 		defaultKeys: "ctrl+s",
-		description: "Toggle session sort mode",
+		description: "切换会话排序模式",
 	},
 	"app.session.rename": {
 		defaultKeys: "ctrl+r",
-		description: "Rename session",
+		description: "重命名会话",
 	},
 	"app.session.delete": {
 		defaultKeys: "ctrl+d",
-		description: "Delete session",
+		description: "删除会话",
 	},
 	"app.session.deleteNoninvasive": {
 		defaultKeys: "ctrl+backspace",
-		description: "Delete session when query is empty",
+		description: "查询为空时删除会话",
 	},
 	"app.models.save": {
 		defaultKeys: "ctrl+s",
-		description: "Save model selection",
+		description: "保存模型选择",
 	},
 	"app.models.enableAll": {
 		defaultKeys: "ctrl+a",
-		description: "Enable all models",
+		description: "启用所有模型",
 	},
 	"app.models.clearAll": {
 		defaultKeys: "ctrl+x",
-		description: "Clear all models",
+		description: "清除所有模型",
 	},
 	"app.models.toggleProvider": {
 		defaultKeys: "ctrl+p",
-		description: "Toggle all models for provider",
+		description: "切换提供商的所有模型",
 	},
 	"app.models.reorderUp": {
 		defaultKeys: "alt+up",
-		description: "Move model up in order",
+		description: "上移模型顺序",
 	},
 	"app.models.reorderDown": {
 		defaultKeys: "alt+down",
-		description: "Move model down in order",
+		description: "下移模型顺序",
 	},
 	"app.tree.filter.default": {
 		defaultKeys: "ctrl+d",
-		description: "Tree filter: default view",
+		description: "树过滤器：默认视图",
 	},
 	"app.tree.filter.noTools": {
 		defaultKeys: "ctrl+t",
-		description: "Tree filter: hide tool results",
+		description: "树过滤器：隐藏工具结果",
 	},
 	"app.tree.filter.userOnly": {
 		defaultKeys: "ctrl+u",
-		description: "Tree filter: user messages only",
+		description: "树过滤器：仅用户消息",
 	},
 	"app.tree.filter.labeledOnly": {
 		defaultKeys: "ctrl+l",
-		description: "Tree filter: labeled entries only",
+		description: "树过滤器：仅已标记条目",
 	},
 	"app.tree.filter.all": {
 		defaultKeys: "ctrl+a",
-		description: "Tree filter: show all entries",
+		description: "树过滤器：显示全部条目",
 	},
 	"app.tree.filter.cycleForward": {
 		defaultKeys: "ctrl+o",
-		description: "Tree filter: cycle forward",
+		description: "树过滤器：向前循环",
 	},
 	"app.tree.filter.cycleBackward": {
 		defaultKeys: "shift+ctrl+o",
-		description: "Tree filter: cycle backward",
+		description: "树过滤器：向后循环",
 	},
 } as const satisfies KeybindingDefinitions;
 

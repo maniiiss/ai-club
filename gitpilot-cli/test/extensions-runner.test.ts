@@ -158,7 +158,7 @@ describe("ExtensionRunner", () => {
 			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
 			const shortcuts = runner.getShortcuts(defaultKeybindings);
 
-			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in"));
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("与内置快捷键冲突"));
 			expect(shortcuts.has("ctrl+c")).toBe(false);
 
 			warnSpy.mockRestore();
@@ -183,7 +183,7 @@ describe("ExtensionRunner", () => {
 			const shortcuts = runner.getShortcuts(keybindings);
 
 			expect(shortcuts.has("ctrl+p")).toBe(true);
-			expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in"));
+			expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining("与内置快捷键冲突"));
 
 			warnSpy.mockRestore();
 		});
@@ -209,7 +209,7 @@ describe("ExtensionRunner", () => {
 			const shortcuts = runner.getShortcuts(defaultKeybindings);
 
 			expect(warnSpy).toHaveBeenCalledWith(
-				expect.stringContaining("built-in shortcut for app.clipboard.pasteImage"),
+				expect.stringContaining("app.clipboard.pasteImage"),
 			);
 			expect(shortcuts.has(pasteImageKey as KeyId)).toBe(true);
 
@@ -234,7 +234,7 @@ describe("ExtensionRunner", () => {
 			const keybindings = { ...defaultKeybindings, "app.interrupt": "ctrl+x" as KeyId };
 			const shortcuts = runner.getShortcuts(keybindings);
 
-			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in"));
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("与内置快捷键冲突"));
 			expect(shortcuts.has("ctrl+x")).toBe(false);
 
 			warnSpy.mockRestore();
@@ -257,7 +257,7 @@ describe("ExtensionRunner", () => {
 			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
 			const shortcuts = runner.getShortcuts(defaultKeybindings);
 
-			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in"));
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("与内置快捷键冲突"));
 			expect(shortcuts.has("ctrl+p")).toBe(false);
 
 			warnSpy.mockRestore();
@@ -281,7 +281,7 @@ describe("ExtensionRunner", () => {
 			const keybindings = { ...defaultKeybindings, "app.clear": ["ctrl+x", "ctrl+y"] as KeyId[] };
 			const shortcuts = runner.getShortcuts(keybindings);
 
-			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in"));
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("与内置快捷键冲突"));
 			expect(shortcuts.has("ctrl+y")).toBe(false);
 
 			warnSpy.mockRestore();
@@ -306,7 +306,7 @@ describe("ExtensionRunner", () => {
 			const shortcuts = runner.getShortcuts(keybindings);
 
 			expect(warnSpy).toHaveBeenCalledWith(
-				expect.stringContaining("built-in shortcut for app.clipboard.pasteImage"),
+				expect.stringContaining("app.clipboard.pasteImage"),
 			);
 			expect(shortcuts.has("ctrl+y")).toBe(true);
 
@@ -340,7 +340,7 @@ describe("ExtensionRunner", () => {
 			const runner = new ExtensionRunner(result.extensions, result.runtime, tempDir, sessionManager, modelRegistry);
 			const shortcuts = runner.getShortcuts(defaultKeybindings);
 
-			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("shortcut conflict"));
+			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("快捷键冲突"));
 			// Last one wins
 			expect(shortcuts.has("ctrl+shift+x")).toBe(true);
 

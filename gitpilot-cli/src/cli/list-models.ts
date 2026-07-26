@@ -11,7 +11,7 @@ import type { ModelRuntime } from "../core/model-runtime.ts";
 /**
  * Format a number as human-readable (e.g., 200000 -> "200K", 1000000 -> "1M")
  */
-function formatTokenCount(count: number): string {
+export function formatTokenCount(count: number): string {
 	if (count >= 1_000_000) {
 		const millions = count / 1_000_000;
 		return millions % 1 === 0 ? `${millions}M` : `${millions.toFixed(1)}M`;
@@ -29,7 +29,7 @@ function formatTokenCount(count: number): string {
 export async function listModels(modelRuntime: ModelRuntime, searchPattern?: string): Promise<void> {
 	const loadError = modelRuntime.getError();
 	if (loadError) {
-		console.error(chalk.yellow(`Warning: errors loading models.json:\n${loadError}`));
+		console.error(chalk.yellow(`警告：加载 models.json 时出错：\n${loadError}`));
 	}
 
 	const models = [...(await modelRuntime.getAvailable())];
@@ -46,7 +46,7 @@ export async function listModels(modelRuntime: ModelRuntime, searchPattern?: str
 	}
 
 	if (filteredModels.length === 0) {
-		console.log(`No models matching "${searchPattern}"`);
+		console.log(`没有匹配 "${searchPattern}" 的模型`);
 		return;
 	}
 
@@ -63,17 +63,17 @@ export async function listModels(modelRuntime: ModelRuntime, searchPattern?: str
 		model: m.id,
 		context: formatTokenCount(m.contextWindow),
 		maxOut: formatTokenCount(m.maxTokens),
-		thinking: m.reasoning ? "yes" : "no",
-		images: m.input.includes("image") ? "yes" : "no",
+		thinking: m.reasoning ? "是" : "否",
+		images: m.input.includes("image") ? "是" : "否",
 	}));
 
 	const headers = {
-		provider: "provider",
-		model: "model",
-		context: "context",
-		maxOut: "max-out",
-		thinking: "thinking",
-		images: "images",
+		provider: "提供商",
+		model: "模型",
+		context: "上下文",
+		maxOut: "最大输出",
+		thinking: "思考",
+		images: "图片",
 	};
 
 	const widths = {

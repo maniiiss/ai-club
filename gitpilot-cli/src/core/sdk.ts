@@ -173,7 +173,12 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	const authPath = options.agentDir ? join(agentDir, "auth.json") : undefined;
 	const modelsPath = options.agentDir ? join(agentDir, "models.json") : undefined;
-	const modelRuntime = options.modelRuntime ?? (await ModelRuntime.create({ authPath, modelsPath }));
+	// GitPilot 二开定制：启动时同步刷新模型清单（allowModelNetwork=true），
+	// 确保平台模型在 resolveModel/findInitialModel 之前就绪，避免重启后登录态已复用却提示"没有可用模型"。
+	// 平台可达时 listModels 仅数百毫秒；离线/超时由 create() 内部 15s 超时保护，且 store 持久化可兜底。
+	const modelRuntime =
+		options.modelRuntime ??
+		(await ModelRuntime.create({ authPath, modelsPath, allowModelNetwork: true }));
 
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
 	const sessionManager = options.sessionManager ?? SessionManager.create(cwd, getDefaultSessionDir(cwd, agentDir));

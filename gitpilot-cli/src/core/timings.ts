@@ -38,13 +38,13 @@ function printTimingGroup(title: string, timings: TimingNamespace["timings"]): v
 	for (const t of printableTimings) {
 		console.error(`  ${t.label}: ${t.ms}ms`);
 	}
-	console.error(`  TOTAL: ${printableTimings.reduce((a, b) => a + b.ms, 0)}ms`);
+		console.error(`  总计：${printableTimings.reduce((a, b) => a + b.ms, 0)}ms`);
 	console.error(`${"-".repeat(title.length + 8)}\n`);
 }
 
 export function printTimings(): void {
 	if (!ENABLED) return;
 	for (const [namespace, timingNamespace] of timingNamespaces) {
-		printTimingGroup(`Startup Timings: ${namespace}`, timingNamespace.timings);
+		printTimingGroup(`启动计时：${namespace}`, timingNamespace.timings);
 	}
 }

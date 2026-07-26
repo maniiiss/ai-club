@@ -44,10 +44,10 @@ function contextLabel(model: LlamaModelInfo): string | undefined {
 function modelDescription(model: LlamaModelInfo): string {
 	const details: string[] = [];
 	const loaded = model.status.value === "loaded" || model.status.value === "sleeping";
-	if (loaded) details.push("loaded");
+	if (loaded) details.push("已加载");
 	else if (model.status.value !== "unloaded") details.push(model.status.value);
 	const context = loaded ? contextLabel(model) : undefined;
-	if (context) details.push(`${context} context`);
+	if (context) details.push(`${context} 上下文`);
 	return details.join(" · ");
 }
 
@@ -106,7 +106,7 @@ class HuggingFaceSearch extends Container implements Focusable {
 	private filteredResults: HuggingFaceModel[] = [];
 	private selectedIndex = 0;
 	private query = "";
-	private status = "Type at least 2 characters";
+	private status = "至少输入 2 个字符";
 	private debounce: ReturnType<typeof setTimeout> | undefined;
 	private request: AbortController | undefined;
 	private closed = false;
@@ -127,7 +127,7 @@ class HuggingFaceSearch extends Container implements Focusable {
 		this.search = search;
 		this.cache = cache;
 		this.onSelectModel = onSelectModel;
-		this.addChild(new Text(theme.fg("dim", "Model name or owner/repository[:quant]"), 1, 0));
+		this.addChild(new Text(theme.fg("dim", "模型名称或 owner/repository[:quant]"), 1, 0));
 		this.addChild(this.input);
 		this.addChild(new Spacer(1));
 		this.addChild(this.resultsContainer);
@@ -155,7 +155,7 @@ class HuggingFaceSearch extends Container implements Focusable {
 			const model = this.filteredResults[index];
 			if (!model) continue;
 			const prefix = index === this.selectedIndex ? "→ " : "  ";
-			const details = `${compactCount(model.downloads)} downloads`;
+			const details = `${compactCount(model.downloads)} 次下载`;
 			this.resultsContainer.addChild(
 				new Text(
 					index === this.selectedIndex
@@ -173,7 +173,7 @@ class HuggingFaceSearch extends Container implements Focusable {
 		}
 		if (this.filteredResults.length === 0) {
 			this.resultsContainer.addChild(new Text(this.theme.fg("dim", `  ${this.status}`), 0, 0));
-		} else if (this.status === "Searching Hugging Face…") {
+		} else if (this.status === "正在搜索 Hugging Face…") {
 			this.resultsContainer.addChild(new Text(this.theme.fg("dim", `  ${this.status}`), 0, 0));
 		}
 		this.tui.requestRender();
@@ -195,18 +195,18 @@ class HuggingFaceSearch extends Container implements Focusable {
 		this.request?.abort();
 		this.request = undefined;
 		if (this.query.length < 2) {
-			this.status = "Type at least 2 characters";
+			this.status = "至少输入 2 个字符";
 			this.filterResults();
 			return;
 		}
 		const cached = this.cache.get(this.query.toLowerCase());
 		if (cached) {
 			this.results = cached;
-			this.status = cached.length === 0 ? "No GGUF models found" : "";
+			this.status = cached.length === 0 ? "未找到 GGUF 模型" : "";
 			this.filterResults();
 			return;
 		}
-		this.status = "Searching Hugging Face…";
+		this.status = "正在搜索 Hugging Face…";
 		this.filterResults();
 		this.debounce = setTimeout(() => void this.runSearch(this.query), 500);
 	}
@@ -220,7 +220,7 @@ class HuggingFaceSearch extends Container implements Focusable {
 			if (this.closed || request.signal.aborted || this.query !== query) return;
 			this.results = results;
 			this.selectedIndex = 0;
-			this.status = results.length === 0 ? "No GGUF models found" : "";
+			this.status = results.length === 0 ? "未找到 GGUF 模型" : "";
 			this.filterResults();
 		} catch (error) {
 			if (this.closed || request.signal.aborted || this.query !== query) return;
@@ -290,7 +290,7 @@ class LlamaView implements LlamaUi, Focusable {
 		this.tui = tui;
 		this.theme = theme;
 		this.keybindings = keybindings;
-		this.content = frame(theme, "llama.cpp models", [new Text(theme.fg("muted", "Loading…"), 1, 1)]);
+		this.content = frame(theme, "llama.cpp 模型", [new Text(theme.fg("muted", "加载中…"), 1, 1)]);
 	}
 
 	get focused(): boolean {
@@ -330,7 +330,7 @@ class LlamaView implements LlamaUi, Focusable {
 				label: model.id,
 				description: modelDescription(model),
 			})),
-			{ value: DOWNLOAD_VALUE, label: "Download model…", description: "Hugging Face owner/repository[:quant]" },
+			{ value: DOWNLOAD_VALUE, label: "下载模型…", description: "Hugging Face owner/repository[:quant]" },
 		];
 		return new Promise((resolve) => {
 			const list = new SelectList(items, Math.min(items.length, 12), selectTheme(this.theme), {
@@ -348,9 +348,9 @@ class LlamaView implements LlamaUi, Focusable {
 			this.setContent(
 				frame(
 					this.theme,
-					"llama.cpp models",
+					"llama.cpp 模型",
 					[new Text(this.theme.fg("dim", serverUrl), 1, 0), new Spacer(1), list],
-					`${keyHint("tui.select.confirm", "load/unload/download")} • ${keyHint("tui.select.cancel", "close")}`,
+					`${keyHint("tui.select.confirm", "加载/卸载/下载")} • ${keyHint("tui.select.cancel", "关闭")}`,
 				),
 				list,
 			);
@@ -371,7 +371,7 @@ class LlamaView implements LlamaUi, Focusable {
 					this.theme,
 					title,
 					[new Spacer(1), list],
-					`${keyHint("tui.select.confirm", "select")} • ${keyHint("tui.select.cancel", "cancel")}`,
+					`${keyHint("tui.select.confirm", "选择")} • ${keyHint("tui.select.cancel", "取消")}`,
 				),
 				list,
 			);
@@ -379,12 +379,12 @@ class LlamaView implements LlamaUi, Focusable {
 	}
 
 	async confirm(title: string, message: string): Promise<boolean> {
-		return (await this.select(`${title}\n${message}`, ["Yes", "No"])) === "Yes";
+		return (await this.select(`${title}\n${message}`, ["是", "否"])) === "是";
 	}
 
 	async connectionError(serverUrl: string, message: string): Promise<"retry" | "close"> {
-		const choice = await this.select(`llama.cpp unavailable\n${serverUrl}\n\n${message}`, ["Retry", "Close"]);
-		return choice === "Retry" ? "retry" : "close";
+		const choice = await this.select(`llama.cpp 不可用\n${serverUrl}\n\n${message}`, ["重试", "关闭"]);
+		return choice === "重试" ? "retry" : "close";
 	}
 
 	searchModels(
@@ -402,9 +402,9 @@ class LlamaView implements LlamaUi, Focusable {
 			this.setContent(
 				frame(
 					this.theme,
-					"Download model",
+					"下载模型",
 					[new Spacer(1), component],
-					`${keyHint("tui.select.confirm", "select")} • ${keyHint("tui.select.cancel", "back")}`,
+					`${keyHint("tui.select.confirm", "选择")} • ${keyHint("tui.select.cancel", "返回")}`,
 				),
 				component,
 				component,
@@ -449,7 +449,7 @@ class LlamaView implements LlamaUi, Focusable {
 			);
 		}
 		if (state.detail) body.push(new Text(this.theme.fg("dim", state.detail), 1, 0));
-		this.content = frame(this.theme, state.title, body, keyHint("tui.select.cancel", "stop"));
+		this.content = frame(this.theme, state.title, body, keyHint("tui.select.cancel", "停止"));
 		this.inputHandler = undefined;
 		this.tui.requestRender();
 	}

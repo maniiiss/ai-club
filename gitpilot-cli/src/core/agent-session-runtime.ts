@@ -47,7 +47,7 @@ export class SessionImportFileNotFoundError extends Error {
 	readonly filePath: string;
 
 	constructor(filePath: string) {
-		super(`File not found: ${filePath}`);
+		super(`文件未找到：${filePath}`);
 		this.name = "SessionImportFileNotFoundError";
 		this.filePath = filePath;
 	}
@@ -287,7 +287,7 @@ export class AgentSessionRuntime {
 		if (this.session.sessionManager.isPersisted()) {
 			const currentSessionFile = this.session.sessionFile;
 			if (!currentSessionFile) {
-				throw new Error("Persisted session is missing a session file");
+				throw new Error("持久化会话缺少会话文件");
 			}
 			const sessionDir = this.session.sessionManager.getSessionDir();
 			if (!targetLeafId) {
@@ -308,13 +308,13 @@ export class AgentSessionRuntime {
 
 			if (!existsSync(currentSessionFile)) {
 				throw new Error(
-					"This session has not been saved yet. Wait for the first assistant response before cloning or forking it.",
+					"此会话尚未保存。请等待首次智能体响应后再克隆或分叉。",
 				);
 			}
 			const sessionManager = SessionManager.open(currentSessionFile, sessionDir);
 			const forkedSessionPath = sessionManager.createBranchedSession(targetLeafId);
 			if (!forkedSessionPath) {
-				throw new Error("Failed to create forked session");
+				throw new Error("创建分叉会话失败");
 			}
 			await this.teardownCurrent("fork", sessionManager.getSessionFile());
 			this.apply(

@@ -33,7 +33,11 @@ public final class CliDtos {
             String provider,
             String modelName,
             String description,
-            String openaiApiMode
+            String openaiApiMode,
+            /** 模型上下文窗口长度（token），未配置时为 null，CLI 回退默认。 */
+            Integer contextLength,
+            /** 模型最大输出 token 数，未配置时为 null，CLI 回退默认。 */
+            Integer maxOutputTokens
     ) {}
 
     public record ModelSessionRequest(Long modelConfigId, String clientVersion) {}
@@ -45,5 +49,27 @@ public final class CliDtos {
             String provider,
             String modelName,
             String proxyBaseUrl
+    ) {}
+
+    /**
+     * CLI 需求列表项（精简版 TaskSummary）。
+     * 业务意图：去掉 prd*、collaborator*、external* 等大/无关字段，
+     * 仅保留 /requirement 命令展示与“设计+开发”指令构造所需信息。
+     */
+    public record CliTaskSummary(
+            Long id,
+            String workItemCode,
+            String name,
+            String status,
+            String priority,
+            String assignee,
+            String taskType,
+            Long projectId,
+            String projectName,
+            Long iterationId,
+            String iterationName,
+            String planStartDate,
+            String planEndDate,
+            String requirementMarkdown
     ) {}
 }

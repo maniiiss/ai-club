@@ -160,7 +160,7 @@ describe("copyToClipboard", () => {
 			throw new Error("pbcopy failed");
 		});
 
-		await expect(copyToClipboard("x".repeat(80_000))).rejects.toThrow("Failed to copy to clipboard");
+		await expect(copyToClipboard("x".repeat(80_000))).rejects.toThrow("复制到剪贴板失败");
 		expect(osc52Writes()).toHaveLength(0);
 	});
 });

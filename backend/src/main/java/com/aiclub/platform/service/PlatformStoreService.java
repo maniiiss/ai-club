@@ -30,6 +30,7 @@ import com.aiclub.platform.dto.ProjectWorkItemStatsSummary;
 import com.aiclub.platform.dto.TaskInlineUpdateSummary;
 import com.aiclub.platform.dto.TaskCommentSummary;
 import com.aiclub.platform.dto.TaskSummary;
+import com.aiclub.platform.dto.cli.CliDtos;
 import com.aiclub.platform.dto.request.AgentRequest;
 import com.aiclub.platform.dto.request.BatchTaskUpdateRequest;
 import com.aiclub.platform.dto.request.IterationRequest;
@@ -873,6 +874,51 @@ public class PlatformStoreService {
         Page<TaskSummary> pageData = taskRepository.findAll(taskSpecification(keyword, status, priority, projectId, agentId, scope), pageable)
                 .map(this::toTaskSummary);
         return PageResponse.from(pageData);
+    }
+
+    /**
+     * 分页查询“负责人是指定用户的需求”列表，供 GitPilot CLI /requirement 命令使用。
+     * 与 pageTasks 的差异：
+     * 1. 强制 assigneeUser.id = userId（负责人过滤）；
+     * 2. 强制 workItemType = "需求"（只看需求，不看任务）；
+     * 3. 不叠加项目参与人可见性（requireCurrentScope / appendProjectVisibilityPredicate），
+     *    因为语义是“负责人是自己的需求”，参与人过滤会导致漏看分配给自己但未参与的项目需求。
+     */
+    public PageResponse<CliDtos.CliTaskSummary> pageMyRequirementTasks(Long userId, int page, int size,
+                                                                       String status, String priority,
+                                                                       Long projectId, String keyword) {
+        Pageable pageable = buildPageable(page, size, Sort.by(Sort.Direction.DESC, "id"));
+        Page<CliDtos.CliTaskSummary> pageData = taskRepository
+                .findAll(cliMyTasksSpecification(userId, keyword, status, priority, projectId), pageable)
+                .map(this::toCliTaskSummary);
+        return PageResponse.from(pageData);
+    }
+
+    /** CLI /requirement 命令的查询谓词：负责人=userId 且 workItemType=需求，不叠加项目可见性。 */
+    private Specification<TaskEntity> cliMyTasksSpecification(Long userId, String keyword, String status,
+                                                              String priority, Long projectId) {
+        return (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+            predicates.add(cb.equal(root.get("assigneeUser").get("id"), userId));
+            predicates.add(cb.equal(root.get("workItemType"), normalizeWorkItemType("需求")));
+            if (hasText(keyword)) {
+                String pattern = "%" + keyword.trim().toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("name")), pattern),
+                        cb.like(cb.lower(root.get("description")), pattern)
+                ));
+            }
+            if (hasText(status)) {
+                predicates.add(root.get("status").in(TaskStatusUtils.candidateStatusesForQuery(null, status)));
+            }
+            if (hasText(priority)) {
+                predicates.add(cb.equal(root.get("priority"), priority.trim()));
+            }
+            if (projectId != null) {
+                predicates.add(cb.equal(root.get("project").get("id"), projectId));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
     }
 
     public List<TaskSummary> listAllTasks() {
@@ -2167,6 +2213,29 @@ public class PlatformStoreService {
                 giteeBinding == null ? null : String.valueOf(giteeBinding.getGiteeIssueId()),
                 giteeBinding == null ? null : trimToNull(giteeBinding.getGiteeIssueUrl()),
                 canDeleteTask(entity)
+        );
+    }
+
+    /**
+     * CLI 需求列表项映射：精简字段，去掉 prd*、collaborator*、external* 等大/无关字段，
+     * 仅保留 /requirement 命令展示与“设计+开发”指令构造所需信息。
+     */
+    private CliDtos.CliTaskSummary toCliTaskSummary(TaskEntity entity) {
+        return new CliDtos.CliTaskSummary(
+                entity.getId(),
+                entity.getWorkItemCode(),
+                entity.getName(),
+                entity.getStatus(),
+                entity.getPriority(),
+                entity.getAssignee(),
+                "任务".equals(normalizeWorkItemType(entity.getWorkItemType())) ? entity.getTaskType() : null,
+                entity.getProject() == null ? null : entity.getProject().getId(),
+                entity.getProject() == null ? null : entity.getProject().getName(),
+                entity.getIteration() == null ? null : entity.getIteration().getId(),
+                entity.getIteration() == null ? null : entity.getIteration().getName(),
+                formatDate(entity.getPlanStartDate()),
+                formatDate(entity.getPlanEndDate()),
+                entity.getRequirementMarkdown()
         );
     }
 

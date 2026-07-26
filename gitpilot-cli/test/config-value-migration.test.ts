@@ -82,8 +82,8 @@ describe("config value env var syntax migration", () => {
 		expect(fs.readFileSync(modelsPath, "utf-8")).toBe(content);
 		const registry = await createModelRegistry(AuthStorage.create(path.join(agentDir, "auth.json")), modelsPath);
 		const loadError = registry.getError();
-		expect(loadError).toContain("Failed to parse models.json");
-		expect(loadError).toContain(`File: ${modelsPath}`);
+		expect(loadError).toContain("解析 models.json 失败");
+		expect(loadError).toContain(`文件：${modelsPath}`);
 	});
 
 	it("leaves uppercase models.json API key and header values unchanged", async () => {

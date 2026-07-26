@@ -44,7 +44,7 @@ export class RetryStatusIndicator extends StatusIndicator {
 
 	constructor(ui: TUI, attempt: number, maxAttempts: number, delayMs: number) {
 		const retryMessage = (seconds: number) =>
-			`Retrying (${attempt}/${maxAttempts}) in ${seconds}s... (${keyText("app.interrupt")} to cancel)`;
+			`重试 (${attempt}/${maxAttempts})，${seconds} 秒后... (${keyText("app.interrupt")} 取消)`;
 		super(
 			"retry",
 			ui,
@@ -75,11 +75,11 @@ export type CompactionStatusReason = "manual" | "threshold" | "overflow";
 
 export class CompactionStatusIndicator extends StatusIndicator {
 	constructor(ui: TUI, reason: CompactionStatusReason) {
-		const cancelHint = `(${keyText("app.interrupt")} to cancel)`;
+		const cancelHint = `(${keyText("app.interrupt")} 取消)`;
 		const label =
 			reason === "manual"
-				? `Compacting context... ${cancelHint}`
-				: `${reason === "overflow" ? "Context overflow detected, " : ""}Auto-compacting... ${cancelHint}`;
+				? `正在压缩上下文... ${cancelHint}`
+				: `${reason === "overflow" ? "检测到上下文溢出，" : ""}自动压缩中... ${cancelHint}`;
 		super(
 			"compaction",
 			ui,
@@ -97,7 +97,7 @@ export class BranchSummaryStatusIndicator extends StatusIndicator {
 			ui,
 			(spinner) => theme.fg("accent", spinner),
 			(text) => theme.fg("muted", text),
-			`Summarizing branch... (${keyText("app.interrupt")} to cancel)`,
+			`正在总结分支... (${keyText("app.interrupt")} 取消)`,
 		);
 	}
 }

@@ -1,3 +1,5 @@
+import { appendFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import {
 	type Api,
@@ -44,7 +46,6 @@ import {
 	resolveConfiguredModelHeaders,
 	validateExtensionProvider,
 } from "./provider-composer.ts";
-import { withRemoteCatalog } from "./remote-catalog-provider.ts";
 import { RuntimeCredentials } from "./runtime-credentials.ts";
 
 interface ModelRuntimeSnapshot {
@@ -140,19 +141,11 @@ export class ModelRuntime implements Models {
 			(modelsPath
 				? new FileModelsStore(options.modelsStorePath ?? join(dirname(modelsPath), "models-store.json"))
 				: new InMemoryCodingAgentModelsStore());
-		const providers = builtinProviderCatalog
-			.builtinProviders()
-			.map((provider) =>
-				provider.id === "radius"
-					? provider
-					: withRemoteCatalog(
-							provider,
-							options.catalogBaseUrl,
-							builtinProviderCatalog.getBuiltinModelDataUrl(
-								provider.id as builtinProviderCatalog.BuiltinProvider,
-							),
-						),
-			);
+		// GitPilot 二开定制：不加载 pi 内置 provider catalog（anthropic/openai/gemini 等 38 个），
+		// 让 /model 只显示 extension 注册的 GitPilot 平台 provider。
+		// radius 动态 provider 不受影响：它走 configureRadiusProviders 从 config 独立实例化，
+		// 不依赖这里的 builtinProviders 列表。
+		const providers: Provider[] = [];
 		const runtime = new ModelRuntime(
 			credentials,
 			config,
@@ -262,6 +255,31 @@ export class ModelRuntime implements Models {
 				.filter((entry): entry is [string, AuthCheck] => entry[1] !== undefined)
 				.map(([providerId]) => providerId),
 		);
+		// GitPilot 二开调试：记录 provider / checkAuth / getModels / available 状态，定位登录后无模型问题。正式发布前移除。
+		try {
+			const lines = providers.map((provider) => {
+				const check = checks.find((entry) => entry[0] === provider.id);
+				let modelCount = "(error)";
+				try {
+					modelCount = String(provider.getModels().length);
+				} catch (error) {
+					modelCount = `error: ${error instanceof Error ? error.message : String(error)}`;
+				}
+				return `  ${provider.id}: models=${modelCount} auth=${
+					check?.[1] ? JSON.stringify(check[1]) : "undefined"
+				}`;
+			});
+			appendFileSync(
+				join(tmpdir(), "gitpilot-debug.log"),
+				`[${new Date().toISOString()}] runAvailabilityRefresh providers=[${providers
+					.map((provider) => provider.id)
+					.join(",")}] available=${available.length} configured=[${[...configuredProviders].join(
+					",",
+				)}]\n${lines.join("\n")}\n`,
+			);
+		} catch {
+			// 诊断日志失败不影响主流程
+		}
 		this.snapshot = {
 			all: [...this.models.getModels()],
 			available: [...available],

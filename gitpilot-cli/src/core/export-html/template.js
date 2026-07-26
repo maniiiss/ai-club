@@ -776,7 +776,7 @@
           }
         }
 
-        document.getElementById('tree-status').textContent = `${filtered.length} / ${flatNodes.length} entries`;
+        document.getElementById('tree-status').textContent = `${filtered.length} / ${flatNodes.length} 条`;
 
         // Scroll active node into view after layout
         setTimeout(() => {
@@ -870,7 +870,7 @@
 
             return `<div class="tool-output expandable" onclick="if(window.getSelection().toString())return;this.classList.toggle('expanded')">
               <div class="output-preview"><pre><code class="hljs">${previewHighlighted}</code></pre>
-              <div class="expand-hint">... (${remaining} more lines)</div></div>
+              <div class="expand-hint">...（还有 ${remaining} 行）</div></div>
               <div class="output-full"><pre><code class="hljs">${highlighted}</code></pre></div></div>`;
           }
 
@@ -884,7 +884,7 @@
           for (const line of displayLines) {
             out += `<div>${escapeHtml(replaceTabs(line))}</div>`;
           }
-          out += `<div class="expand-hint">... (${remaining} more lines)</div></div>`;
+          out += `<div class="expand-hint">...（还有 ${remaining} 行）</div></div>`;
           out += '<div class="output-full">';
           for (const line of lines) {
             out += `<div>${escapeHtml(replaceTabs(line))}</div>`;
@@ -1163,7 +1163,7 @@
        * Render the copy-link button HTML for a message.
        */
       function renderCopyLinkButton(entryId) {
-        return `<button class="copy-link-btn" data-entry-id="${escapeHtml(entryId)}" title="Copy link to this message">
+        return `<button class="copy-link-btn" data-entry-id="${escapeHtml(entryId)}" title="复制此消息的链接">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
             <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
@@ -1195,7 +1195,7 @@
               // Skill invocation (collapsed by default, click to expand)
               html += `<div class="skill-invocation" onclick="if(window.getSelection().toString())return;this.classList.toggle('expanded')">
                 <div class="skill-invocation-label">[skill] ${escapeHtml(skillBlock.name)}</div>
-                <div class="skill-invocation-collapsed">${escapeHtml(skillBlock.name)} (click to expand)</div>
+                <div class="skill-invocation-collapsed">${escapeHtml(skillBlock.name)} （点击展开）</div>
                 <div class="skill-invocation-content markdown-content">${safeMarkedParse(skillBlock.content)}</div>
               </div>`;
 
@@ -1249,7 +1249,7 @@
               } else if (block.type === 'thinking' && block.thinking.trim()) {
                 html += `<div class="thinking-block">
                   <div class="thinking-text">${escapeHtml(block.thinking)}</div>
-                  <div class="thinking-collapsed">Thinking ...</div>
+                  <div class="thinking-collapsed">思考中...</div>
                 </div>`;
               }
             }
@@ -1261,9 +1261,9 @@
             }
 
             if (msg.stopReason === 'aborted') {
-              html += '<div class="error-text">Aborted</div>';
+              html += '<div class="error-text">已中止</div>';
             } else if (msg.stopReason === 'error') {
-              html += `<div class="error-text">Error: ${escapeHtml(msg.errorMessage || 'Unknown error')}</div>`;
+              html += `<div class="error-text">错误：${escapeHtml(msg.errorMessage || '未知错误')}</div>`;
             }
 
             html += '</div>';
@@ -1276,9 +1276,9 @@
             html += `<div class="tool-command">$ ${escapeHtml(msg.command)}</div>`;
             if (msg.output) html += formatExpandableOutput(msg.output, 10);
             if (msg.cancelled) {
-              html += '<div style="color: var(--warning)">(cancelled)</div>';
+              html += '<div style="color: var(--warning)">（已取消）</div>';
             } else if (msg.exitCode !== 0 && msg.exitCode !== null) {
-              html += `<div style="color: var(--error)">(exit ${msg.exitCode})</div>`;
+              html += `<div style="color: var(--error)">（退出码 ${msg.exitCode}）</div>`;
             }
             html += '</div>';
             return html;
@@ -1288,20 +1288,20 @@
         }
 
         if (entry.type === 'model_change') {
-          return `<div class="model-change" id="${entryDomId}">${tsHtml}Switched to model: <span class="model-name">${escapeHtml(entry.provider)}/${escapeHtml(entry.modelId)}</span></div>`;
+          return `<div class="model-change" id="${entryDomId}">${tsHtml}已切换到模型： <span class="model-name">${escapeHtml(entry.provider)}/${escapeHtml(entry.modelId)}</span></div>`;
         }
 
         if (entry.type === 'compaction') {
           return `<div class="compaction" id="${entryDomId}" onclick="if(window.getSelection().toString())return;this.classList.toggle('expanded')">
             <div class="compaction-label">[compaction]</div>
-            <div class="compaction-collapsed">Compacted from ${entry.tokensBefore.toLocaleString()} tokens</div>
-            <div class="compaction-content"><strong>Compacted from ${entry.tokensBefore.toLocaleString()} tokens</strong>\n\n${escapeHtml(entry.summary)}</div>
+            <div class="compaction-collapsed">从 ${entry.tokensBefore.toLocaleString()} 个 token 压缩</div>
+            <div class="compaction-content"><strong>从 ${entry.tokensBefore.toLocaleString()} 个 token 压缩</strong>\n\n${escapeHtml(entry.summary)}</div>
           </div>`;
         }
 
         if (entry.type === 'branch_summary') {
           return `<div class="branch-summary" id="${entryDomId}">${tsHtml}
-            <div class="branch-summary-header">Branch Summary</div>
+            <div class="branch-summary-header">分支摘要</div>
             <div class="markdown-content">${safeMarkedParse(entry.summary)}</div>
           </div>`;
         }
@@ -1373,31 +1373,31 @@
         if (globalStats.tokens.cacheWrite) tokenParts.push(`W${formatTokens(globalStats.tokens.cacheWrite)}`);
 
         const msgParts = [];
-        if (globalStats.userMessages) msgParts.push(`${globalStats.userMessages} user`);
-        if (globalStats.assistantMessages) msgParts.push(`${globalStats.assistantMessages} assistant`);
-        if (globalStats.toolResults) msgParts.push(`${globalStats.toolResults} tool results`);
-        if (globalStats.customMessages) msgParts.push(`${globalStats.customMessages} custom`);
-        if (globalStats.compactions) msgParts.push(`${globalStats.compactions} compactions`);
-        if (globalStats.branchSummaries) msgParts.push(`${globalStats.branchSummaries} branch summaries`);
+        if (globalStats.userMessages) msgParts.push(`${globalStats.userMessages} 用户`);
+        if (globalStats.assistantMessages) msgParts.push(`${globalStats.assistantMessages} 助手`);
+        if (globalStats.toolResults) msgParts.push(`${globalStats.toolResults} 工具结果`);
+        if (globalStats.customMessages) msgParts.push(`${globalStats.customMessages} 自定义`);
+        if (globalStats.compactions) msgParts.push(`${globalStats.compactions} 次压缩`);
+        if (globalStats.branchSummaries) msgParts.push(`${globalStats.branchSummaries} 个分支摘要`);
 
         let html = `
           <div class="header">
-            <h1>Session: ${escapeHtml(header?.id || 'unknown')}</h1>
+            <h1>会话：${escapeHtml(header?.id || '未知')}</h1>
             <div class="help-bar">
-              <span class="help-hint">T toggle thinking · O toggle tools</span>
+              <span class="help-hint">T 切换思考 · O 切换工具</span>
               <div class="help-actions">
-                <button type="button" class="header-toggle-btn" data-action="toggle-thinking" title="Toggle thinking (T)">Toggle thinking</button>
-                <button type="button" class="header-toggle-btn" data-action="toggle-tools" title="Toggle tools (O)">Toggle tools</button>
-                <button type="button" class="download-json-btn" onclick="downloadSessionJson()" title="Download session as JSONL">↓ JSONL</button>
+                <button type="button" class="header-toggle-btn" data-action="toggle-thinking" title="切换思考 (T)">切换思考</button>
+                <button type="button" class="header-toggle-btn" data-action="toggle-tools" title="切换工具 (O)">切换工具</button>
+                <button type="button" class="download-json-btn" onclick="downloadSessionJson()" title="下载会话为 JSONL">↓ JSONL</button>
               </div>
             </div>
             <div class="header-info">
-              <div class="info-item"><span class="info-label">Date:</span><span class="info-value">${header?.timestamp ? new Date(header.timestamp).toLocaleString() : 'unknown'}</span></div>
-              <div class="info-item"><span class="info-label">Models:</span><span class="info-value">${escapeHtml(globalStats.models.join(', ') || 'unknown')}</span></div>
-              <div class="info-item"><span class="info-label">Messages:</span><span class="info-value">${msgParts.join(', ') || '0'}</span></div>
-              <div class="info-item"><span class="info-label">Tool Calls:</span><span class="info-value">${globalStats.toolCalls}</span></div>
-              <div class="info-item"><span class="info-label">Tokens:</span><span class="info-value">${tokenParts.join(' ') || '0'}</span></div>
-              <div class="info-item"><span class="info-label">Cost:</span><span class="info-value">$${totalCost.toFixed(3)}</span></div>
+              <div class="info-item"><span class="info-label">日期：</span><span class="info-value">${header?.timestamp ? new Date(header.timestamp).toLocaleString() : '未知'}</span></div>
+              <div class="info-item"><span class="info-label">模型：</span><span class="info-value">${escapeHtml(globalStats.models.join(', ') || '未知')}</span></div>
+              <div class="info-item"><span class="info-label">消息：</span><span class="info-value">${msgParts.join(', ') || '0'}</span></div>
+              <div class="info-item"><span class="info-label">工具调用：</span><span class="info-value">${globalStats.toolCalls}</span></div>
+              <div class="info-item"><span class="info-label">Token：</span><span class="info-value">${tokenParts.join(' ') || '0'}</span></div>
+              <div class="info-item"><span class="info-label">费用：</span><span class="info-value">$${totalCost.toFixed(3)}</span></div>
             </div>
           </div>`;
 
@@ -1409,14 +1409,14 @@
             const preview = lines.slice(0, previewLines).join('\n');
             const remaining = lines.length - previewLines;
             html += `<div class="system-prompt expandable" onclick="if(window.getSelection().toString())return;this.classList.toggle('expanded')">
-              <div class="system-prompt-header">System Prompt</div>
+              <div class="system-prompt-header">系统提示</div>
               <div class="system-prompt-preview">${escapeHtml(preview)}</div>
-              <div class="system-prompt-expand-hint">... (${remaining} more lines, click to expand)</div>
+              <div class="system-prompt-expand-hint">...（还有 ${remaining} 行，点击展开）</div>
               <div class="system-prompt-full">${escapeHtml(systemPrompt)}</div>
             </div>`;
           } else {
             html += `<div class="system-prompt">
-              <div class="system-prompt-header">System Prompt</div>
+              <div class="system-prompt-header">系统提示</div>
               <div class="system-prompt-full" style="display: block">${escapeHtml(systemPrompt)}</div>
             </div>`;
           }
@@ -1424,7 +1424,7 @@
 
         if (tools && tools.length > 0) {
           html += `<div class="tools-list">
-            <div class="tools-header">Available Tools</div>
+            <div class="tools-header">可用工具</div>
             <div class="tools-content">
               ${tools.map(t => {
                 const hasParams = t.parameters && typeof t.parameters === 'object' && t.parameters.properties && Object.keys(t.parameters.properties).length > 0;
@@ -1438,7 +1438,7 @@
                 for (const [name, prop] of Object.entries(properties)) {
                   const isRequired = required.includes(name);
                   const typeStr = prop.type || 'any';
-                  const reqLabel = isRequired ? '<span class="tool-param-required">required</span>' : '<span class="tool-param-optional">optional</span>';
+                  const reqLabel = isRequired ? '<span class="tool-param-required">必填</span>' : '<span class="tool-param-optional">可选</span>';
                   paramsHtml += `<div class="tool-param"><span class="tool-param-name">${escapeHtml(name)}</span> <span class="tool-param-type">${escapeHtml(typeStr)}</span> ${reqLabel}`;
                   if (prop.description) {
                     paramsHtml += `<div class="tool-param-desc">${escapeHtml(prop.description)}</div>`;

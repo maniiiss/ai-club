@@ -138,8 +138,8 @@ describe("package commands", () => {
 			await expect(main(["list"])).resolves.toBeUndefined();
 
 			const stdout = logSpy.mock.calls.map(([message]) => String(message)).join("\n");
-			expect(stdout).toContain("No packages installed.");
-			expect(stdout).not.toContain("Project packages:");
+			expect(stdout).toContain("未安装任何包。");
+			expect(stdout).not.toContain("项目包：");
 		} finally {
 			logSpy.mockRestore();
 		}
@@ -155,9 +155,9 @@ describe("package commands", () => {
 			await expect(main(["list"])).resolves.toBeUndefined();
 
 			const stdout = logSpy.mock.calls.map(([message]) => String(message)).join("\n");
-			expect(stdout).toContain("Project packages:");
+			expect(stdout).toContain("项目包：");
 			expect(stdout).toContain("npm:@project/pkg");
-			expect(stdout).not.toContain("No packages installed.");
+			expect(stdout).not.toContain("未安装任何包。");
 			expect(process.exitCode).toBeUndefined();
 		} finally {
 			logSpy.mockRestore();
@@ -174,8 +174,8 @@ describe("package commands", () => {
 			await expect(main(["list", "--no-approve"])).resolves.toBeUndefined();
 
 			const stdout = logSpy.mock.calls.map(([message]) => String(message)).join("\n");
-			expect(stdout).toContain("No packages installed.");
-			expect(stdout).not.toContain("Project packages:");
+			expect(stdout).toContain("未安装任何包。");
+			expect(stdout).not.toContain("项目包：");
 			expect(process.exitCode).toBeUndefined();
 		} finally {
 			logSpy.mockRestore();
@@ -191,9 +191,9 @@ describe("package commands", () => {
 			await expect(main(["list", "--approve"])).resolves.toBeUndefined();
 
 			const stdout = logSpy.mock.calls.map(([message]) => String(message)).join("\n");
-			expect(stdout).toContain("Project packages:");
+			expect(stdout).toContain("项目包：");
 			expect(stdout).toContain("npm:@project/pkg");
-			expect(stdout).not.toContain("No packages installed.");
+			expect(stdout).not.toContain("未安装任何包。");
 			expect(process.exitCode).toBeUndefined();
 		} finally {
 			logSpy.mockRestore();
@@ -210,9 +210,9 @@ describe("package commands", () => {
 			await expect(main(["list"])).resolves.toBeUndefined();
 
 			const stdout = logSpy.mock.calls.map(([message]) => String(message)).join("\n");
-			expect(stdout).toContain("Project packages:");
+			expect(stdout).toContain("项目包：");
 			expect(stdout).toContain("npm:@project/pkg");
-			expect(stdout).not.toContain("No packages installed.");
+			expect(stdout).not.toContain("未安装任何包。");
 			expect(process.exitCode).toBeUndefined();
 		} finally {
 			logSpy.mockRestore();
@@ -236,9 +236,9 @@ describe("package commands", () => {
 			).resolves.toBeUndefined();
 
 			const stdout = logSpy.mock.calls.map(([message]) => String(message)).join("\n");
-			expect(stdout).toContain("Project packages:");
+			expect(stdout).toContain("项目包：");
 			expect(stdout).toContain("npm:@project/pkg");
-			expect(stdout).not.toContain("No packages installed.");
+			expect(stdout).not.toContain("未安装任何包。");
 			expect(process.exitCode).toBeUndefined();
 		} finally {
 			logSpy.mockRestore();
@@ -319,8 +319,8 @@ describe("package commands", () => {
 			await expect(main(["list"])).resolves.toBeUndefined();
 
 			const stdout = logSpy.mock.calls.map(([message]) => String(message)).join("\n");
-			expect(stdout).toContain("No packages installed.");
-			expect(stdout).not.toContain("Project packages:");
+			expect(stdout).toContain("未安装任何包。");
+			expect(stdout).not.toContain("项目包：");
 			expect(process.exitCode).toBeUndefined();
 		} finally {
 			logSpy.mockRestore();
@@ -336,7 +336,7 @@ describe("package commands", () => {
 			await expect(main(["install", "-l", "./local-package"])).resolves.toBeUndefined();
 
 			const stderr = errorSpy.mock.calls.map(([message]) => String(message)).join("\n");
-			expect(stderr).toContain("Project is not trusted. Use --approve to modify local package config.");
+			expect(stderr).toContain("项目未被信任。使用 --approve 可修改本地包配置。");
 			expect(process.exitCode).toBe(1);
 		} finally {
 			errorSpy.mockRestore();
@@ -362,8 +362,8 @@ describe("package commands", () => {
 			await expect(main(["install", "--help"])).resolves.toBeUndefined();
 
 			const stdout = logSpy.mock.calls.map(([message]) => String(message)).join("\n");
-			expect(stdout).toContain("Usage:");
-			expect(stdout).toContain("pi install <source> [-l]");
+			expect(stdout).toContain("用法：");
+			expect(stdout).toContain("gitpilot install <source> [-l]");
 			expect(errorSpy).not.toHaveBeenCalled();
 			expect(process.exitCode).toBeUndefined();
 		} finally {
@@ -390,7 +390,7 @@ describe("package commands", () => {
 			force: true,
 			signal: expect.any(AbortSignal),
 		});
-		expect(logSpy.mock.calls.map(([message]) => String(message)).join("\n")).toContain("Model catalogs refreshed");
+		expect(logSpy.mock.calls.map(([message]) => String(message)).join("\n")).toContain("模型目录已刷新");
 		expect(errorSpy).not.toHaveBeenCalled();
 		expect(process.exitCode).toBeUndefined();
 	});
@@ -403,7 +403,7 @@ describe("package commands", () => {
 
 		expect(create).not.toHaveBeenCalled();
 		expect(errorSpy.mock.calls.map(([message]) => String(message)).join("\n")).toContain(
-			"--models cannot be combined with --self",
+			"--models 不能与 --self",
 		);
 		expect(process.exitCode).toBe(1);
 	});
@@ -446,8 +446,8 @@ describe("package commands", () => {
 			await expect(main(["install", "--unknown"])).resolves.toBeUndefined();
 
 			const stderr = errorSpy.mock.calls.map(([message]) => String(message)).join("\n");
-			expect(stderr).toContain('Unknown option --unknown for "install".');
-			expect(stderr).toContain('Use "pi --help" or "pi install <source> [-l] [--approve|--no-approve]".');
+			expect(stderr).toContain('"install" 的未知选项 --unknown');
+			expect(stderr).toContain('请使用 "gitpilot --help" 或 "gitpilot install <source> [-l] [--approve|--no-approve]"。');
 			expect(process.exitCode).toBe(1);
 		} finally {
 			errorSpy.mockRestore();
@@ -461,8 +461,8 @@ describe("package commands", () => {
 			await expect(main(["install"])).resolves.toBeUndefined();
 
 			const stderr = errorSpy.mock.calls.map(([message]) => String(message)).join("\n");
-			expect(stderr).toContain("Missing install source.");
-			expect(stderr).toContain("Usage: pi install <source> [-l]");
+			expect(stderr).toContain("缺少 install 源");
+			expect(stderr).toContain("用法：gitpilot install <source> [-l]");
 			expect(stderr).not.toContain("at ");
 			expect(process.exitCode).toBe(1);
 		} finally {
@@ -516,7 +516,7 @@ else fs.writeFileSync(${JSON.stringify(recordPath)},JSON.stringify(args));
 			expect(recordedArgs).toContain(`${PACKAGE_NAME}@${VERSION}`);
 			expect(recordedArgs).not.toContain(PACKAGE_NAME);
 			expect(recordedArgs).not.toContain(projectPrefix);
-			expect(stdout).toContain(`Updated pi from ${VERSION} to ${VERSION}`);
+			expect(stdout).toContain(`已将 gitpilot 从 ${VERSION} 更新到 ${VERSION}`);
 		} finally {
 			logSpy.mockRestore();
 			errorSpy.mockRestore();
@@ -562,7 +562,7 @@ else fs.writeFileSync(${JSON.stringify(recordPath)},JSON.stringify(args));
 			const recordedArgs = JSON.parse(readFileSync(recordPath, "utf-8")) as string[];
 			expect(recordedArgs).toContain(`${PACKAGE_NAME}@${targetVersion}`);
 			expect(recordedArgs).not.toContain(PACKAGE_NAME);
-			expect(stdout).toContain(`Updated pi from ${VERSION} to ${targetVersion}`);
+			expect(stdout).toContain(`已将 gitpilot 从 ${VERSION} 更新到 ${targetVersion}`);
 		} finally {
 			logSpy.mockRestore();
 			errorSpy.mockRestore();

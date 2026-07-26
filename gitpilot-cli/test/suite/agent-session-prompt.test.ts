@@ -372,7 +372,7 @@ describe("AgentSession prompt characterization", () => {
 		await sawToolStart;
 
 		await expect(harness.session.prompt("second")).rejects.toThrow(
-			"Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
+			"智能体正在处理中。请指定 streamingBehavior（'steer' 或 'followUp'）以排队消息。",
 		);
 
 		releaseToolExecution?.();
@@ -384,7 +384,7 @@ describe("AgentSession prompt characterization", () => {
 		harnesses.push(harness);
 		harness.session.agent.state.model = undefined as unknown as Model<any>;
 
-		await expect(harness.session.prompt("hi")).rejects.toThrow("No model selected.");
+		await expect(harness.session.prompt("hi")).rejects.toThrow("未选择模型");
 	});
 
 	it("throws when prompting without configured auth", async () => {
@@ -392,7 +392,7 @@ describe("AgentSession prompt characterization", () => {
 		harnesses.push(harness);
 
 		await expect(harness.session.prompt("hi")).rejects.toThrow(
-			`No API key found for ${harness.getModel().provider}.`,
+			`未找到 ${harness.getModel().provider} 的 API 密钥`,
 		);
 	});
 });

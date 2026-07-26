@@ -220,6 +220,6 @@ describe("FooterComponent width handling", () => {
 		});
 		const footer = new FooterComponent(session, createFooterData(1));
 
-		expect(stripAnsi(footer.render(120)[1])).toContain("$1.234 (sub)");
+		expect(stripAnsi(footer.render(120)[1])).toContain("$1.234 (订阅)");
 	});
 });

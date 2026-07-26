@@ -120,10 +120,10 @@ export class UserMessageSelectorComponent extends Container {
 
 		// Add header
 		this.addChild(new Spacer(1));
-		this.addChild(new Text(theme.bold("Fork from Message"), 1, 0));
+		this.addChild(new Text(theme.bold("从消息分叉"), 1, 0));
 		this.addChild(
 			new Text(
-				theme.fg("muted", "Select a user message to copy the active path up to that point into a new session"),
+				theme.fg("muted", "选择一条用户消息，将其到该点的活动路径复制到新会话"),
 				1,
 				0,
 			),

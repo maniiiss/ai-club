@@ -240,7 +240,7 @@ export function parseModelPattern(
 			return {
 				model: result.model,
 				thinkingLevel: undefined,
-				warning: `Invalid thinking level "${suffix}" in pattern "${pattern}". Using default instead.`,
+				warning: `模式 "${pattern}" 中的思考级别 "${suffix}" 无效。改为使用默认值。`,
 			};
 		}
 		return result;
@@ -301,7 +301,7 @@ export async function resolveModelScopeWithDiagnostics(
 			});
 
 			if (matchingModels.length === 0) {
-				diagnostics.push({ type: "warning", message: `No models match pattern "${pattern}"`, pattern });
+				diagnostics.push({ type: "warning", message: `没有模型匹配模式 "${pattern}"`, pattern });
 				continue;
 			}
 
@@ -320,7 +320,7 @@ export async function resolveModelScopeWithDiagnostics(
 		}
 
 		if (!model) {
-			diagnostics.push({ type: "warning", message: `No models match pattern "${pattern}"`, pattern });
+			diagnostics.push({ type: "warning", message: `没有模型匹配模式 "${pattern}"`, pattern });
 			continue;
 		}
 
@@ -336,7 +336,7 @@ export async function resolveModelScopeWithDiagnostics(
 export async function resolveModelScope(patterns: string[], modelRuntime: ModelRuntime): Promise<ScopedModel[]> {
 	const { scopedModels, diagnostics } = await resolveModelScopeWithDiagnostics(patterns, modelRuntime);
 	for (const diagnostic of diagnostics) {
-		console.warn(chalk.yellow(`Warning: ${diagnostic.message}`));
+		console.warn(chalk.yellow(`警告：${diagnostic.message}`));
 	}
 	return scopedModels;
 }
@@ -382,7 +382,7 @@ export function resolveCliModel(options: {
 		return {
 			model: undefined,
 			warning: undefined,
-			error: "No models available. Check your installation or add models to models.json.",
+			error: "没有可用模型。请检查安装或向 models.json 中添加模型。",
 		};
 	}
 
@@ -394,11 +394,11 @@ export function resolveCliModel(options: {
 
 	let provider = cliProvider ? providerMap.get(cliProvider.toLowerCase()) : undefined;
 	if (cliProvider && !provider) {
-		return {
-			model: undefined,
-			warning: undefined,
-			error: `Unknown provider "${cliProvider}". Use --list-models to see available providers/models.`,
-		};
+			return {
+				model: undefined,
+				warning: undefined,
+				error: `未知提供商 "${cliProvider}"。使用 --list-models 查看可用的提供商/模型。`,
+			};
 	}
 
 	// If no explicit --provider, try to interpret "provider/model" format first.
@@ -521,8 +521,8 @@ export function resolveCliModel(options: {
 			const model =
 				requestedThinking && requestedThinking !== "off" ? { ...fallbackModel, reasoning: true } : fallbackModel;
 			const fallbackWarning = warning
-				? `${warning} Model "${fallbackPattern}" not found for provider "${provider}". Using custom model id.`
-				: `Model "${fallbackPattern}" not found for provider "${provider}". Using custom model id.`;
+				? `${warning} 提供商 "${provider}" 下未找到模型 "${fallbackPattern}"。将使用自定义模型 ID。`
+				: `提供商 "${provider}" 下未找到模型 "${fallbackPattern}"。将使用自定义模型 ID。`;
 			return { model, thinkingLevel: fallbackThinking, warning: fallbackWarning, error: undefined };
 		}
 	}
@@ -532,7 +532,7 @@ export function resolveCliModel(options: {
 		model: undefined,
 		thinkingLevel: undefined,
 		warning,
-		error: `Model "${display}" not found. Use --list-models to see available models.`,
+		error: `未找到模型 "${display}"。使用 --list-models 查看可用模型。`,
 	};
 }
 
@@ -649,26 +649,26 @@ export async function restoreModelFromSession(
 
 	if (restoredModel && hasConfiguredAuth) {
 		if (shouldPrintMessages) {
-			console.log(chalk.dim(`Restored model: ${savedProvider}/${savedModelId}`));
+			console.log(chalk.dim(`已恢复模型：${savedProvider}/${savedModelId}`));
 		}
 		return { model: restoredModel, fallbackMessage: undefined };
 	}
 
 	// Model not found or no API key - fall back
-	const reason = !restoredModel ? "model no longer exists" : "no auth configured";
+	const reason = !restoredModel ? "模型不再存在" : "未配置认证";
 
 	if (shouldPrintMessages) {
-		console.error(chalk.yellow(`Warning: Could not restore model ${savedProvider}/${savedModelId} (${reason}).`));
+		console.error(chalk.yellow(`警告：无法恢复模型 ${savedProvider}/${savedModelId}（${reason}）。`));
 	}
 
 	// If we already have a model, use it as fallback
 	if (currentModel) {
 		if (shouldPrintMessages) {
-			console.log(chalk.dim(`Falling back to: ${currentModel.provider}/${currentModel.id}`));
+			console.log(chalk.dim(`回退到：${currentModel.provider}/${currentModel.id}`));
 		}
 		return {
 			model: currentModel,
-			fallbackMessage: `Could not restore model ${savedProvider}/${savedModelId} (${reason}). Using ${currentModel.provider}/${currentModel.id}.`,
+			fallbackMessage: `无法恢复模型 ${savedProvider}/${savedModelId}（${reason}）。改用 ${currentModel.provider}/${currentModel.id}。`,
 		};
 	}
 
@@ -693,12 +693,12 @@ export async function restoreModelFromSession(
 		}
 
 		if (shouldPrintMessages) {
-			console.log(chalk.dim(`Falling back to: ${fallbackModel.provider}/${fallbackModel.id}`));
+			console.log(chalk.dim(`回退到：${fallbackModel.provider}/${fallbackModel.id}`));
 		}
 
 		return {
 			model: fallbackModel,
-			fallbackMessage: `Could not restore model ${savedProvider}/${savedModelId} (${reason}). Using ${fallbackModel.provider}/${fallbackModel.id}.`,
+			fallbackMessage: `无法恢复模型 ${savedProvider}/${savedModelId}（${reason}）。改用 ${fallbackModel.provider}/${fallbackModel.id}。`,
 		};
 	}
 

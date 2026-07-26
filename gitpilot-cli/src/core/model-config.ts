@@ -252,7 +252,7 @@ export class ModelConfig {
 		} catch (error) {
 			return new ModelConfig(
 				new Map(),
-				`Failed to parse models.json: ${error instanceof Error ? error.message : error}\n\nFile: ${path}`,
+				`解析 models.json 失败：${error instanceof Error ? error.message : error}\n\n文件：${path}`,
 			);
 		}
 

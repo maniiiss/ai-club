@@ -183,7 +183,7 @@ describe("AgentSession auto-compaction queue resume", () => {
 			type: "compaction_end",
 			reason: "overflow",
 			errorMessage:
-				"Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.",
+				"一次压缩重试后上下文溢出恢复失败。请尝试减少上下文或切换到更大上下文窗口的模型。",
 		});
 	});
 

@@ -34,6 +34,10 @@ export interface CliModel {
 	modelName: string;
 	description?: string;
 	openaiApiMode?: string;
+	/** 平台配置的上下文窗口长度（token），未配置时为 undefined，toModelConfig 回退默认。 */
+	contextLength?: number;
+	/** 平台配置的最大输出 token 数，未配置时为 undefined，toModelConfig 回退默认。 */
+	maxOutputTokens?: number;
 }
 
 export interface ModelSession {
@@ -121,3 +125,53 @@ export const createModelSession = (platformUrl: string, token: string, modelConf
 		body: { modelConfigId, clientVersion: CLI_CLIENT_VERSION },
 		token,
 	});
+
+/** 平台分页响应（与后端 PageResponse<T> 对应）。 */
+export interface PageResponse<T> {
+	records: T[];
+	total: number;
+	page: number;
+	size: number;
+	totalPages: number;
+}
+
+/** CLI 需求列表项（与后端 CliDtos.CliTaskSummary 对应）。 */
+export interface CliTaskSummary {
+	id: number;
+	workItemCode: string;
+	name: string;
+	status: string;
+	priority: string | null;
+	assignee: string | null;
+	taskType: string | null;
+	projectId: number | null;
+	projectName: string | null;
+	iterationId: number | null;
+	iterationName: string | null;
+	planStartDate: string | null;
+	planEndDate: string | null;
+	requirementMarkdown: string | null;
+}
+
+/** /requirement 命令查询参数（首版仅交互式使用，全部可空）。 */
+export interface ListMyTasksParams {
+	page?: number;
+	size?: number;
+	status?: string;
+	priority?: string;
+	projectId?: number;
+	keyword?: string;
+}
+
+/** 列出当前 CLI 用户负责的需求（workItemType=需求）。 */
+export const listMyTasks = (platformUrl: string, token: string, params: ListMyTasksParams = {}) => {
+	const query = new URLSearchParams();
+	if (params.page != null) query.set("page", String(params.page));
+	if (params.size != null) query.set("size", String(params.size));
+	if (params.status) query.set("status", params.status);
+	if (params.priority) query.set("priority", params.priority);
+	if (params.projectId != null) query.set("projectId", String(params.projectId));
+	if (params.keyword) query.set("keyword", params.keyword);
+	const qs = query.toString();
+	return requestJson<PageResponse<CliTaskSummary>>(platformUrl, `/api/cli/tasks${qs ? `?${qs}` : ""}`, { token });
+};

@@ -299,7 +299,7 @@ describe("AgentSessionRuntime characterization", () => {
 		expect(leafId).toBeTruthy();
 
 		await expect(runtime.fork(leafId!, { position: "at" })).rejects.toThrow(
-			"This session has not been saved yet. Wait for the first assistant response before cloning or forking it.",
+			"此会话尚未保存。请等待首次智能体响应后再克隆或分叉。",
 		);
 	});
 

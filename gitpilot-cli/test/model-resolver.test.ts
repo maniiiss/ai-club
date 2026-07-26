@@ -121,7 +121,7 @@ describe("parseModelPattern", () => {
 			const result = parseModelPattern("sonnet:random", allModels);
 			expect(result.model?.id).toBe("claude-sonnet-4-5");
 			expect(result.thinkingLevel).toBeUndefined();
-			expect(result.warning).toContain("Invalid thinking level");
+			expect(result.warning).toContain("思考级别");
 			expect(result.warning).toContain("random");
 		});
 
@@ -129,7 +129,7 @@ describe("parseModelPattern", () => {
 			const result = parseModelPattern("gpt-4o:invalid", allModels);
 			expect(result.model?.id).toBe("gpt-4o");
 			expect(result.thinkingLevel).toBeUndefined();
-			expect(result.warning).toContain("Invalid thinking level");
+			expect(result.warning).toContain("思考级别");
 		});
 	});
 
@@ -177,7 +177,7 @@ describe("parseModelPattern", () => {
 			const result = parseModelPattern("qwen/qwen3-coder:exacto:random", allModels);
 			expect(result.model?.id).toBe("qwen/qwen3-coder:exacto");
 			expect(result.thinkingLevel).toBeUndefined();
-			expect(result.warning).toContain("Invalid thinking level");
+			expect(result.warning).toContain("思考级别");
 			expect(result.warning).toContain("random");
 		});
 
@@ -185,7 +185,7 @@ describe("parseModelPattern", () => {
 			const result = parseModelPattern("qwen/qwen3-coder:exacto:high:random", allModels);
 			expect(result.model?.id).toBe("qwen/qwen3-coder:exacto");
 			expect(result.thinkingLevel).toBeUndefined();
-			expect(result.warning).toContain("Invalid thinking level");
+			expect(result.warning).toContain("思考级别");
 			expect(result.warning).toContain("random");
 		});
 	});
@@ -203,7 +203,7 @@ describe("parseModelPattern", () => {
 			// Empty string after colon is not a valid thinking level
 			// So it tries to match "sonnet:" which won't match, then tries "sonnet"
 			expect(result.model?.id).toBe("claude-sonnet-4-5");
-			expect(result.warning).toContain("Invalid thinking level");
+			expect(result.warning).toContain("思考级别");
 		});
 	});
 });
@@ -224,12 +224,12 @@ describe("resolveModelScopeWithDiagnostics", () => {
 			expect(result.diagnostics).toEqual([
 				{
 					type: "warning",
-					message: 'Invalid thinking level "invalid" in pattern "gpt-4o:invalid". Using default instead.',
+					message: '模式 "gpt-4o:invalid" 中的思考级别 "invalid" 无效。改为使用默认值。',
 					pattern: "gpt-4o:invalid",
 				},
 				{
 					type: "warning",
-					message: 'No models match pattern "missing"',
+					message: '没有模型匹配模式 "missing"',
 					pattern: "missing",
 				},
 			]);
@@ -250,7 +250,7 @@ describe("resolveModelScopeWithDiagnostics", () => {
 
 			expect(scopedModels).toEqual([]);
 			expect(warn).toHaveBeenCalledOnce();
-			expect(warn.mock.calls[0][0]).toContain('Warning: No models match pattern "missing"');
+			expect(warn.mock.calls[0][0]).toContain('警告：没有模型匹配模式 "missing"');
 		} finally {
 			warn.mockRestore();
 		}
@@ -363,7 +363,7 @@ describe("resolveCliModel", () => {
 		});
 
 		expect(result.model).toBeUndefined();
-		expect(result.error).toContain("No models available");
+		expect(result.error).toContain("没有可用模型");
 	});
 
 	test("prefers provider/model split over gateway model with matching id", () => {

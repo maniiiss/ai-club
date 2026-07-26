@@ -41,7 +41,9 @@ class ModelConfigServiceIntegrationTests {
                 ModelConfigService.OPENAI_API_MODE_AUTO,
                 "chat-key",
                 "默认对话模型",
-                true
+                true,
+                null,
+                null
         ));
         AiModelConfigSummary embeddingModel = modelConfigService.createConfig(new AiModelConfigRequest(
                 "知识检索向量",
@@ -52,7 +54,9 @@ class ModelConfigServiceIntegrationTests {
                 ModelConfigService.OPENAI_API_MODE_AUTO,
                 "embedding-key",
                 "默认向量模型",
-                true
+                true,
+                null,
+                null
         ));
 
         List<AiModelConfigSummary> defaultOptions = modelConfigService.listEnabledOptions();
@@ -101,7 +105,9 @@ class ModelConfigServiceIntegrationTests {
                     ModelConfigService.OPENAI_API_MODE_AUTO,
                     "embedding-key",
                     "本地测试服务",
-                    true
+                    true,
+                    null,
+                    null
             ));
 
             ModelTestResult result = modelConfigService.testConfig(embeddingModel.id());
@@ -128,7 +134,9 @@ class ModelConfigServiceIntegrationTests {
                 ModelConfigService.OPENAI_API_MODE_AUTO,
                 "embedding-key",
                 "向量模型",
-                true
+                true,
+                null,
+                null
         ));
 
         assertThatThrownBy(() -> modelConfigService.invokePrompt(embeddingModel.id(), "system", "user"))
@@ -165,7 +173,9 @@ class ModelConfigServiceIntegrationTests {
                     ModelConfigService.OPENAI_API_MODE_AUTO,
                     "vision-key",
                     "视觉请求测试",
-                    true
+                    true,
+                    null,
+                    null
             ));
 
             ModelConfigService.ModelInvocation invocation = modelConfigService.invokeVisionPromptWithUsage(
@@ -206,7 +216,7 @@ class ModelConfigServiceIntegrationTests {
             AiModelConfigSummary model = modelConfigService.createConfig(new AiModelConfigRequest(
                     "Chat 视觉模型", ModelConfigService.MODEL_TYPE_CHAT, ModelConfigService.PROVIDER_OPENAI,
                     "http://127.0.0.1:" + server.getAddress().getPort(), "vision-chat",
-                    ModelConfigService.OPENAI_API_MODE_CHAT_COMPLETIONS, "vision-key", "", true));
+                    ModelConfigService.OPENAI_API_MODE_CHAT_COMPLETIONS, "vision-key", "", true, null, null));
 
             ModelConfigService.ModelInvocation invocation = modelConfigService.invokeVisionPromptWithUsage(
                     modelConfigService.resolveModelConfig(model.id()), "系统提示", "描述图片",
@@ -242,7 +252,7 @@ class ModelConfigServiceIntegrationTests {
             AiModelConfigSummary model = modelConfigService.createConfig(new AiModelConfigRequest(
                     "Anthropic 视觉模型", ModelConfigService.MODEL_TYPE_CHAT, ModelConfigService.PROVIDER_ANTHROPIC,
                     "http://127.0.0.1:" + server.getAddress().getPort(), "claude-vision",
-                    ModelConfigService.OPENAI_API_MODE_AUTO, "vision-key", "", true));
+                    ModelConfigService.OPENAI_API_MODE_AUTO, "vision-key", "", true, null, null));
 
             ModelConfigService.ModelInvocation invocation = modelConfigService.invokeVisionPromptWithUsage(
                     modelConfigService.resolveModelConfig(model.id()), "系统提示", "描述图片",

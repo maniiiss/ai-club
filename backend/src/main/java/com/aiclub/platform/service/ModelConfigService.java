@@ -343,6 +343,8 @@ public class ModelConfigService {
         entity.setApiBaseUrl(resolveApiBaseUrl(provider, modelType, request.apiBaseUrl()));
         entity.setModelName(request.modelName().trim());
         entity.setOpenaiApiMode(normalizeOpenAiApiMode(provider, request.openaiApiMode()));
+        entity.setContextLength(request.contextLength());
+        entity.setMaxOutputTokens(request.maxOutputTokens());
         entity.setDescription(request.description() == null ? "" : request.description().trim());
         entity.setEnabled(request.enabled() == null || request.enabled());
 
@@ -390,7 +392,9 @@ public class ModelConfigService {
                 normalizeOpenAiApiMode(entity.getProvider(), entity.getOpenaiApiMode()),
                 hasText(entity.getApiKeyCiphertext()),
                 entity.getDescription(),
-                entity.getEnabled()
+                entity.getEnabled(),
+                entity.getContextLength(),
+                entity.getMaxOutputTokens()
         );
     }
 

@@ -305,6 +305,12 @@
               <el-option v-for="item in openAiApiModeOptions" :key="item.value" :label="item.label" :value="item.value" />
             </el-select>
           </el-form-item>
+          <el-form-item label="上下文长度" prop="contextLength">
+            <el-input-number v-model="form.contextLength" :min="0" :step="1000" controls-position="right" style="width: 100%" placeholder="如 128000" />
+          </el-form-item>
+          <el-form-item label="最大输出" prop="maxOutputTokens">
+            <el-input-number v-model="form.maxOutputTokens" :min="0" :step="1000" controls-position="right" style="width: 100%" placeholder="如 16384" />
+          </el-form-item>
           <el-form-item label="API 密钥" prop="apiKey">
             <el-input
               v-model="form.apiKey"
@@ -372,6 +378,12 @@
             <el-select v-model="form.openaiApiMode" style="width: 100%">
               <el-option v-for="item in openAiApiModeOptions" :key="item.value" :label="item.label" :value="item.value" />
             </el-select>
+          </el-form-item>
+          <el-form-item label="上下文长度" prop="contextLength">
+            <el-input-number v-model="form.contextLength" :min="0" :step="1000" controls-position="right" style="width: 100%" placeholder="如 128000" />
+          </el-form-item>
+          <el-form-item label="最大输出" prop="maxOutputTokens">
+            <el-input-number v-model="form.maxOutputTokens" :min="0" :step="1000" controls-position="right" style="width: 100%" placeholder="如 16384" />
           </el-form-item>
           <el-form-item label="API 密钥" prop="apiKey">
             <el-input
@@ -450,6 +462,8 @@ interface ModelForm {
   apiKey: string
   description: string
   enabled: boolean
+  contextLength?: number
+  maxOutputTokens?: number
 }
 
 const loading = ref(false)
@@ -492,7 +506,9 @@ const form = reactive<ModelForm>({
   openaiApiMode: 'AUTO',
   apiKey: '',
   description: '',
-  enabled: true
+  enabled: true,
+  contextLength: undefined,
+  maxOutputTokens: undefined
 })
 
 const availableProviderOptions = computed(() =>
@@ -571,6 +587,8 @@ const resetForm = () => {
   form.apiKey = ''
   form.description = ''
   form.enabled = true
+  form.contextLength = undefined
+  form.maxOutputTokens = undefined
   formRef.value?.clearValidate()
 }
 
@@ -636,6 +654,8 @@ const fillForm = (row: AiModelConfigItem) => {
   form.apiKey = ''
   form.description = row.description
   form.enabled = row.enabled
+  form.contextLength = row.contextLength
+  form.maxOutputTokens = row.maxOutputTokens
 }
 
 const openDetailDialog = (row: AiModelConfigItem) => {

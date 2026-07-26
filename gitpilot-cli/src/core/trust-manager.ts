@@ -65,12 +65,12 @@ export function getProjectTrustParentPath(cwd: string): string | undefined {
 export function getProjectTrustOptions(cwd: string, options?: { includeSessionOnly?: boolean }): ProjectTrustOption[] {
 	const trustPath = normalizeCwd(cwd);
 	const trustOptions: ProjectTrustOption[] = [
-		{ label: "Trust", trusted: true, updates: [{ path: trustPath, decision: true }], savedPath: trustPath },
+		{ label: "信任", trusted: true, updates: [{ path: trustPath, decision: true }], savedPath: trustPath },
 	];
 	const parentPath = getProjectTrustParentPath(cwd);
 	if (parentPath !== undefined) {
 		trustOptions.push({
-			label: `Trust parent folder (${parentPath})`,
+			label: `信任父文件夹（${parentPath}）`,
 			trusted: true,
 			updates: [
 				{ path: parentPath, decision: true },
@@ -80,16 +80,16 @@ export function getProjectTrustOptions(cwd: string, options?: { includeSessionOn
 		});
 	}
 	if (options?.includeSessionOnly) {
-		trustOptions.push({ label: "Trust (this session only)", trusted: true, updates: [] });
+		trustOptions.push({ label: "信任（仅本次会话）", trusted: true, updates: [] });
 	}
 	trustOptions.push({
-		label: "Do not trust",
+		label: "不信任",
 		trusted: false,
 		updates: [{ path: trustPath, decision: false }],
 		savedPath: trustPath,
 	});
 	if (options?.includeSessionOnly) {
-		trustOptions.push({ label: "Do not trust (this session only)", trusted: false, updates: [] });
+		trustOptions.push({ label: "不信任（仅本次会话）", trusted: false, updates: [] });
 	}
 	return trustOptions;
 }
@@ -104,17 +104,17 @@ function readTrustFile(path: string): TrustFile {
 		parsed = JSON.parse(readFileSync(path, "utf-8"));
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(`Failed to read trust store ${path}: ${message}`);
+		throw new Error(`读取信任存储 ${path} 失败：${message}`);
 	}
 
 	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-		throw new Error(`Invalid trust store ${path}: expected an object`);
+		throw new Error(`无效的信任存储 ${path}：应为对象`);
 	}
 
 	const data: TrustFile = {};
 	for (const [key, value] of Object.entries(parsed)) {
 		if (value !== true && value !== false && value !== null) {
-			throw new Error(`Invalid trust store ${path}: value for ${JSON.stringify(key)} must be true, false, or null`);
+			throw new Error(`无效的信任存储 ${path}：键 ${JSON.stringify(key)} 的值必须为 true、false 或 null`);
 		}
 		data[key] = value;
 	}
@@ -162,7 +162,7 @@ function acquireTrustLockSync(path: string): () => void {
 	if (lastError instanceof Error) {
 		throw lastError;
 	}
-	throw new Error("Failed to acquire trust store lock");
+	throw new Error("获取信任存储锁失败");
 }
 
 function withTrustFileLock<T>(path: string, fn: () => T): T {

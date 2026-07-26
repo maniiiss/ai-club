@@ -1157,7 +1157,7 @@ export class AgentSession {
 			if (this.isStreaming) {
 				if (!options?.streamingBehavior) {
 					throw new Error(
-						"Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
+						"智能体正在处理中。请指定 streamingBehavior（'steer' 或 'followUp'）以排队消息。",
 					);
 				}
 				if (options.streamingBehavior === "followUp") {
@@ -1801,7 +1801,7 @@ export class AgentSession {
 				if (lastEntry?.type === "compaction") {
 					throw new Error("Already compacted");
 				}
-				throw new Error("Nothing to compact (session too small)");
+				throw new Error("无需压缩（会话过小）");
 			}
 
 			let extensionCompaction: CompactionResult | undefined;
@@ -1993,7 +1993,7 @@ export class AgentSession {
 					aborted: false,
 					willRetry: false,
 					errorMessage:
-						"Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.",
+						"一次压缩重试后上下文溢出恢复失败。请尝试减少上下文或切换到更大上下文窗口的模型。",
 				});
 				return false;
 			}
@@ -2899,7 +2899,7 @@ export class AgentSession {
 
 		// Model required for summarization
 		if (options.summarize && !this.model) {
-			throw new Error("No model available for summarization");
+			throw new Error("没有可用于摘要的模型");
 		}
 
 		const targetEntry = this.sessionManager.getEntry(targetId);

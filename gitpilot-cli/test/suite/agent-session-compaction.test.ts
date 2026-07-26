@@ -153,14 +153,14 @@ describe("AgentSession compaction characterization", () => {
 		harnesses.push(harness);
 		harness.session.agent.state.model = undefined as unknown as Model<any>;
 
-		await expect(harness.session.compact()).rejects.toThrow("No model selected");
+		await expect(harness.session.compact()).rejects.toThrow("未选择模型");
 	});
 
 	it("throws when compacting without configured auth", async () => {
 		const harness = await createHarness({ withConfiguredAuth: false });
 		harnesses.push(harness);
 
-		await expect(harness.session.compact()).rejects.toThrow(`No API key found for ${harness.getModel().provider}.`);
+		await expect(harness.session.compact()).rejects.toThrow(`未找到 ${harness.getModel().provider} 的 API 密钥`);
 	});
 
 	it("manually compacts with a custom streamFn when registry auth is absent", async () => {
@@ -289,7 +289,7 @@ describe("AgentSession compaction characterization", () => {
 
 		expect(runAutoCompactionSpy).toHaveBeenCalledTimes(1);
 		expect(compactionErrors).toContain(
-			"Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.",
+			"一次压缩重试后上下文溢出恢复失败。请尝试减少上下文或切换到更大上下文窗口的模型。",
 		);
 	});
 

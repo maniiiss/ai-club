@@ -43,6 +43,18 @@ public class AiModelConfigEntity {
     @Column(name = "openai_api_mode", nullable = false, length = 40)
     private String openaiApiMode = "AUTO";
 
+    /**
+     * 模型上下文窗口长度（token），用于 GitPilot CLI 展示与自动压缩阈值判断；为空时 CLI 回退默认。
+     */
+    @Column(name = "context_length")
+    private Integer contextLength;
+
+    /**
+     * 模型最大输出 token 数；为空时 CLI 回退默认。
+     */
+    @Column(name = "max_output_tokens")
+    private Integer maxOutputTokens;
+
     @Column(name = "api_key_ciphertext", nullable = false, columnDefinition = "TEXT")
     private String apiKeyCiphertext;
 
@@ -124,6 +136,22 @@ public class AiModelConfigEntity {
 
     public void setOpenaiApiMode(String openaiApiMode) {
         this.openaiApiMode = openaiApiMode;
+    }
+
+    public Integer getContextLength() {
+        return contextLength;
+    }
+
+    public void setContextLength(Integer contextLength) {
+        this.contextLength = contextLength;
+    }
+
+    public Integer getMaxOutputTokens() {
+        return maxOutputTokens;
+    }
+
+    public void setMaxOutputTokens(Integer maxOutputTokens) {
+        this.maxOutputTokens = maxOutputTokens;
     }
 
     public String getApiKeyCiphertext() {

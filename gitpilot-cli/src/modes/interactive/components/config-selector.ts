@@ -32,10 +32,10 @@ export type ScopedResolvedPaths = Record<ConfigWriteScope, ResolvedPaths>;
 const RESOURCE_TYPES = ["extensions", "skills", "prompts", "themes"] as const satisfies readonly ResourceType[];
 
 const RESOURCE_TYPE_LABELS: Record<ResourceType, string> = {
-	extensions: "Extensions",
-	skills: "Skills",
-	prompts: "Prompts",
-	themes: "Themes",
+	extensions: "扩展",
+	skills: "技能",
+	prompts: "提示",
+	themes: "主题",
 };
 
 interface ResourceItem {
@@ -88,12 +88,12 @@ function getGroupLabel(metadata: PathMetadata, agentDir: string): string {
 	if (metadata.source === "auto") {
 		if (metadata.baseDir) {
 			return metadata.scope === "user"
-				? `User (${formatBaseDir(metadata.baseDir)})`
-				: `Project (${formatBaseDir(metadata.baseDir)})`;
+				? `用户 (${formatBaseDir(metadata.baseDir)})`
+				: `项目 (${formatBaseDir(metadata.baseDir)})`;
 		}
-		return metadata.scope === "user" ? `User (${formatBaseDir(agentDir)})` : `Project (${CONFIG_DIR_NAME}/)`;
+		return metadata.scope === "user" ? `用户 (${formatBaseDir(agentDir)})` : `项目 (${CONFIG_DIR_NAME}/)`;
 	}
-	return metadata.scope === "user" ? "User settings" : "Project settings";
+	return metadata.scope === "user" ? "用户设置" : "项目设置";
 }
 
 function buildGroups(resolved: ResolvedPaths, agentDir: string): ResourceGroup[] {
@@ -200,16 +200,16 @@ class ConfigSelectorHeader implements Component {
 	invalidate(): void {}
 
 	render(width: number): string[] {
-		const title = theme.bold(this.writeScope === "project" ? "Project Local Resources" : "Global Resources");
+		const title = theme.bold(this.writeScope === "project" ? "项目本地资源" : "全局资源");
 		const sep = theme.fg("muted", " · ");
-		const switchHint = this.projectModeAvailable ? keyHint("tui.input.tab", "switch mode") + sep : "";
+		const switchHint = this.projectModeAvailable ? keyHint("tui.input.tab", "切换模式") + sep : "";
 		const actionHint =
-			this.writeScope === "project" ? rawKeyHint("space", "cycle inherit/+/-") : rawKeyHint("space", "toggle");
-		const hint = switchHint + actionHint + sep + rawKeyHint("esc", "close");
+			this.writeScope === "project" ? rawKeyHint("space", "循环 继承/+/-") : rawKeyHint("space", "切换");
+		const hint = switchHint + actionHint + sep + rawKeyHint("esc", "关闭");
 		const spacing = Math.max(1, width - visibleWidth(title) - visibleWidth(hint));
 		const scopeHint =
 			this.writeScope === "project"
-				? theme.fg("muted", `${CONFIG_DIR_NAME}/settings.json · inherited global resources are dimmed`)
+				? theme.fg("muted", `${CONFIG_DIR_NAME}/settings.json · 继承的全局资源将灰显`)
 				: theme.fg("muted", `~/${CONFIG_DIR_NAME}/agent/settings.json`);
 
 		return [
@@ -397,7 +397,7 @@ class ResourceList implements Component, Focusable {
 		lines.push("");
 
 		if (this.filteredItems.length === 0) {
-			lines.push(theme.fg("muted", "  No resources found"));
+			lines.push(theme.fg("muted", "  未找到资源"));
 			return lines;
 		}
 
@@ -415,7 +415,7 @@ class ResourceList implements Component, Focusable {
 			if (entry.type === "group") {
 				// Main group header (no cursor)
 				const inherited = this.writeScope === "project" && entry.group.scope === "user";
-				const label = theme.bold(`${entry.group.label}${inherited ? " · inherited global" : ""}`);
+				const label = theme.bold(`${entry.group.label}${inherited ? " · 继承全局" : ""}`);
 				const groupLine = theme.fg(inherited ? "dim" : "accent", label);
 				lines.push(truncateToWidth(`  ${groupLine}`, width, ""));
 			} else if (entry.type === "subgroup") {
@@ -649,9 +649,9 @@ class ResourceList implements Component, Focusable {
 	private getItemSuffix(item: ResourceItem): string {
 		if (this.writeScope !== "project") return "";
 		const state = this.getProjectOverrideState(item);
-		if (state === "load") return theme.fg("muted", "  project load");
-		if (state === "unload") return theme.fg("muted", "  project unload");
-		return this.isInheritedGlobalItem(item) ? theme.fg("dim", "  inherited global") : "";
+		if (state === "load") return theme.fg("muted", "  项目加载");
+		if (state === "unload") return theme.fg("muted", "  项目卸载");
+		return this.isInheritedGlobalItem(item) ? theme.fg("dim", "  继承全局") : "";
 	}
 
 	private isDimmedItem(item: ResourceItem): boolean {

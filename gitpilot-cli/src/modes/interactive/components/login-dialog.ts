@@ -39,7 +39,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 		this.onComplete = onComplete;
 
 		const providerName = providerNameOverride || providerId;
-		const title = titleOverride ?? `Login to ${providerName}`;
+		const title = titleOverride ?? `登录 ${providerName}`;
 
 		// Top border
 		this.addChild(new DynamicBorder());
@@ -83,11 +83,11 @@ export class LoginDialogComponent extends Container implements Focusable {
 	private cancel(): void {
 		this.abortController.abort();
 		if (this.inputRejecter) {
-			this.inputRejecter(new Error("Login cancelled"));
+			this.inputRejecter(new Error("登录已取消"));
 			this.inputResolver = undefined;
 			this.inputRejecter = undefined;
 		}
-		this.onComplete(false, "Login cancelled");
+		this.onComplete(false, "登录已取消");
 	}
 
 	/**
@@ -99,7 +99,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 		const linkedUrl = `\x1b]8;;${url}\x07${url}\x1b]8;;\x07`;
 		this.contentContainer.addChild(new Text(theme.fg("accent", linkedUrl), 1, 0));
 
-		const clickHint = process.platform === "darwin" ? "Cmd+click to open" : "Ctrl+click to open";
+		const clickHint = process.platform === "darwin" ? "Cmd+点击打开" : "Ctrl+点击打开";
 		const hyperlink = `\x1b]8;;${url}\x07${clickHint}\x1b]8;;\x07`;
 		this.contentContainer.addChild(new Text(theme.fg("dim", hyperlink), 1, 0));
 
@@ -121,11 +121,11 @@ export class LoginDialogComponent extends Container implements Focusable {
 		const linkedUrl = `\x1b]8;;${info.verificationUri}\x07${info.verificationUri}\x1b]8;;\x07`;
 		this.contentContainer.addChild(new Text(theme.fg("accent", linkedUrl), 1, 0));
 
-		const clickHint = process.platform === "darwin" ? "Cmd+click to open" : "Ctrl+click to open";
+		const clickHint = process.platform === "darwin" ? "Cmd+点击打开" : "Ctrl+点击打开";
 		const hyperlink = `\x1b]8;;${info.verificationUri}\x07${clickHint}\x1b]8;;\x07`;
 		this.contentContainer.addChild(new Text(theme.fg("dim", hyperlink), 1, 0));
 		this.contentContainer.addChild(new Spacer(1));
-		this.contentContainer.addChild(new Text(theme.fg("warning", `Enter code: ${info.userCode}`), 1, 0));
+		this.contentContainer.addChild(new Text(theme.fg("warning", `输入验证码：${info.userCode}`), 1, 0));
 
 		this.tui.requestRender();
 	}
@@ -138,7 +138,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 		this.contentContainer.addChild(new Spacer(1));
 		this.contentContainer.addChild(new Text(theme.fg("dim", prompt), 1, 0));
 		this.contentContainer.addChild(this.input);
-		this.contentContainer.addChild(new Text(`(${keyHint("tui.select.cancel", "to cancel")})`, 1, 0));
+		this.contentContainer.addChild(new Text(`(${keyHint("tui.select.cancel", "取消")})`, 1, 0));
 		this.tui.requestRender();
 
 		return new Promise((resolve, reject) => {
@@ -155,12 +155,12 @@ export class LoginDialogComponent extends Container implements Focusable {
 		this.contentContainer.addChild(new Spacer(1));
 		this.contentContainer.addChild(new Text(theme.fg("text", message), 1, 0));
 		if (placeholder) {
-			this.contentContainer.addChild(new Text(theme.fg("dim", `e.g., ${placeholder}`), 1, 0));
+			this.contentContainer.addChild(new Text(theme.fg("dim", `例如 ${placeholder}`), 1, 0));
 		}
 		this.contentContainer.addChild(this.input);
 		this.contentContainer.addChild(
 			new Text(
-				`(${keyHint("tui.select.cancel", "to cancel,")} ${keyHint("tui.select.confirm", "to submit")})`,
+				`(${keyHint("tui.select.cancel", "取消，")} ${keyHint("tui.select.confirm", "提交")})`,
 				1,
 				0,
 			),
@@ -196,7 +196,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 		}
 		if (showCloseHint) {
 			this.contentContainer.addChild(new Spacer(1));
-			this.contentContainer.addChild(new Text(`(${keyHint("tui.select.cancel", "to close")})`, 1, 0));
+			this.contentContainer.addChild(new Text(`(${keyHint("tui.select.cancel", "关闭")})`, 1, 0));
 		}
 		this.tui.requestRender();
 	}
@@ -207,7 +207,7 @@ export class LoginDialogComponent extends Container implements Focusable {
 	showWaiting(message: string): void {
 		this.contentContainer.addChild(new Spacer(1));
 		this.contentContainer.addChild(new Text(theme.fg("dim", message), 1, 0));
-		this.contentContainer.addChild(new Text(`(${keyHint("tui.select.cancel", "to cancel")})`, 1, 0));
+		this.contentContainer.addChild(new Text(`(${keyHint("tui.select.cancel", "取消")})`, 1, 0));
 		this.tui.requestRender();
 	}
 

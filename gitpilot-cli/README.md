@@ -33,17 +33,15 @@ gitpilot                      # 在当前仓库启动交互式 Coding Agent
 gitpilot exec -p "指令"        # 单轮非交互执行
 ```
 
-进入交互式 GitPilot 后，输入 `/` 呼出命令菜单。平台对接命令：
+进入交互式 GitPilot 后，输入 `/` 呼出命令菜单。平台对接复用 Pi 原生命令：
 
-- `/gitpilot login [平台地址]`：设备授权登录，长期令牌保存在系统凭据库。
-- `/gitpilot logout`：撤销并清除令牌。
-- `/gitpilot status`：查看当前登录状态。
-
-登录后通过 `/model`（或 Ctrl+L）选择平台模型即可开始推理；模型会话令牌（`gms_`）短期签发并自动续期，上游真实密钥与模型地址不进入本地。
+- `/login`：选择 GitPilot 平台登录项，走设备授权；首次会提示输入平台地址，长期令牌（`gpt_`）保存在系统凭据库。
+- `/logout`：退出登录。
+- `/model`（或 Ctrl+L）：选择平台模型开始推理。`/model` 只显示平台已配置的 CHAT 模型（已移除 pi 内置的 anthropic/openai 等 provider），模型会话令牌（`gms_`）短期签发并自动续期，上游真实密钥与模型地址不进入本地。
 
 ## 平台地址配置
 
-优先级：环境变量 `GITPILOT_PLATFORM_URL` > `~/.gitpilot/agent/platform.json` > `/gitpilot login` 时输入。
+优先级：环境变量 `GITPILOT_PLATFORM_URL` > `~/.gitpilot/agent/platform.json` > `/login` 时输入。
 
 ## 凭据与安全边界
 
@@ -59,8 +57,7 @@ src/extensions/gitpilot/
   credentials.ts     # gpt_ token 的 keyring 存取与进程内缓存
   api.ts             # 平台 CLI HTTP 客户端（设备授权 / 模型会话 / 模型清单）
   session-cache.ts   # gms_ 模型会话缓存（带 TTL 自动重建）
-  platform-auth.ts   # /gitpilot login|logout|status 命令
-  platform-model.ts  # gitpilot provider + streamSimple 接平台模型代理
+  platform-model.ts  # gitpilot provider：oauth.login 设备授权 + refreshModels 拉平台模型 + streamSimple 接平台代理
   index.ts           # 内置 extension 入口
 ```
 

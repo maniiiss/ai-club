@@ -141,12 +141,12 @@ function migrateCommandsToPrompts(baseDir: string, label: string): boolean {
 	if (existsSync(commandsDir) && !existsSync(promptsDir)) {
 		try {
 			renameSync(commandsDir, promptsDir);
-			console.log(chalk.green(`Migrated ${label} commands/ → prompts/`));
+			console.log(chalk.green(`已迁移 ${label} commands/ -> prompts/`));
 			return true;
 		} catch (err) {
 			console.log(
 				chalk.yellow(
-					`Warning: Could not migrate ${label} commands/ to prompts/: ${err instanceof Error ? err.message : err}`,
+					`警告：无法迁移 ${label} commands/ 到 prompts/：${err instanceof Error ? err.message : err}`,
 				),
 			);
 		}
@@ -211,7 +211,7 @@ function migrateToolsToBin(): void {
 	}
 
 	if (movedAny) {
-		console.log(chalk.green(`Migrated managed binaries tools/ → bin/`));
+		console.log(chalk.green(`已迁移托管的二进制文件 tools/ -> bin/`));
 	}
 }
 
@@ -225,7 +225,7 @@ function checkDeprecatedExtensionDirs(baseDir: string, label: string): string[] 
 	const warnings: string[] = [];
 
 	if (existsSync(hooksDir)) {
-		warnings.push(`${label} hooks/ directory found. Hooks have been renamed to extensions.`);
+		warnings.push(`${label} 发现 hooks/ 目录。Hooks 已重命名为扩展。`);
 	}
 
 	if (existsSync(toolsDir)) {
@@ -240,7 +240,7 @@ function checkDeprecatedExtensionDirs(baseDir: string, label: string): string[] 
 			});
 			if (customTools.length > 0) {
 				warnings.push(
-					`${label} tools/ directory contains custom tools. Custom tools have been merged into extensions.`,
+					`${label} tools/ 目录包含自定义工具。自定义工具已合并到扩展中。`,
 				);
 			}
 		} catch {
@@ -278,12 +278,12 @@ export async function showDeprecationWarnings(warnings: string[]): Promise<void>
 	if (warnings.length === 0) return;
 
 	for (const warning of warnings) {
-		console.log(chalk.yellow(`Warning: ${warning}`));
+		console.log(chalk.yellow(`警告：${warning}`));
 	}
-	console.log(chalk.yellow(`\nMove your extensions to the extensions/ directory.`));
-	console.log(chalk.yellow(`Migration guide: ${MIGRATION_GUIDE_URL}`));
-	console.log(chalk.yellow(`Documentation: ${EXTENSIONS_DOC_URL}`));
-	console.log(chalk.dim(`\nPress any key to continue...`));
+	console.log(chalk.yellow(`\n请将你的扩展移动到 extensions/ 目录。`));
+	console.log(chalk.yellow(`迁移指南：${MIGRATION_GUIDE_URL}`));
+	console.log(chalk.yellow(`文档：${EXTENSIONS_DOC_URL}`));
+	console.log(chalk.dim(`\n按任意键继续...`));
 
 	await new Promise<void>((resolve) => {
 		process.stdin.setRawMode?.(true);
