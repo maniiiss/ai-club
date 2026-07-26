@@ -82,6 +82,7 @@ platform:
       model-proxy-timeout-seconds: ${PLATFORM_GITPILOT_CLI_MODEL_PROXY_TIMEOUT_SECONDS:180}
       model-proxy-max-request-bytes: ${PLATFORM_GITPILOT_CLI_MODEL_PROXY_MAX_REQUEST_BYTES:4194304}
       public-base-url: ${PLATFORM_GITPILOT_CLI_PUBLIC_BASE_URL:${PLATFORM_FRONTEND_PUBLIC_BASE_URL:http://localhost:3000}}
+      download-base-url: ${PLATFORM_GITPILOT_CLI_DOWNLOAD_BASE_URL:}
   cloud-coding:
     # P0 只冻结协议和安全边界，Cloud Coding Session/REST 在 P1 实现前保持关闭。
     enabled: ${PLATFORM_CLOUD_CODING_ENABLED:false}

@@ -23,6 +23,7 @@ public class GitPilotCliProperties {
     private final int modelProxyTimeoutSeconds;
     private final int modelProxyMaxRequestBytes;
     private final String publicBaseUrl;
+    private final String downloadBaseUrl;
     private final boolean cloudCodingEnabled;
     private final boolean cloudCodingCliEnabled;
     private final String cloudCodingWorkerMode;
@@ -40,6 +41,7 @@ public class GitPilotCliProperties {
             @Value("${platform.gitpilot.cli.model-proxy-timeout-seconds:180}") int modelProxyTimeoutSeconds,
             @Value("${platform.gitpilot.cli.model-proxy-max-request-bytes:4194304}") int modelProxyMaxRequestBytes,
             @Value("${platform.gitpilot.cli.public-base-url:}") String publicBaseUrl,
+            @Value("${platform.gitpilot.cli.download-base-url:}") String downloadBaseUrl,
             @Value("${platform.cloud-coding.enabled:false}") boolean cloudCodingEnabled,
             @Value("${platform.cloud-coding.cli-enabled:false}") boolean cloudCodingCliEnabled,
             @Value("${platform.cloud-coding.worker-mode:LOCAL_PROCESS}") String cloudCodingWorkerMode,
@@ -54,6 +56,7 @@ public class GitPilotCliProperties {
         this.modelProxyTimeoutSeconds = clamp(modelProxyTimeoutSeconds, 30, 600);
         this.modelProxyMaxRequestBytes = clamp(modelProxyMaxRequestBytes, 65536, 16777216);
         this.publicBaseUrl = publicBaseUrl == null ? "" : publicBaseUrl.trim().replaceFirst("/+$", "");
+        this.downloadBaseUrl = downloadBaseUrl == null ? "" : downloadBaseUrl.trim().replaceFirst("/+$", "");
         this.cloudCodingEnabled = cloudCodingEnabled;
         this.cloudCodingCliEnabled = cloudCodingCliEnabled;
         this.cloudCodingWorkerMode = normalizeWorkerMode(cloudCodingWorkerMode);
@@ -75,7 +78,8 @@ public class GitPilotCliProperties {
                                  int modelProxyMaxRequestBytes,
                                  String publicBaseUrl) {
         this(enabled, deviceCodeTtlSeconds, pollIntervalSeconds, tokenTtlDays, modelSessionTtlSeconds,
-                modelProxyTimeoutSeconds, modelProxyMaxRequestBytes, publicBaseUrl, false, false,
+                modelProxyTimeoutSeconds, modelProxyMaxRequestBytes, publicBaseUrl, "",
+                false, false,
                 "LOCAL_PROCESS", ".env,.env.*,**/*.pem,**/*.key,**/*.p12,**/*.pfx", 3, 24);
     }
 
@@ -87,6 +91,7 @@ public class GitPilotCliProperties {
     public int modelProxyTimeoutSeconds() { return modelProxyTimeoutSeconds; }
     public int modelProxyMaxRequestBytes() { return modelProxyMaxRequestBytes; }
     public String publicBaseUrl() { return publicBaseUrl; }
+    public String downloadBaseUrl() { return downloadBaseUrl; }
     public boolean cloudCodingEnabled() { return cloudCodingEnabled; }
     public boolean cloudCodingCliEnabled() { return cloudCodingCliEnabled; }
     public String cloudCodingWorkerMode() { return cloudCodingWorkerMode; }

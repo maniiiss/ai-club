@@ -32,7 +32,7 @@ class GitPilotCliServiceTests {
     @Test
     void shouldRejectPublicCloudCodingWithLocalProcessWorker() {
         assertThatThrownBy(() -> new GitPilotCliProperties(true, 600, 5, 30, 900, 180, 4194304,
-                "http://localhost:3000", true, true, "LOCAL_PROCESS", ".env", 3, 24))
+                "http://localhost:3000", "", true, true, "LOCAL_PROCESS", ".env", 3, 24))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("CONTAINER");
     }

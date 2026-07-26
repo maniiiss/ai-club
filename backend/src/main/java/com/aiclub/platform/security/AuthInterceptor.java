@@ -113,6 +113,7 @@ public class AuthInterceptor implements HandlerInterceptor {
                 || requestUri.startsWith("/api/cicd/public/")
                 || requestUri.startsWith("/api/gitlab/public/")
                 || requestUri.startsWith("/api/common/public-files/")
+                || requestUri.startsWith("/api/public/gitpilot-cli/")
                 || requestUri.startsWith("/comment-images")
                 || requestUri.startsWith("/actuator/health")
                 || requestUri.startsWith("/error");
