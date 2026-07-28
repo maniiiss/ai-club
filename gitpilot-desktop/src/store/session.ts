@@ -227,13 +227,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
 		set({ _unsubs: unsubs });
 
-		// 非 Tauri（mock）模式下 refreshAll 由 onReady 触发；Tauri 模式等 rpc:ready
-		// 若 5 秒内未收到 ready，主动刷新一次（Rust 可能在 listen 注册前已发 ready）
-		setTimeout(() => {
-			if (get().connection === 'connecting') {
-				get().refreshAll();
-			}
-		}, 5000);
+		// rpc:ready 可能在 listen 注册前已发出（Rust setup 时即 emit），
+		// 不依赖 ready 事件，直接拉取状态；失败由 refreshAll 内部 catch 记录 error。
+		void get().refreshAll();
 	},
 
 	disconnect: async () => {

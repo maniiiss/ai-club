@@ -43,6 +43,7 @@ impl SidecarBridge {
 			std::thread::spawn(move || {
 				let reader = BufReader::new(stdout);
 				for line in reader.lines().flatten() {
+					eprintln!("[rpc] <- sidecar stdout: {}", line);
 					match serde_json::from_str::<Value>(&line) {
 						Ok(v) => {
 							let _ = app_clone.emit("rpc:event", v);
@@ -73,6 +74,7 @@ impl SidecarBridge {
 
 	/// 向 sidecar stdin 写入一行 JSONL 命令。
 	pub fn send(&self, line: &str) -> Result<(), String> {
+		eprintln!("[rpc] -> sidecar stdin: {}", line);
 		let mut guard = self.stdin.lock().map_err(|e| format!("stdin 锁失败: {e}"))?;
 		if let Some(stdin) = guard.as_mut() {
 			stdin

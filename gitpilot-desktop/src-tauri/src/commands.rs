@@ -12,5 +12,6 @@ use tauri::State;
 #[tauri::command]
 pub fn rpc_send(command: Value, state: State<'_, SidecarBridge>) -> Result<(), String> {
 	let line = serde_json::to_string(&command).map_err(|e| format!("序列化命令失败: {e}"))?;
+	eprintln!("[rpc] invoke rpc_send: {}", line);
 	state.send(&line)
 }

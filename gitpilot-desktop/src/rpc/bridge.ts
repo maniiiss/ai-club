@@ -122,19 +122,16 @@ export async function initBridge(): Promise<void> {
 		return;
 	}
 
-	// sidecar 就绪
-	listen('rpc:ready', () => {
-		readyCbs.forEach((cb) => cb());
-	});
-	// sidecar 断开
-	listen('rpc:disconnect', () => {
-		disconnectCbs.forEach((cb) => cb());
-	});
-
-	unlisten = await listen('rpc:event', (e) => {
-		const line = e.payload as RpcStreamLine;
-		dispatchLine(line);
-	});
+	// 注意：rpc:ready 在 Rust setup 时即 emit，可能早于此处 listen 注册完成，
+	// 因此不依赖 ready 事件触发刷新，改由 connect() 主动 refreshAll 拉取状态。
+	// listen 全部 fire-and-forget，避免阻塞 connect（曾因 await listen 卡住后续 refreshAll）。
+	void listen('rpc:ready', () => readyCbs.forEach((cb) => cb())).catch((e) => console.error('[bridge] listen rpc:ready failed', e));
+	void listen('rpc:disconnect', () => disconnectCbs.forEach((cb) => cb())).catch(() => {});
+	void listen('rpc:event', (e) => dispatchLine(e.payload as RpcStreamLine))
+		.then((u) => {
+			unlisten = u;
+		})
+		.catch((e) => console.error('[bridge] listen rpc:event failed', e));
 }
 
 export async function destroyBridge(): Promise<void> {
