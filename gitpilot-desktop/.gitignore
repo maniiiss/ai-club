@@ -21,3 +21,5 @@ src-tauri/resources/
 
 # 图标生成临时源图（由 gen-icon.mjs 生成，提交 src-tauri/icons 产物即可）
 app-icon.png
+app-icon.png.cp
+*.bun-build

@@ -49,9 +49,12 @@ export interface SourceInfo {
 	id?: string;
 }
 
-/** 会话树节点（pi SessionTreeNode 的桌面版消费视图） */
+/** 会话树节点（pi SessionTreeNode 的桌面版消费视图）。
+ * pi 实际结构为 { entry: SessionEntry, children: SessionTreeNode[] }，
+ * entry.id 为条目 id；sessionFile 在部分节点上提供。 */
 export interface SessionTreeNode {
-	id: string;
+	entry?: { id: string; type?: string; name?: string; sessionFile?: string; [k: string]: unknown };
+	id?: string;
 	name?: string;
 	sessionFile?: string;
 	isLeaf?: boolean;
@@ -96,6 +99,8 @@ export type RpcCommand =
 	| { id?: string; type: 'set_session_name'; name: string }
 	| { id?: string; type: 'export_html'; outputPath?: string }
 	| { id?: string; type: 'get_commands' }
+	// 桌面版登录后注入平台 gpt_ token（复用 sidecar saveCliToken）
+	| { id?: string; type: 'set_token'; platformUrl: string; token: string }
 	// 扩展 UI 响应
 	| { type: 'extension_ui_response'; id: string; value: string }
 	| { type: 'extension_ui_response'; id: string; confirmed: boolean }
@@ -144,6 +149,7 @@ export type RpcResponse =
 	| { id?: string; type: 'response'; command: 'set_session_name'; success: true }
 	| { id?: string; type: 'response'; command: 'export_html'; success: true; data: { path: string } }
 	| { id?: string; type: 'response'; command: 'get_commands'; success: true; data: { commands: RpcSlashCommand[] } }
+	| { id?: string; type: 'response'; command: 'set_token'; success: true }
 	| { id?: string; type: 'response'; command: string; success: false; error: string };
 
 // ============================================================================

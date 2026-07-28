@@ -24,6 +24,12 @@ import com.aiclub.platform.runtime.RuntimeChatResult;
 import com.aiclub.platform.runtime.RuntimeInvocationContext;
 import com.aiclub.platform.repository.ChatMessageRepository;
 import com.aiclub.platform.repository.ChatRoomRepository;
+import com.aiclub.platform.agentusage.AgentInvocationContext;
+import com.aiclub.platform.agentusage.AgentInvocationRecorder;
+import com.aiclub.platform.agentusage.AgentType;
+import com.aiclub.platform.agentusage.TriggerSource;
+import com.aiclub.platform.agentusage.UsageSink;
+import com.aiclub.platform.security.AuthContext;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -66,6 +72,10 @@ public class ChatAssistantService {
     private final AssistantConversationStateStore assistantConversationStateStore;
     private final AssistantMcpSessionTokenService assistantMcpSessionTokenService;
     private final RuntimeChatService runtimeChatService;
+    private final AgentInvocationRecorder agentInvocationRecorder;
+    private final AssistantProperties assistantProperties;
+    /** 按需下发工具选择器，可选（旧测试构造方式注入 null）。 */
+    private final PlatformToolSelector platformToolSelector;
     private final Set<Long> runningRoomIds = ConcurrentHashMap.newKeySet();
 
     @Autowired
@@ -76,7 +86,10 @@ public class ChatAssistantService {
                              ChatAttachmentService chatAttachmentService,
                              AssistantConversationStateStore assistantConversationStateStore,
                              AssistantMcpSessionTokenService assistantMcpSessionTokenService,
-                             RuntimeChatService runtimeChatService) {
+                             RuntimeChatService runtimeChatService,
+                             AgentInvocationRecorder agentInvocationRecorder,
+                             AssistantProperties assistantProperties,
+                             PlatformToolSelector platformToolSelector) {
         this.chatRoomRepository = chatRoomRepository;
         this.chatMessageRepository = chatMessageRepository;
         this.assistantGatewayService = assistantGatewayService;
@@ -85,6 +98,9 @@ public class ChatAssistantService {
         this.assistantConversationStateStore = assistantConversationStateStore;
         this.assistantMcpSessionTokenService = assistantMcpSessionTokenService;
         this.runtimeChatService = runtimeChatService;
+        this.agentInvocationRecorder = agentInvocationRecorder;
+        this.assistantProperties = assistantProperties;
+        this.platformToolSelector = platformToolSelector;
     }
 
     /** 兼容旧测试构造方式，默认所有聊天室任务走 Assistant Legacy。 */
@@ -96,7 +112,7 @@ public class ChatAssistantService {
                              AssistantConversationStateStore assistantConversationStateStore,
                              AssistantMcpSessionTokenService assistantMcpSessionTokenService) {
         this(chatRoomRepository, chatMessageRepository, assistantGatewayService, chatWebSocketPushService,
-                chatAttachmentService, assistantConversationStateStore, assistantMcpSessionTokenService, null);
+                chatAttachmentService, assistantConversationStateStore, assistantMcpSessionTokenService, null, null, null, null);
     }
 
     /**
@@ -106,7 +122,7 @@ public class ChatAssistantService {
                              ChatMessageRepository chatMessageRepository,
                              AssistantGatewayService assistantGatewayService,
                              ChatWebSocketPushService chatWebSocketPushService) {
-        this(chatRoomRepository, chatMessageRepository, assistantGatewayService, chatWebSocketPushService, null, null, null, null);
+        this(chatRoomRepository, chatMessageRepository, assistantGatewayService, chatWebSocketPushService, null, null, null, null, null, null, null);
     }
 
     @Transactional
@@ -531,12 +547,29 @@ public class ChatAssistantService {
                 : runtimeRegistryCode.trim().toUpperCase(Locale.ROOT);
         AssistantPromptBuilder.AssistantPrompt prompt = buildPrompt(room, preparedSession.sessionToken());
         if (runtimeChatService == null || runtimeChatService.isLegacy(normalizedRuntime)) {
-            AssistantGatewayService.AssistantGatewayResult result = assistantGatewayService.streamChatCompletion(
-                    prompt,
-                    transcript,
-                    delta -> deltaConsumer.accept(delta)
-            );
-            return new ChatExecutionResult(result.content());
+            // Hermes 流式对话埋点：默认 runtime，平台最大模型消耗来源。
+            // Pi Runtime 路径的 usage 落账见后续 follow-up（独立 AgentType）。
+            AgentInvocationRecorder.ManualHandle usageHandle = beginHermesChatTracking(preparedSession, room, prompt);
+            try {
+                AssistantGatewayService.AssistantGatewayResult result = assistantGatewayService.streamChatCompletion(
+                        prompt,
+                        transcript,
+                        delta -> deltaConsumer.accept(delta)
+                );
+                if (usageHandle != null) {
+                    UsageSink sink = usageHandle.sink();
+                    sink.setUsage(result.promptTokens(), result.completionTokens(), result.totalTokens());
+                    sink.setOutputChars(result.content() == null ? 0 : result.content().length());
+                    sink.setCorrelationId(result.responseId());
+                    usageHandle.commit();
+                }
+                return new ChatExecutionResult(result.content());
+            } catch (RuntimeException ex) {
+                if (usageHandle != null) {
+                    usageHandle.fail(ex);
+                }
+                throw ex;
+            }
         }
 
         Map<String, Object> requestBody = new LinkedHashMap<>();
@@ -555,11 +588,12 @@ public class ChatAssistantService {
         ).withConversationHistory(com.aiclub.platform.runtime.RuntimeConversationMessage
                 .fromAssistantTurns(transcript));
         AssistantToolExecutionPolicy toolExecutionPolicy = preparedSession.toolExecutionPolicy();
+        Set<String> selectedToolCodes = resolveSelectedToolCodes(preparedSession, room, transcript, toolExecutionPolicy);
         context = runtimeChatService.withToolContract(
                 context,
                 preparedSession.currentUser(),
                 preparedSession.sessionToken(),
-                toolExecutionPolicy == null ? null : toolExecutionPolicy.enabledToolCodes(),
+                selectedToolCodes,
                 toolExecutionPolicy == null ? null : toolExecutionPolicy.autoExecutableToolCodes()
         );
         if (deltaConsumer == null) {
@@ -573,6 +607,68 @@ public class ChatAssistantService {
             }
         });
         return new ChatExecutionResult(result.content());
+    }
+
+    /**
+     * 按本轮用户意图在房间启用工具集内选出相关子集，避免一次性下发全部工具超过模型阈值。
+     * 候选集为房间策略启用的工具，保证"按需 ⊂ 房间策略"。返回 {@code null} 表示按需未启用或选择器未注入。
+     */
+    private Set<String> resolveSelectedToolCodes(PreparedChatAssistantSession preparedSession,
+                                                 ChatRoomEntity room,
+                                                 List<AssistantConversationTurn> transcript,
+                                                 AssistantToolExecutionPolicy toolExecutionPolicy) {
+        if (platformToolSelector == null) {
+            return null;
+        }
+        String question = transcript == null || transcript.isEmpty()
+                ? "" : transcript.get(transcript.size() - 1).content();
+        var candidateCodes = toolExecutionPolicy == null ? null : toolExecutionPolicy.enabledToolCodes();
+        return platformToolSelector.select(new ToolSelectionContext(
+                question,
+                null,
+                room.getTitle(),
+                room.getProject() == null ? null : room.getProject().getId(),
+                candidateCodes,
+                preparedSession.currentUser()
+        ));
+    }
+
+    /**
+     * 为 Hermes 流式对话构造埋点上下文并启动手动生命周期句柄。
+     * 业务意图：把 GitPilot 对话（平台最大模型消耗来源）纳入 agent_invocation_log 统计。
+     * 显式抓取用户快照（captureAuthContext），避免流式消费跨线程时 ThreadLocal 失效。
+     * 返回 null 表示 Recorder 未注入（单元测试场景），调用方应跳过落账。
+     */
+    private AgentInvocationRecorder.ManualHandle beginHermesChatTracking(PreparedChatAssistantSession preparedSession,
+                                                                          ChatRoomEntity room,
+                                                                          AssistantPromptBuilder.AssistantPrompt prompt) {
+        if (agentInvocationRecorder == null) {
+            return null;
+        }
+        CurrentUserInfo currentUser = preparedSession.currentUser();
+        // Recorder 落账只用 userId/username/nickname，角色与权限快照传空集合即可。
+        AuthContext authSnapshot = new AuthContext(
+                currentUser == null ? null : currentUser.id(),
+                currentUser == null ? null : currentUser.username(),
+                currentUser == null ? null : currentUser.nickname(),
+                Set.of(),
+                Set.of()
+        );
+        AgentInvocationContext ctx = AgentInvocationContext.builder(AgentType.HERMES_CHAT)
+                .action("CHAT")
+                .triggerSource(TriggerSource.USER_DIRECT)
+                .provider("HERMES")
+                .modelName(assistantProperties == null ? null : assistantProperties.getModel())
+                .projectId(room.getProject() == null ? null : room.getProject().getId())
+                .bizId(room.getId())
+                .inputChars(charLength(prompt.systemPrompt()) + charLength(prompt.userPrompt()))
+                .captureAuthContext(authSnapshot)
+                .build();
+        return agentInvocationRecorder.startManual(ctx);
+    }
+
+    private static int charLength(String value) {
+        return value == null ? 0 : value.length();
     }
 
     private String buildRoomContext(ChatRoomEntity room) {

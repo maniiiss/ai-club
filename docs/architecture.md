@@ -416,6 +416,25 @@ PR 评审检查清单：
 
 详细设计见 `docs/design-docs/agent-invocation-tracking-technical-design-v1.md`。
 
+##### 模型调用量统计扩展（v2）
+
+在 §3.2.8 体系之上补齐两大覆盖盲区，并新增以「模型」为中心的平台级看板（不复用 `model-token-usage-technical-design-v1.md` 提议的独立事件表，统一落 `agent_invocation_log`）：
+
+埋点覆盖扩展：
+
+- `AgentType.HERMES_CHAT`：GitPilot 流式对话（默认 runtime，最大消耗源）。`AssistantGatewayService` 请求体开启 `stream_options.include_usage`，`ChatAssistantService.executeChat` 通过 `recorder.startManual` 显式抓取用户快照落账；provider 标记为 `HERMES`，`model_config_id` 留空（env 配置不入库）。
+- `AgentType.GITPILOT_CLI`：GitPilot CLI 本地推理。所有 CLI 模型调用经 `GitPilotModelProxyService` 单咽喉点代理转发，把裸 `transferTo` 改为「边转发边嗅探 SSE usage」后 `recorder.startManual` 落账；用户与模型配置取自 gms_ 会话状态，无需新增鉴权。
+- code-processing 跨服务回传：代码审核等 Python 侧调用经 `POST /internal/model-usage/events`（共享 Bearer Token 鉴权）回传 usage，由 `ModelUsageIngestService` 落账（`AgentType.CODE_REVIEW` 等，`correlation_id=usageKey` 幂等去重）。`review_service._call_provider` 解析 usage，`model_usage_reporter` 复用 `_post_backend_json` 异步重试上报。
+
+模型看板：
+
+- `ModelUsageStatsController`（`/api/model-usage-stats`，权限 `system:model-usage:view`）：`getOverview / getByModel / getTrend / getByProvider`，聚合键为 `(model_name, provider)`（`COALESCE` 空值归 `<unknown>`），覆盖表内模型、env 模型与回传模型。
+- 前端 `/model-usage-stats`（`ModelUsageStatsView`）：引入 ECharts（按需注册）做模型调用量排行、Token 分布、调用趋势可视化，与 `/agent-usage-stats`（按智能体/用户维度）互补。
+- 迁移 `V145__model_usage_stats_menu.sql` 注入菜单与 `SUPER_ADMIN` 授权。
+
+详细设计见 `docs/design-docs/platform-model-usage-stats-technical-design-v1.md`。
+未落地的旧设计 `docs/design-docs/model-token-usage-technical-design-v1.md` 已标记 superseded。
+
 #### 3.2.7 可观测性中心
 
 后端当前新增了独立的项目级可观测性子系统，职责边界如下：
@@ -504,6 +523,7 @@ GitPilot 的产品入口与具体 Runtime 解耦，Runtime 注册项统一维护
 - Pi Runtime 的模型部署配置由 `PLATFORM_PI_RUNTIME_MODEL_PROVIDER`、`PLATFORM_PI_RUNTIME_MODEL_ID`、`PLATFORM_PI_RUNTIME_MODEL_BASE_URL` 和 `PLATFORM_PI_RUNTIME_API_KEY` 提供；其中 Base URL 可覆盖 Pi 内置模型地址，用于 OpenAI-compatible 或自建模型网关，不属于 Runtime Registry 的 endpointRef。
 - 所有非 Legacy AgentRuntime 通过统一 `tools` / `toolPolicy` 契约接收平台工具目录、JSON Schema、授权工具编码、自动执行工具编码和短期会话令牌；backend 的 `RuntimeToolContractService` 负责按用户权限和聊天室策略生成契约，具体 Runtime 只做原生 tool calling 转换。
 - Runtime 工具函数名使用稳定的 `project__search` 形式，执行时仍回传平台内部编码 `project.search`；工具最终由 backend `/internal/runtime/tools/execute` 二次鉴权、按项目范围执行并记录审计，不能由 Runtime 本地策略绕过。
+- 工具契约按需下发：平台 MCP 工具（最多 24 个）一次性下发会超过部分模型（如 Ark `deepseek-v4-flash`）的有效阈值，导致思考流在第一个词就异常结束、不产出正文。`PlatformToolSelector` 根据本轮用户输入（问题文本、slash 命令、路由）按“规则匹配 + 向量检索兜底”选出相关工具子集，通过现成的 `restrictedToolCodes` 通道下发，控制在 `maxTools`（默认 12）内；规则与向量均未命中时下发核心工具集（≤8 高频只读工具）。向量检索复用 `QdrantClientService` 与 Wiki 的 embedding 配置，embedding 未配置或 Qdrant 不可用时自动降级为纯规则。聊天室在房间启用工具集内按需筛选，保证“按需 ⊂ 房间策略”。下发的 `tools` 与 `toolPolicy.allowedToolCodes` 由 `RuntimeToolContractService.build()` 自动同源，pi-runtime 无需改动。具体设计见 `docs/design-docs/gitpilot-on-demand-tool-selection-technical-design-v1.md`。
 - GitPilot 公众端支持用户在助手“更多”菜单配置个人外部 MCP 服务，配置保存在 `assistant_mcp_server` 并按用户隔离。backend 负责 Streamable HTTP/SSE 握手、工具发现和实际调用，Bearer/API Key 通过 `TokenCipherService` 加密保存，不把长期凭证下发给 Runtime。
 - 外部 MCP 服务必须通过管理员网络白名单校验。管理员在“系统管理 → 环境变量管理”配置 `PLATFORM_ASSISTANT_EXTERNAL_MCP_ALLOWED_HOSTS`，填写 `10.0.0.0/8,192.168.1.0/24,corp.example.com` 等英文逗号分隔的域名/IP/CIDR；公网服务使用 HTTPS，内网、HTTP、回环和云元数据地址需要命中该配置。新建 GitPilot 会话固化启用服务的加密快照和配置版本，历史会话不会因用户编辑服务而漂移。
 - 非 Legacy Runtime 的统一工具契约会加入 `external_mcp__{serverId}__v{version}__{toolName}` 命名空间。外部工具默认需要确认，用户在个人 MCP 配置中明确取消确认后才进入自动执行列表，并由界面提示未声明只读工具的风险；`HERMES_LEGACY` 保持平台固定 MCP 兼容边界。具体设计见 `docs/design-docs/gitpilot-external-mcp-technical-design-v1.md`。

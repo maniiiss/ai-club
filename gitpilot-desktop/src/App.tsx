@@ -15,9 +15,11 @@ import { ChatView } from '@/src/components/ChatView';
 import { InputBox } from '@/src/components/InputBox';
 import { ModelPicker } from '@/src/components/ModelPicker';
 import { ExtensionUIModal } from '@/src/components/ExtensionUIModal';
+import { LoginPage } from '@/src/components/LoginPage';
 
 export default function App() {
 	const connection = useSessionStore((s) => s.connection);
+	const loggedIn = useSessionStore((s) => s.loggedIn);
 	const error = useSessionStore((s) => s.error);
 	const clearError = useSessionStore((s) => s.clearError);
 	const connect = useSessionStore((s) => s.connect);
@@ -58,6 +60,11 @@ export default function App() {
 				</button>
 			</div>
 		);
+	}
+
+	// ready 但未登录：显示登录页
+	if (!loggedIn) {
+		return <LoginPage />;
 	}
 
 	// ready：主界面

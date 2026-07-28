@@ -55,6 +55,13 @@ public class CodeReviewClientService {
                     .put("reviewStrictness", normalizeReviewStrictness(reviewStrictness))
                     .put("mergeRequestTitle", defaultString(mergeRequest.title()))
                     .put("mergeRequestDescription", defaultString(changes.description()));
+            // 模型用量统计归属字段：模型配置 id 与 MR iid，供 code-processing 回传 usage 落账到 agent_invocation_log。
+            if (modelConfig.id() != null) {
+                payload.put("modelConfigId", modelConfig.id());
+            }
+            if (mergeRequest.iid() != null) {
+                payload.put("bizId", mergeRequest.iid());
+            }
 
             List<JsonNode> changeNodes = new ArrayList<>();
             for (GitlabApiService.GitlabChange change : changes.changes()) {

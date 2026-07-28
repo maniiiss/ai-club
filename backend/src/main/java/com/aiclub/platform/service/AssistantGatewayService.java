@@ -56,9 +56,13 @@ public class AssistantGatewayService {
                 throw new IllegalStateException("GitPilot 未返回有效回答");
             }
             JsonNode messageNode = choices.get(0).path("message");
+            UsageTokens usage = extractUsage(root);
             return new AssistantGatewayResult(
                     root.path("id").asText(""),
-                    extractMessageContent(messageNode.path("content"))
+                    extractMessageContent(messageNode.path("content")),
+                    usage == null ? null : usage.promptTokens(),
+                    usage == null ? null : usage.completionTokens(),
+                    usage == null ? null : usage.totalTokens()
             );
         } catch (IOException | InterruptedException exception) {
             if (exception instanceof InterruptedException) {
@@ -100,6 +104,13 @@ public class AssistantGatewayService {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("model", assistantProperties.getModel());
         payload.put("stream", stream);
+        if (stream) {
+            // 开启 usage 回传：OpenAI 兼容网关会在流末尾追加一个携带 usage 的 chunk，
+            // 供调用方统计 token 用量。部分网关不支持时 usage 缺失，不影响文本流。
+            ObjectNode streamOptions = objectMapper.createObjectNode();
+            streamOptions.put("include_usage", true);
+            payload.set("stream_options", streamOptions);
+        }
         ArrayNode messages = payload.putArray("messages");
         messages.addObject()
                 .put("role", "system")
@@ -132,6 +143,7 @@ public class AssistantGatewayService {
         StringBuilder eventData = new StringBuilder();
         ReasoningStreamState reasoningState = new ReasoningStreamState();
         String responseId = null;
+        UsageTokens lastUsage = null;
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
@@ -141,6 +153,11 @@ public class AssistantGatewayService {
                         JsonNode node = objectMapper.readTree(data);
                         if (node.path("id").isTextual()) {
                             responseId = node.path("id").asText();
+                        }
+                        UsageTokens tokens = extractUsage(node);
+                        if (tokens != null) {
+                            // OpenAI 兼容网关在流末尾发送携带 usage 的 chunk，取最后一次有效值。
+                            lastUsage = tokens;
                         }
                         JsonNode choices = node.path("choices");
                         if (choices.isArray() && !choices.isEmpty()) {
@@ -172,7 +189,10 @@ public class AssistantGatewayService {
                 consumer.onDelta(tailText);
             }
         }
-        return new AssistantGatewayResult(responseId, fullText.toString());
+        return new AssistantGatewayResult(responseId, fullText.toString(),
+                lastUsage == null ? null : lastUsage.promptTokens(),
+                lastUsage == null ? null : lastUsage.completionTokens(),
+                lastUsage == null ? null : lastUsage.totalTokens());
     }
 
     private String buildStreamDeltaText(JsonNode deltaNode, ReasoningStreamState reasoningState) {
@@ -247,8 +267,45 @@ public class AssistantGatewayService {
         return builder.toString();
     }
 
-    private HttpResponse<String> sendJsonRequest(String url, JsonNode payload) throws IOException, InterruptedException {
-        HttpRequest.Builder builder = HttpRequest.newBuilder()
+    /**
+     * 从响应节点抽取 token 用量。兼容 OpenAI（prompt_tokens/completion_tokens/total_tokens）
+     * 与 Anthropic（input_tokens/output_tokens）两种命名；缺失返回 null。
+     */
+    private UsageTokens extractUsage(JsonNode root) {
+        if (root == null) {
+            return null;
+        }
+        JsonNode usage = root.path("usage");
+        if (usage.isMissingNode() || usage.isNull() || !usage.isObject()) {
+            return null;
+        }
+        Integer promptTokens = readUsageInt(usage, "prompt_tokens", "input_tokens");
+        Integer completionTokens = readUsageInt(usage, "completion_tokens", "output_tokens");
+        Integer totalTokens = readUsageInt(usage, "total_tokens");
+        if (promptTokens == null && completionTokens == null && totalTokens == null) {
+            return null;
+        }
+        if (totalTokens == null && (promptTokens != null || completionTokens != null)) {
+            totalTokens = (promptTokens == null ? 0 : promptTokens) + (completionTokens == null ? 0 : completionTokens);
+        }
+        return new UsageTokens(promptTokens, completionTokens, totalTokens);
+    }
+
+    private Integer readUsageInt(JsonNode usage, String... keys) {
+        for (String key : keys) {
+            JsonNode node = usage.path(key);
+            if (node.isNumber()) {
+                return node.asInt();
+            }
+        }
+        return null;
+    }
+
+    /** 一次调用的 token 用量快照。 */
+    private record UsageTokens(Integer promptTokens, Integer completionTokens, Integer totalTokens) {
+    }
+
+    private HttpResponse<String> sendJsonRequest(String url, JsonNode payload) throws IOException, InterruptedException {        HttpRequest.Builder builder = HttpRequest.newBuilder()
                 .uri(URI.create(url))
                 .timeout(Duration.ofSeconds(assistantProperties.getTimeoutSeconds()))
                 .header("Content-Type", "application/json");
@@ -334,6 +391,11 @@ public class AssistantGatewayService {
     /**
      * 一次 Chat Completions 调用的关键信息摘要。
      */
-    public record AssistantGatewayResult(String responseId, String content) {
+    public record AssistantGatewayResult(String responseId, String content,
+                                        Integer promptTokens, Integer completionTokens, Integer totalTokens) {
+        /** 兼容历史调用：不携带 token 用量的构造。 */
+        public AssistantGatewayResult(String responseId, String content) {
+            this(responseId, content, null, null, null);
+        }
     }
 }

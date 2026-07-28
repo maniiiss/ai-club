@@ -18,7 +18,6 @@ import {
 	onEvent,
 	onExtensionUI,
 	onReady,
-	onStateChange,
 	rpc,
 } from '@/src/rpc/bridge';
 import type {
@@ -71,6 +70,7 @@ interface SessionStore {
 	isStreaming: boolean;
 
 	// 会话树与模型
+	loggedIn: boolean;
 	sessionTree: SessionTreeNode[];
 	models: ModelInfo[];
 	commands: RpcSlashCommand[];
@@ -185,6 +185,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	sessionState: null,
 	messages: [],
 	isStreaming: false,
+	loggedIn: false,
 	sessionTree: [],
 	models: [],
 	commands: [],
@@ -211,9 +212,6 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			onDisconnect(() => set({ connection: 'disconnected', isStreaming: false, _streamingAssistantId: null })),
 		);
 		unsubs.push(onError((msg) => set({ error: msg })));
-		unsubs.push(
-			onStateChange((state) => set({ sessionState: state, isStreaming: state.isStreaming })),
-		);
 		unsubs.push(onEvent((e) => applyEvent(set, e)));
 		unsubs.push(
 			onExtensionUI((req) => {
@@ -240,28 +238,43 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	},
 
 	refreshAll: async () => {
+		const next: Partial<SessionStore> = {};
+		// 会话状态
 		try {
-			const [stateRes, treeRes, cmdRes] = await Promise.all([
-				rpc.getState(),
-				rpc.getTree(),
-				rpc.getCommands(),
-			]);
-			const next: Partial<SessionStore> = {};
+			const stateRes = await rpc.getState();
 			if (stateRes.success && stateRes.command === 'get_state') {
 				next.sessionState = stateRes.data;
 				next.isStreaming = stateRes.data.isStreaming;
 				next.connection = 'ready';
 			}
-			if (treeRes.success && treeRes.command === 'get_tree') {
-				next.sessionTree = treeRes.data.tree;
-			}
-			if (cmdRes.success && cmdRes.command === 'get_commands') {
-				next.commands = cmdRes.data.commands;
-			}
-			set(next);
 		} catch (err) {
 			set({ error: err instanceof Error ? err.message : String(err) });
 		}
+		// 会话树
+		try {
+			const treeRes = await rpc.getTree();
+			if (treeRes.success && treeRes.command === 'get_tree') next.sessionTree = treeRes.data.tree;
+		} catch {}
+		// 命令
+		try {
+			const cmdRes = await rpc.getCommands();
+			if (cmdRes.success && cmdRes.command === 'get_commands') next.commands = cmdRes.data.commands;
+		} catch {}
+		// 登录态：getAvailableModels 返回非空模型列表=已登录（有有效 token 且平台有模型）
+		try {
+			const modelsRes = await rpc.getAvailableModels();
+			if (modelsRes.success && modelsRes.command === 'get_available_models' && modelsRes.data.models.length > 0) {
+				next.loggedIn = true;
+				next.models = modelsRes.data.models;
+			} else {
+				next.loggedIn = false;
+				next.models = [];
+			}
+		} catch {
+			next.loggedIn = false;
+			next.models = [];
+		}
+		set(next);
 	},
 
 	prompt: async (message: string) => {

@@ -25,6 +25,8 @@ class AssistantGatewayServiceTests {
 
     private HttpServer server;
     private final AtomicReference<String> lastRequestBody = new AtomicReference<>("");
+    /** 控制流式响应是否在末尾追加 usage chunk，用于验证 token 用量解析。 */
+    private boolean appendUsageChunk = false;
 
     @AfterEach
     void tearDown() {
@@ -83,6 +85,30 @@ class AssistantGatewayServiceTests {
         );
     }
 
+    @Test
+    void shouldRequestStreamUsageInclusionAndParseUsage() throws Exception {
+        appendUsageChunk = true;
+        try {
+            AssistantGatewayService service = createService();
+
+            AssistantGatewayService.AssistantGatewayResult result = service.streamChatCompletion(
+                    new AssistantPromptBuilder.AssistantPrompt("system prompt", "current user prompt"),
+                    List.of(),
+                    delta -> { }
+            );
+
+            // 验证请求体开启了 usage 回传
+            JsonNode requestRoot = new ObjectMapper().readTree(lastRequestBody.get());
+            assertThat(requestRoot.path("stream_options").path("include_usage").asBoolean(false)).isTrue();
+            // 验证流末 usage chunk 被解析进结果
+            assertThat(result.promptTokens()).isEqualTo(120);
+            assertThat(result.completionTokens()).isEqualTo(45);
+            assertThat(result.totalTokens()).isEqualTo(165);
+        } finally {
+            appendUsageChunk = false;
+        }
+    }
+
     private AssistantGatewayService createService() throws Exception {
         server = HttpServer.create(new InetSocketAddress(0), 0);
         server.createContext("/v1/chat/completions", this::handleRequest);
@@ -121,17 +147,21 @@ class AssistantGatewayServiceTests {
     }
 
     private void handleStreamRequest(HttpExchange exchange) throws IOException {
-        String body = """
+        String baseBody = """
                 data: {"id":"stream-1","choices":[{"delta":{"reasoning_content":"先分析项目状态，"}}]}
 
                 data: {"id":"stream-1","choices":[{"delta":{"reasoning_content":"再查找延期风险。"}}]}
 
                 data: {"id":"stream-1","choices":[{"delta":{"content":"当前项目存在延期风险。"}}]}
 
-                data: [DONE]
-
                 """;
-        byte[] responseBody = body.getBytes(StandardCharsets.UTF_8);
+        StringBuilder body = new StringBuilder(baseBody);
+        if (appendUsageChunk) {
+            // 模拟 OpenAI 兼容网关在流末追加携带 usage 的 chunk（choices 为空）。
+            body.append("data: {\"id\":\"stream-1\",\"choices\":[],\"usage\":{\"prompt_tokens\":120,\"completion_tokens\":45,\"total_tokens\":165}}\n\n");
+        }
+        body.append("data: [DONE]\n\n");
+        byte[] responseBody = body.toString().getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().add("Content-Type", "text/event-stream; charset=utf-8");
         exchange.sendResponseHeaders(200, responseBody.length);
         try (OutputStream outputStream = exchange.getResponseBody()) {

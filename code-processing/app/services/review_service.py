@@ -1,11 +1,13 @@
 import json
 import logging
 import re
+import time
 from typing import Any
 
 import httpx
 
 from app.models import ReviewRequest, ReviewResponse
+from app.services.model_usage_reporter import report_model_usage
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +28,30 @@ def review_code(request: ReviewRequest) -> ReviewResponse:
         openai_api_mode,
         len(request.changes),
     )
-    raw_text = _call_provider(provider, request.apiBaseUrl.rstrip("/"), request.apiKey, request.model, prompt, openai_api_mode)
+    started_at = time.monotonic()
+    usage: dict[str, int] | None = None
+    raw_text = ""
+    status = "SUCCESS"
+    try:
+        raw_text, usage = _call_provider(provider, request.apiBaseUrl.rstrip("/"), request.apiKey, request.model, prompt, openai_api_mode)
+    except Exception:
+        status = "FAILURE"
+        raise
+    finally:
+        # 把模型用量回传后端纳入 agent_invocation_log，失败不阻塞主业务。
+        report_model_usage(
+            agent_type="CODE_REVIEW",
+            provider=provider,
+            model_name=request.model,
+            usage=usage,
+            duration_ms=int((time.monotonic() - started_at) * 1000),
+            status=status,
+            user_id=request.userId,
+            project_id=request.projectId,
+            biz_id=request.bizId,
+            model_config_id=request.modelConfigId,
+            action="REVIEW",
+        )
     logger.info("Code review raw model response excerpt: %s", _abbreviate(raw_text, 1000))
     payload = _extract_json(raw_text)
 
@@ -157,7 +182,7 @@ def _trim_diff(diff: str, max_chars: int = 12000) -> str:
     return diff[:max_chars] + "\n...diff truncated..."
 
 
-def _call_provider(provider: str, api_base_url: str, api_key: str, model: str, prompt: str, openai_api_mode: str) -> str:
+def _call_provider(provider: str, api_base_url: str, api_key: str, model: str, prompt: str, openai_api_mode: str) -> tuple[str, dict[str, int] | None]:
     with httpx.Client(timeout=60.0, http2=False) as client:
         if provider == "OPENAI":
             headers = {
@@ -186,7 +211,8 @@ def _call_provider(provider: str, api_base_url: str, api_key: str, model: str, p
                 return _call_openai_chat_completions_with_fallback(client, api_base_url, headers, model, prompt, allow_plain_fallback=True)
 
             _raise_for_provider_error("OPENAI responses", response)
-            return _extract_openai_text(response.json())
+            body = response.json()
+            return _extract_openai_text(body), _extract_usage(body)
 
         if provider == "ANTHROPIC":
             response = client.post(
@@ -204,7 +230,8 @@ def _call_provider(provider: str, api_base_url: str, api_key: str, model: str, p
                 },
             )
             _raise_for_provider_error("ANTHROPIC messages", response)
-            return _extract_anthropic_text(response.json())
+            body = response.json()
+            return _extract_anthropic_text(body), _extract_usage(body)
 
     raise ValueError(f"Unsupported provider: {provider}")
 
@@ -227,7 +254,7 @@ def _call_openai_chat_completions_with_fallback(
         model: str,
         prompt: str,
         allow_plain_fallback: bool,
-) -> str:
+) -> tuple[str, dict[str, int] | None]:
     """兼容不支持 response_format 的 OpenAI 网关，必要时降级为纯提示词约束。"""
     structured_payload = _build_openai_chat_payload(model, prompt, include_response_format=True)
     fallback_response = client.post(
@@ -238,7 +265,8 @@ def _call_openai_chat_completions_with_fallback(
     if allow_plain_fallback and _should_retry_without_response_format(fallback_response):
         return _call_openai_chat_completions_plain(client, api_base_url, headers, model, prompt)
     _raise_for_provider_error("OPENAI chat/completions", fallback_response)
-    return _extract_openai_chat_text(fallback_response.json())
+    body = fallback_response.json()
+    return _extract_openai_chat_text(body), _extract_usage(body)
 
 
 def _call_openai_chat_completions_plain(
@@ -247,7 +275,7 @@ def _call_openai_chat_completions_plain(
         headers: dict[str, str],
         model: str,
         prompt: str,
-) -> str:
+) -> tuple[str, dict[str, int] | None]:
     """直接走不带 response_format 的 chat/completions，减少兼容网关的额外探测。"""
     plain_payload = _build_openai_chat_payload(model, prompt, include_response_format=False)
     response = client.post(
@@ -256,7 +284,8 @@ def _call_openai_chat_completions_plain(
         json=plain_payload,
     )
     _raise_for_provider_error("OPENAI chat/completions", response)
-    return _extract_openai_chat_text(response.json())
+    body = response.json()
+    return _extract_openai_chat_text(body), _extract_usage(body)
 
 
 def _build_openai_chat_payload(model: str, prompt: str, include_response_format: bool) -> dict[str, Any]:
@@ -352,6 +381,34 @@ def _extract_openai_chat_text(body: dict[str, Any]) -> str:
         if isinstance(content, str) and content.strip():
             return content
     return json.dumps(body, ensure_ascii=False)
+
+
+def _extract_usage(body: dict[str, Any]) -> dict[str, int] | None:
+    """从响应体抽取 token 用量。
+
+    兼容 OpenAI（prompt_tokens/completion_tokens/total_tokens）与
+    Anthropic（input_tokens/output_tokens）两种命名；缺失返回 None。
+    """
+    if not isinstance(body, dict):
+        return None
+    usage = body.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    prompt = usage.get("prompt_tokens") if usage.get("prompt_tokens") is not None else usage.get("input_tokens")
+    completion = usage.get("completion_tokens") if usage.get("completion_tokens") is not None else usage.get("output_tokens")
+    total = usage.get("total_tokens")
+    if prompt is None and completion is None and total is None:
+        return None
+    if total is None and (prompt is not None or completion is not None):
+        total = (prompt or 0) + (completion or 0)
+    result: dict[str, int] = {}
+    if prompt is not None:
+        result["prompt_tokens"] = int(prompt)
+    if completion is not None:
+        result["completion_tokens"] = int(completion)
+    if total is not None:
+        result["total_tokens"] = int(total)
+    return result
 
 
 def _extract_json(text: str) -> dict[str, Any]:

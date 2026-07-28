@@ -92,7 +92,7 @@ class ReviewServiceTests(unittest.TestCase):
 
     @patch("app.services.review_service._call_provider")
     def test_should_build_chinese_fallback_markdown_when_review_markdown_missing(self, call_provider):
-        call_provider.return_value = """
+        call_provider.return_value = ("""
         {
           "approved": false,
           "summary": "存在空指针风险",
@@ -100,7 +100,7 @@ class ReviewServiceTests(unittest.TestCase):
           "resolvedPreviousIssues": [],
           "unresolvedPreviousIssues": ["缺少空值判断"]
         }
-        """
+        """, None)
 
         result = review_code(self._build_request().model_copy(update={
             "previousIssues": ["缺少空值判断"]
@@ -201,7 +201,7 @@ class ReviewServiceTests(unittest.TestCase):
 
     @patch("app.services.review_service._call_provider")
     def test_should_parse_history_resolution_fields_when_provider_returns_them(self, call_provider):
-        call_provider.return_value = """
+        call_provider.return_value = ("""
         {
           "approved": false,
           "summary": "仍有历史问题未修复",
@@ -210,7 +210,7 @@ class ReviewServiceTests(unittest.TestCase):
           "unresolvedPreviousIssues": ["缺少空值判断"],
           "reviewMarkdown": "# 代码审查\\n## 历史问题修复情况\\n### 未修复\\n- 缺少空值判断"
         }
-        """
+        """, None)
 
         result = review_code(self._build_request().model_copy(update={
             "previousIssues": ["缺少空值判断", "补充单元测试"]
@@ -225,6 +225,62 @@ class ReviewServiceTests(unittest.TestCase):
         self.assertEqual("OPENAI responses 调用失败，HTTP 400：模型不支持该接口", str(
             ReviewProviderError("OPENAI responses 调用失败，HTTP 400：模型不支持该接口")
         ))
+
+    def test_extract_usage_handles_openai_and_anthropic_naming(self):
+        from app.services.review_service import _extract_usage
+
+        self.assertEqual(
+            {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            _extract_usage({"usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15}}),
+        )
+        # Anthropic 命名：input/output 且无 total，应自动求和。
+        self.assertEqual(
+            {"prompt_tokens": 12, "completion_tokens": 8, "total_tokens": 20},
+            _extract_usage({"usage": {"input_tokens": 12, "output_tokens": 8}}),
+        )
+        self.assertIsNone(_extract_usage({"choices": []}))
+        self.assertIsNone(_extract_usage({"usage": {}}))
+
+    @patch("app.services.review_service.report_model_usage")
+    @patch("app.services.review_service._call_provider")
+    def test_should_report_model_usage_with_attribution(self, call_provider, report_usage):
+        usage = {"prompt_tokens": 100, "completion_tokens": 30, "total_tokens": 130}
+        call_provider.return_value = (
+            '{"approved": true, "summary": "可以合并", "issues": [], "reviewMarkdown": "# 代码审查"}',
+            usage,
+        )
+
+        request = self._build_request().model_copy(update={
+            "modelConfigId": 7,
+            "bizId": 2001,
+            "userId": 101,
+            "projectId": 5,
+        })
+        review_code(request)
+
+        report_usage.assert_called_once()
+        kwargs = report_usage.call_args.kwargs
+        self.assertEqual("CODE_REVIEW", kwargs["agent_type"])
+        self.assertEqual("OPENAI", kwargs["provider"])
+        self.assertEqual("gpt-test", kwargs["model_name"])
+        self.assertEqual(usage, kwargs["usage"])
+        self.assertEqual("SUCCESS", kwargs["status"])
+        self.assertEqual(7, kwargs["model_config_id"])
+        self.assertEqual(2001, kwargs["biz_id"])
+        self.assertEqual(101, kwargs["user_id"])
+        self.assertEqual(5, kwargs["project_id"])
+        self.assertEqual("REVIEW", kwargs["action"])
+
+    @patch("app.services.review_service.report_model_usage")
+    @patch("app.services.review_service._call_provider")
+    def test_should_report_failure_status_when_provider_raises(self, call_provider, report_usage):
+        call_provider.side_effect = ReviewProviderError("上游失败")
+
+        with self.assertRaises(ReviewProviderError):
+            review_code(self._build_request())
+
+        report_usage.assert_called_once()
+        self.assertEqual("FAILURE", report_usage.call_args.kwargs["status"])
 
     @classmethod
     def _build_httpx_response(cls, status_code: int, url: str, body: dict[str, object] | str):

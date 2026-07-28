@@ -32,7 +32,8 @@ export const PLATFORM_MANAGEMENT_PERMISSION_CODES = [
   'data-workbench:view',
   'scan:ruleset:view',
   'system:pr-review:view',
-  'system:agent-usage:view'
+  'system:agent-usage:view',
+  'system:model-usage:view'
 ] as const
 
 export const PERMISSION_TAXONOMY_GROUPS: PermissionTaxonomyMeta[] = [

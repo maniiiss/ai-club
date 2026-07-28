@@ -5,6 +5,7 @@
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod auth;
 mod commands;
 mod sidecar;
 
@@ -22,7 +23,7 @@ fn main() {
 			app.manage(bridge);
 			Ok(())
 		})
-		.invoke_handler(tauri::generate_handler![commands::rpc_send])
+		.invoke_handler(tauri::generate_handler![commands::rpc_send, auth::cli_login_start, auth::cli_login_poll])
 		.run(tauri::generate_context!())
 		.expect("启动 Tauri 应用失败");
 }

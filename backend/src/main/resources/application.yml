@@ -161,6 +161,11 @@ platform:
       allowed-hosts: ${PLATFORM_ASSISTANT_EXTERNAL_MCP_ALLOWED_HOSTS:}
       connect-timeout-ms: ${PLATFORM_ASSISTANT_EXTERNAL_MCP_CONNECT_TIMEOUT_MS:5000}
       request-timeout-ms: ${PLATFORM_ASSISTANT_EXTERNAL_MCP_REQUEST_TIMEOUT_MS:20000}
+    tool-selection:
+      # 按需下发工具：根据用户本轮意图动态筛选工具子集，避免全量下发超过模型阈值导致空回复。
+      enabled: ${PLATFORM_TOOL_SELECTION_ENABLED:true}
+      max-tools: ${PLATFORM_TOOL_SELECTION_MAX_TOOLS:12}
+      vector-fallback-enabled: ${PLATFORM_TOOL_SELECTION_VECTOR_FALLBACK:true}
   hindsight:
     base-url: ${HINDSIGHT_API_URL:}
     api-key: ${HINDSIGHT_API_KEY:}

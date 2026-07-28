@@ -46,6 +46,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -76,6 +77,8 @@ public class AssistantChatService {
     private final AssistantFileLibraryService assistantFileLibraryService;
     private final RuntimeChatService runtimeChatService;
     private final ObjectMapper objectMapper;
+    /** 按需下发工具选择器，可选（旧测试构造方式注入 null）。 */
+    private final PlatformToolSelector platformToolSelector;
     private final AssistantConversationContextService assistantConversationContextService = new AssistantConversationContextService();
 
     @Autowired
@@ -96,7 +99,8 @@ public class AssistantChatService {
                              WikiKnowledgeSearchService wikiKnowledgeSearchService,
                              AssistantFileLibraryService assistantFileLibraryService,
                              RuntimeChatService runtimeChatService,
-                             ObjectMapper objectMapper) {
+                             ObjectMapper objectMapper,
+                             PlatformToolSelector platformToolSelector) {
         this.authService = authService;
         this.userRepository = userRepository;
         this.assistantProperties = assistantProperties;
@@ -115,6 +119,7 @@ public class AssistantChatService {
         this.assistantFileLibraryService = assistantFileLibraryService;
         this.runtimeChatService = runtimeChatService;
         this.objectMapper = objectMapper;
+        this.platformToolSelector = platformToolSelector;
     }
 
     /**
@@ -138,7 +143,7 @@ public class AssistantChatService {
                              ObjectMapper objectMapper) {
         this(authService, userRepository, assistantProperties, assistantContextAssembler, assistantPromptBuilder, assistantGatewayService,
                 assistantHindsightMemoryService, assistantToolOrchestrator, assistantActionFallbackService, assistantConversationStateStore, assistantMcpSessionTokenService,
-                assistantChatAuditRepository, assistantConversationSessionService, assistantAttachmentService, wikiKnowledgeSearchService, null, null, objectMapper);
+                assistantChatAuditRepository, assistantConversationSessionService, assistantAttachmentService, wikiKnowledgeSearchService, null, null, objectMapper, null);
     }
 
     /** 兼容尚未接入 Runtime 路由的旧测试构造方式，默认所有会话走 Assistant Legacy。 */
@@ -162,7 +167,7 @@ public class AssistantChatService {
         this(authService, userRepository, assistantProperties, assistantContextAssembler, assistantPromptBuilder, assistantGatewayService,
                 assistantHindsightMemoryService, assistantToolOrchestrator, assistantActionFallbackService, assistantConversationStateStore,
                 assistantMcpSessionTokenService, assistantChatAuditRepository, assistantConversationSessionService, assistantAttachmentService,
-                wikiKnowledgeSearchService, assistantFileLibraryService, null, objectMapper);
+                wikiKnowledgeSearchService, assistantFileLibraryService, null, objectMapper, null);
     }
 
     /**
@@ -184,7 +189,7 @@ public class AssistantChatService {
                              ObjectMapper objectMapper) {
         this(authService, userRepository, assistantProperties, assistantContextAssembler, assistantPromptBuilder, assistantGatewayService,
                 assistantHindsightMemoryService, assistantToolOrchestrator, assistantActionFallbackService, assistantConversationStateStore, assistantMcpSessionTokenService,
-                assistantChatAuditRepository, assistantConversationSessionService, null, null, null, null, objectMapper);
+                assistantChatAuditRepository, assistantConversationSessionService, null, null, null, null, objectMapper, null);
     }
 
     /**
@@ -460,11 +465,12 @@ public class AssistantChatService {
                 assistantConversationSessionService.resolveRuntimeContextProfile(session)
         ).withConversationHistory(com.aiclub.platform.runtime.RuntimeConversationMessage
                 .fromAssistantTurns(preparedConversation.outboundTranscript()));
+        Set<String> selectedToolCodes = resolveSelectedToolCodes(session, preparedConversation);
         context = runtimeChatService.withToolContract(
                 context,
                 preparedConversation.state().currentUser(),
                 preparedConversation.state().mcpSessionToken(),
-                null,
+                selectedToolCodes,
                 null,
                 assistantConversationSessionService.resolveExternalMcpTools(session,
                         preparedConversation.state().currentRequest() == null
@@ -487,6 +493,29 @@ public class AssistantChatService {
             }
         });
         return new ChatExecutionResult(result.content(), result.runId());
+    }
+
+    /**
+     * 按本轮用户意图选出相关平台工具子集，避免一次性下发全部工具超过模型阈值导致空回复。
+     * 返回 {@code null} 表示按需未启用或选择器未注入，调用方回退全量下发。
+     */
+    private Set<String> resolveSelectedToolCodes(AssistantConversationSessionEntity session,
+                                                 PreparedConversation preparedConversation) {
+        if (platformToolSelector == null) {
+            return null;
+        }
+        var state = preparedConversation.state();
+        String question = preparedConversation.currentUserTurn() == null
+                ? "" : preparedConversation.currentUserTurn().content();
+        String slashCommand = state.currentRequest() == null ? null : state.currentRequest().slashCommand();
+        return platformToolSelector.select(new ToolSelectionContext(
+                question,
+                slashCommand,
+                session.getRouteName(),
+                session.getProjectId(),
+                null,
+                state.currentUser()
+        ));
     }
 
     /**

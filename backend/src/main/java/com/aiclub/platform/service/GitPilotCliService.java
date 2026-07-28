@@ -199,7 +199,7 @@ public class GitPilotCliService {
         String sessionId = UUID.randomUUID().toString().replace("-", "");
         String token = MODEL_SESSION_PREFIX + randomToken(40);
         Instant expiresAt = Instant.now().plusSeconds(properties.modelSessionTtlSeconds());
-        ModelSessionState state = new ModelSessionState(sessionId, current.userId(), modelConfigId, expiresAt.toEpochMilli());
+        ModelSessionState state = new ModelSessionState(sessionId, current.userId(), current.username(), current.nickname(), modelConfigId, expiresAt.toEpochMilli());
         saveJson(MODEL_KEY_PREFIX + token, state, properties.modelSessionTtlSeconds());
         return new ModelSessionResponse(sessionId, token, expiresAt.toString(), summary.provider(), summary.modelName(), trim(proxyBaseUrl) + "/" + sessionId);
     }
@@ -267,6 +267,6 @@ public class GitPilotCliService {
 
     public enum DeviceTokenStatus { PENDING, APPROVED, EXPIRED }
     public record DeviceTokenPoll(DeviceTokenStatus status, CliTokenResponse response) {}
-    public record ModelSessionState(String sessionId, Long userId, Long modelConfigId, long expiresAtEpochMillis) {}
+    public record ModelSessionState(String sessionId, Long userId, String username, String nickname, Long modelConfigId, long expiresAtEpochMillis) {}
     private record DeviceState(String userCode, String clientVersion, Long userId, long expiresAtEpochMillis) {}
 }

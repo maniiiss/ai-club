@@ -14,6 +14,8 @@ function TreeItem({ node, depth }: { node: SessionTreeNode; depth: number }) {
 	const sessionState = useSessionStore((s) => s.sessionState);
 	const [open, setOpen] = useState(true);
 
+	const nodeKey = node.entry?.id || node.id || '';
+	const nodeLabel = node.name || node.entry?.name || nodeKey.slice(0, 8) || '未命名';
 	const isActive = sessionState?.sessionFile === node.sessionFile;
 	const hasChildren = node.children && node.children.length > 0;
 
@@ -41,9 +43,9 @@ function TreeItem({ node, depth }: { node: SessionTreeNode; depth: number }) {
 				) : (
 					<MessageSquare size={13} className="shrink-0 text-[var(--color-text-muted)]" />
 				)}
-				<span className="truncate">{node.name || node.id.slice(0, 8)}</span>
+				<span className="truncate">{nodeLabel}</span>
 			</button>
-			{hasChildren && open && node.children!.map((child) => <TreeItem key={child.id} node={child} depth={depth + 1} />)}
+			{hasChildren && open && node.children!.map((child) => <TreeItem key={child.entry?.id || child.id || Math.random()} node={child} depth={depth + 1} />)}
 		</div>
 	);
 }

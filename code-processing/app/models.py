@@ -51,6 +51,12 @@ class ReviewRequest(BaseModel):
     mergeRequestDescription: str = Field(default="")
     changes: list[CodeChange] = Field(default_factory=list)
     previousIssues: list[str] = Field(default_factory=list)
+    # 模型用量统计归属字段：后端调用时尽量传入，便于把 code-processing 侧调用纳入 agent_invocation_log。
+    # userId/projectId 当前由后端按需穿线，未传时记为 None，不影响模型维度统计。
+    modelConfigId: int | None = Field(default=None, description="ai_model_config.id，用于关联平台模型配置")
+    userId: int | None = Field(default=None, description="触发用户 id")
+    projectId: int | None = Field(default=None, description="关联项目 id")
+    bizId: int | None = Field(default=None, description="业务关联 id（如 MR iid）")
 
     @field_validator("mergeRequestTitle", "mergeRequestDescription", mode="before")
     @classmethod

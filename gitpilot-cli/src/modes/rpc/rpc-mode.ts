@@ -36,6 +36,8 @@ import type {
 	RpcSessionState,
 	RpcSlashCommand,
 } from "./rpc-types.ts";
+import { setPlatformUrl } from "../../extensions/gitpilot/config.ts";
+import { saveCliToken } from "../../extensions/gitpilot/credentials.ts";
 
 // Re-export types for consumers
 export type {
@@ -644,6 +646,14 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				}
 				session.setSessionName(name);
 				return success(id, "set_session_name");
+			}
+
+			// 桌面版登录后注入平台 gpt_ token：持久化平台地址并存入系统凭据库，
+			// 复用 saveCliToken 使 inMemoryToken 与 GITPILOT_CLI_TOKEN 立即生效，无需重启 sidecar。
+			case "set_token": {
+				const normalized = setPlatformUrl(command.platformUrl);
+				await saveCliToken(normalized, command.token);
+				return success(id, "set_token");
 			}
 
 			// =================================================================
