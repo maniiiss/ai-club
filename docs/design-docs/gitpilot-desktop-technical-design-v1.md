@@ -243,12 +243,14 @@ bun `--compile` 按目标三元组生成单文件，随 Tauri `resources` 打入
 | Tauri WebView 跨平台一致性 | 中 | WebView2 / WKWebView / webkit2gtk 差异（MVP 只 Windows，风险已降低） | 后续扩展平台时三端冒烟 + 限定 CSS 子集 |
 | 流式 token IPC 吞吐 | 中 | 高频 token 逐条 emit 拖慢渲染 | Rust 侧按 16ms 窗口批量 emit |
 
-### 13.1 实施前必做 Spike
+### 13.1 Spike 结果（已完成）
 
-在正式开发前，用一个 1–2 天的独立 spike 验证：bun 能否把含 `@napi-rs/keyring` 与 `@silvia-odwyer/photon-node` 的 `rpc-entry` 编译成可在 Windows 上运行的单文件。
+已用 `bun build ./src/rpc-entry.ts --compile --target=bun-windows-x64` 完成验证，结论：**通过，sidecar 打包走 bun `--compile` 路线**。
 
-- 若 spike 通过：sidecar 打包走 bun `--compile`，体积最优
-- 若 spike 失败：sidecar 打包降级为"随包分发 Node 22 runtime + 裸 node 跑 dist"，架构其余部分不变
+- 编译：2949 模块打包成功，生成单文件 `gitpilot-rpc.exe`，退出码 0
+- 运行：成功响应 `get_state` 命令，返回完整会话状态，agent core 完整初始化，native 模块（`@napi-rs/keyring`、`@silvia-odwyer/photon-node`）在启动与 RPC 响应路径上不崩溃
+- 体积：单文件约 107MB（含完整 bun runtime），仍优于 Electron ~150MB，可后续用 `--minify` 等进一步压缩
+- **关键约束**：`theme/*.json`、`export-html/*` 由代码以 `fs.readFileSync` 相对路径读取，bun compile 不会嵌入这些资源，必须作为**外部资源**随 exe 分发到运行目录（Tauri `resources` 打包并在启动时将 sidecar 工作目录设为资源所在目录）。`@napi-rs/keyring` 的真正加载发生在 `/login` 设备授权流程，留待端到端登录测试进一步验证。
 
 ## 14. 后续迭代
 
@@ -269,7 +271,7 @@ MVP 之后的迭代方向（不在本次实施范围）：
 
 ### 15.2 待确认
 
-- sidecar 打包最终走 bun `--compile` 还是 Node runtime 分发，取决于第 13.1 节 spike 结果
+- ~~sidecar 打包最终走 bun `--compile` 还是 Node runtime 分发~~：已确认走 bun `--compile`（见第 13.1 节 spike 结果）
 - 平台分发端点接口契约待与后端对齐
 
 ## 16. 文档同步

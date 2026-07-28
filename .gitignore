@@ -32,3 +32,6 @@ nul
 
 # 前端构建依赖缓存（Vite 预构建产物，不纳入版本管理）
 frontend-public/.vite/
+
+# GitPilot 桌面版 spike 临时产物
+.tmp-spike/

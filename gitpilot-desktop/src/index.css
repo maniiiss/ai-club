@@ -1,0 +1,67 @@
+@import 'tailwindcss';
+@import './styles/tokens.css';
+
+/* Tailwind v4 主题扩展：把设计令牌映射为 Tailwind 可用颜色 */
+@theme {
+	--color-bg: var(--color-bg);
+	--color-surface: var(--color-bg-surface);
+	--color-elevated: var(--color-bg-elevated);
+	--color-hover: var(--color-bg-hover);
+	--color-text: var(--color-text);
+	--color-text-secondary: var(--color-text-secondary);
+	--color-text-muted: var(--color-text-muted);
+	--color-border: var(--color-border);
+	--color-brand: var(--color-primary);
+	--color-brand-hover: var(--color-primary-hover);
+}
+
+/* ── 全局基础样式 ── */
+html,
+body,
+#root {
+	height: 100%;
+}
+
+body {
+	margin: 0;
+	font-family: var(--font-sans);
+	font-size: var(--text-base);
+	line-height: var(--leading-normal);
+	background: var(--color-bg);
+	color: var(--color-text);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+/* 滚动条：深色适配 */
+*::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+*::-webkit-scrollbar-track {
+	background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+	background: var(--color-border-strong);
+	border-radius: var(--radius-sm);
+}
+*::-webkit-scrollbar-thumb:hover {
+	background: var(--color-text-muted);
+}
+
+/* 选区 */
+::selection {
+	background: var(--color-primary-muted);
+}
+
+/* 代码与等宽内容 */
+code,
+pre,
+.mono {
+	font-family: var(--font-mono);
+}
+
+/* 可复用：无衬里按钮 */
+button {
+	font-family: inherit;
+}
