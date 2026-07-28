@@ -45,28 +45,32 @@ fn resolve_sidecar() -> Result<(String, String), Box<dyn std::error::Error>> {
 		return Ok((exe, cwd));
 	}
 
-	// 生产期：Tauri externalBin 放在主程序同级目录
+	// sidecar 文件名（与 Tauri externalBin 命名约定 + build.sh 产物一致）
+	let sidecar_name = if cfg!(target_os = "windows") {
+		"gitpilot-rpc-x86_64-pc-windows-msvc.exe"
+	} else {
+		"gitpilot-rpc-x86_64-unknown-linux-gnu"
+	};
+
+	// 生产期：Tauri externalBin 放在主程序同级目录，资源在同级 resources/
 	let exe_dir = std::env::current_exe()?
 		.parent()
 		.map(PathBuf::from)
 		.unwrap_or_else(|| PathBuf::from("."));
-
-	// Tauri externalBin 命名约定：<name>-<rust-target-triple>.exe
-	let target = std::env::consts::ARCH;
-	let candidate = exe_dir.join(format!("gitpilot-rpc-{}-pc-windows-msvc.exe", target));
-	if candidate.exists() {
+	let prod_candidate = exe_dir.join(sidecar_name);
+	if prod_candidate.exists() {
 		return Ok((
-			candidate.to_string_lossy().to_string(),
-			exe_dir.to_string_lossy().to_string(),
+			prod_candidate.to_string_lossy().to_string(),
+			exe_dir.join("resources").to_string_lossy().to_string(),
 		));
 	}
 
-	// 开发期 fallback
-	let dev = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-		.parent()
-		.unwrap()
-		.join(".tmp-spike")
-		.join("gitpilot-rpc.exe");
-	let cwd = dev.parent().unwrap().to_string_lossy().to_string();
-	Ok((dev.to_string_lossy().to_string(), cwd))
+	// 开发期 fallback：CARGO_MANIFEST_DIR（src-tauri）下的 binaries/（exe 与资源同级）
+	let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+	let dev_exe = manifest.join("binaries").join(sidecar_name);
+	let dev_cwd = manifest.join("binaries");
+	Ok((
+		dev_exe.to_string_lossy().to_string(),
+		dev_cwd.to_string_lossy().to_string(),
+	))
 }

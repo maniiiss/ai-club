@@ -26,12 +26,12 @@ bun build "$CLI/src/rpc-entry.ts" \
   --target=bun-windows-x64 \
   --outfile="$BIN/gitpilot-rpc-$TARGET.exe"
 
-echo "==> 复制资源文件"
-mkdir -p "$RES/theme" "$RES/export-html/vendor"
-cp "$CLI/src/modes/interactive/theme/"*.json "$RES/theme/"
-cp "$CLI/src/core/export-html/template."* "$RES/export-html/" 2>/dev/null || true
-cp "$CLI/src/core/export-html/vendor/"* "$RES/export-html/vendor/" 2>/dev/null || true
+echo "==> 复制资源文件（sidecar exe 同级，供运行时 fs.readFileSync 读取）"
+mkdir -p "$BIN/theme" "$BIN/export-html/vendor"
+cp "$CLI/src/modes/interactive/theme/"*.json "$BIN/theme/"
+cp "$CLI/src/core/export-html/template."* "$BIN/export-html/" 2>/dev/null || true
+cp "$CLI/src/core/export-html/vendor/"* "$BIN/export-html/vendor/" 2>/dev/null || true
 
 echo "✓ sidecar 构建完成："
 echo "    二进制: $BIN/gitpilot-rpc-$TARGET.exe"
-echo "    资源:   $RES/"
+echo "    资源:   $BIN/（theme、export-html，与 exe 同级）"

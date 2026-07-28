@@ -18,3 +18,6 @@ src-tauri/resources/
 
 # 日志
 *.log
+
+# 图标生成临时源图（由 gen-icon.mjs 生成，提交 src-tauri/icons 产物即可）
+app-icon.png
