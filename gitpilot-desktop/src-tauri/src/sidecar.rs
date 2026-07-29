@@ -77,8 +77,13 @@ impl SidecarBridge {
 							let res = app_clone.emit("rpc:event", v);
 							eprintln!("[rpc] emit rpc:event ok={}", res.is_ok());
 						}
-						Err(_) => {
-							let _ = app_clone.emit("rpc:event", serde_json::json!({ "type": "rpc:error", "message": line }));
+						Err(error) => {
+							// sidecar 可能误把诊断文本写到 stdout；只记录长度与解析失败原因，不能把模型上下文原文转发给界面。
+							eprintln!("[rpc] invalid sidecar JSONL output: bytes={}, error={}", line.len(), error);
+							let _ = app_clone.emit(
+								"rpc:event",
+								serde_json::json!({ "type": "rpc:error", "message": "本地 Coding Agent 返回了无法识别的输出。请重试；若持续出现，请重新启动应用。" }),
+							);
 						}
 					}
 				}

@@ -119,6 +119,16 @@ pub async fn cli_login_poll(platform_url: String, device_code: String) -> Result
 	}
 }
 
+/// 在用户主动选择时打开已登录的平台主页；仅允许标准 http(s) 地址。
+#[tauri::command]
+pub fn open_platform_web(platform_url: String) -> Result<(), String> {
+	let parsed = reqwest::Url::parse(platform_url.trim()).map_err(|_| "平台地址不合法".to_string())?;
+	if parsed.scheme() != "http" && parsed.scheme() != "https" {
+		return Err("平台地址必须使用 http 或 https".to_string());
+	}
+	open::that(parsed.as_str()).map_err(|err| format!("打开 GitPilot Web 失败: {err}"))
+}
+
 /// 通用平台请求：解包 {success,message,data} 包络，非 2xx 或 success=false 报错。
 async fn request_json<T: serde::de::DeserializeOwned>(
 	platform_url: &str,

@@ -1,13 +1,12 @@
 /**
  * 单条消息渲染。
  *
- * - user：右对齐，品牌色背景
- * - assistant：左对齐，表面色背景，Markdown 渲染
+ * - user：右对齐，浅灰背景配深色文字
+ * - assistant：左对齐，无外框直接渲染 Markdown
  * - tool：灰色卡片（委托 CodeCard）
  * - system/error：居中提示
  */
 import { memo } from 'react';
-import { Bot, User } from 'lucide-react';
 import { CodeCard } from './CodeCard';
 import type { UIMessage } from '@/src/store/session';
 
@@ -21,7 +20,7 @@ const ROLE_ALIGN: Record<UIMessage['role'], string> = {
 export const MessageBubble = memo(function MessageBubble({ message }: { message: UIMessage }) {
 	if (message.role === 'tool') {
 		return (
-			<div className="my-1 pl-9">
+			<div className="my-1">
 				<CodeCard message={message} />
 			</div>
 		);
@@ -37,19 +36,12 @@ export const MessageBubble = memo(function MessageBubble({ message }: { message:
 
 	const isUser = message.role === 'user';
 	return (
-		<div className={`flex items-start gap-2.5 ${ROLE_ALIGN[message.role]}`}>
-			{!isUser && (
-				<div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-[var(--color-primary-muted)] text-[var(--color-primary-hover)]">
-					<Bot size={15} />
-				</div>
-			)}
+		<div className={`chat-message flex min-w-0 w-full ${ROLE_ALIGN[message.role]}`}>
 			<div
-				className={`max-w-[78%] rounded-lg px-3.5 py-2.5 text-sm leading-relaxed ${
+				className={`${isUser ? 'max-w-[78%] rounded-lg px-4 py-3' : 'w-full min-w-0 max-w-none px-1 py-1'} text-[14px] font-normal leading-6 ${
 					isUser
-						? 'bg-[var(--color-primary)] text-white'
-						: message.kind === 'error'
-							? 'border border-[var(--color-error)]/40 bg-[var(--color-code-diff-del)] text-[var(--color-error)]'
-							: 'bg-[var(--color-bg-surface)] text-[var(--color-text)]'
+						? 'bg-[var(--color-bg-hover)] text-[var(--color-text)]'
+						: 'bg-transparent text-[var(--color-text)]'
 				}`}
 			>
 				{isUser ? (
@@ -59,11 +51,6 @@ export const MessageBubble = memo(function MessageBubble({ message }: { message:
 				)}
 				{message.streaming && <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-[var(--color-primary-hover)] align-middle" />}
 			</div>
-			{isUser && (
-				<div className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-md bg-[var(--color-bg-hover)] text-[var(--color-text-secondary)]">
-					<User size={15} />
-				</div>
-			)}
 		</div>
 	);
 });

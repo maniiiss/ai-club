@@ -1,12 +1,14 @@
 package com.aiclub.platform.controller;
 
 import com.aiclub.platform.common.api.ApiResponse;
+import com.aiclub.platform.dto.CreditAccountSummary;
 import com.aiclub.platform.dto.CurrentUserInfo;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.cli.CliDtos;
 import com.aiclub.platform.security.AuthContextHolder;
 import com.aiclub.platform.service.GitPilotCliService;
 import com.aiclub.platform.service.PlatformStoreService;
+import com.aiclub.platform.service.CreditService;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,10 +30,14 @@ public class GitPilotCliController {
 
     private final GitPilotCliService cliService;
     private final PlatformStoreService platformStoreService;
+    private final CreditService creditService;
 
-    public GitPilotCliController(GitPilotCliService cliService, PlatformStoreService platformStoreService) {
+    public GitPilotCliController(GitPilotCliService cliService,
+                                 PlatformStoreService platformStoreService,
+                                 CreditService creditService) {
         this.cliService = cliService;
         this.platformStoreService = platformStoreService;
+        this.creditService = creditService;
     }
 
     @PostMapping("/device/authorizations")
@@ -65,6 +71,15 @@ public class GitPilotCliController {
     public ApiResponse<CurrentUserInfo> currentUser() {
         Long userId = AuthContextHolder.get().orElseThrow().userId();
         return ApiResponse.success(cliServiceUser(userId));
+    }
+
+    /**
+     * 供桌面端账户菜单读取当前 CLI 登录用户的积分余额。
+     * 该路由保留在 /api/cli 下，以确保仅已通过 gpt_ token 校验的 CLI 会话可读取本人账户。
+     */
+    @GetMapping("/me/credits")
+    public ApiResponse<CreditAccountSummary> currentCredits() {
+        return ApiResponse.success(creditService.getCurrentAccount());
     }
 
     @PostMapping("/logout")

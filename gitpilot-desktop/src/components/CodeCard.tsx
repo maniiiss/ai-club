@@ -85,7 +85,7 @@ export const CodeCard = memo(function CodeCard({ message }: { message: UIMessage
 
 	// text / thinking / image：走 Markdown
 	return (
-		<div className="prose prose-invert max-w-none text-sm text-[var(--color-text)]">
+		<div className="chat-markdown prose prose-invert min-w-0 max-w-full text-[14px] font-normal leading-6 text-[var(--color-text)]">
 			<ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown>
 		</div>
 	);

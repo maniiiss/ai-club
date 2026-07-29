@@ -1,20 +1,31 @@
 /**
- * 应用根组件。
+ * GitPilot Agent IDE 工作台入口。
  *
- * 职责：
- * - 在挂载时初始化 Tauri IPC 桥接（connect）
- * - 根据连接态渲染加载 / 主界面 / 断连重试
- * - 布局：顶栏（标题 + 用户头像）+ 项目/任务侧栏 + 对话区 + 扩展 UI 模态 + 错误提示
+ * React 层只消费 IPC 事件与本地 UI 状态；项目文件、Git 与 Shell 能力仍只存在于 sidecar。
  */
-import { useEffect } from 'react';
-import { CircleUserRound, Loader2, WifiOff, RefreshCw, X } from 'lucide-react';
+import { useEffect, type ReactNode } from 'react';
+import { Loader2, RefreshCw, WifiOff, X } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
-import { isTauriEnv } from '@/src/rpc/bridge';
+import { useWorkbenchStore } from '@/src/store/workbench';
 import { SessionSidebar } from '@/src/components/SessionSidebar';
 import { ChatView } from '@/src/components/ChatView';
 import { InputBox } from '@/src/components/InputBox';
 import { ExtensionUIModal } from '@/src/components/ExtensionUIModal';
 import { LoginPage } from '@/src/components/LoginPage';
+import { DesktopTitleBar } from '@/src/components/DesktopTitleBar';
+import { WorkbenchLayout } from '@/src/components/WorkbenchLayout';
+import { GlobalCommandPalette } from '@/src/components/GlobalCommandPalette';
+import { DesktopContextMenu } from '@/src/components/DesktopContextMenu';
+import { TerminalPanel } from '@/src/components/TerminalPanel';
+import { resolveWorkbenchShortcut } from '@/src/workbench/shortcuts';
+
+function ExecutionOutputPanel() {
+	const execution = useWorkbenchStore((s) => s.execution);
+	const selectedStepId = useWorkbenchStore((s) => s.selectedStepId);
+	const step = execution.steps.find((item) => item.id === selectedStepId) ?? execution.steps.at(-1);
+	const text = step?.result ?? step?.partialResult ?? step?.args ?? '选择执行步骤后，这里会显示 sidecar 返回的原始输出。';
+	return <div className="execution-output"><span className="pane-eyebrow">OUTPUT {step ? `· ${step.title}` : ''}</span><pre>{text}</pre></div>;
+}
 
 export default function App() {
 	const connection = useSessionStore((s) => s.connection);
@@ -23,89 +34,54 @@ export default function App() {
 	const clearError = useSessionStore((s) => s.clearError);
 	const connect = useSessionStore((s) => s.connect);
 	const disconnect = useSessionStore((s) => s.disconnect);
+	const newSession = useSessionStore((s) => s.newSession);
+	const abort = useSessionStore((s) => s.abort);
+	const isStreaming = useSessionStore((s) => s.isStreaming);
+	const pendingExtensionUI = useSessionStore((s) => s.pendingExtensionUI);
+	const globalPaletteOpen = useWorkbenchStore((s) => s.globalPaletteOpen);
+	const openGlobalPalette = useWorkbenchStore((s) => s.openGlobalPalette);
+	const closeGlobalPalette = useWorkbenchStore((s) => s.closeGlobalPalette);
+	const requestModelPicker = useWorkbenchStore((s) => s.requestModelPicker);
 
 	useEffect(() => {
 		void connect();
-		return () => {
-			void disconnect();
-		};
+		return () => { void disconnect(); };
 	}, [connect, disconnect]);
 
-	// 连接中：加载态
+	useEffect(() => {
+		const onKeyDown = (event: KeyboardEvent) => {
+			const shortcut = resolveWorkbenchShortcut(event, { globalPaletteOpen, pendingExtensionCount: pendingExtensionUI.length, isStreaming });
+			if (shortcut === 'open-palette') { event.preventDefault(); openGlobalPalette(); }
+			if (shortcut === 'new-session') { event.preventDefault(); void newSession(); }
+			if (shortcut === 'open-model') { event.preventDefault(); requestModelPicker(); }
+			if (shortcut === 'close-palette') { event.preventDefault(); closeGlobalPalette(); }
+			if (shortcut === 'abort') { event.preventDefault(); void abort(); }
+		};
+		window.addEventListener('keydown', onKeyDown, true);
+		return () => window.removeEventListener('keydown', onKeyDown, true);
+	}, [abort, closeGlobalPalette, globalPaletteOpen, isStreaming, newSession, openGlobalPalette, pendingExtensionUI.length, requestModelPicker]);
+
+	let content: ReactNode;
 	if (connection === 'connecting' || connection === 'idle') {
-		return (
-			<div className="flex h-full flex-col items-center justify-center gap-3 text-[var(--color-text-muted)]">
-				<Loader2 size={22} className="animate-spin" />
-				<span className="text-sm">正在连接本地 Coding Agent…</span>
-			</div>
-		);
+		content = <div className="app-loading"><Loader2 size={22} className="animate-spin" /><span>正在连接本地 Coding Agent…</span></div>;
+	} else if (connection === 'disconnected') {
+		content = <div className="app-disconnected"><WifiOff size={28} /><div><p>与 Coding Agent 的连接已断开</p><small>sidecar 进程可能已退出</small></div><button type="button" onClick={() => void connect()}><RefreshCw size={13} />重新连接</button></div>;
+	} else if (!loggedIn) {
+		content = <LoginPage />;
+	} else {
+		content = <div className="app-workbench">
+		<DesktopTitleBar />
+		<WorkbenchLayout
+			left={<SessionSidebar />}
+			center={<main className="workbench-conversation"><ChatView /><InputBox /></main>}
+			bottom={<ExecutionOutputPanel />}
+			terminal={<TerminalPanel />}
+		/>
+		<ExtensionUIModal />
+		<GlobalCommandPalette onNewSession={() => void newSession()} onAbort={() => void abort()} />
+		{error && <div className="workbench-error"><span>{error}</span><button type="button" onClick={clearError} aria-label="关闭错误提示"><X size={14} /></button></div>}
+		</div>;
 	}
 
-	// 断连：重试态
-	if (connection === 'disconnected') {
-		return (
-			<div className="flex h-full flex-col items-center justify-center gap-4 text-center">
-				<WifiOff size={28} className="text-[var(--color-error)]" />
-				<div>
-					<p className="text-sm text-[var(--color-text)]">与 Coding Agent 的连接已断开</p>
-					<p className="mt-1 text-xs text-[var(--color-text-muted)]">sidecar 进程可能已退出</p>
-				</div>
-				<button
-					type="button"
-					onClick={() => connect()}
-					className="flex items-center gap-1.5 rounded-md bg-[var(--color-primary)] px-3 py-1.5 text-xs text-white hover:bg-[var(--color-primary-hover)]"
-				>
-					<RefreshCw size={13} /> 重新连接
-				</button>
-			</div>
-		);
-	}
-
-	// ready 但未登录：显示登录页
-	if (!loggedIn) {
-		return <LoginPage />;
-	}
-
-	// ready：主界面
-	return (
-		<div className="flex h-full flex-col">
-			{/* 顶栏仅承载应用标识与当前用户，模型设置放在输入区附近以贴近发送行为。 */}
-			<header className="flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-bg-surface)] px-4 py-2.5">
-				<div className="flex items-center gap-2">
-					<span className="text-sm font-medium text-[var(--color-text)]">GitPilot</span>
-					{!isTauriEnv() && <span className="rounded bg-[var(--color-bg-hover)] px-1.5 py-0.5 text-[10px] text-[var(--color-text-muted)]">mock 预览</span>}
-				</div>
-				<div
-					className="flex size-8 items-center justify-center rounded-full border border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)]"
-					role="img"
-					aria-label="当前用户头像"
-					title="当前用户"
-				>
-					<CircleUserRound size={18} />
-				</div>
-			</header>
-
-			{/* 主体：侧栏 + 对话 */}
-			<div className="flex flex-1 overflow-hidden">
-				<SessionSidebar />
-				<main className="flex flex-1 flex-col overflow-hidden">
-					<ChatView />
-					<InputBox />
-				</main>
-			</div>
-
-			{/* 扩展 UI 模态 */}
-			<ExtensionUIModal />
-
-			{/* 错误提示 */}
-			{error && (
-				<div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 rounded-lg border border-[var(--color-error)]/40 bg-[var(--color-bg-elevated)] px-4 py-3 text-sm text-[var(--color-error)] shadow-lg">
-					<span className="max-w-80">{error}</span>
-					<button type="button" onClick={clearError} className="text-[var(--color-text-muted)] hover:text-[var(--color-text)]">
-						<X size={14} />
-					</button>
-				</div>
-			)}
-		</div>
-	);
+	return <><DesktopContextMenu />{content}</>;
 }

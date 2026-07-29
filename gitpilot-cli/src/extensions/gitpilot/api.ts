@@ -16,6 +16,8 @@ export interface CliUser {
 	id: number;
 	username: string;
 	nickname?: string;
+	/** 平台用户中心配置的头像地址，允许为空。 */
+	avatarUrl?: string;
 }
 
 export interface CliTokenResult {
@@ -23,6 +25,11 @@ export interface CliTokenResult {
 	expiresAt: string;
 	user: CliUser;
 	scopes: string[];
+}
+
+/** 当前 CLI 用户的积分账户摘要，仅供桌面端展示余额，不提供任何扣减能力。 */
+export interface CliCreditAccount {
+	balance: number;
 }
 
 export type CliProvider = "OPENAI" | "ANTHROPIC";
@@ -112,6 +119,10 @@ export const pollDeviceToken = (platformUrl: string, deviceCode: string) =>
 
 export const getCurrentUser = (platformUrl: string, token: string) =>
 	requestJson<CliUser>(platformUrl, "/api/cli/me", { token });
+
+/** 读取当前 CLI 用户的积分余额，复用平台既有的只读积分接口。 */
+export const getCurrentCreditAccount = (platformUrl: string, token: string) =>
+	requestJson<CliCreditAccount>(platformUrl, "/api/cli/me/credits", { token });
 
 export const revokeCliToken = (platformUrl: string, token: string) =>
 	requestJson<void>(platformUrl, "/api/cli/logout", { method: "POST", token });

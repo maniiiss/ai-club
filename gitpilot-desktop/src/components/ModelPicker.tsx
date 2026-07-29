@@ -6,10 +6,11 @@
  * - 已登录显示当前模型，下拉切换平台 CHAT 模型
  * - 思维级别切换
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Cpu, Brain, LogIn } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
 import type { ThinkingLevel } from '@/src/rpc/types';
+import { useWorkbenchStore } from '@/src/store/workbench';
 
 export function ModelPicker() {
 	const sessionState = useSessionStore((s) => s.sessionState);
@@ -18,11 +19,40 @@ export function ModelPicker() {
 	const setModel = useSessionStore((s) => s.setModel);
 	const setThinkingLevel = useSessionStore((s) => s.setThinkingLevel);
 	const prompt = useSessionStore((s) => s.prompt);
+	const modelPickerRequest = useWorkbenchStore((s) => s.modelPickerRequest);
 
 	const [openModel, setOpenModel] = useState(false);
 	const [openThinking, setOpenThinking] = useState(false);
+	const pickerRef = useRef<HTMLDivElement>(null);
 
 	const currentModel = sessionState?.model;
+
+	useEffect(() => {
+		if (modelPickerRequest > 0) setOpenModel(true);
+	}, [modelPickerRequest]);
+
+	// 两个下拉均属于同一浮层组，点击其外侧空白区域或按 Esc 必须立即收起。
+	useEffect(() => {
+		if (!openModel && !openThinking) return;
+		const dismiss = (event: PointerEvent) => {
+			if (!pickerRef.current?.contains(event.target as Node)) {
+				setOpenModel(false);
+				setOpenThinking(false);
+			}
+		};
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === 'Escape') {
+				setOpenModel(false);
+				setOpenThinking(false);
+			}
+		};
+		document.addEventListener('pointerdown', dismiss);
+		window.addEventListener('keydown', onKeyDown);
+		return () => {
+			document.removeEventListener('pointerdown', dismiss);
+			window.removeEventListener('keydown', onKeyDown);
+		};
+	}, [openModel, openThinking]);
 
 	// 登录态以 store.loggedIn 为准（登录流程标记），不依赖 sessionState.model（未选模型时为 unknown，会导致已登录仍显示"登录平台"）
 	if (!loggedIn) {
@@ -40,12 +70,12 @@ export function ModelPicker() {
 	const levels: ThinkingLevel[] = ['off', 'low', 'medium', 'high'];
 
 	return (
-		<div className="flex items-center gap-2">
+		<div ref={pickerRef} className="flex items-center gap-2">
 			{/* 模型选择 */}
 			<div className="relative">
 				<button
 					type="button"
-					onClick={() => setOpenModel((o) => !o)}
+					onClick={() => { setOpenModel((o) => !o); setOpenThinking(false); }}
 					className="flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2.5 py-1.5 text-xs text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-hover)]"
 				>
 					<Cpu size={13} />
@@ -82,7 +112,7 @@ export function ModelPicker() {
 			<div className="relative">
 				<button
 					type="button"
-					onClick={() => setOpenThinking((o) => !o)}
+					onClick={() => { setOpenThinking((o) => !o); setOpenModel(false); }}
 					className="flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2.5 py-1.5 text-xs text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-hover)]"
 				>
 					<Brain size={13} />

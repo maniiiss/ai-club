@@ -37,8 +37,9 @@ import type {
 	RpcSessionState,
 	RpcSlashCommand,
 } from "./rpc-types.ts";
-import { setPlatformUrl } from "../../extensions/gitpilot/config.ts";
-import { saveCliToken } from "../../extensions/gitpilot/credentials.ts";
+import { getPlatformUrl, setPlatformUrl } from "../../extensions/gitpilot/config.ts";
+import { deleteCliToken, loadCliToken, saveCliToken } from "../../extensions/gitpilot/credentials.ts";
+import { getCurrentCreditAccount, getCurrentUser, revokeCliToken } from "../../extensions/gitpilot/api.ts";
 
 // Re-export types for consumers
 export type {
@@ -672,6 +673,38 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				// 否则 get_available_models 仍返回 sidecar 启动时（无 token）拉取的空列表。
 				await session.modelRuntime.refresh({ allowNetwork: true });
 				return success(id, "set_token");
+			}
+
+			// 桌面标题栏只取得安全的账户摘要；长期令牌始终留在 sidecar 的系统凭据库中。
+			case "get_platform_account": {
+				const platformUrl = getPlatformUrl();
+				if (!platformUrl) return error(id, "get_platform_account", "未配置 GitPilot 平台地址");
+				const token = await loadCliToken(platformUrl);
+				if (!token) return error(id, "get_platform_account", "未登录 GitPilot 平台");
+				const user = await getCurrentUser(platformUrl, token);
+				// 资料和积分分开获取：积分服务短暂异常时仍要让标题栏显示已登录用户。
+				let creditBalance: number | null = null;
+				try {
+					creditBalance = (await getCurrentCreditAccount(platformUrl, token)).balance;
+				} catch (err) {
+					console.warn("[rpc] 读取 GitPilot 积分失败：", err);
+				}
+				return success(id, "get_platform_account", { platformUrl, user, creditBalance });
+			}
+
+			// 菜单登出需撤销平台会话并删除系统凭据，避免本地 Agent 继续持有可用 token。
+			case "logout": {
+				const platformUrl = getPlatformUrl();
+				if (platformUrl) {
+					const token = await loadCliToken(platformUrl);
+					try {
+						if (token) await revokeCliToken(platformUrl, token);
+					} finally {
+						await deleteCliToken(platformUrl);
+					}
+				}
+				await session.modelRuntime.refresh({ allowNetwork: true });
+				return success(id, "logout");
 			}
 
 			// =================================================================

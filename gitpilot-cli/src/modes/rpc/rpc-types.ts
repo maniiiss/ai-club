@@ -13,6 +13,13 @@ import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { SessionEntry, SessionInfo, SessionTreeNode } from "../../core/session-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 
+/** 桌面标题栏展示的登录账户摘要，令牌绝不通过 RPC 返回。 */
+export interface RpcPlatformAccount {
+	platformUrl: string;
+	user: { id: number; username: string; nickname?: string; avatarUrl?: string };
+	creditBalance: number | null;
+}
+
 // ============================================================================
 // RPC Commands (stdin)
 // ============================================================================
@@ -74,7 +81,10 @@ export type RpcCommand =
 	| { id?: string; type: "get_commands" }
 
 	// Token（桌面版登录后注入平台设备授权拿到的 gpt_ token，复用 saveCliToken 存凭据库）
-	| { id?: string; type: "set_token"; platformUrl: string; token: string };
+	| { id?: string; type: "set_token"; platformUrl: string; token: string }
+	// 桌面账户菜单：所有网络访问和凭据读取保留在 sidecar 内。
+	| { id?: string; type: "get_platform_account" }
+	| { id?: string; type: "logout" };
 
 // ============================================================================
 // RPC Slash Command (for get_commands response)
@@ -238,6 +248,8 @@ export type RpcResponse =
 			data: { commands: RpcSlashCommand[] };
 	  }
 	| { id?: string; type: "response"; command: "set_token"; success: true }
+	| { id?: string; type: "response"; command: "get_platform_account"; success: true; data: RpcPlatformAccount }
+	| { id?: string; type: "response"; command: "logout"; success: true }
 
 	// Error response (any command can fail)
 	| { id?: string; type: "response"; command: string; success: false; error: string };

@@ -4,15 +4,15 @@
  * 渲染累积的 UI 消息列表，自动滚动到底部。
  * 流式时保留底部跟随；用户上滚查看历史时不强制跟随。
  */
-import { useEffect, useRef } from 'react';
+import { useLayoutEffect, useRef } from 'react';
 import { Sparkles } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
 import { MessageBubble } from './MessageBubble';
+import { ExecutionActivity } from './ExecutionActivity';
 
 export function ChatView() {
 	const messages = useSessionStore((s) => s.messages);
 	const isStreaming = useSessionStore((s) => s.isStreaming);
-	const bottomRef = useRef<HTMLDivElement>(null);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const stickToBottom = useRef(true);
 
@@ -23,15 +23,14 @@ export function ChatView() {
 		stickToBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
 	};
 
-	useEffect(() => {
-		if (stickToBottom.current) {
-			bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-		}
+	useLayoutEffect(() => {
+		const container = containerRef.current;
+		if (container && stickToBottom.current) container.scrollTop = container.scrollHeight;
 	}, [messages, isStreaming]);
 
 	return (
 		<div ref={containerRef} onScroll={onScroll} className="flex-1 overflow-y-auto">
-			<div className="mx-auto max-w-3xl px-6 py-6">
+			<div className="chat-view-content mx-auto w-full min-w-0 max-w-[900px] px-6 py-6">
 				{messages.length === 0 ? (
 					<div className="mt-24 flex flex-col items-center gap-4 text-center">
 						<div className="flex size-14 items-center justify-center rounded-2xl bg-[var(--color-primary-muted)] text-[var(--color-primary-hover)]">
@@ -43,13 +42,13 @@ export function ChatView() {
 						</div>
 					</div>
 				) : (
-					<div className="space-y-4">
+					<div className="space-y-5">
 						{messages.map((m) => (
 							<MessageBubble key={m.id} message={m} />
 						))}
+						<ExecutionActivity isStreaming={isStreaming} />
 					</div>
 				)}
-				<div ref={bottomRef} />
 			</div>
 		</div>
 	);

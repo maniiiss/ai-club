@@ -1076,6 +1076,7 @@ GitPilot CLI 已改为基于 pi-coding-agent 二开的本地执行平面：
 - `packages/gitpilot-agent-core` 收窄为 pi-runtime 专用的 Pi Agent 封装 + Handoff 协议层，已随 pi-runtime 升级到 `@earendil-works/*@0.81.1`（`getModel`/`getModels`/`streamSimple` 经 `pi-ai/compat` 兼容入口消费）；CLI 不再依赖该包。
 - 云端接力（项目关联、Git 快照、handoff 分支、Cloud Coding 工作区）尚未接入，相关代码（`gitstate/snapshot.ts`、handoff envelope、`HandoffSessionEnvelopeValidator`、`cloud_coding_sandbox_policy.py`）已停车到 `packages/gitpilot-agent-core/cloud/`，后续作为 Pi extension 接入；接力仍需遵循 `gitpilot-cli-cloud-coding-handoff-technical-design-v1.md` 的本地零污染和 Sandbox Worker 边界。
 - P0 已冻结 `HandoffSessionEnvelope v1` Schema/限制/敏感字段拒绝规则、CLI scope 和 `cloud-coding-sandbox-v1`。Cloud Coding 默认关闭，公众发布门槛为 `CONTAINER` Worker；Session 表、云端 REST 和公众端仍属于 P1。
+- `gitpilot-desktop` 是同一套本地执行平面的 Windows GUI：Tauri 主进程管理窗口、sidecar 和受限的应用内 PowerShell 终端，React 渲染层只消费 RPC 事件。终端入口只传递已选项目目录，Rust 规范化并校验后创建独立 PowerShell 进程；用户在可见终端面板的键盘输入经有大小限制的原生桥接写入该进程，终端输出以事件回传，不与 Agent sidecar 混用。桌面端 P0/P1 以自定义标题栏、可持久化三栏工作台、输出面板和按真实工具生命周期聚合的执行时间线提供 IDE 式操作感；它不把文件树/编辑器伪装成已实现能力。完整边界见 `docs/design-docs/gitpilot-desktop-technical-design-v1.md`。
 
 ## 8. 当前存在的架构边界
 

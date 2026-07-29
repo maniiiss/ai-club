@@ -35,3 +35,6 @@ frontend-public/.vite/
 
 # GitPilot 桌面版 spike 临时产物
 .tmp-spike/
+
+# Bun 构建的本地二进制缓存，不能作为源码提交
+*.bun-build

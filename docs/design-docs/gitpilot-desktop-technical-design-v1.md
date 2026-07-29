@@ -1,6 +1,6 @@
 # GitPilot 桌面版技术设计 v1
 
-> 状态：**草稿**。本设计为 GitPilot CLI 的桌面版选型与架构设计，面向"类 Codex"的原生 GUI 编码助手。
+> 状态：**P0/P1 已实施**。本设计为 GitPilot CLI 的桌面版选型与架构设计，面向"类 Codex"的原生 GUI 编码助手。
 > 实施前需先完成 bun 编译 native 模块的可行性验证 spike（见第 13 节）。
 
 ## 1. 设计目标与定位
@@ -280,3 +280,27 @@ MVP 之后的迭代方向（不在本次实施范围）：
 
 - `docs/design-docs/index.md`：登记本文档
 - `docs/architecture.md`：在 GitPilot 模块边界章节补充桌面版三进程模型说明
+
+## 17. P0/P1 Agent IDE 工作台实施
+
+桌面版已从“项目侧栏 + 对话”升级为 Agent IDE 工作台，但仍不是通用 IDE：
+
+- **P0 工作台壳**：Windows 使用自定义无边框标题栏，呈现当前项目、模型与 sidecar 连接/执行状态，并通过 Tauri 窗口 API 提供最小化、最大化和关闭。主体为可调整的项目/任务左栏、对话中心区、执行检查器右栏和可展开输出底栏；面板宽度与折叠状态仅保存在渲染层本地偏好。
+- **P1 执行工作台**：React 消费既有 `tool_execution_start`、`tool_execution_update`、`tool_execution_end` 和 `turn_end` 事件，以 `toolCallId` 聚合成真实执行时间线。工具参数、增量输出、最终结果和错误仅在检查器/输出面板显示，不再混入对话气泡；“读取、编辑、命令、验证”只按真实工具名归类，不从模型文案推断。
+- **交互**：`Ctrl/Cmd+Shift+P` 打开全局命令面板，`Ctrl/Cmd+N` 新建任务，`Ctrl/Cmd+L` 打开模型选择，`Esc` 优先关闭工作台面板或扩展确认，最后才中止执行。重试只回填最近任务文本，不自动重放可能写文件或执行命令的回合。
+- **安全边界不变**：本轮没有增加文件树、Git 查询、Monaco 编辑器或 Agent RPC。渲染层不直接获得文件系统、Shell、Git 或网络权限；所有 Agent 侧有副作用能力仍由 sidecar 的既有工具确认策略控制。
+
+后续工程工作区阶段若要展示文件树、Git 分支或代码编辑器，必须先在 sidecar 定义受限、可审计的读取协议，不能绕过本设计第 10 节的 IPC 边界。
+
+### 17.1 当前项目终端入口
+
+状态栏终端按钮打开应用底部的 Windows PowerShell 面板，而不是启动外部 `wt.exe` 窗口。React 只能将当前已选项目路径传给 `terminal_start`，Rust 先规范化路径并确认其为目录，再创建与 Agent sidecar 隔离的 PowerShell 进程；标准输入与输出仅通过受限的 `terminal_write` 和 `terminal:data` 桥接到终端组件。终端命令只来自用户在该可见终端面板中的键盘输入，单次输入限制为 16KB；该会话不能读取渲染层文件、不能调用 Agent 工具，也不改变 sidecar 的权限或确认策略。
+
+## 18. Windows 原生窗口与账户交互补充
+
+为消除 WebView 的浏览器感，桌面端补充以下原生交互边界：
+
+- **窗口与托盘**：Rust 主进程创建系统托盘；点击标题栏关闭或系统关闭按钮时只隐藏主窗口，sidecar 继续运行。托盘菜单提供“打开 GitPilot”和“退出 GitPilot”，后者才会结束应用及其受管 sidecar。
+- **标题栏账户入口**：右侧面板折叠按钮由登录用户头像替代。账户菜单展示用户标识、积分余额、前往 GitPilot Web 与退出登录；头像采用用户名首字母渲染，不额外将头像资源或 token 暴露给 WebView。
+- **账户数据安全**：桌面渲染层通过新增的 `get_platform_account` RPC 获取 `{ platformUrl, user, creditBalance }` 安全摘要。sidecar 从系统凭据库读取 `gpt_` token 后请求平台，令牌不进入 React 状态、IPC 响应、日志或本地存储。`logout` RPC 负责撤销平台会话、清除系统凭据并刷新模型目录。
+- **菜单与浮层**：React 拦截 WebView 默认 `contextmenu`，只提供复制、剪切、粘贴与全选等桌面编辑操作。模型、思维级别、slash 命令、账户菜单和扩展模态均支持点击浮层外的空白区域关闭，`Esc` 仍是键盘兜底。

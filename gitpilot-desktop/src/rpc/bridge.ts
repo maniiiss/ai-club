@@ -41,6 +41,17 @@ const disconnectCbs = new Set<LifecycleCb>();
 let unlisten: UnlistenFn | null = null;
 let mockTimer: ReturnType<typeof setInterval> | null = null;
 
+/** 将 sidecar 错误收敛为可读提示，避免模型上下文或原始 JSON 撑满桌面界面。 */
+export function normalizeSidecarError(raw: string): string {
+	const message = raw.trim();
+	if (!message) return '本地 Coding Agent 发生错误，请重试。';
+	if (message.startsWith('{') && message.includes('"type"')) {
+		return '本地 Coding Agent 返回了无法识别的输出。请重试；若持续出现，请重新启动应用。';
+	}
+	if (message.length > 240) return `${message.slice(0, 220)}…`;
+	return message;
+}
+
 /** 分流 sidecar 输出的一行 JSONL（仅处理非 response：agent 事件 / extension UI / error）。 */
 function dispatchLine(line: RpcStreamLine): void {
 	if (line.type === 'extension_ui_request') {
@@ -48,8 +59,8 @@ function dispatchLine(line: RpcStreamLine): void {
 		return;
 	}
 	if (line.type === 'rpc:error' || line.type === 'error') {
-		const msg = (line as { message?: string; error?: string }).message ?? (line as { error?: string }).error ?? '未知错误';
-		errorCbs.forEach((cb) => cb(msg));
+		const raw = (line as { message?: string; error?: string }).message ?? (line as { error?: string }).error ?? '未知错误';
+		errorCbs.forEach((cb) => cb(normalizeSidecarError(raw)));
 		return;
 	}
 	// agent 事件流
@@ -142,6 +153,8 @@ export const rpc = {
 	exportHtml: (outputPath?: string) => send({ type: 'export_html', outputPath }),
 	getCommands: () => send({ type: 'get_commands' }),
 	setToken: (platformUrl: string, token: string) => send({ type: 'set_token', platformUrl, token }),
+	getPlatformAccount: () => send({ type: 'get_platform_account' }),
+	logout: () => send({ type: 'logout' }),
 	respondValue: (id: string, value: string) => send({ type: 'extension_ui_response', id, value }),
 	respondConfirmed: (id: string, confirmed: boolean) => send({ type: 'extension_ui_response', id, confirmed }),
 	respondCancelled: (id: string) => send({ type: 'extension_ui_response', id, cancelled: true }),
@@ -173,6 +186,12 @@ export function onDisconnect(cb: LifecycleCb): () => void {
 }
 export function isTauriEnv(): boolean {
 	return isTauri;
+}
+
+/** 获取独立任务的 GitPilot 工作区根目录；该路径由原生层解析，避免依赖 WebView 当前页面地址。 */
+export async function getGitPilotRoot(): Promise<string> {
+	if (!isTauri) return '';
+	return invoke<string>('gitpilot_root');
 }
 
 // ============================================================================

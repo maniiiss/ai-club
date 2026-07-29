@@ -18,6 +18,7 @@ export function CommandPalette({ commands, onPick, onDismiss }: CommandPalettePr
 	const [query, setQuery] = useState('');
 	const [active, setActive] = useState(0);
 	const listRef = useRef<HTMLDivElement>(null);
+	const panelRef = useRef<HTMLDivElement>(null);
 
 	const filtered = useMemo(() => {
 		const q = query.toLowerCase();
@@ -49,16 +50,25 @@ export function CommandPalette({ commands, onPick, onDismiss }: CommandPalettePr
 		return () => window.removeEventListener('keydown', onKey);
 	}, [filtered, active, onPick, onDismiss]);
 
+	// Slash 面板不遮住工作台交互，点击面板外部即关闭并让原点击继续生效。
+	useEffect(() => {
+		const dismissOutside = (event: PointerEvent) => {
+			if (!panelRef.current?.contains(event.target as Node)) onDismiss();
+		};
+		document.addEventListener('pointerdown', dismissOutside);
+		return () => document.removeEventListener('pointerdown', dismissOutside);
+	}, [onDismiss]);
+
 	if (filtered.length === 0) {
 		return (
-			<div className="absolute bottom-16 left-1/2 z-50 w-96 -translate-x-1/2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-4 text-sm text-[var(--color-text-muted)] shadow-lg">
+			<div ref={panelRef} className="input-composer__palette absolute bottom-[calc(100%+10px)] left-1/2 z-50 -translate-x-1/2 rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elevated)] p-4 text-sm text-[var(--color-text-muted)] shadow-lg">
 				无可用命令
 			</div>
 		);
 	}
 
 	return (
-		<div className="absolute bottom-16 left-1/2 z-50 w-96 -translate-x-1/2 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elevated)] shadow-lg">
+		<div ref={panelRef} className="input-composer__palette absolute bottom-[calc(100%+10px)] left-1/2 z-50 -translate-x-1/2 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elevated)] shadow-lg">
 			<div className="border-b border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-text-muted)]">命令</div>
 			<div className="border-b border-[var(--color-border)] px-3 py-2">
 				<input

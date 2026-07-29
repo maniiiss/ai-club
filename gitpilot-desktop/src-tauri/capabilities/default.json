@@ -3,5 +3,5 @@
 	"identifier": "default",
 	"description": "默认权限：允许事件监听、窗口操作与自动更新。rpc_send 命令由 invoke_handler 注册，按 Tauri 2 默认对主窗口开放。",
 	"windows": ["main"],
-	"permissions": ["core:event:default", "core:window:default", "core:app:default", "updater:default", "dialog:default"]
+	"permissions": ["core:event:default", "core:window:default", "core:window:allow-start-dragging", "core:window:allow-minimize", "core:window:allow-toggle-maximize", "core:window:allow-close", "core:app:default", "updater:default", "dialog:default"]
 }

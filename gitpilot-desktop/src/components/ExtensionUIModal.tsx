@@ -20,6 +20,18 @@ export function ExtensionUIModal() {
 		setValue(req?.method === 'editor' ? req.prefill ?? '' : '');
 	}, [req]);
 
+	useEffect(() => {
+		if (!req) return;
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === 'Escape') {
+				event.preventDefault();
+				respond(req, { cancelled: true });
+			}
+		};
+		window.addEventListener('keydown', onKeyDown);
+		return () => window.removeEventListener('keydown', onKeyDown);
+	}, [req, respond]);
+
 	if (!req) return null;
 
 	// 联合类型中仅 select/confirm/input/editor/setTitle 含 title，统一安全取值
@@ -30,8 +42,8 @@ export function ExtensionUIModal() {
 	};
 
 	return (
-		<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50">
-			<div className="w-full max-w-md rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elevated)] shadow-lg">
+		<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50" onMouseDown={(event) => { if (event.target === event.currentTarget) close({ cancelled: true }); }}>
+			<div className="w-full max-w-md rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elevated)] shadow-lg" onMouseDown={(event) => event.stopPropagation()}>
 				<div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
 					<span className="text-sm font-medium text-[var(--color-text)]">{title}</span>
 					<button type="button" onClick={() => close({ cancelled: true })} className="text-[var(--color-text-muted)] hover:text-[var(--color-text)]">

@@ -12,12 +12,24 @@ mod sidecar;
 use std::path::PathBuf;
 
 use sidecar::SidecarBridge;
-use tauri::{webview::PageLoadEvent, Manager, Wry};
+use tauri::{
+	menu::{Menu, MenuItem},
+	tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+	webview::PageLoadEvent,
+	Manager, Wry,
+};
 
 fn main() {
 	tauri::Builder::<Wry>::default()
 		.plugin(tauri_plugin_updater::Builder::new().build())
 		.plugin(tauri_plugin_dialog::init())
+		// 关闭主窗口时仅隐藏到托盘，确保本地 Agent 在后台持续运行。
+		.on_window_event(|window, event| {
+			if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+				api.prevent_close();
+				let _ = window.hide();
+			}
+		})
 		// 主窗口初始隐藏；WebView 已完成页面加载时再显示，使用户首眼看到启动 Loading，
 		// 而非 Vite 与前端模块尚未就绪时的空白原生窗口。
 		.on_page_load(|webview, payload| {
@@ -26,14 +38,44 @@ fn main() {
 			}
 		})
 		.setup(|app| {
+			let show = MenuItem::with_id(app, "show", "打开 GitPilot", true, None::<&str>)?;
+			let quit = MenuItem::with_id(app, "quit", "退出 GitPilot", true, None::<&str>)?;
+			let menu = Menu::with_items(app, &[&show, &quit])?;
+			let icon = app.default_window_icon().cloned().ok_or("未找到应用图标")?;
+			TrayIconBuilder::with_id("gitpilot-tray")
+				.icon(icon)
+				.tooltip("GitPilot 正在后台运行")
+				.menu(&menu)
+				.show_menu_on_left_click(false)
+				.on_menu_event(|app, event| match event.id.as_ref() {
+					"show" => show_main_window(app),
+					"quit" => app.exit(0),
+					_ => {}
+				})
+				.on_tray_icon_event(|tray, event| {
+					if let TrayIconEvent::Click { button: MouseButton::Left, button_state: MouseButtonState::Up, .. } = event {
+						show_main_window(tray.app_handle());
+					}
+				})
+				.build(app)?;
 			let (exe, cwd) = resolve_sidecar()?;
 			let bridge = SidecarBridge::spawn(app.handle().clone(), &exe, &cwd)?;
 			app.manage(bridge);
+			// 与 Agent sidecar 隔离的应用内 PowerShell 会话，仅在用户打开终端面板后创建。
+			app.manage(commands::TerminalManager::default());
 			Ok(())
 		})
-		.invoke_handler(tauri::generate_handler![commands::rpc_send, auth::cli_login_start, auth::cli_login_poll])
+		.invoke_handler(tauri::generate_handler![commands::rpc_send, commands::gitpilot_root, commands::terminal_start, commands::terminal_write, commands::terminal_close, auth::cli_login_start, auth::cli_login_poll, auth::open_platform_web])
 		.run(tauri::generate_context!())
 		.expect("启动 Tauri 应用失败");
+}
+
+/// 从托盘恢复主窗口并请求前台焦点，避免后台常驻后用户找不到入口。
+fn show_main_window(app: &tauri::AppHandle<Wry>) {
+	if let Some(window) = app.get_webview_window("main") {
+		let _ = window.show();
+		let _ = window.set_focus();
+	}
 }
 
 /// 解析 sidecar 可执行文件路径与工作目录（资源所在目录）。
