@@ -12,12 +12,19 @@ mod sidecar;
 use std::path::PathBuf;
 
 use sidecar::SidecarBridge;
-use tauri::{Manager, Wry};
+use tauri::{webview::PageLoadEvent, Manager, Wry};
 
 fn main() {
 	tauri::Builder::<Wry>::default()
 		.plugin(tauri_plugin_updater::Builder::new().build())
 		.plugin(tauri_plugin_dialog::init())
+		// 主窗口初始隐藏；WebView 已完成页面加载时再显示，使用户首眼看到启动 Loading，
+		// 而非 Vite 与前端模块尚未就绪时的空白原生窗口。
+		.on_page_load(|webview, payload| {
+			if payload.event() == PageLoadEvent::Finished {
+				let _ = webview.window().show();
+			}
+		})
 		.setup(|app| {
 			let (exe, cwd) = resolve_sidecar()?;
 			let bridge = SidecarBridge::spawn(app.handle().clone(), &exe, &cwd)?;

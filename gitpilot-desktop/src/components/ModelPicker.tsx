@@ -1,5 +1,5 @@
 /**
- * 模型与思维级别选择器 + 登录态。
+ * 输入区的模型与思维级别选择器。
  *
  * 平台对接全靠 sidecar 内 extension（见设计文档第 8 节）：
  * - 未登录（model.id === unknown）显示"登录"按钮，点击发送 /login 走设备授权
@@ -53,7 +53,7 @@ export function ModelPicker() {
 					<ChevronDown size={12} />
 				</button>
 				{openModel && (
-					<div className="absolute left-0 top-full z-40 mt-1 max-h-72 w-56 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-bg-elevated)] py-1 shadow-lg">
+					<div className="absolute bottom-full left-0 z-40 mb-1 max-h-72 w-56 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-bg-elevated)] py-1 shadow-lg">
 						{models.length === 0 ? (
 							<div className="px-3 py-2 text-xs text-[var(--color-text-muted)]">加载中…</div>
 						) : (
@@ -90,7 +90,7 @@ export function ModelPicker() {
 					<ChevronDown size={12} />
 				</button>
 				{openThinking && (
-					<div className="absolute right-0 top-full z-40 mt-1 w-32 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-bg-elevated)] py-1 shadow-lg">
+					<div className="absolute bottom-full right-0 z-40 mb-1 w-32 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-bg-elevated)] py-1 shadow-lg">
 						{levels.map((lv) => (
 							<button
 								key={lv}

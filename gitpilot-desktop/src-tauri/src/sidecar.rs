@@ -41,7 +41,7 @@ impl SidecarBridge {
 		let stdin = child.stdin.take();
 		let stdout = child.stdout.take();
 		let pending: Arc<Mutex<HashMap<String, mpsc::Sender<Value>>>> = Arc::new(Mutex::new(HashMap::new()));
-		// sidecar 是否已输出 ready 信号：stdout 线程置位，超时看门狗据此判断
+		// sidecar 是否已证明可通信：ready 或任意合法 JSONL 输出都会置位，避免兼容旧版 sidecar 时误报超时。
 		let ready = Arc::new(AtomicBool::new(false));
 
 		if let Some(stdout) = stdout {
@@ -54,9 +54,10 @@ impl SidecarBridge {
 					eprintln!("[rpc] <- sidecar stdout: {}", line);
 					match serde_json::from_str::<Value>(&line) {
 						Ok(v) => {
+							// 合法协议输出（尤其是 response）已证明子进程可通信；不能只依赖新协议的 ready 信号。
+							ready_clone.store(true, Ordering::SeqCst);
 							// ready 信号：sidecar 完成初始化、可接收命令。据此通知前端就绪，不再转发为 rpc:event。
 							if v.get("type").and_then(|t| t.as_str()) == Some("ready") {
-								ready_clone.store(true, Ordering::SeqCst);
 								let _ = app_clone.emit("rpc:ready", ());
 								continue;
 							}
@@ -85,7 +86,7 @@ impl SidecarBridge {
 			});
 		}
 
-		// 启动超时看门狗：sidecar 若 30s 内未输出 ready 信号则主动报错，避免前端无限等待。
+		// 启动超时看门狗：内部仍以 ready 信号判断，但向用户只说明可行动的启动状态，避免暴露 RPC 协议细节。
 		{
 			let ready_watch = ready.clone();
 			let app_watch = app.clone();
@@ -94,7 +95,7 @@ impl SidecarBridge {
 				if !ready_watch.load(Ordering::SeqCst) {
 					let _ = app_watch.emit(
 						"rpc:event",
-						serde_json::json!({ "type": "rpc:error", "message": "sidecar 启动超时：30s 内未输出 ready 信号" }),
+						serde_json::json!({ "type": "rpc:error", "message": "本地 Coding Agent 启动时间较长，请稍候；若持续无法进入登录页，请重新启动应用。" }),
 					);
 				}
 			});
@@ -122,7 +123,12 @@ impl SidecarBridge {
 			.map_err(|e| format!("pending 锁失败: {e}"))?
 			.insert(id.clone(), tx);
 
-		eprintln!("[rpc] -> sidecar stdin: {}", line);
+		// 请求可能包含设备授权 token；日志只保留关联信息，绝不输出完整 JSON 载荷。
+		eprintln!(
+			"[rpc] -> sidecar stdin: id={}, type={}",
+			id,
+			command.get("type").and_then(|t| t.as_str()).unwrap_or("?")
+		);
 		{
 			let mut guard = self.stdin.lock().map_err(|e| format!("stdin 锁失败: {e}"))?;
 			let stdin = guard.as_mut().ok_or("sidecar stdin 不可用")?;

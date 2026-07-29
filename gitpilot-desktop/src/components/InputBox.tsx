@@ -4,15 +4,15 @@
  * - Enter 发送，Shift+Enter 换行
  * - 输入 / 触发命令面板（见 CommandPalette）
  * - 流式中输入为 steer（不打断当前回合），并显示停止按钮触发 abort
- * - 高频命令快捷键 Ctrl+L 切换模型由 ModelPicker 承载，这里聚焦文本输入
+ * - 模型与思维级别选择器置于输入区上方，发送指令前可就近调整
  */
 import { useEffect, useRef, useState } from 'react';
 import { ArrowUp, Square, Slash } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
 import { CommandPalette } from './CommandPalette';
+import { ModelPicker } from './ModelPicker';
 
 export function InputBox() {
-	const messages = useSessionStore((s) => s.messages);
 	const isStreaming = useSessionStore((s) => s.isStreaming);
 	const commands = useSessionStore((s) => s.commands);
 	const prompt = useSessionStore((s) => s.prompt);
@@ -66,6 +66,9 @@ export function InputBox() {
 	return (
 		<div className="relative border-t border-[var(--color-border)] bg-[var(--color-bg-surface)] px-4 py-3">
 			{showPalette && <CommandPalette commands={commands} onPick={pickCommand} onDismiss={() => setShowPalette(false)} />}
+			<div className="mx-auto mb-2 flex max-w-3xl justify-end">
+				<ModelPicker />
+			</div>
 			<div className="mx-auto flex max-w-3xl items-end gap-2">
 				<div className="flex flex-1 items-end rounded-lg border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 focus-within:border-[var(--color-primary)]">
 					<textarea
@@ -100,9 +103,6 @@ export function InputBox() {
 					</button>
 				)}
 			</div>
-			{messages.length === 0 && (
-				<p className="mx-auto mt-2 max-w-3xl text-center text-[10px] text-[var(--color-text-muted)]">本地 Coding Agent · 平台模型推理 · 密钥不落地</p>
-			)}
 		</div>
 	);
 }
