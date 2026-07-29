@@ -1,78 +1,118 @@
 /**
- * 会话侧栏。
+ * 会话侧栏：项目(工作目录) > 对话记录(会话) 两层树。
  *
- * 展示会话树（支持父子层级），新建会话，切换会话。
- * 会话树来自 sidecar 的 get_tree，复用 Pi 的会话持久化。
+ * 项目可折叠，展开后是该工作目录下的对话记录；每项目行可新建任务（cwd=项目根）、移除项目。
+ * 新建任务按钮直接传项目 cwd，不依赖全局 currentProjectPath。
  */
-import { Plus, MessageSquare, ChevronRight, ChevronDown } from 'lucide-react';
+import { Plus, FolderOpen, ChevronRight, ChevronDown, Folder, X } from 'lucide-react';
 import { useState } from 'react';
 import { useSessionStore } from '@/src/store/session';
-import type { SessionTreeNode } from '@/src/rpc/types';
 
-function TreeItem({ node, depth }: { node: SessionTreeNode; depth: number }) {
-	const switchSession = useSessionStore((s) => s.switchSession);
-	const sessionState = useSessionStore((s) => s.sessionState);
-	const [open, setOpen] = useState(true);
-
-	const nodeKey = node.entry?.id || node.id || '';
-	const nodeLabel = node.name || node.entry?.name || nodeKey.slice(0, 8) || '未命名';
-	const isActive = sessionState?.sessionFile === node.sessionFile;
-	const hasChildren = node.children && node.children.length > 0;
-
-	return (
-		<div>
-			<button
-				type="button"
-				onClick={() => node.sessionFile && switchSession(node.sessionFile)}
-				className={`flex w-full items-center gap-1.5 rounded-sm px-2 py-1.5 text-left text-sm transition-colors ${
-					isActive ? 'bg-[var(--color-primary-muted)] text-[var(--color-text)]' : 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]'
-				}`}
-				style={{ paddingLeft: `${8 + depth * 14}px` }}
-			>
-				{hasChildren ? (
-					<button
-						type="button"
-						onClick={(e) => {
-							e.stopPropagation();
-							setOpen((o) => !o);
-						}}
-						className="text-[var(--color-text-muted)]"
-					>
-						{open ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
-					</button>
-				) : (
-					<MessageSquare size={13} className="shrink-0 text-[var(--color-text-muted)]" />
-				)}
-				<span className="truncate">{nodeLabel}</span>
-			</button>
-			{hasChildren && open && node.children!.map((child) => <TreeItem key={child.entry?.id || child.id || Math.random()} node={child} depth={depth + 1} />)}
-		</div>
-	);
+/** 路径前缀匹配（兼容 Windows 反斜杠与大小写） */
+function pathStartsWith(child: string, parent: string): boolean {
+	const norm = (p: string) => p.replace(/\\/g, '/').toLowerCase().replace(/\/$/, '');
+	const c = norm(child);
+	const p = norm(parent);
+	return c === p || c.startsWith(`${p}/`);
 }
 
 export function SessionSidebar() {
-	const tree = useSessionStore((s) => s.sessionTree);
+	const projects = useSessionStore((s) => s.projects);
+	const sessions = useSessionStore((s) => s.sessions);
+	const sessionState = useSessionStore((s) => s.sessionState);
 	const newSession = useSessionStore((s) => s.newSession);
+	const switchSession = useSessionStore((s) => s.switchSession);
+	const addProject = useSessionStore((s) => s.addProject);
+	const removeProject = useSessionStore((s) => s.removeProject);
 	const connection = useSessionStore((s) => s.connection);
+	const currentFile = sessionState?.sessionFile;
+	const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+
+	const sessionsOf = (projectPath: string) => sessions.filter((s) => pathStartsWith(s.cwd ?? '', projectPath));
+	const toggle = (path: string) => setCollapsed((c) => ({ ...c, [path]: !c[path] }));
 
 	return (
 		<aside className="flex w-60 shrink-0 flex-col border-r border-[var(--color-border)] bg-[var(--color-bg-surface)]">
-			<div className="flex items-center justify-between px-3 py-3">
-				<span className="text-xs font-medium uppercase tracking-wide text-[var(--color-text-muted)]">会话</span>
+			<div className="flex items-center justify-between px-3 py-2.5">
+				<span className="text-[10px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">项目</span>
 				<button
 					type="button"
-					onClick={() => newSession()}
+					onClick={() => addProject()}
 					disabled={connection !== 'ready'}
 					className="flex items-center gap-1 rounded-md bg-[var(--color-primary-muted)] px-2 py-1 text-xs text-[var(--color-primary-hover)] transition-colors hover:bg-[var(--color-primary)]/25 disabled:opacity-40"
 				>
-					<Plus size={13} /> 新建
+					<FolderOpen size={12} /> 添加
 				</button>
 			</div>
+
 			<div className="flex-1 overflow-y-auto px-1.5 pb-2">
-				{tree.length === 0 ? (
-					<div className="px-2 py-4 text-xs text-[var(--color-text-muted)]">暂无会话</div>
+				{projects.length === 0 ? (
+					<div className="px-2 py-4 text-xs text-[var(--color-text-muted)]">点「添加」选择工作目录</div>
 				) : (
-					tree.map((node) => <TreeItem key={node.id} node={node} depth={0} />)
+					projects.map((p) => {
+						const list = sessionsOf(p.path);
+						const isCollapsed = collapsed[p.path];
+						return (
+							<div key={p.path} className="mb-1">
+								<div className="group flex items-center gap-1 rounded-sm px-2 py-1.5 text-sm text-[var(--color-text)] hover:bg-[var(--color-bg-hover)]">
+									<button type="button" onClick={() => toggle(p.path)} className="shrink-0 text-[var(--color-text-muted)]">
+										{isCollapsed ? <ChevronRight size={13} /> : <ChevronDown size={13} />}
+									</button>
+									<Folder size={13} className="shrink-0 text-[var(--color-text-muted)]" />
+									<span className="min-w-0 flex-1 truncate" title={p.path}>
+										{p.name}
+									</span>
+									<button
+										type="button"
+										onClick={() => newSession(p.path)}
+										className="shrink-0 text-[var(--color-text-muted)] opacity-0 hover:text-[var(--color-primary-hover)] group-hover:opacity-100"
+										title="新建任务"
+									>
+										<Plus size={13} />
+									</button>
+									<button
+										type="button"
+										onClick={() => removeProject(p.path)}
+										className="shrink-0 text-[var(--color-text-muted)] opacity-0 hover:text-[var(--color-error)] group-hover:opacity-100"
+										title="移除项目"
+									>
+										<X size={12} />
+									</button>
+								</div>
+								{!isCollapsed && (
+									<div className="ml-3 border-l border-[var(--color-border)]">
+										{list.length === 0 ? (
+											<div className="px-3 py-1.5 text-xs text-[var(--color-text-muted)]">暂无任务</div>
+										) : (
+											list.map((s) => {
+												const active = s.path === currentFile;
+												const label = s.name || s.firstMessage || '未命名任务';
+												const time = s.modified ? new Date(s.modified).toLocaleString() : '';
+												return (
+													<button
+														key={s.path}
+														type="button"
+														onClick={() => switchSession(s.path)}
+														className={`flex w-full flex-col items-start gap-0.5 border-l-2 px-3 py-1.5 text-left text-xs transition-colors ${
+															active
+																? 'border-[var(--color-primary)] bg-[var(--color-primary-muted)] text-[var(--color-text)]'
+																: 'border-transparent text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]'
+														}`}
+													>
+														<span className="truncate">{label}</span>
+														<span className="text-[10px] text-[var(--color-text-muted)]">
+															{time}
+															{s.messageCount > 0 ? ` · ${s.messageCount} 条` : ''}
+														</span>
+													</button>
+												);
+											})
+										)}
+									</div>
+								)}
+							</div>
+						);
+					})
 				)}
 			</div>
 		</aside>

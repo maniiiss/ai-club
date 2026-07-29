@@ -6,37 +6,26 @@
  * - 已登录显示当前模型，下拉切换平台 CHAT 模型
  * - 思维级别切换
  */
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ChevronDown, Cpu, Brain, LogIn } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
-import { rpc } from '@/src/rpc/bridge';
-import type { ModelInfo, ThinkingLevel } from '@/src/rpc/types';
+import type { ThinkingLevel } from '@/src/rpc/types';
 
 export function ModelPicker() {
 	const sessionState = useSessionStore((s) => s.sessionState);
+	const loggedIn = useSessionStore((s) => s.loggedIn);
+	const models = useSessionStore((s) => s.models);
 	const setModel = useSessionStore((s) => s.setModel);
 	const setThinkingLevel = useSessionStore((s) => s.setThinkingLevel);
 	const prompt = useSessionStore((s) => s.prompt);
 
-	const [models, setModels] = useState<ModelInfo[]>([]);
 	const [openModel, setOpenModel] = useState(false);
 	const [openThinking, setOpenThinking] = useState(false);
 
-	const isLoggedIn = !!sessionState?.model && sessionState.model.id !== 'unknown' && sessionState.model.provider !== 'unknown';
 	const currentModel = sessionState?.model;
 
-	useEffect(() => {
-		if (!isLoggedIn) return;
-		// 已登录时拉取可用模型列表
-		rpc
-			.getAvailableModels()
-			.then((res) => {
-				if (res.success && res.command === 'get_available_models') setModels(res.data.models);
-			})
-			.catch(() => {});
-	}, [isLoggedIn]);
-
-	if (!isLoggedIn) {
+	// 登录态以 store.loggedIn 为准（登录流程标记），不依赖 sessionState.model（未选模型时为 unknown，会导致已登录仍显示"登录平台"）
+	if (!loggedIn) {
 		return (
 			<button
 				type="button"

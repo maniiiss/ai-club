@@ -222,6 +222,8 @@ export class AgentSessionRuntime {
 
 	async newSession(options?: {
 		parentSession?: string;
+		/** 任务工作目录；不传则用当前 runtime cwd。桌面版按项目/子目录创建任务时传入。 */
+		cwd?: string;
 		setup?: (sessionManager: SessionManager) => Promise<void>;
 		withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
 	}): Promise<{ cancelled: boolean }> {
@@ -231,10 +233,11 @@ export class AgentSessionRuntime {
 		}
 
 		const previousSessionFile = this.session.sessionFile;
-		const sessionDir = this.session.sessionManager.getSessionDir();
+		// 任务工作目录：默认当前 runtime cwd，可由调用方指定；切换后 services 与会话目录都归属该 cwd
+		const targetCwd = options?.cwd ?? this.cwd;
 		const sessionManager = this.session.sessionManager.isPersisted()
-			? SessionManager.create(this.cwd, sessionDir)
-			: SessionManager.inMemory(this.cwd);
+			? SessionManager.create(targetCwd)
+			: SessionManager.inMemory(targetCwd);
 		if (options?.parentSession) {
 			sessionManager.newSession({ parentSession: options.parentSession });
 		}
@@ -242,7 +245,7 @@ export class AgentSessionRuntime {
 		await this.teardownCurrent("new", sessionManager.getSessionFile());
 		this.apply(
 			await this.createRuntime({
-				cwd: this.cwd,
+				cwd: targetCwd,
 				agentDir: this.services.agentDir,
 				sessionManager,
 				sessionStartEvent: { type: "session_start", reason: "new", previousSessionFile },

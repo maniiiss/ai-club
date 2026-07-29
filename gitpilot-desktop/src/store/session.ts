@@ -13,6 +13,7 @@ import { create } from 'zustand';
 import {
 	destroyBridge,
 	initBridge,
+	isTauriEnv,
 	onDisconnect,
 	onError,
 	onEvent,
@@ -26,6 +27,7 @@ import type {
 	RpcExtensionUIRequest,
 	RpcSessionState,
 	RpcSlashCommand,
+	SessionListItem,
 	SessionTreeNode,
 	ThinkingLevel,
 } from '@/src/rpc/types';
@@ -53,6 +55,42 @@ function newId(): string {
 	return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// 项目列表与当前项目的本地持久化（localStorage）
+const PROJECTS_KEY = 'gitpilot-desktop.projects';
+const CURRENT_PROJECT_KEY = 'gitpilot-desktop.currentProject';
+
+interface ProjectEntry {
+	name: string;
+	path: string;
+}
+
+function loadProjects(): ProjectEntry[] {
+	try {
+		const raw = localStorage.getItem(PROJECTS_KEY);
+		return raw ? (JSON.parse(raw) as ProjectEntry[]) : [];
+	} catch {
+		return [];
+	}
+}
+function saveProjects(projects: ProjectEntry[]): void {
+	try {
+		localStorage.setItem(PROJECTS_KEY, JSON.stringify(projects));
+	} catch {}
+}
+function loadCurrentProject(): string | null {
+	try {
+		return localStorage.getItem(CURRENT_PROJECT_KEY);
+	} catch {
+		return null;
+	}
+}
+function saveCurrentProject(path: string | null): void {
+	try {
+		if (path) localStorage.setItem(CURRENT_PROJECT_KEY, path);
+		else localStorage.removeItem(CURRENT_PROJECT_KEY);
+	} catch {}
+}
+
 // ============================================================================
 // store 类型
 // ============================================================================
@@ -72,8 +110,13 @@ interface SessionStore {
 	// 会话树与模型
 	loggedIn: boolean;
 	sessionTree: SessionTreeNode[];
+	sessions: SessionListItem[];
 	models: ModelInfo[];
 	commands: RpcSlashCommand[];
+
+	// 项目（工作目录）管理
+	projects: ProjectEntry[];
+	currentProjectPath: string | null;
 	thinkingLevels: ThinkingLevel[];
 
 	// 扩展 UI 请求队列（待用户交互）
@@ -91,12 +134,18 @@ interface SessionStore {
 	prompt: (message: string) => Promise<void>;
 	steer: (message: string) => Promise<void>;
 	abort: () => Promise<void>;
-	newSession: () => Promise<void>;
+	newSession: (cwd?: string) => Promise<void>;
 	switchSession: (sessionPath: string) => Promise<void>;
+	loadMessages: () => Promise<void>;
+	switchProject: (path: string) => void;
+	addProject: () => Promise<void>;
+	removeProject: (path: string) => void;
 	setModel: (provider: string, modelId: string) => Promise<void>;
 	setThinkingLevel: (level: ThinkingLevel) => Promise<void>;
 	exportHtml: () => Promise<void>;
 	respondExtensionUI: (req: RpcExtensionUIRequest, value: { value: string } | { confirmed: boolean } | { cancelled: true }) => Promise<void>;
+	/** 标记已登录（登录流程成功后调用，与模型列表可用性解耦）。 */
+	markLoggedIn: () => void;
 	clearError: () => void;
 }
 
@@ -104,13 +153,16 @@ interface SessionStore {
 // 事件 -> UI 消息 转换
 // ============================================================================
 
-/** 处理一条 agent 事件，更新 messages。MVP 识别常见事件类型，其余忽略。 */
+/** 处理一条 agent 事件，更新 messages。
+ * 事件类型对齐 pi-agent-core 实际输出（message_update/turn_end/tool_execution_update 等），
+ * 非早期假设的 message.delta/message.end 点分命名。 */
 function applyEvent(set: (partial: Partial<SessionStore> | ((s: SessionStore) => Partial<SessionStore>)) => void, e: AgentSessionEvent): void {
 	const type = e.type;
 
-	// assistant 文本增量
-	if (type === 'message.delta' || type === 'text.delta' || type === 'stream.delta') {
-		const chunk = (e as { text?: string; delta?: string }).text ?? (e as { delta?: string }).delta ?? '';
+	// assistant 流式增量：pi 的 message_update 内嵌 assistantMessageEvent，其 type 为 text_delta，delta 为增量文本
+	if (type === 'message_update') {
+		const inner = (e as { assistantMessageEvent?: { type?: string; delta?: string } }).assistantMessageEvent;
+		const chunk = inner?.type === 'text_delta' ? inner.delta ?? '' : '';
 		if (!chunk) return;
 		set((s) => {
 			let id = s._streamingAssistantId;
@@ -129,8 +181,8 @@ function applyEvent(set: (partial: Partial<SessionStore> | ((s: SessionStore) =>
 		return;
 	}
 
-	// 流结束
-	if (type === 'message.end' || type === 'stream.end' || type === 'done') {
+	// 轮次结束：停止流式（pi 用 turn_end 标记一整轮 agent 响应完成）
+	if (type === 'turn_end') {
 		set((s) => {
 			const messages = s.messages.map((m) => (m.id === s._streamingAssistantId ? { ...m, streaming: false } : m));
 			return { messages, _streamingAssistantId: null, isStreaming: false };
@@ -138,21 +190,13 @@ function applyEvent(set: (partial: Partial<SessionStore> | ((s: SessionStore) =>
 		return;
 	}
 
-	// 工具调用：渲染为工具消息卡片
-	if (type === 'tool.call' || type === 'tool_use' || type === 'tool.start') {
-		const toolName = (e as { tool?: string; name?: string }).tool ?? (e as { name?: string }).name ?? 'tool';
-		const text = (e as { input?: string; args?: string; text?: string }).input ?? (e as { args?: string }).args ?? (e as { text?: string }).text ?? '';
+	// 工具执行更新：渲染为工具消息卡片
+	if (type === 'tool_execution_update') {
+		const toolName = (e as { toolName?: string }).toolName ?? 'tool';
+		const args = (e as { args?: unknown }).args;
+		const text = args ? JSON.stringify(args) : '';
 		set((s) => ({
 			messages: [...s.messages, { id: newId(), role: 'tool', text, kind: toolKind(toolName), meta: { tool: toolName } }],
-		}));
-		return;
-	}
-
-	// 工具结果
-	if (type === 'tool.result' || type === 'tool_result') {
-		const text = (e as { output?: string; content?: string; text?: string }).output ?? (e as { content?: string }).content ?? (e as { text?: string }).text ?? '';
-		set((s) => ({
-			messages: [...s.messages, { id: newId(), role: 'tool', text, kind: 'bash' }],
 		}));
 		return;
 	}
@@ -164,7 +208,7 @@ function applyEvent(set: (partial: Partial<SessionStore> | ((s: SessionStore) =>
 		return;
 	}
 
-	// 其余事件类型暂忽略，后续按需扩展
+	// 其余事件（thinking/message_start/message_end/agent_start 等）暂忽略，后续按需扩展
 }
 
 /** 工具名 -> 卡片类型 */
@@ -173,6 +217,16 @@ function toolKind(name: string): MessageKind {
 	if (name === 'bash' || name === 'shell') return 'bash';
 	if (name === 'read' || name === 'ls' || name === 'find' || name === 'grep') return 'file';
 	return 'text';
+}
+
+/** 将 pi AgentMessage[] 转为 UIMessage[] 用于历史回显（仅取 text 内容块，MVP 简化）。 */
+function agentMessagesToUi(messages: unknown[]): UIMessage[] {
+	return messages.map((m, i) => {
+		const msg = m as { role?: string; content?: Array<{ type?: string; text?: string }> };
+		const role = (msg.role === 'user' || msg.role === 'assistant' || msg.role === 'tool' ? msg.role : 'system') as MessageRole;
+		const text = (msg.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
+		return { id: `hist-${i}`, role, text, kind: 'text' as MessageKind };
+	});
 }
 
 // ============================================================================
@@ -187,10 +241,13 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	isStreaming: false,
 	loggedIn: false,
 	sessionTree: [],
+	sessions: [],
 	models: [],
 	commands: [],
 	thinkingLevels: ['off', 'low', 'medium', 'high'],
 	pendingExtensionUI: [],
+	projects: loadProjects(),
+	currentProjectPath: loadCurrentProject(),
 	_streamingAssistantId: null,
 	_unsubs: [],
 
@@ -255,24 +312,30 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			const treeRes = await rpc.getTree();
 			if (treeRes.success && treeRes.command === 'get_tree') next.sessionTree = treeRes.data.tree;
 		} catch {}
+		// 历史会话列表：跨所有项目目录拉取（listAll），前端按项目分组显示
+		try {
+			const sessionsRes = await rpc.listSessions('all');
+			if (sessionsRes.success && sessionsRes.command === 'list_sessions') {
+				next.sessions = sessionsRes.data.sessions;
+			}
+		} catch {}
 		// 命令
 		try {
 			const cmdRes = await rpc.getCommands();
 			if (cmdRes.success && cmdRes.command === 'get_commands') next.commands = cmdRes.data.commands;
 		} catch {}
-		// 登录态：getAvailableModels 返回非空模型列表=已登录（有有效 token 且平台有模型）
+		// 模型列表：非空表示 token 有效（已登录），置 loggedIn=true；
+		// 空时不重置 loggedIn——登录态由登录流程（markLoggedIn）管理，避免登录后平台暂无模型被误判未登录而卡回登录页。
 		try {
 			const modelsRes = await rpc.getAvailableModels();
-			if (modelsRes.success && modelsRes.command === 'get_available_models' && modelsRes.data.models.length > 0) {
-				next.loggedIn = true;
+			if (modelsRes.success && modelsRes.command === 'get_available_models') {
 				next.models = modelsRes.data.models;
-			} else {
-				next.loggedIn = false;
-				next.models = [];
+				if (modelsRes.data.models.length > 0) {
+					next.loggedIn = true;
+				}
 			}
 		} catch {
-			next.loggedIn = false;
-			next.models = [];
+			// 拉取失败不清空模型与登录态，保留上次已知状态
 		}
 		set(next);
 	},
@@ -304,13 +367,45 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		set({ isStreaming: false, _streamingAssistantId: null });
 	},
 
-	newSession: async () => {
+	newSession: async (cwd?: string) => {
 		try {
-			await rpc.newSession();
+			// 任务工作目录：优先传入（项目内子目录），否则用当前项目根
+			const taskCwd = cwd ?? get().currentProjectPath ?? undefined;
+			await rpc.newSession(taskCwd);
 			set({ messages: [], _streamingAssistantId: null, isStreaming: false });
 			await get().refreshAll();
 		} catch (err) {
 			set({ error: err instanceof Error ? err.message : String(err) });
+		}
+	},
+	switchProject: (path: string) => {
+		saveCurrentProject(path);
+		set({ currentProjectPath: path });
+		void get().refreshAll();
+	},
+	addProject: async () => {
+		if (!isTauriEnv()) return;
+		const { open } = await import('@tauri-apps/plugin-dialog');
+		const selected = await open({ directory: true, multiple: false });
+		if (typeof selected !== 'string' || !selected) return;
+		const path = selected;
+		const exists = get().projects.some((p) => p.path === path);
+		const projects = exists ? get().projects : [...get().projects, { name: path.split(/[\\/]/).pop() || path, path }];
+		saveProjects(projects);
+		saveCurrentProject(path);
+		set({ projects, currentProjectPath: path });
+		await get().refreshAll();
+	},
+	removeProject: (path: string) => {
+		const projects = get().projects.filter((p) => p.path !== path);
+		saveProjects(projects);
+		if (get().currentProjectPath === path) {
+			const next = projects[0]?.path ?? null;
+			saveCurrentProject(next);
+			set({ projects, currentProjectPath: next });
+			void get().refreshAll();
+		} else {
+			set({ projects });
 		}
 	},
 
@@ -319,9 +414,20 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			await rpc.switchSession(sessionPath);
 			set({ messages: [], _streamingAssistantId: null, isStreaming: false });
 			await get().refreshAll();
+			// 回显切换后会话的历史消息
+			await get().loadMessages();
 		} catch (err) {
 			set({ error: err instanceof Error ? err.message : String(err) });
 		}
+	},
+	loadMessages: async () => {
+		// 拉取当前会话历史消息并转为 UIMessage 回显（仅取 text 内容块）
+		try {
+			const res = await rpc.getMessages();
+			if (res.success && res.command === 'get_messages' && Array.isArray(res.data.messages)) {
+				set({ messages: agentMessagesToUi(res.data.messages), _streamingAssistantId: null, isStreaming: false });
+			}
+		} catch {}
 	},
 
 	setModel: async (provider, modelId) => {
@@ -363,4 +469,5 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	},
 
 	clearError: () => set({ error: null }),
+	markLoggedIn: () => set({ loggedIn: true }),
 }));

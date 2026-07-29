@@ -31,6 +31,7 @@ interface PollResult {
 
 export function LoginPage() {
 	const refreshAll = useSessionStore((s) => s.refreshAll);
+	const markLoggedIn = useSessionStore((s) => s.markLoggedIn);
 	const clearError = useSessionStore((s) => s.clearError);
 	const error = useSessionStore((s) => s.error);
 
@@ -71,6 +72,8 @@ export function LoginPage() {
 				const res = await invoke<PollResult>('cli_login_poll', { platformUrl, deviceCode });
 				if (res.status === 'success' && res.token) {
 					await rpc.setToken(platformUrl, res.token);
+					// token 已注入 sidecar，立即标记已登录（与模型列表可用性解耦，避免平台暂无模型时卡回登录页）
+					markLoggedIn();
 					setPhase('done');
 					await refreshAll();
 					return;

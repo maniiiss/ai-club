@@ -7,6 +7,7 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -40,16 +41,25 @@ impl SidecarBridge {
 		let stdin = child.stdin.take();
 		let stdout = child.stdout.take();
 		let pending: Arc<Mutex<HashMap<String, mpsc::Sender<Value>>>> = Arc::new(Mutex::new(HashMap::new()));
+		// sidecar 是否已输出 ready 信号：stdout 线程置位，超时看门狗据此判断
+		let ready = Arc::new(AtomicBool::new(false));
 
 		if let Some(stdout) = stdout {
 			let app_clone = app.clone();
 			let pending_clone = pending.clone();
+			let ready_clone = ready.clone();
 			std::thread::spawn(move || {
 				let reader = BufReader::new(stdout);
 				for line in reader.lines().flatten() {
 					eprintln!("[rpc] <- sidecar stdout: {}", line);
 					match serde_json::from_str::<Value>(&line) {
 						Ok(v) => {
+							// ready 信号：sidecar 完成初始化、可接收命令。据此通知前端就绪，不再转发为 rpc:event。
+							if v.get("type").and_then(|t| t.as_str()) == Some("ready") {
+								ready_clone.store(true, Ordering::SeqCst);
+								let _ = app_clone.emit("rpc:ready", ());
+								continue;
+							}
 							// response 带 id：匹配 pending，通过 invoke 返回（不依赖 event 时序）
 							let is_response = v.get("type").and_then(|t| t.as_str()) == Some("response");
 							let id = v.get("id").and_then(|i| i.as_str()).map(|s| s.to_string());
@@ -75,7 +85,20 @@ impl SidecarBridge {
 			});
 		}
 
-		let _ = app.emit("rpc:ready", ());
+		// 启动超时看门狗：sidecar 若 30s 内未输出 ready 信号则主动报错，避免前端无限等待。
+		{
+			let ready_watch = ready.clone();
+			let app_watch = app.clone();
+			std::thread::spawn(move || {
+				std::thread::sleep(Duration::from_secs(30));
+				if !ready_watch.load(Ordering::SeqCst) {
+					let _ = app_watch.emit(
+						"rpc:event",
+						serde_json::json!({ "type": "rpc:error", "message": "sidecar 启动超时：30s 内未输出 ready 信号" }),
+					);
+				}
+			});
+		}
 
 		Ok(Self {
 			child: Mutex::new(Some(child)),

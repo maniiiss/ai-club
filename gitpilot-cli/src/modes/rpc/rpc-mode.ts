@@ -13,6 +13,7 @@
 
 import * as crypto from "node:crypto";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
+import { SessionManager } from "../../core/session-manager.ts";
 import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
@@ -432,8 +433,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "new_session": {
-				const options = command.parentSession ? { parentSession: command.parentSession } : undefined;
-				const result = await runtimeHost.newSession(options);
+				// 透传 cwd：桌面版按项目/子目录创建任务时指定工作目录
+				const options: { parentSession?: string; cwd?: string } = {};
+				if (command.parentSession) options.parentSession = command.parentSession;
+				if (command.cwd) options.cwd = command.cwd;
+				const result = await runtimeHost.newSession(Object.keys(options).length > 0 ? options : undefined);
 				if (!result.cancelled) {
 					await rebindSession();
 				}
@@ -634,6 +638,17 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return success(id, "get_tree", { tree: sessionManager.getTree(), leafId: sessionManager.getLeafId() });
 			}
 
+			case "list_sessions": {
+				// scope=all 跨所有项目目录列会话（SessionManager.listAll），每条带 cwd 供前端按项目分组；
+				// 否则只列当前 cwd 的会话。
+				const sessionManager = session.sessionManager;
+				const sessions =
+					command.scope === "all"
+						? await SessionManager.listAll()
+						: await SessionManager.list(sessionManager.getCwd(), sessionManager.getSessionDir());
+				return success(id, "list_sessions", { sessions });
+			}
+
 			case "get_last_assistant_text": {
 				const text = session.getLastAssistantText();
 				return success(id, "get_last_assistant_text", { text });
@@ -653,6 +668,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			case "set_token": {
 				const normalized = setPlatformUrl(command.platformUrl);
 				await saveCliToken(normalized, command.token);
+				// 用新 token 重拉平台模型清单（refreshModels -> listModels -> GET /api/cli/models），
+				// 否则 get_available_models 仍返回 sidecar 启动时（无 token）拉取的空列表。
+				await session.modelRuntime.refresh({ allowNetwork: true });
 				return success(id, "set_token");
 			}
 
@@ -793,6 +811,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	const onInputEnd = () => {
 		void shutdown();
 	};
+	// 通知宿主 sidecar 已完成初始化、可接收命令。宿主（如 Tauri 桥接器）据此确认就绪，
+	// 避免在 sidecar 真正可用前误发命令导致首条命令响应延迟或就绪状态失真。
+	output({ type: "ready" });
+	await waitForRawStdoutBackpressure();
+
 	process.stdin.on("end", onInputEnd);
 
 	detachInput = (() => {

@@ -17,6 +17,7 @@ use tauri::{Manager, Wry};
 fn main() {
 	tauri::Builder::<Wry>::default()
 		.plugin(tauri_plugin_updater::Builder::new().build())
+		.plugin(tauri_plugin_dialog::init())
 		.setup(|app| {
 			let (exe, cwd) = resolve_sidecar()?;
 			let bridge = SidecarBridge::spawn(app.handle().clone(), &exe, &cwd)?;
@@ -66,10 +67,10 @@ fn resolve_sidecar() -> Result<(String, String), Box<dyn std::error::Error>> {
 		));
 	}
 
-	// 开发期 fallback：CARGO_MANIFEST_DIR（src-tauri）下的 binaries/（exe 与资源同级）
+	// 开发期 fallback：sidecar exe 在 binaries/，资源在 resources/（sidecar cwd 指向 resources/，相对路径读取 theme/、export-html/）
 	let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 	let dev_exe = manifest.join("binaries").join(sidecar_name);
-	let dev_cwd = manifest.join("binaries");
+	let dev_cwd = manifest.join("resources");
 	Ok((
 		dev_exe.to_string_lossy().to_string(),
 		dev_cwd.to_string_lossy().to_string(),

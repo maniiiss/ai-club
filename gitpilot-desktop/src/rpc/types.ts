@@ -71,6 +71,19 @@ export interface SessionEntry {
 	createdAt?: string;
 }
 
+/** 历史会话列表项（pi SessionInfo 的桌面版消费视图）。
+ * created/modified 经 JSON 序列化为 ISO 字符串；path 可直接作为 switch_session 的 sessionPath。 */
+export interface SessionListItem {
+	path: string;
+	id: string;
+	name?: string;
+	cwd: string;
+	created: string;
+	modified: string;
+	messageCount: number;
+	firstMessage: string;
+}
+
 // ============================================================================
 // RPC Commands（桌面版 -> sidecar，stdin）
 // ============================================================================
@@ -81,7 +94,7 @@ export type RpcCommand =
 	| { id?: string; type: 'steer'; message: string; images?: ImageContent[] }
 	| { id?: string; type: 'follow_up'; message: string; images?: ImageContent[] }
 	| { id?: string; type: 'abort' }
-	| { id?: string; type: 'new_session'; parentSession?: string }
+	| { id?: string; type: 'new_session'; parentSession?: string; cwd?: string }
 	| { id?: string; type: 'get_state' }
 	// 模型
 	| { id?: string; type: 'set_model'; provider: string; modelId: string }
@@ -93,6 +106,7 @@ export type RpcCommand =
 	| { id?: string; type: 'get_available_thinking_levels' }
 	// 会话管理
 	| { id?: string; type: 'get_tree' }
+	| { id?: string; type: 'list_sessions'; scope?: 'current' | 'all' }
 	| { id?: string; type: 'get_entries'; since?: string }
 	| { id?: string; type: 'get_messages' }
 	| { id?: string; type: 'switch_session'; sessionPath: string }
@@ -143,6 +157,7 @@ export type RpcResponse =
 	| { id?: string; type: 'response'; command: 'cycle_thinking_level'; success: true; data: { level: ThinkingLevel } | null }
 	| { id?: string; type: 'response'; command: 'get_available_thinking_levels'; success: true; data: { levels: ThinkingLevel[] } }
 	| { id?: string; type: 'response'; command: 'get_tree'; success: true; data: { tree: SessionTreeNode[]; leafId: string | null } }
+	| { id?: string; type: 'response'; command: 'list_sessions'; success: true; data: { sessions: SessionListItem[] } }
 	| { id?: string; type: 'response'; command: 'get_entries'; success: true; data: { entries: SessionEntry[]; leafId: string | null } }
 	| { id?: string; type: 'response'; command: 'get_messages'; success: true; data: { messages: unknown[] } }
 	| { id?: string; type: 'response'; command: 'switch_session'; success: true; data: { cancelled: boolean } }
