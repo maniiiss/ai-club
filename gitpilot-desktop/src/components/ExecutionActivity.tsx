@@ -5,9 +5,12 @@ import { useWorkbenchStore, type ExecutionRun, type ExecutionStep } from '@/src/
 
 export function getExecutionActivityLabel(execution: ExecutionRun, isStreaming: boolean): string | null {
 	if (!isStreaming) return null;
-	// 仅显示当前仍在执行的真实工具；没有活跃工具时回退为思考状态。
+	// 仅显示当前仍在执行的真实工具；没有活跃工具时按模型增量阶段判断。
 	const activeTool = [...execution.steps].reverse().find((step) => step.status === 'running' || step.status === 'waiting');
-	return activeTool ? describeExecutionActivity(activeTool) : '正在思考';
+	if (activeTool) return describeExecutionActivity(activeTool);
+	// 正文已经在输出时模型处于回答阶段，由正文气泡本身体现进度，不再展示“正在思考”。
+	if (execution.lastDeltaKind === 'text') return null;
+	return '正在思考';
 }
 
 /** 从真实工具参数中提取用户可读的操作对象，例如 read 的文件路径。 */

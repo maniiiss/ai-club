@@ -42,6 +42,8 @@ import { SettingsManager } from "./core/settings-manager.ts";
 import { printTimings, resetTimings, time } from "./core/timings.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.ts";
 import { builtInExtensions } from "./extensions/index.ts";
+import { loadCliToken } from "./extensions/gitpilot/credentials.ts";
+import { getPlatformUrl } from "./extensions/gitpilot/config.ts";
 import { runMigrations, showDeprecationWarnings } from "./migrations.ts";
 import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.ts";
 import { initTheme, stopThemeWatcher } from "./modes/interactive/theme/theme.ts";
@@ -808,9 +810,23 @@ export async function main(args: string[], options?: MainOptions) {
 		process.exit(1);
 	}
 
-	// RPC refreshes catalogs here in the background; interactive mode starts its refresh after TUI initialization.
-	if (!offlineMode && appMode === "rpc") {
-		void modelRuntime.refresh().catch(() => {});
+	// RPC（桌面 sidecar）启动时强制网络刷新平台模型清单并重解析当前模型：
+	// PI_OFFLINE 下 create 只读持久化缓存，旧二进制写入的 reasoning 等配置会一直生效，
+	// 必须显式 allowNetwork:true 重新跑 toModelConfig 覆盖缓存，再重解析 agent.state.model，
+	// 否则思考级别等依赖当前模型 reasoning 能力的功能会滞后于 toModelConfig 逻辑。
+	// await 确保桌面连上 RPC 时模型已是最新，避免首次查询读到旧缓存；失败则回退缓存不阻塞启动。
+	if (appMode === "rpc") {
+		try {
+			// 平台 gpt_ token 仅存于系统凭据库（keyring），重启后 process.env.GITPILOT_CLI_TOKEN 未设；
+			// gitpilot provider 的 apiKey（${GITPILOT_CLI_TOKEN}）解析时 env 为空会抛错，导致启动网络刷新被跳过、
+			// 旧二进制写入的 reasoning 等配置一直生效。先从 keyring 加载 token 到 env，再强制网络刷新并重解析当前模型。
+			const platformUrl = getPlatformUrl();
+			if (platformUrl) await loadCliToken(platformUrl);
+			await modelRuntime.refresh({ allowNetwork: true });
+			session.refreshCurrentModelFromRegistry();
+		} catch {
+			// 网络刷新失败时回退到缓存，不阻塞 sidecar 启动。
+		}
 	}
 
 	if (appMode === "rpc") {

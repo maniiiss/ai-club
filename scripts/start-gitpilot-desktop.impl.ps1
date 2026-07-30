@@ -4,6 +4,10 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 # 桌面端依赖 Tauri、bun sidecar 与前端开发服务器；在启动前集中校验，避免窗口打开后才出现难定位的环境错误。
+# 兼容直接运行 impl：入口 start-gitpilot-desktop.ps1 会预设 $Utf8ScriptRoot；直接运行时回退到 $PSScriptRoot。
+if (-not (Get-Variable -Name 'Utf8ScriptRoot' -Scope Script -ErrorAction SilentlyContinue)) {
+    $script:Utf8ScriptRoot = $PSScriptRoot
+}
 $repositoryRoot = Split-Path -Parent $script:Utf8ScriptRoot
 $desktopDirectory = Join-Path $repositoryRoot 'gitpilot-desktop'
 $sidecarBinary = Join-Path $desktopDirectory 'src-tauri\binaries\gitpilot-rpc-x86_64-pc-windows-msvc.exe'

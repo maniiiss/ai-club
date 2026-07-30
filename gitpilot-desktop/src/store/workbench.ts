@@ -29,6 +29,8 @@ export interface ExecutionRun {
 	lastPrompt: string | null;
 	/** sidecar 推送的真实思考增量，仅在当前执行中的思考面板展示。 */
 	thinking?: string;
+	/** 最近一次到达的模型增量类型：thinking 表示仍在思考，text 表示已进入正文回答阶段。 */
+	lastDeltaKind?: 'thinking' | 'text';
 	steps: ExecutionStep[];
 }
 
@@ -127,7 +129,11 @@ export function reduceExecutionEvent(run: ExecutionRun, event: AgentSessionEvent
 	if (event.type === 'message_update') {
 		const inner = event.assistantMessageEvent as { type?: unknown; delta?: unknown } | undefined;
 		if (inner?.type === 'thinking_delta' && typeof inner.delta === 'string' && inner.delta) {
-			return { ...run, thinking: `${run.thinking ?? ''}${inner.delta}` };
+			return { ...run, thinking: `${run.thinking ?? ''}${inner.delta}`, lastDeltaKind: 'thinking' };
+		}
+		// 正文增量到达即表示模型已开始输出回答，执行面板此时不应再展示“正在思考”。
+		if (inner?.type === 'text_delta') {
+			return { ...run, lastDeltaKind: 'text' };
 		}
 		return run;
 	}

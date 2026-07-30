@@ -16,6 +16,7 @@ import type {
 	RpcResponse,
 	RpcSessionState,
 	RpcStreamLine,
+	ThinkingLevel,
 } from './types';
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -40,6 +41,8 @@ const disconnectCbs = new Set<LifecycleCb>();
 
 let unlisten: UnlistenFn | null = null;
 let mockTimer: ReturnType<typeof setInterval> | null = null;
+// Mock 模式下跟踪用户选择的思考级别，使非 Tauri 预览也能反映切换结果。
+let mockThinkingLevel: ThinkingLevel = 'off';
 
 /** 将 sidecar 错误收敛为可读提示，避免模型上下文或原始 JSON 撑满桌面界面。 */
 export function normalizeSidecarError(raw: string): string {
@@ -209,7 +212,7 @@ function mockResponseFor(cmd: RpcCommand & { id: string }): RpcResponse {
 				success: true,
 				data: {
 					model: { id: 'mock-model', name: 'Mock 模型', api: 'openai', provider: 'gitpilot' },
-					thinkingLevel: 'off',
+					thinkingLevel: mockThinkingLevel,
 					isStreaming: false,
 					isCompacting: false,
 					steeringMode: 'one-at-a-time',
@@ -223,6 +226,11 @@ function mockResponseFor(cmd: RpcCommand & { id: string }): RpcResponse {
 			};
 		case 'get_available_models':
 			return { id, type: 'response', command: 'get_available_models', success: true, data: { models: [{ id: 'mock-model', name: 'Mock 模型', api: 'openai', provider: 'gitpilot' }] } };
+		case 'set_thinking_level':
+			mockThinkingLevel = cmd.level;
+			return { id, type: 'response', command: 'set_thinking_level', success: true };
+		case 'get_available_thinking_levels':
+			return { id, type: 'response', command: 'get_available_thinking_levels', success: true, data: { levels: ['off', 'low', 'medium', 'high'] } };
 		case 'get_commands':
 			return { id, type: 'response', command: 'get_commands', success: true, data: { commands: [{ name: 'login', source: 'extension', sourceInfo: { kind: 'extension', name: 'gitpilot' } }] } };
 		case 'get_tree':

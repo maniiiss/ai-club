@@ -30,6 +30,15 @@ describe('Agent 工作台执行事件', () => {
 		expect(reduceExecutionEvent(thinking, { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '最终回答' } }, 120).thinking).toBe('先检查调用链');
 	});
 
+	it('按最近一次增量标记思考/回答阶段，供执行面板区分“正在思考”与正文输出', () => {
+		const thinking = reduceExecutionEvent(runningRun(), { type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: '分析' } }, 100);
+		expect(thinking.lastDeltaKind).toBe('thinking');
+		const answering = reduceExecutionEvent(thinking, { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '回答' } }, 120);
+		expect(answering.lastDeltaKind).toBe('text');
+		// 正文阶段不丢失此前累积的思考文本。
+		expect(answering.thinking).toBe('分析');
+	});
+
 	it('turn_end 不结束整次执行，agent_settled 才写入完成节点', () => {
 		const duringContinuation = reduceExecutionEvent(runningRun(), { type: 'turn_end' }, 150);
 		expect(duringContinuation).toMatchObject({ status: 'running', steps: [] });

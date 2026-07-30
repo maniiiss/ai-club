@@ -2316,7 +2316,12 @@ export class AgentSession {
 			: undefined;
 	}
 
-	private _refreshCurrentModelFromRegistry(): void {
+	/**
+	 * 从模型注册表重新解析当前选中模型并写回 agent.state.model。
+	 * 模型配置刷新（如平台 toModelConfig 变更 reasoning 能力）后，agent.state.model 仍持有刷新前的旧对象引用，
+	 * 思考级别、流式 reasoning 等依赖当前模型能力的功能会滞后，故需在刷新后显式重解析。
+	 */
+	refreshCurrentModelFromRegistry(): void {
 		const currentModel = this.model;
 		if (!currentModel) {
 			return;
@@ -2439,15 +2444,15 @@ export class AgentSession {
 			{
 				registerProvider: (name, config) => {
 					this._modelRuntime.registerProvider(name, config);
-					this._refreshCurrentModelFromRegistry();
+					this.refreshCurrentModelFromRegistry();
 				},
 				registerNativeProvider: (provider) => {
 					this._modelRuntime.registerNativeProvider(provider);
-					this._refreshCurrentModelFromRegistry();
+					this.refreshCurrentModelFromRegistry();
 				},
 				unregisterProvider: (name) => {
 					this._modelRuntime.unregisterProvider(name);
-					this._refreshCurrentModelFromRegistry();
+					this.refreshCurrentModelFromRegistry();
 				},
 			},
 		);

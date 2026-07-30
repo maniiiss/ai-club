@@ -9,7 +9,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Cpu, Brain, LogIn } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
-import type { ThinkingLevel } from '@/src/rpc/types';
 import { useWorkbenchStore } from '@/src/store/workbench';
 
 export function ModelPicker() {
@@ -18,6 +17,7 @@ export function ModelPicker() {
 	const models = useSessionStore((s) => s.models);
 	const setModel = useSessionStore((s) => s.setModel);
 	const setThinkingLevel = useSessionStore((s) => s.setThinkingLevel);
+	const thinkingLevels = useSessionStore((s) => s.thinkingLevels);
 	const prompt = useSessionStore((s) => s.prompt);
 	const modelPickerRequest = useWorkbenchStore((s) => s.modelPickerRequest);
 
@@ -67,7 +67,8 @@ export function ModelPicker() {
 		);
 	}
 
-	const levels: ThinkingLevel[] = ['off', 'low', 'medium', 'high'];
+	// 可用思考级别由 sidecar 按当前模型能力给出；仅剩 off 表示该模型不支持 reasoning，需禁用控件。
+	const thinkingSupported = thinkingLevels.some((lv) => lv !== 'off');
 
 	return (
 		<div ref={pickerRef} className="flex items-center gap-2">
@@ -112,16 +113,20 @@ export function ModelPicker() {
 			<div className="relative">
 				<button
 					type="button"
+					disabled={!thinkingSupported}
+					title={thinkingSupported ? undefined : '当前模型不支持思考'}
 					onClick={() => { setOpenThinking((o) => !o); setOpenModel(false); }}
-					className="flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2.5 py-1.5 text-xs text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-hover)]"
+					className={`flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2.5 py-1.5 text-xs transition-colors ${
+						thinkingSupported ? 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]' : 'cursor-not-allowed text-[var(--color-text-muted)]'
+					}`}
 				>
 					<Brain size={13} />
 					<span>{sessionState?.thinkingLevel ?? 'off'}</span>
-					<ChevronDown size={12} />
+					{thinkingSupported && <ChevronDown size={12} />}
 				</button>
-				{openThinking && (
+				{thinkingSupported && openThinking && (
 					<div className="absolute bottom-full right-0 z-40 mb-1 w-32 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-bg-elevated)] py-1 shadow-lg">
-						{levels.map((lv) => (
+						{thinkingLevels.map((lv) => (
 							<button
 								key={lv}
 								type="button"

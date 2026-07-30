@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { agentMessagesToUi, getAssistantMessageEndText, shouldSkipProjectSwitch } from './session';
+import { agentMessagesToUi, filterDesktopThinkingLevels, getAssistantMessageEndText, shouldSkipProjectSwitch } from './session';
 
 describe('历史消息回放', () => {
 	it('只显示用户消息和带文本的助手回复，不回放工具输出或空工具调用', () => {
@@ -31,5 +31,20 @@ describe('会话切换去重', () => {
 
 	it('项目任务已选中时，项目行不视为已选中', () => {
 		expect(shouldSkipProjectSwitch('C:\\workspace\\gitpilot', 'task-session', [{ path: 'task-session', cwd: 'C:\\workspace\\gitpilot\\frontend' }], 'C:\\workspace\\gitpilot')).toBe(false);
+	});
+});
+
+describe('桌面端可用思考级别收敛', () => {
+	it('不支持 reasoning 的模型只保留 off，用于禁用思考控件', () => {
+		expect(filterDesktopThinkingLevels(['off'])).toEqual(['off']);
+		// 空输入表示无可用级别，结果为空，调用方据此禁用控件。
+		expect(filterDesktopThinkingLevels([])).toEqual([]);
+	});
+
+	it('过滤掉桌面未暴露的扩展档位（minimal/xhigh/max）并保持固定顺序', () => {
+		// sidecar 对完整能力模型可能返回 7 档；桌面只消费 off/low/medium/high 且顺序固定。
+		expect(filterDesktopThinkingLevels(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])).toEqual(['off', 'low', 'medium', 'high']);
+		// 输入乱序时仍按桌面固定顺序输出。
+		expect(filterDesktopThinkingLevels(['high', 'off', 'medium'])).toEqual(['off', 'medium', 'high']);
 	});
 });

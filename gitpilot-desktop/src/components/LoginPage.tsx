@@ -142,14 +142,13 @@ export function LoginPage() {
 							<Loader2 size={13} className="animate-spin" />
 							等待授权完成…
 						</div>
-						<a
-							href={auth.verificationUri}
-							target="_blank"
-							rel="noreferrer"
+						<button
+							type="button"
+							onClick={() => void invoke('open_platform_web', { platformUrl: auth.verificationUri })}
 							className="mt-3 flex items-center justify-center gap-1 text-xs text-[var(--color-primary-hover)] hover:underline"
 						>
 							<ExternalLink size={12} /> 重新打开授权页
-						</a>
+						</button>
 					</div>
 				)}
 

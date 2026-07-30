@@ -69,6 +69,17 @@ export function getAssistantMessageEndText(event: AgentSessionEvent): string | n
 	return text.trim() ? text : null;
 }
 
+/** 桌面端可设置的思考级别（pi-ai 完整枚举含 minimal/xhigh/max，桌面 UI 暂只暴露这 4 档）。 */
+const DESKTOP_THINKING_LEVELS: readonly ThinkingLevel[] = ['off', 'low', 'medium', 'high'];
+
+/**
+ * 将 sidecar 返回的可用思考级别收敛到桌面 UI 可设置的子集，并保持固定展示顺序。
+ * 不支持 reasoning 的模型 sidecar 只回 ['off']，结果仅剩 ['off']，调用方据此禁用思考控件。
+ */
+export function filterDesktopThinkingLevels(raw: readonly unknown[]): ThinkingLevel[] {
+	return DESKTOP_THINKING_LEVELS.filter((lv) => raw.includes(lv));
+}
+
 // 项目列表与当前项目的本地持久化（localStorage）
 const PROJECTS_KEY = 'gitpilot-desktop.projects';
 const CURRENT_PROJECT_KEY = 'gitpilot-desktop.currentProject';
@@ -484,6 +495,16 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			if (accountRes.success && accountRes.command === 'get_platform_account') next.platformAccount = accountRes.data;
 		} catch {
 			// 未登录或平台暂不可用时维持空账户摘要，不影响本地 Agent 的启动。
+		}
+		// 思考级别按当前模型能力收敛：不支持 reasoning 的模型 sidecar 只回 ['off']，用于禁用思考控件。
+		try {
+			const levelsRes = await rpc.getAvailableThinkingLevels();
+			if (levelsRes.success && levelsRes.command === 'get_available_thinking_levels') {
+				const raw = (levelsRes as { data?: { levels?: unknown[] } }).data?.levels;
+				if (Array.isArray(raw)) next.thinkingLevels = filterDesktopThinkingLevels(raw);
+			}
+		} catch {
+			// 拉取失败保留上次已知档位，不阻塞会话刷新。
 		}
 		set(next);
 	},

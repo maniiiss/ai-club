@@ -57,9 +57,46 @@ function debugLog(message: string): void {
 	}
 }
 
+/** 已知支持推理（reasoning）的平台模型能力配置，复刻 pi-ai 原生 provider catalog（见 providers/data/deepseek.json）。
+ *  平台 provider 名为 gitpilot、baseUrl 为代理地址，pi-ai 不会自动识别为 deepseek，故需在此显式声明
+ *  reasoning + deepseek thinkingFormat，同时保留 supportsDeveloperRole:false 以走 system role，避免平台 400。 */
+interface ReasoningProfile {
+	reasoning: true;
+	thinkingLevelMap: { minimal: null; low: null; medium: null; high: string; max: string };
+	compat: {
+		supportsStore: false;
+		supportsDeveloperRole: false;
+		requiresReasoningContentOnAssistantMessages: true;
+		thinkingFormat: "deepseek";
+	};
+}
+
+const REASONING_MODEL_PROFILES: Record<string, ReasoningProfile> = {
+	// DeepSeek V4 系列：原生即 reasoning，仅支持 off/high/max（minimal/low/medium 不支持，置 null）。
+	"deepseek-v4-flash": {
+		reasoning: true,
+		thinkingLevelMap: { minimal: null, low: null, medium: null, high: "high", max: "max" },
+		compat: { supportsStore: false, supportsDeveloperRole: false, requiresReasoningContentOnAssistantMessages: true, thinkingFormat: "deepseek" },
+	},
+	"deepseek-v4-pro": {
+		reasoning: true,
+		thinkingLevelMap: { minimal: null, low: null, medium: null, high: "high", max: "max" },
+		compat: { supportsStore: false, supportsDeveloperRole: false, requiresReasoningContentOnAssistantMessages: true, thinkingFormat: "deepseek" },
+	},
+};
+
+/** 按平台模型名（modelName，大小写不敏感）解析推理能力配置；未命中返回 undefined，调用方按非推理模型处理。 */
+export function resolveReasoningProfile(modelName: string | undefined | null): ReasoningProfile | undefined {
+	const key = (modelName ?? "").trim().toLowerCase();
+	return key ? REASONING_MODEL_PROFILES[key] : undefined;
+}
+
 /** 把平台模型配置映射为 pi provider 模型条目；api 按 provider 决定走 openai-completions 或 anthropic-messages。 */
 function toModelConfig(model: CliModel): ProviderModelConfig {
 	const api: Api = model.provider === "ANTHROPIC" ? "anthropic-messages" : "openai-completions";
+	// 命中推理能力映射表的模型按 pi-ai 原生配置启用思考（reasoning + deepseek thinkingFormat + system role）；
+	// 其余平台模型保持 reasoning:false，避免向不支持思考的模型发送 reasoning/thinking 参数。
+	const profile = resolveReasoningProfile(model.modelName);
 	return {
 		// id 用平台数据库 ID（streamSimple 据此 Number(id) 调 createModelSession）。
 		id: String(model.id),
@@ -68,9 +105,9 @@ function toModelConfig(model: CliModel): ProviderModelConfig {
 		api,
 		// applyExtension 必填；streamSimple 实际用会话 proxyBaseUrl 覆盖。
 		baseUrl: GITPILOT_BASE_URL_PLACEHOLDER,
-		// 平台模型多为标准对话模型，不支持 OpenAI reasoning 的 developer role；
-		// 设 false 让 pi 用 system role，避免平台 400 messages.role=developer 报错。
-		reasoning: false,
+		reasoning: profile?.reasoning ?? false,
+		thinkingLevelMap: profile?.thinkingLevelMap,
+		compat: profile?.compat,
 		input: ["text"],
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: model.contextLength ?? DEFAULT_CONTEXT_WINDOW,
