@@ -1,5 +1,5 @@
 /** Windows 自定义标题栏：只呈现状态与窗口控制，不承载 Agent 业务能力。 */
-import { ChevronsLeft, Minus, Square, X } from 'lucide-react';
+import { ChevronsLeft, ChevronsRight, Minus, Square, X } from 'lucide-react';
 import { closeWindow, minimizeWindow, startDraggingWindow, toggleMaximizeWindow } from '@/src/desktop/window';
 import { useWorkbenchStore } from '@/src/store/workbench';
 import { useSessionStore } from '@/src/store/session';
@@ -12,6 +12,7 @@ export function DesktopTitleBar() {
 	const layout = useWorkbenchStore((s) => s.layout);
 	const updateLayout = useWorkbenchStore((s) => s.updateLayout);
 	const reportError = useSessionStore((s) => s.reportError);
+	const sidebarToggleLabel = layout.leftCollapsed ? '显示导航栏' : '隐藏导航栏';
 	const startDragging = (event: React.MouseEvent<HTMLElement>) => {
 		if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
 		void startDraggingWindow();
@@ -32,8 +33,8 @@ export function DesktopTitleBar() {
 			{/* 已连接状态放在底栏，模型只保留输入区选择器，避免重复占用标题栏。 */}
 			<div className="desktop-titlebar__spacer" data-tauri-drag-region onMouseDown={startDragging} />
 			<div className="desktop-titlebar__actions" onMouseDown={(event) => event.stopPropagation()}>
-				<button type="button" onClick={() => updateLayout({ leftCollapsed: !layout.leftCollapsed })} title={layout.leftCollapsed ? '显示导航栏' : '隐藏导航栏'} aria-label={layout.leftCollapsed ? '显示导航栏' : '隐藏导航栏'}>
-					<ChevronsLeft size={14} />
+				<button type="button" onClick={() => updateLayout({ leftCollapsed: !layout.leftCollapsed })} title={sidebarToggleLabel} aria-label={sidebarToggleLabel}>
+					{layout.leftCollapsed ? <ChevronsRight size={14} /> : <ChevronsLeft size={14} />}
 				</button>
 				<UserMenu />
 				<i />

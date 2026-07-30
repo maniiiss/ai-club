@@ -40,6 +40,11 @@ export interface PlatformAccount {
 	creditBalance: number | null;
 }
 
+/** 平台后端的只读连通状态；由 sidecar 持有凭据并完成探测。 */
+export interface PlatformConnection {
+	connected: boolean;
+}
+
 /** 思维级别（与 pi-agent-core ThinkingLevel 对齐） */
 export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high';
 
@@ -124,6 +129,7 @@ export type RpcCommand =
 	| { id?: string; type: 'set_token'; platformUrl: string; token: string }
 	// 账户菜单的只读摘要与受控登出。
 	| { id?: string; type: 'get_platform_account' }
+	| { id?: string; type: 'get_platform_connection' }
 	| { id?: string; type: 'logout' }
 	// 扩展 UI 响应
 	| { type: 'extension_ui_response'; id: string; value: string }
@@ -176,6 +182,7 @@ export type RpcResponse =
 	| { id?: string; type: 'response'; command: 'get_commands'; success: true; data: { commands: RpcSlashCommand[] } }
 	| { id?: string; type: 'response'; command: 'set_token'; success: true }
 	| { id?: string; type: 'response'; command: 'get_platform_account'; success: true; data: PlatformAccount }
+	| { id?: string; type: 'response'; command: 'get_platform_connection'; success: true; data: PlatformConnection }
 	| { id?: string; type: 'response'; command: 'logout'; success: true }
 	| { id?: string; type: 'response'; command: string; success: false; error: string };
 

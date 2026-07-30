@@ -1,7 +1,7 @@
 /**
  * Slash 命令面板。
  *
- * 输入框输入 / 触发，列出 sidecar extension 注册的命令（/login、/model 等），
+ * 输入框中的 / 后文本直接筛选 sidecar extension 注册的命令（/login、/model 等），
  * 选中后通过 onPick 回调执行。对应设计文档第 7.2 节。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -10,12 +10,12 @@ import type { RpcSlashCommand } from '@/src/rpc/types';
 
 interface CommandPaletteProps {
 	commands: RpcSlashCommand[];
+	query: string;
 	onPick: (name: string) => void;
 	onDismiss: () => void;
 }
 
-export function CommandPalette({ commands, onPick, onDismiss }: CommandPaletteProps) {
-	const [query, setQuery] = useState('');
+export function CommandPalette({ commands, query, onPick, onDismiss }: CommandPaletteProps) {
 	const [active, setActive] = useState(0);
 	const listRef = useRef<HTMLDivElement>(null);
 	const panelRef = useRef<HTMLDivElement>(null);
@@ -70,15 +70,6 @@ export function CommandPalette({ commands, onPick, onDismiss }: CommandPalettePr
 	return (
 		<div ref={panelRef} className="input-composer__palette absolute bottom-[calc(100%+10px)] left-1/2 z-50 -translate-x-1/2 overflow-hidden rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elevated)] shadow-lg">
 			<div className="border-b border-[var(--color-border)] px-3 py-2 text-xs text-[var(--color-text-muted)]">命令</div>
-			<div className="border-b border-[var(--color-border)] px-3 py-2">
-				<input
-					autoFocus
-					value={query}
-					onChange={(e) => setQuery(e.target.value)}
-					placeholder="搜索命令…"
-					className="w-full bg-transparent text-sm text-[var(--color-text)] outline-none placeholder:text-[var(--color-text-muted)]"
-				/>
-			</div>
 			<div ref={listRef} className="max-h-72 overflow-y-auto py-1">
 				{filtered.map((cmd, i) => (
 					<button
@@ -90,8 +81,8 @@ export function CommandPalette({ commands, onPick, onDismiss }: CommandPalettePr
 							i === active ? 'bg-[var(--color-primary-muted)] text-[var(--color-text)]' : 'text-[var(--color-text-secondary)]'
 						}`}
 					>
-						<span className="mono">/{cmd.name}</span>
-						{cmd.description && <span className="ml-2 truncate text-xs text-[var(--color-text-muted)]">{cmd.description}</span>}
+						<span className="mono shrink-0 whitespace-nowrap">/{cmd.name}</span>
+						{cmd.description && <span className="ml-2 min-w-0 flex-1 truncate text-right text-xs text-[var(--color-text-muted)]">{cmd.description}</span>}
 					</button>
 				))}
 			</div>

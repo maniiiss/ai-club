@@ -32,6 +32,8 @@ export interface ExecutionRun {
 	/** 最近一次到达的模型增量类型：thinking 表示仍在思考，text 表示已进入正文回答阶段。 */
 	lastDeltaKind?: 'thinking' | 'text';
 	steps: ExecutionStep[];
+	/** 已归档到聊天正文后的工具步骤；后续实时面板只显示尚未归档的步骤。 */
+	reportedStepIds?: string[];
 }
 
 export interface LayoutPreferences {
@@ -173,7 +175,13 @@ export function reduceExecutionEvent(run: ExecutionRun, event: AgentSessionEvent
 
 function createRun(prompt: string): ExecutionRun {
 	const now = Date.now();
-	return { id: `run-${now}`, status: 'running', lastPrompt: prompt, thinking: '', steps: [] };
+	return { id: `run-${now}`, status: 'running', lastPrompt: prompt, thinking: '', steps: [], reportedStepIds: [] };
+}
+
+/** 获取当前正文之后新产生、尚未显示为聊天批次的真实工具步骤。 */
+export function getUnreportedExecutionSteps(execution: ExecutionRun): ExecutionStep[] {
+	const reported = new Set(execution.reportedStepIds);
+	return execution.steps.filter((step) => step.kind !== 'complete' && !reported.has(step.id));
 }
 
 interface WorkbenchStore {
@@ -186,6 +194,8 @@ interface WorkbenchStore {
 	updateLayout: (patch: Partial<LayoutPreferences>) => void;
 	beginExecution: (prompt: string) => void;
 	applyExecutionEvent: (event: AgentSessionEvent) => void;
+	/** 将一批已显示在聊天区的工具步骤标记为已归档，避免后续正文重复展示。 */
+	markExecutionStepsReported: (stepIds: string[]) => void;
 	markExecutionStopped: () => void;
 	addApprovalStep: (request: RpcExtensionUIRequest) => void;
 	resolveApprovalStep: (requestId: string) => void;
@@ -214,6 +224,11 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 		const execution = reduceExecutionEvent(get().execution, event);
 		set({ execution, selectedStepId: get().selectedStepId ?? execution.steps.at(-1)?.id ?? null });
 	},
+	markExecutionStepsReported: (stepIds) => set((state) => {
+		if (stepIds.length === 0) return {};
+		const reportedStepIds = [...new Set([...(state.execution.reportedStepIds ?? []), ...stepIds])];
+		return { execution: { ...state.execution, reportedStepIds } };
+	}),
 	markExecutionStopped: () => set((state) => ({ execution: { ...state.execution, status: 'stopped' } })),
 	addApprovalStep: (request) => {
 		const now = Date.now();

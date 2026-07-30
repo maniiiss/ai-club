@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { agentMessagesToUi, filterDesktopThinkingLevels, getAssistantMessageEndText, shouldSkipProjectSwitch } from './session';
+import { applyEvent, agentMessagesToUi, filterDesktopThinkingLevels, getAssistantMessageEndText, platformConnectionStateFromResponse, shouldSkipProjectSwitch, type UIMessage } from './session';
+import { useWorkbenchStore } from './workbench';
+
+function applyToStreamingState(state: { messages: UIMessage[]; _streamingAssistantId: string | null; isStreaming: boolean }, event: Parameters<typeof applyEvent>[1]) {
+	applyEvent(((partial: unknown) => {
+		const next = typeof partial === 'function' ? partial(state as never) : partial;
+		Object.assign(state, next);
+	}) as Parameters<typeof applyEvent>[0], event);
+}
 
 describe('历史消息回放', () => {
 	it('只显示用户消息和带文本的助手回复，不回放工具输出或空工具调用', () => {
@@ -21,6 +29,28 @@ describe('最终 assistant 正文兜底', () => {
 	it('从 message_end 读取完整正文，忽略工具调用和非 assistant 消息', () => {
 		expect(getAssistantMessageEndText({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '已完成' }, { type: 'toolCall', name: 'read' }] } })).toBe('已完成');
 		expect(getAssistantMessageEndText({ type: 'message_end', message: { role: 'toolResult', content: [{ type: 'text', text: '输出' }] } })).toBeNull();
+	});
+});
+
+describe('流式正文与工具批次边界', () => {
+	it('后续正文到达前先归档中间工具，使正文、工具、正文按真实顺序展示', () => {
+		useWorkbenchStore.setState({ execution: { id: 'run-1', status: 'running', lastPrompt: '检查代码', steps: [] } });
+		const state = { messages: [] as UIMessage[], _streamingAssistantId: null as string | null, isStreaming: true };
+
+		applyToStreamingState(state, { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '我先检查配置。' } });
+		useWorkbenchStore.setState({ execution: {
+			id: 'run-1', status: 'running', lastPrompt: '检查代码',
+			steps: [{ id: 'tool-1', toolCallId: 'tool-1', kind: 'command', status: 'succeeded', title: 'bash', startedAt: 1, result: 'ok' }],
+		} });
+		applyToStreamingState(state, { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '配置已确认。' } });
+
+		expect(state.messages.map((message) => [message.kind, message.text])).toEqual([
+			['text', '我先检查配置。'],
+			['execution', ''],
+			['text', '配置已确认。'],
+		]);
+		expect(state.messages[0].streaming).toBe(false);
+		expect(state.messages[2].streaming).toBe(true);
 	});
 });
 
@@ -46,5 +76,12 @@ describe('桌面端可用思考级别收敛', () => {
 		expect(filterDesktopThinkingLevels(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])).toEqual(['off', 'low', 'medium', 'high']);
 		// 输入乱序时仍按桌面固定顺序输出。
 		expect(filterDesktopThinkingLevels(['high', 'off', 'medium'])).toEqual(['off', 'medium', 'high']);
+	});
+});
+
+describe('平台后端连接状态', () => {
+	it('仅在后端可达且登录令牌有效时显示已连接', () => {
+		expect(platformConnectionStateFromResponse({ connected: true })).toBe('connected');
+		expect(platformConnectionStateFromResponse({ connected: false })).toBe('disconnected');
 	});
 });

@@ -1,5 +1,5 @@
 /**
- * 会话侧栏：项目（工作目录）树与任务（会话）列表两个独立分区。
+ * 会话侧栏：项目（工作目录）树与任务（会话）列表使用同一条滚动轴。
  *
  * 项目区在项目节点下展示其项目任务；任务区仅展示没有关联项目的独立任务。
  * 选择任意任务仍会同步 Agent 的实际工作目录。
@@ -26,6 +26,8 @@ function ProjectTreeItem({ node, depth, activeTaskPath, canCreateTask, onCreateT
 	return (
 		<div>
 			<div
+				data-sidebar-menu-kind="project"
+				data-project-path={node.project.path}
 				className="group flex min-h-8 items-center gap-1 rounded-sm py-1 pr-1 text-[14px] text-[var(--color-text)] transition-colors hover:bg-[var(--color-bg-hover)]"
 				style={{ paddingLeft: `${8 + depth * 14}px` }}
 			>
@@ -45,6 +47,9 @@ function ProjectTreeItem({ node, depth, activeTaskPath, canCreateTask, onCreateT
 				<button
 					key={task.path}
 					type="button"
+					data-sidebar-menu-kind="project-task"
+					data-session-path={task.path}
+					data-session-cwd={task.cwd}
 					onClick={() => onSelectTask(task.path)}
 					className={`flex w-full items-center gap-1.5 border-l-2 py-1.5 pr-2 text-left text-[14px] transition-colors ${
 						task.path === activeTaskPath
@@ -90,8 +95,9 @@ export function SessionSidebar() {
 				</button>
 			</div>
 
-			<div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-				<div className="shrink-0 overflow-y-auto px-1.5 pb-2">
+			{/* 两个列表共享滚动容器，项目任务增长时不会再挤压独立任务区域。 */}
+			<div className="sidebar-scroll min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
+				<div>
 					{projects.length === 0 ? (
 						<div className="px-2 py-4 text-[14px] text-[var(--color-text-muted)]">点「添加」选择工作目录</div>
 					) : (
@@ -99,7 +105,7 @@ export function SessionSidebar() {
 					)}
 				</div>
 
-				<div className="flex min-h-0 flex-1 flex-col border-t border-[var(--color-border)] pt-1.5">
+				<div className="mt-1 border-t border-[var(--color-border)] pt-1.5">
 					<div className="flex items-center justify-between px-3 py-2">
 						<span className="text-[10px] font-medium uppercase tracking-wide text-[var(--color-text-muted)]">任务</span>
 						<button
@@ -111,7 +117,7 @@ export function SessionSidebar() {
 							<Plus size={12} /> 添加
 						</button>
 					</div>
-					<div className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
+					<div className="px-1.5 pb-2">
 						{standaloneTasks.length === 0 ? (
 							<div className="px-2 py-2 text-xs text-[var(--color-text-muted)]">暂无独立任务</div>
 						) : (
@@ -122,6 +128,9 @@ export function SessionSidebar() {
 									<button
 										key={session.path}
 										type="button"
+										data-sidebar-menu-kind="standalone-task"
+										data-session-path={session.path}
+										data-session-cwd={session.cwd}
 										onClick={() => void switchSession(session.path)}
 										className={`flex w-full items-center rounded-sm border-l-2 px-2 py-2 text-left text-[14px] transition-colors ${
 											active

@@ -157,6 +157,7 @@ export const rpc = {
 	getCommands: () => send({ type: 'get_commands' }),
 	setToken: (platformUrl: string, token: string) => send({ type: 'set_token', platformUrl, token }),
 	getPlatformAccount: () => send({ type: 'get_platform_account' }),
+	getPlatformConnection: () => send({ type: 'get_platform_connection' }),
 	logout: () => send({ type: 'logout' }),
 	respondValue: (id: string, value: string) => send({ type: 'extension_ui_response', id, value }),
 	respondConfirmed: (id: string, confirmed: boolean) => send({ type: 'extension_ui_response', id, confirmed }),
@@ -233,6 +234,9 @@ function mockResponseFor(cmd: RpcCommand & { id: string }): RpcResponse {
 			return { id, type: 'response', command: 'get_available_thinking_levels', success: true, data: { levels: ['off', 'low', 'medium', 'high'] } };
 		case 'get_commands':
 			return { id, type: 'response', command: 'get_commands', success: true, data: { commands: [{ name: 'login', source: 'extension', sourceInfo: { kind: 'extension', name: 'gitpilot' } }] } };
+		case 'get_platform_connection':
+			// 浏览器预览没有 sidecar 与真实后端，固定模拟为可用以保持工作台可进入。
+			return { id, type: 'response', command: 'get_platform_connection', success: true, data: { connected: true } };
 		case 'get_tree':
 			return { id, type: 'response', command: 'get_tree', success: true, data: { tree: [], leafId: null } };
 		default:

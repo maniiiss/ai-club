@@ -8,6 +8,7 @@
  */
 import { memo } from 'react';
 import { CodeCard } from './CodeCard';
+import { ExecutionBatch } from './ExecutionActivity';
 import type { UIMessage } from '@/src/store/session';
 
 const ROLE_ALIGN: Record<UIMessage['role'], string> = {
@@ -18,6 +19,10 @@ const ROLE_ALIGN: Record<UIMessage['role'], string> = {
 };
 
 export const MessageBubble = memo(function MessageBubble({ message }: { message: UIMessage }) {
+	if (message.kind === 'execution') {
+		return message.executionSteps?.length ? <ExecutionBatch steps={message.executionSteps} /> : null;
+	}
+
 	if (message.role === 'tool') {
 		return (
 			<div className="my-1">

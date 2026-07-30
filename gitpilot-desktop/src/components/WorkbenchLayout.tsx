@@ -1,6 +1,6 @@
 /** 可持久化调整的三栏工作台骨架。 */
 import { useRef, useState, type ReactNode } from 'react';
-import { Circle, SquareTerminal, X } from 'lucide-react';
+import { Circle, RefreshCw, SquareTerminal, X } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
 import { useWorkbenchStore } from '@/src/store/workbench';
 
@@ -39,11 +39,14 @@ function ResizeHandle({ side }: { side: 'left' | 'right' }) {
 export function WorkbenchLayout({ left, center, right, bottom, terminal }: WorkbenchLayoutProps) {
 	const layout = useWorkbenchStore((s) => s.layout);
 	const updateLayout = useWorkbenchStore((s) => s.updateLayout);
-	const connection = useSessionStore((s) => s.connection);
+	const platformConnection = useSessionStore((s) => s.platformConnection);
+	const retryPlatformConnection = useSessionStore((s) => s.retryPlatformConnection);
 	const currentProjectPath = useSessionStore((s) => s.currentProjectPath);
 	const [bottomView, setBottomView] = useState<'terminal' | 'output'>('output');
 	const terminalOpen = layout.bottomOpen && bottomView === 'terminal';
 	const rightVisible = Boolean(right) && !layout.rightCollapsed;
+	const isPlatformChecking = platformConnection === 'checking';
+	const platformStatusText = isPlatformChecking ? '正在连接' : platformConnection === 'connected' ? '已连接' : '未连接';
 	const columns = [
 		layout.leftCollapsed ? '0px' : `${layout.leftWidth}px`,
 		layout.leftCollapsed ? '0px' : '1px',
@@ -54,22 +57,22 @@ export function WorkbenchLayout({ left, center, right, bottom, terminal }: Workb
 
 	return (
 		<div className="workbench-shell">
-			<div className="workbench-grid" style={{ gridTemplateColumns: columns }}>
+			<div className={`workbench-grid ${layout.leftCollapsed ? 'is-left-collapsed' : ''}`} style={{ gridTemplateColumns: columns }}>
 				<div className="workbench-pane workbench-pane--left" aria-hidden={layout.leftCollapsed}>{left}</div>
 				{layout.leftCollapsed ? <div /> : <ResizeHandle side="left" />}
 				<div className="workbench-pane workbench-pane--center">{center}</div>
 				{rightVisible ? <ResizeHandle side="right" /> : <div />}
 				<div className="workbench-pane workbench-pane--right" aria-hidden={!rightVisible}>{right}</div>
 			</div>
-			{layout.bottomOpen && <section className="workbench-bottom">
+			<section className={`workbench-bottom ${layout.bottomOpen ? 'is-open' : ''}`} aria-hidden={!layout.bottomOpen} inert={!layout.bottomOpen}>
 				<div className="workbench-bottom__tabs" role="tablist" aria-label="底部面板">
 					<button type="button" role="tab" aria-selected={bottomView === 'terminal'} className={bottomView === 'terminal' ? 'is-active' : ''} onClick={() => setBottomView('terminal')}>终端</button>
 					<button type="button" role="tab" aria-selected={bottomView === 'output'} className={bottomView === 'output' ? 'is-active' : ''} onClick={() => setBottomView('output')}>输出</button>
 					<span className="workbench-bottom__tabs-grow" />
 					<button type="button" className="workbench-bottom__close" onClick={() => updateLayout({ bottomOpen: false })} title="关闭底部面板" aria-label="关闭底部面板"><X size={13} /></button>
 				</div>
-				<div className="workbench-bottom__content">{bottomView === 'terminal' && terminal ? terminal : bottom}</div>
-			</section>}
+				<div className="workbench-bottom__content">{layout.bottomOpen && (bottomView === 'terminal' && terminal ? terminal : bottom)}</div>
+			</section>
 			<footer className="workbench-statusbar">
 				<button
 					className={`workbench-statusbar__terminal ${terminalOpen ? 'is-active' : ''}`}
@@ -91,9 +94,16 @@ export function WorkbenchLayout({ left, center, right, bottom, terminal }: Workb
 				</button>
 				<span className="mono truncate" title={currentProjectPath ?? undefined}>{currentProjectPath ?? '未选择工作目录'}</span>
 				<span className="workbench-statusbar__grow" />
-				<span className={`workbench-statusbar__connection ${connection === 'ready' ? 'is-ready' : 'is-disconnected'}`} title="通过 sidecar RPC 状态实时判断">
-					<Circle size={7} fill="currentColor" /> {connection === 'ready' ? '已连接' : '未连接'}
-				</span>
+				<button
+					type="button"
+					className={`workbench-statusbar__connection ${platformConnection === 'connected' ? 'is-ready' : 'is-disconnected'} ${isPlatformChecking ? 'is-checking' : ''}`}
+					disabled={isPlatformChecking}
+					onClick={() => void retryPlatformConnection()}
+					title={isPlatformChecking ? '正在重新连接 GitPilot 平台' : platformConnection === 'connected' ? '刷新 GitPilot 平台状态与账户信息' : '重新连接 GitPilot 平台并刷新账户信息'}
+					aria-label={isPlatformChecking ? '正在重新连接 GitPilot 平台' : '重新连接 GitPilot 平台并刷新账户信息'}
+				>
+					{isPlatformChecking ? <RefreshCw size={11} className="animate-spin" /> : <Circle size={7} fill="currentColor" />} {platformStatusText}
+				</button>
 			</footer>
 		</div>
 	);

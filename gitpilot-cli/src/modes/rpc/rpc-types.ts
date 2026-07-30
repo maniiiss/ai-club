@@ -20,6 +20,15 @@ export interface RpcPlatformAccount {
 	creditBalance: number | null;
 }
 
+/**
+ * GitPilot 平台后端的可用性摘要。
+ * 业务意图：桌面端以一次需要凭据的轻量请求同时确认后端可达与登录令牌有效，
+ * 不把令牌、网络错误原文或账户资料暴露给渲染层。
+ */
+export interface RpcPlatformConnection {
+	connected: boolean;
+}
+
 // ============================================================================
 // RPC Commands (stdin)
 // ============================================================================
@@ -84,6 +93,8 @@ export type RpcCommand =
 	| { id?: string; type: "set_token"; platformUrl: string; token: string }
 	// 桌面账户菜单：所有网络访问和凭据读取保留在 sidecar 内。
 	| { id?: string; type: "get_platform_account" }
+	// 仅检查已登录的平台后端是否可用，供桌面底栏显示连接状态。
+	| { id?: string; type: "get_platform_connection" }
 	| { id?: string; type: "logout" };
 
 // ============================================================================
@@ -249,6 +260,7 @@ export type RpcResponse =
 	  }
 	| { id?: string; type: "response"; command: "set_token"; success: true }
 	| { id?: string; type: "response"; command: "get_platform_account"; success: true; data: RpcPlatformAccount }
+	| { id?: string; type: "response"; command: "get_platform_connection"; success: true; data: RpcPlatformConnection }
 	| { id?: string; type: "response"; command: "logout"; success: true }
 
 	// Error response (any command can fail)

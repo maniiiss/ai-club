@@ -24,6 +24,16 @@ describe("buildSystemPrompt", () => {
 
 			expect(prompt).toContain("Show file paths clearly");
 		});
+
+		test("asks for one progress sentence before the first tool call", () => {
+			const prompt = buildSystemPrompt({
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("After thinking, the same assistant response MUST start with one short user-visible plain-text progress sentence before any tool call");
+		});
 	});
 
 	describe("default tools", () => {

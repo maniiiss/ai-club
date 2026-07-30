@@ -26,20 +26,21 @@ import type {
 	AgentSessionEvent,
 	ModelInfo,
 	PlatformAccount,
+	PlatformConnection,
 	RpcExtensionUIRequest,
 	RpcSessionState,
 	RpcSlashCommand,
 	SessionListItem,
 	ThinkingLevel,
 } from '@/src/rpc/types';
-import { useWorkbenchStore } from '@/src/store/workbench';
+import { getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionStep } from '@/src/store/workbench';
 
 // ============================================================================
 // UI 消息模型
 // ============================================================================
 
 export type MessageRole = 'user' | 'assistant' | 'tool' | 'system';
-export type MessageKind = 'text' | 'diff' | 'bash' | 'file' | 'image' | 'thinking' | 'error';
+export type MessageKind = 'text' | 'diff' | 'bash' | 'file' | 'image' | 'thinking' | 'execution' | 'error';
 
 export interface UIMessage {
 	id: string;
@@ -51,6 +52,8 @@ export interface UIMessage {
 	meta?: Record<string, unknown>;
 	/** 是否仍在流式接收 */
 	streaming?: boolean;
+	/** 一次正文边界内的真实工具步骤；只用于 execution 类型消息。 */
+	executionSteps?: ExecutionStep[];
 }
 
 function newId(): string {
@@ -85,6 +88,8 @@ const PROJECTS_KEY = 'gitpilot-desktop.projects';
 const CURRENT_PROJECT_KEY = 'gitpilot-desktop.currentProject';
 const MODEL_KEY = 'gitpilot-desktop.lastModel';
 const STANDALONE_TASKS_KEY = 'gitpilot-desktop.standaloneTasks';
+/** 只采纳最后一次平台探测结果，避免旧的失败请求覆盖用户刚刚重连后的成功状态。 */
+let platformConnectionRequestVersion = 0;
 
 interface ProjectEntry {
 	name: string;
@@ -200,10 +205,18 @@ function currentSessionListItem(state: RpcSessionState | null, cwd: string | und
 // ============================================================================
 
 export type ConnectionState = 'idle' | 'connecting' | 'ready' | 'disconnected';
+/** 平台后端连通状态，与本地 sidecar 的进程连接态分开维护。 */
+export type PlatformConnectionState = 'checking' | 'connected' | 'disconnected';
+
+export function platformConnectionStateFromResponse(response: PlatformConnection): PlatformConnectionState {
+	return response.connected ? 'connected' : 'disconnected';
+}
 
 interface SessionStore {
 	// 连接
 	connection: ConnectionState;
+	/** 平台后端可用性：只有后端可达且当前令牌有效时才为 connected。 */
+	platformConnection: PlatformConnectionState;
 	error: string | null;
 
 	// 会话状态
@@ -238,6 +251,9 @@ interface SessionStore {
 	connect: () => Promise<void>;
 	disconnect: () => Promise<void>;
 	refreshAll: () => Promise<void>;
+	refreshPlatformConnection: () => Promise<void>;
+	/** 用户点击底栏状态时重新请求平台账户、模型与连通状态。 */
+	retryPlatformConnection: () => Promise<void>;
 	refreshSessionList: () => Promise<void>;
 	prompt: (message: string) => Promise<void>;
 	steer: (message: string) => Promise<void>;
@@ -269,7 +285,39 @@ interface SessionStore {
 /** 处理一条 agent 事件，更新 messages。
  * 事件类型对齐 pi-agent-core 实际输出（message_update/turn_end/tool_execution_update 等），
  * 非早期假设的 message.delta/message.end 点分命名。 */
-function applyEvent(set: (partial: Partial<SessionStore> | ((s: SessionStore) => Partial<SessionStore>)) => void, e: AgentSessionEvent): void {
+type SessionSetter = (partial: Partial<SessionStore> | ((s: SessionStore) => Partial<SessionStore>)) => void;
+
+/**
+ * 将最近一段正文之后尚未归档的工具步骤插入聊天流。
+ * 每个摘要都是独立批次，因此下一次助手正文只会展示新发生的命令或文件编辑。
+ */
+function appendUnreportedExecutionBatch(set: SessionSetter): void {
+	const steps = getUnreportedExecutionSteps(useWorkbenchStore.getState().execution);
+	if (steps.length === 0) return;
+	set((state) => ({
+		messages: [...state.messages, { id: newId(), role: 'assistant', text: '', kind: 'execution', executionSteps: steps }],
+	}));
+	useWorkbenchStore.getState().markExecutionStepsReported(steps.map((step) => step.id));
+}
+
+/**
+ * 新正文到来时，先把上一段正文与其间发生的工具调用切开。
+ * 工具专用回合没有正文 message_end，不能等待该事件，否则后续正文会错误拼入前一段。
+ */
+function flushExecutionBoundaryBeforeText(set: SessionSetter): void {
+	const steps = getUnreportedExecutionSteps(useWorkbenchStore.getState().execution);
+	if (steps.length === 0) return;
+	set((state) => {
+		if (!state._streamingAssistantId) return {};
+		const messages = state.messages.map((message) => (
+			message.id === state._streamingAssistantId ? { ...message, streaming: false } : message
+		));
+		return { messages, _streamingAssistantId: null };
+	});
+	appendUnreportedExecutionBatch(set);
+}
+
+export function applyEvent(set: SessionSetter, e: AgentSessionEvent): void {
 	const type = e.type;
 
 	// assistant 流式增量：pi 的 message_update 内嵌 assistantMessageEvent，其 type 为 text_delta，delta 为增量文本
@@ -277,6 +325,7 @@ function applyEvent(set: (partial: Partial<SessionStore> | ((s: SessionStore) =>
 		const inner = (e as { assistantMessageEvent?: { type?: string; delta?: string } }).assistantMessageEvent;
 		const chunk = inner?.type === 'text_delta' ? inner.delta ?? '' : '';
 		if (!chunk) return;
+		flushExecutionBoundaryBeforeText(set);
 		set((s) => {
 			let id = s._streamingAssistantId;
 			const messages = [...s.messages];
@@ -298,6 +347,7 @@ function applyEvent(set: (partial: Partial<SessionStore> | ((s: SessionStore) =>
 	if (type === 'message_end') {
 		const text = getAssistantMessageEndText(e);
 		if (!text) return;
+		flushExecutionBoundaryBeforeText(set);
 		set((s) => {
 			const messages = [...s.messages];
 			const streamingIndex = s._streamingAssistantId ? messages.findIndex((message) => message.id === s._streamingAssistantId) : -1;
@@ -309,6 +359,7 @@ function applyEvent(set: (partial: Partial<SessionStore> | ((s: SessionStore) =>
 			if (previous?.role === 'assistant' && previous.text === text) return {};
 			return { messages: [...messages, { id: newId(), role: 'assistant', text, kind: 'text', streaming: true }], _streamingAssistantId: undefined };
 		});
+		appendUnreportedExecutionBatch(set);
 		return;
 	}
 
@@ -328,6 +379,8 @@ function applyEvent(set: (partial: Partial<SessionStore> | ((s: SessionStore) =>
 			const messages = s.messages.map((m) => (m.id === s._streamingAssistantId ? { ...m, streaming: false } : m));
 			return { messages, _streamingAssistantId: null, isStreaming: false };
 		});
+		// 极少数工具可能在最后一段正文之后才结束；收敛时补建批次，不能让这些真实操作消失。
+		appendUnreportedExecutionBatch(set);
 		return;
 	}
 
@@ -365,6 +418,7 @@ export function agentMessagesToUi(messages: unknown[]): UIMessage[] {
 
 export const useSessionStore = create<SessionStore>()((set, get) => ({
 	connection: 'idle',
+	platformConnection: 'checking',
 	error: null,
 	sessionState: null,
 	messages: [],
@@ -384,7 +438,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
 	connect: async () => {
 		if (get().connection === 'connecting' || get().connection === 'ready') return;
-		set({ connection: 'connecting', error: null });
+		set({ connection: 'connecting', platformConnection: 'checking', error: null });
 
 		await initBridge();
 
@@ -397,7 +451,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			}),
 		);
 		unsubs.push(
-			onDisconnect(() => set({ connection: 'disconnected', isStreaming: false, _streamingAssistantId: null })),
+			onDisconnect(() => {
+				platformConnectionRequestVersion += 1;
+				set({ connection: 'disconnected', platformConnection: 'disconnected', isStreaming: false, _streamingAssistantId: null });
+			}),
 		);
 		unsubs.push(onError((msg) => {
 			// sidecar JSONL 损坏或协议异常后，继续保留流式态会让下一次输入被误发为 steer，用户将无法启动新任务。
@@ -406,8 +463,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			if (wasStreaming) useWorkbenchStore.getState().markExecutionStopped();
 		}));
 		unsubs.push(onEvent((e) => {
-			applyEvent(set, e);
 			useWorkbenchStore.getState().applyExecutionEvent(e);
+			// 先归并工具事件，再由 assistant 正文把此刻未归档的步骤封装成一个聊天批次。
+			applyEvent(set, e);
 			// 首轮回答结束后 session 文件才会带上标题和首条消息，需要立即刷新左侧任务列表。
 			if (e.type === 'turn_end') void get().refreshSessionList();
 		}));
@@ -423,6 +481,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		);
 
 		set({ _unsubs: unsubs });
+		// 后端可能在桌面应用运行期间停止；周期探测只影响底栏状态，不阻塞本地 Agent 会话。
+		const connectionPoll = window.setInterval(() => void get().refreshPlatformConnection(), 10_000);
+		unsubs.push(() => window.clearInterval(connectionPoll));
 
 		// rpc:ready 可能在 listen 注册前已发出（Rust setup 时即 emit），
 		// 不依赖 ready 事件，直接拉取状态；失败由 refreshAll 内部 catch 记录 error。
@@ -492,7 +553,11 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		// 用户名与积分由 sidecar 使用系统凭据读取，渲染层不会接触 gpt_ token。
 		try {
 			const accountRes = await rpc.getPlatformAccount();
-			if (accountRes.success && accountRes.command === 'get_platform_account') next.platformAccount = accountRes.data;
+			if (accountRes.success && accountRes.command === 'get_platform_account') {
+				next.platformAccount = accountRes.data;
+				// 账户摘要请求已携带当前令牌且由平台成功返回，是比独立心跳更可靠的已连接证据。
+				next.platformConnection = 'connected';
+			}
 		} catch {
 			// 未登录或平台暂不可用时维持空账户摘要，不影响本地 Agent 的启动。
 		}
@@ -507,6 +572,34 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			// 拉取失败保留上次已知档位，不阻塞会话刷新。
 		}
 		set(next);
+		if (next.platformConnection === 'connected') {
+			// 账户成功后废弃仍在路上的旧探测，不能让其失败结果把状态写回红色。
+			platformConnectionRequestVersion += 1;
+			return;
+		}
+		await get().refreshPlatformConnection();
+	},
+
+	refreshPlatformConnection: async () => {
+		const requestVersion = ++platformConnectionRequestVersion;
+		set({ platformConnection: 'checking' });
+		try {
+			const response = await rpc.getPlatformConnection();
+			if (requestVersion !== platformConnectionRequestVersion) return;
+			if (response.success && response.command === 'get_platform_connection') {
+				set({ platformConnection: platformConnectionStateFromResponse(response.data) });
+				return;
+			}
+		} catch {
+			// sidecar 仍存活但平台后端已停止时，底栏必须立即转为未连接。
+		}
+		if (requestVersion !== platformConnectionRequestVersion) return;
+		set({ platformConnection: 'disconnected' });
+	},
+
+	retryPlatformConnection: async () => {
+		set({ platformConnection: 'checking' });
+		await get().refreshAll();
 	},
 
 	refreshSessionList: async () => {

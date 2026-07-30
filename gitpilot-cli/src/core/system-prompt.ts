@@ -114,6 +114,8 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	// Always include these
 	addGuideline("Be concise in your responses");
+	// 流式界面必须先收到真实正文，再显示工具；纯正文回合会结束 Agent，因此正文和首批工具需要属于同一回复。
+	addGuideline("After thinking, the same assistant response MUST start with one short user-visible plain-text progress sentence before any tool call. Never emit a thinking-plus-tool-only response. Keep consecutive tool calls grouped; only send another progress sentence when the next action or finding materially changes");
 	addGuideline("Show file paths clearly when working with files");
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");

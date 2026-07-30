@@ -26,9 +26,9 @@ export function InputBox() {
 	const [showPalette, setShowPalette] = useState(false);
 	const taRef = useRef<HTMLTextAreaElement>(null);
 
-	// / 开头且无空格时显示命令面板
+	// / 开头且无空格时显示命令面板；/ 后的文本就是命令筛选条件。
 	useEffect(() => {
-		const m = text.match(/^\/(\w*)$/);
+		const m = text.match(/^\/(\S*)$/);
 		setShowPalette(m !== null);
 	}, [text]);
 
@@ -76,7 +76,7 @@ export function InputBox() {
 
 	return (
 		<div className="input-composer">
-			{showPalette && <CommandPalette commands={commands} onPick={pickCommand} onDismiss={() => setShowPalette(false)} />}
+			{showPalette && <CommandPalette commands={commands} query={text.slice(1)} onPick={pickCommand} onDismiss={() => setShowPalette(false)} />}
 			<div className="input-composer__surface">
 				<textarea
 					ref={taRef}

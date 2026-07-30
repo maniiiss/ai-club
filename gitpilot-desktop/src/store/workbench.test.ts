@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { classifyExecutionKind, reduceExecutionEvent, useWorkbenchStore, type ExecutionRun } from './workbench';
+import { classifyExecutionKind, getUnreportedExecutionSteps, reduceExecutionEvent, useWorkbenchStore, type ExecutionRun } from './workbench';
 import { resolveWorkbenchShortcut } from '@/src/workbench/shortcuts';
 
 function runningRun(): ExecutionRun {
@@ -46,6 +46,17 @@ describe('Agent 工作台执行事件', () => {
 		const completed = reduceExecutionEvent(duringContinuation, { type: 'agent_settled' }, 200);
 		expect(completed.status).toBe('completed');
 		expect(completed.steps.at(-1)).toMatchObject({ kind: 'complete', status: 'succeeded', endedAt: 200 });
+	});
+
+	it('已归档的工具步骤不会混入下一段正文对应的执行批次', () => {
+		const withFirst = reduceExecutionEvent(runningRun(), { type: 'tool_execution_end', toolCallId: 'tool-1', toolName: 'bash', result: 'first', isError: false }, 100);
+		const firstBatch = getUnreportedExecutionSteps(withFirst);
+		expect(firstBatch.map((step) => step.id)).toEqual(['tool-1']);
+
+		useWorkbenchStore.setState({ execution: withFirst });
+		useWorkbenchStore.getState().markExecutionStepsReported(firstBatch.map((step) => step.id));
+		const withSecond = reduceExecutionEvent(useWorkbenchStore.getState().execution, { type: 'tool_execution_end', toolCallId: 'tool-2', toolName: 'edit_file', result: 'second', isError: false }, 200);
+		expect(getUnreportedExecutionSteps(withSecond).map((step) => step.id)).toEqual(['tool-2']);
 	});
 });
 

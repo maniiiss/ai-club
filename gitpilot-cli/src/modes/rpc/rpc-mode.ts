@@ -692,6 +692,22 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return success(id, "get_platform_account", { platformUrl, user, creditBalance });
 			}
 
+			// 底栏的“已连接”必须表示平台后端实际可访问，不能仅以 sidecar 存活作为依据。
+			// 复用需要 Bearer token 的 /api/cli/me，以一次只读请求同时验证后端连通性和当前登录态。
+			case "get_platform_connection": {
+				const platformUrl = getPlatformUrl();
+				if (!platformUrl) return success(id, "get_platform_connection", { connected: false });
+				const token = await loadCliToken(platformUrl);
+				if (!token) return success(id, "get_platform_connection", { connected: false });
+				try {
+					await getCurrentUser(platformUrl, token);
+					return success(id, "get_platform_connection", { connected: true });
+				} catch {
+					// 网络不可达、后端停止或令牌失效都不能显示为绿色“已连接”。
+					return success(id, "get_platform_connection", { connected: false });
+				}
+			}
+
 			// 菜单登出需撤销平台会话并删除系统凭据，避免本地 Agent 继续持有可用 token。
 			case "logout": {
 				const platformUrl = getPlatformUrl();

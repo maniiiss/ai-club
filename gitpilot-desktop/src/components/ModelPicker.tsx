@@ -10,6 +10,32 @@ import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Cpu, Brain, LogIn } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
 import { useWorkbenchStore } from '@/src/store/workbench';
+import type { ThinkingLevel } from '@/src/rpc/types';
+
+/**
+ * 只有一个启用档位的模型本质上是开关能力，例如 sidecar 回传 off/high。
+ * UI 不暴露误导性的 high，而是显示 off/on；实际写回时仍使用模型支持的原始档位。
+ */
+export function isBinaryThinkingMode(levels: readonly ThinkingLevel[]): boolean {
+	return levels.includes('off') && levels.filter((level) => level !== 'off').length === 1;
+}
+
+export interface ThinkingLevelOption {
+	label: string;
+	value: ThinkingLevel;
+}
+
+/** 根据模型能力生成显示选项，避免改变 sidecar 的真实 thinking level 协议。 */
+export function getThinkingLevelOptions(levels: readonly ThinkingLevel[]): ThinkingLevelOption[] {
+	if (!isBinaryThinkingMode(levels)) return levels.map((level) => ({ label: level, value: level }));
+	const enabledLevel = levels.find((level) => level !== 'off');
+	return enabledLevel ? [{ label: 'off', value: 'off' }, { label: 'on', value: enabledLevel }] : [];
+}
+
+/** 二元模型的任意启用档位在输入区统一显示为 on。 */
+export function getThinkingLevelLabel(level: ThinkingLevel, levels: readonly ThinkingLevel[]): string {
+	return isBinaryThinkingMode(levels) && level !== 'off' ? 'on' : level;
+}
 
 export function ModelPicker() {
 	const sessionState = useSessionStore((s) => s.sessionState);
@@ -69,6 +95,8 @@ export function ModelPicker() {
 
 	// 可用思考级别由 sidecar 按当前模型能力给出；仅剩 off 表示该模型不支持 reasoning，需禁用控件。
 	const thinkingSupported = thinkingLevels.some((lv) => lv !== 'off');
+	const thinkingOptions = getThinkingLevelOptions(thinkingLevels);
+	const currentThinkingLevel = sessionState?.thinkingLevel ?? 'off';
 
 	return (
 		<div ref={pickerRef} className="flex items-center gap-2">
@@ -121,24 +149,24 @@ export function ModelPicker() {
 					}`}
 				>
 					<Brain size={13} />
-					<span>{sessionState?.thinkingLevel ?? 'off'}</span>
+					<span>{getThinkingLevelLabel(currentThinkingLevel, thinkingLevels)}</span>
 					{thinkingSupported && <ChevronDown size={12} />}
 				</button>
 				{thinkingSupported && openThinking && (
 					<div className="absolute bottom-full right-0 z-40 mb-1 w-32 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-bg-elevated)] py-1 shadow-lg">
-						{thinkingLevels.map((lv) => (
+						{thinkingOptions.map((option) => (
 							<button
-								key={lv}
+								key={option.value}
 								type="button"
 								onClick={() => {
-									setThinkingLevel(lv);
+									setThinkingLevel(option.value);
 									setOpenThinking(false);
 								}}
 								className={`block w-full px-3 py-1.5 text-left text-xs transition-colors hover:bg-[var(--color-primary-muted)] ${
-									lv === sessionState?.thinkingLevel ? 'text-[var(--color-primary-hover)]' : 'text-[var(--color-text-secondary)]'
+									option.value === currentThinkingLevel ? 'text-[var(--color-primary-hover)]' : 'text-[var(--color-text-secondary)]'
 								}`}
 							>
-								{lv}
+								{option.label}
 							</button>
 						))}
 					</div>

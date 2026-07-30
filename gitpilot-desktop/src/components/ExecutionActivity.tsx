@@ -1,7 +1,7 @@
 /** 聊天流内的 Agent 执行摘要，所有信息均来自已归并的 sidecar 真实事件。 */
 import { useEffect, useState } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
-import { useWorkbenchStore, type ExecutionRun, type ExecutionStep } from '@/src/store/workbench';
+import { ChevronRight, LoaderCircle } from 'lucide-react';
+import { getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionRun, type ExecutionStep } from '@/src/store/workbench';
 
 export function getExecutionActivityLabel(execution: ExecutionRun, isStreaming: boolean): string | null {
 	if (!isStreaming) return null;
@@ -10,7 +10,7 @@ export function getExecutionActivityLabel(execution: ExecutionRun, isStreaming: 
 	if (activeTool) return describeExecutionActivity(activeTool);
 	// 正文已经在输出时模型处于回答阶段，由正文气泡本身体现进度，不再展示“正在思考”。
 	if (execution.lastDeltaKind === 'text') return null;
-	return '正在思考';
+	return execution.thinking?.trim() ? '正在思考' : 'Loading';
 }
 
 /** 从真实工具参数中提取用户可读的操作对象，例如 read 的文件路径。 */
@@ -43,6 +43,56 @@ export function canExpandExecutionActivity(execution: ExecutionRun): boolean {
 	return Boolean(execution.thinking?.trim()) || execution.steps.some((step) => step.kind !== 'complete');
 }
 
+/** 将一批工具步骤归纳为紧凑摘要，避免把每个底层调用直接堆入聊天正文。 */
+export function describeExecutionBatch(steps: ExecutionStep[]): string {
+	const countByKind = new Map<ExecutionStep['kind'], number>();
+	for (const step of steps) countByKind.set(step.kind, (countByKind.get(step.kind) ?? 0) + 1);
+	const labels: string[] = [];
+	const append = (kind: ExecutionStep['kind'], text: string) => {
+		const count = countByKind.get(kind);
+		if (count) labels.push(`${text}${count}个${kind === 'edit' ? '文件' : kind === 'verify' ? '项验证' : kind === 'command' ? '命令' : '操作'}`);
+	};
+	append('command', '运行了');
+	append('edit', '编辑了');
+	append('read', '读取了');
+	append('verify', '完成了');
+	const otherCount = (countByKind.get('plan') ?? 0) + (countByKind.get('other') ?? 0);
+	if (otherCount) labels.push(`调用了${otherCount}个工具`);
+	return labels.length > 0 ? labels.join('、') : `调用了${steps.length}个工具`;
+}
+
+/** 已经完成一段正文的工具批次：默认收起，详情仍保留原始步骤与输出。 */
+export function ExecutionBatch({ steps }: { steps: ExecutionStep[] }) {
+	const selectStep = useWorkbenchStore((s) => s.selectStep);
+	const [expanded, setExpanded] = useState(false);
+	const [selectedId, setSelectedId] = useState<string | null>(steps.at(-1)?.id ?? null);
+	const selected = steps.find((step) => step.id === selectedId) ?? steps.at(-1);
+
+	return (
+		<section className="chat-execution chat-execution--batch" aria-label="已完成的 Agent 执行批次">
+			<button type="button" className="chat-execution__summary" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
+				<ChevronRight size={13} aria-hidden="true" className={`chat-execution__chevron ${expanded ? 'is-expanded' : ''}`} />
+				<span className="chat-execution__label">{describeExecutionBatch(steps)}</span>
+			</button>
+			<div className={`chat-execution__expanded ${expanded ? 'is-expanded' : ''}`} aria-hidden={!expanded} inert={!expanded}>
+				<div className="chat-execution__expanded-inner">
+					<div className="chat-execution__steps" aria-label="本批执行步骤">
+						{steps.map((step) => (
+							<button key={step.id} type="button" onClick={() => { setSelectedId(step.id); selectStep(step.id); }} className={`chat-execution__step ${selected?.id === step.id ? 'is-selected' : ''}`}>
+								<span>{describeExecutionStep(step)}</span>
+							</button>
+						))}
+					</div>
+					{selected && <div className="chat-execution__detail">
+						<span className="chat-execution__detail-title">{selected.kind === 'command' ? 'Shell' : selected.title || '工具输出'}</span>
+						<pre>{selected.error ?? selected.result ?? selected.partialResult ?? selected.args ?? ''}</pre>
+					</div>}
+				</div>
+			</div>
+		</section>
+	);
+}
+
 /** 展开后显示完整步骤；步骤区域固定最多五行高度，更多步骤可独立滚动。 */
 export function ExecutionActivity({ isStreaming }: { isStreaming: boolean }) {
 	const execution = useWorkbenchStore((s) => s.execution);
@@ -50,9 +100,10 @@ export function ExecutionActivity({ isStreaming }: { isStreaming: boolean }) {
 	const selectStep = useWorkbenchStore((s) => s.selectStep);
 	const [expanded, setExpanded] = useState(false);
 	const label = getExecutionActivityLabel(execution, isStreaming);
-	const visibleSteps = execution.steps.filter((step) => step.kind !== 'complete');
+	const isLoading = label === 'Loading';
+	const visibleSteps = getUnreportedExecutionSteps(execution);
 	const selected = visibleSteps.find((step) => step.id === selectedStepId) ?? visibleSteps.at(-1);
-	const canExpand = canExpandExecutionActivity(execution);
+	const canExpand = Boolean(execution.thinking?.trim()) || visibleSteps.length > 0;
 
 	// 新问题会生成新的执行 run，面板必须回到收起状态，不能沿用上一次用户展开的详情。
 	useEffect(() => setExpanded(false), [execution.id]);
@@ -63,32 +114,38 @@ export function ExecutionActivity({ isStreaming }: { isStreaming: boolean }) {
 
 	if (!label) return null;
 
+	const activityLabel = isLoading
+		? <span className="chat-execution__spinner" role="status" aria-label="加载中"><LoaderCircle size={14} aria-hidden="true" /></span>
+		: <span className="chat-execution__label is-running">{label}</span>;
+
 	return (
 		<section className="chat-execution" aria-label="Agent 执行过程">
 			{canExpand ? (
 				<button type="button" className="chat-execution__summary" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
-					{expanded ? <ChevronDown size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />}
-					<span className="chat-execution__label is-running">{label}</span>
+					<ChevronRight size={13} aria-hidden="true" className={`chat-execution__chevron ${expanded ? 'is-expanded' : ''}`} />
+					{activityLabel}
 				</button>
-			) : <span className="chat-execution__summary is-static" aria-live="polite"><span className="chat-execution__label is-running">{label}</span></span>}
-			{expanded && (
-				<div className="chat-execution__expanded">
-					{visibleSteps.length === 0 ? <div className="chat-execution__thinking">
-						<span className="chat-execution__thinking-title">思考过程</span>
-						<pre>{execution.thinking}</pre>
-					</div> : <>
-						<div className="chat-execution__steps" aria-label="执行步骤">
-							{visibleSteps.map((step) => (
-								<button key={step.id} type="button" onClick={() => selectStep(step.id)} className={`chat-execution__step ${selected?.id === step.id ? 'is-selected' : ''}`}>
-									<span>{describeExecutionStep(step)}</span>
-								</button>
-							))}
-						</div>
-						{selected && <div className="chat-execution__detail">
-							<span className="chat-execution__detail-title">{selected.kind === 'command' ? 'Shell' : selected.title || '工具输出'}</span>
-							<pre>{selected.error ?? selected.result ?? selected.partialResult ?? selected.args ?? ''}</pre>
-						</div>}
-					</>}
+			) : <span className="chat-execution__summary is-static" aria-live="polite">{activityLabel}</span>}
+			{canExpand && (
+				<div className={`chat-execution__expanded ${expanded ? 'is-expanded' : ''}`} aria-hidden={!expanded} inert={!expanded}>
+					<div className="chat-execution__expanded-inner">
+						{visibleSteps.length === 0 ? <div className="chat-execution__thinking">
+							<span className="chat-execution__thinking-title">思考过程</span>
+							<pre>{execution.thinking}</pre>
+						</div> : <>
+							<div className="chat-execution__steps" aria-label="执行步骤">
+								{visibleSteps.map((step) => (
+									<button key={step.id} type="button" onClick={() => selectStep(step.id)} className={`chat-execution__step ${selected?.id === step.id ? 'is-selected' : ''}`}>
+										<span>{describeExecutionStep(step)}</span>
+									</button>
+								))}
+							</div>
+							{selected && <div className="chat-execution__detail">
+								<span className="chat-execution__detail-title">{selected.kind === 'command' ? 'Shell' : selected.title || '工具输出'}</span>
+								<pre>{selected.error ?? selected.result ?? selected.partialResult ?? selected.args ?? ''}</pre>
+							</div>}
+						</>}
+					</div>
 				</div>
 			)}
 		</section>
