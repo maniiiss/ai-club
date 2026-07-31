@@ -24,9 +24,11 @@ import {
 } from '@/src/rpc/bridge';
 import type {
 	AgentSessionEvent,
+	ImageContent,
 	ModelInfo,
 	PlatformAccount,
 	PlatformConnection,
+	PreparedAttachment,
 	RpcExtensionUIRequest,
 	RpcSessionState,
 	RpcSlashCommand,
@@ -42,6 +44,16 @@ import { getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionStep } fr
 export type MessageRole = 'user' | 'assistant' | 'tool' | 'system';
 export type MessageKind = 'text' | 'diff' | 'bash' | 'file' | 'image' | 'thinking' | 'execution' | 'error';
 
+/** 用户消息附件的 UI 展示元数据（不含文档原文，避免撑大 UI；图片带 previewUrl 缩略图）。 */
+export interface UIAttachment {
+	name: string;
+	kind: 'image' | 'document' | 'text';
+	mimeType: string;
+	sizeBytes: number;
+	/** 图片预览 data URL（base64），仅图片有值。 */
+	previewUrl?: string;
+}
+
 export interface UIMessage {
 	id: string;
 	role: MessageRole;
@@ -54,10 +66,63 @@ export interface UIMessage {
 	streaming?: boolean;
 	/** 一次正文边界内的真实工具步骤；只用于 execution 类型消息。 */
 	executionSteps?: ExecutionStep[];
+	/** 用户消息携带的附件元数据（仅展示用，文档原文已注入 prompt 文本不在此存）。 */
+	attachments?: UIAttachment[];
 }
 
 function newId(): string {
 	return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * 把预解析附件拆分为：注入到 prompt 的图片列表 + 追加到 message 文本的 <file> 块 + UI 展示元数据。
+ * 图片走 prompt.images（协议已支持），文档文本以 <file name="..."> 块追加（与 CLI @file 一致），
+ * UI 元数据只含展示信息（图片带 previewUrl 缩略图），不存文档原文以免撑大 UI。
+ */
+function buildAttachmentPayload(attachments: PreparedAttachment[] | undefined): {
+	images: ImageContent[];
+	messageSuffix: string;
+	uiAttachments: UIAttachment[];
+} {
+	if (!attachments || attachments.length === 0) {
+		return { images: [], messageSuffix: '', uiAttachments: [] };
+	}
+	const images: ImageContent[] = [];
+	const fileBlocks: string[] = [];
+	const uiAttachments: UIAttachment[] = [];
+	for (const a of attachments) {
+		if (a.kind === 'image' && a.image) {
+			images.push(a.image);
+			uiAttachments.push({
+				name: a.name,
+				kind: 'image',
+				mimeType: a.image.mimeType,
+				sizeBytes: a.sizeBytes,
+				previewUrl: `data:${a.image.mimeType};base64,${a.image.data}`,
+			});
+		} else if (a.text && a.text.length > 0) {
+			fileBlocks.push(`\n<file name="${a.name}">\n${a.text}\n</file>`);
+			uiAttachments.push({
+				name: a.name,
+				kind: a.kind,
+				mimeType: a.mimeType,
+				sizeBytes: a.sizeBytes,
+			});
+		} else {
+			// 无文本（空文件/二进制拒绝/解析失败）：仅展示 chip 与 warnings。
+			uiAttachments.push({
+				name: a.name,
+				kind: a.kind,
+				mimeType: a.mimeType,
+				sizeBytes: a.sizeBytes,
+			});
+		}
+	}
+	return {
+		images,
+		messageSuffix: fileBlocks.join(''),
+		uiAttachments,
+	};
 }
 
 /** 从 sidecar 的 message_end 中提取最终 assistant 正文，为未提供 text_delta 的模型提供显示兜底。 */
@@ -255,8 +320,8 @@ interface SessionStore {
 	/** 用户点击底栏状态时重新请求平台账户、模型与连通状态。 */
 	retryPlatformConnection: () => Promise<void>;
 	refreshSessionList: () => Promise<void>;
-	prompt: (message: string) => Promise<void>;
-	steer: (message: string) => Promise<void>;
+	prompt: (message: string, attachments?: PreparedAttachment[]) => Promise<void>;
+	steer: (message: string, attachments?: PreparedAttachment[]) => Promise<void>;
 	abort: () => Promise<void>;
 	newSession: (cwd?: string) => Promise<void>;
 	newStandaloneSession: () => Promise<void>;
@@ -611,10 +676,19 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		}
 	},
 
-	prompt: async (message: string) => {
-		// 立即把用户消息落到 UI
+	prompt: async (message: string, attachments?: PreparedAttachment[]) => {
+		const { images, messageSuffix, uiAttachments } = buildAttachmentPayload(attachments);
+		const promptMessage = messageSuffix ? `${message}${messageSuffix}` : message;
+		// 立即把用户消息落到 UI（展示原话 + 附件元数据，不含注入的文档原文）
 		useWorkbenchStore.getState().beginExecution(message);
-		set((s) => ({ messages: [...s.messages, { id: newId(), role: 'user', text: message, kind: 'text' }], isStreaming: true, _streamingAssistantId: null }));
+		set((s) => ({
+			messages: [
+				...s.messages,
+				{ id: newId(), role: 'user', text: message, kind: 'text', attachments: uiAttachments.length ? uiAttachments : undefined },
+			],
+			isStreaming: true,
+			_streamingAssistantId: null,
+		}));
 		// 空白会话不占用任务列表；用户发送第一句后才立即显示为任务，回合结束再由 sidecar 扫描结果校正。
 		const created = currentSessionListItem(get().sessionState, get().currentProjectPath ?? undefined);
 		if (created) {
@@ -633,15 +707,17 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			});
 		}
 		try {
-			await rpc.prompt(message);
+			await rpc.prompt(promptMessage, images.length ? images : undefined);
 		} catch (err) {
 			set({ error: err instanceof Error ? err.message : String(err), isStreaming: false });
 		}
 	},
 
-	steer: async (message: string) => {
+	steer: async (message: string, attachments?: PreparedAttachment[]) => {
+		const { images, messageSuffix } = buildAttachmentPayload(attachments);
+		const promptMessage = messageSuffix ? `${message}${messageSuffix}` : message;
 		try {
-			await rpc.steer(message);
+			await rpc.steer(promptMessage, images.length ? images : undefined);
 		} catch (err) {
 			set({ error: err instanceof Error ? err.message : String(err) });
 		}

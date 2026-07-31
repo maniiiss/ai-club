@@ -11,6 +11,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type {
 	AgentSessionEvent,
+	AttachmentInput,
+	ImageContent,
+	PreparedAttachment,
 	RpcCommand,
 	RpcExtensionUIRequest,
 	RpcResponse,
@@ -137,10 +140,11 @@ export function send<C extends RpcCommand>(cmd: C, timeoutMs = DEFAULT_TIMEOUT_M
 // ============================================================================
 
 export const rpc = {
-	prompt: (message: string) => send({ type: 'prompt', message }),
-	steer: (message: string) => send({ type: 'steer', message }),
-	followUp: (message: string) => send({ type: 'follow_up', message }),
+	prompt: (message: string, images?: ImageContent[]) => send({ type: 'prompt', message, images }),
+	steer: (message: string, images?: ImageContent[]) => send({ type: 'steer', message, images }),
+	followUp: (message: string, images?: ImageContent[]) => send({ type: 'follow_up', message, images }),
 	abort: () => send({ type: 'abort' }),
+	prepareAttachments: (items: AttachmentInput[]) => send({ type: 'prepare_attachments', items }),
 	newSession: (cwd?: string, parentSession?: string) => send({ type: 'new_session', cwd, parentSession }),
 	getState: () => send({ type: 'get_state' }),
 	setModel: (provider: string, modelId: string) => send({ type: 'set_model', provider, modelId }),
@@ -239,6 +243,21 @@ function mockResponseFor(cmd: RpcCommand & { id: string }): RpcResponse {
 			return { id, type: 'response', command: 'get_platform_connection', success: true, data: { connected: true } };
 		case 'get_tree':
 			return { id, type: 'response', command: 'get_tree', success: true, data: { tree: [], leafId: null } };
+		case 'prepare_attachments': {
+			// 浏览器预览无真实 sidecar，按输入条目返回占位附件，便于 UI 联调。
+			const attachments: PreparedAttachment[] = (cmd.items ?? []).map((item) => {
+				const name = 'path' in item ? item.name ?? item.path : item.name;
+				return {
+					name: typeof name === 'string' ? name : '附件',
+					kind: 'text' as const,
+					mimeType: 'text/plain',
+					sizeBytes: 0,
+					text: '[mock] 浏览器预览不解析附件内容。',
+					warnings: [],
+				};
+			});
+			return { id, type: 'response', command: 'prepare_attachments', success: true, data: { attachments } };
+		}
 		default:
 			return { id, type: 'response', command: cmd.type, success: true } as RpcResponse;
 	}

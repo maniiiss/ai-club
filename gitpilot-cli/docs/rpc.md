@@ -157,6 +157,77 @@ If an extension cancelled:
 {"type": "response", "command": "new_session", "success": true, "data": {"cancelled": true}}
 ```
 
+### Attachments
+
+#### prepare_attachments
+
+Pre-parse attachment files into text and/or image content **before** sending the next `prompt`/`steer`.
+Designed for the desktop upload UI: file paths come from the native file picker / drag-drop (sidecar
+reads the local file), inline base64 items come from clipboard paste / dropped image blobs.
+
+解析逻辑在 sidecar 本地完成，离线零网络：
+- 图片（png/jpg/gif/webp/bmp）-> 自动压缩为内联 `ImageContent`（复用 image-process）；
+- 文档（pdf/docx/xlsx/pptx）-> 抽取纯文本（pdf:unpdf / docx:mammoth / xlsx:SheetJS / pptx:jszip），单文件上限 20MB、文本上限 15000 字符；
+- 其它文本/源码 -> utf-8 读取并截断（与 read 工具一致）；
+- 错误收敛为 `warnings` 字段返回，不会让进程崩溃。
+
+Items:
+
+```json
+{
+  "type": "prepare_attachments",
+  "items": [
+    { "path": "/abs/or/relative/path.png", "name": "optional-display-name.png" },
+    { "name": "pasted.png", "data": "base64-without-data-uri-prefix", "mimeType": "image/png" }
+  ]
+}
+```
+
+Response (`attachments` 顺序与 `items` 一致)：
+
+```json
+{
+  "type": "response",
+  "command": "prepare_attachments",
+  "success": true,
+  "data": {
+    "attachments": [
+      {
+        "name": "path.png",
+        "path": "/abs/or/relative/path.png",
+        "kind": "image",
+        "mimeType": "image/png",
+        "sizeBytes": 12345,
+        "image": { "type": "image", "data": "base64...", "mimeType": "image/png" },
+        "warnings": ["[Image resized to 1568x2000.]"]
+      },
+      {
+        "name": "report.pdf",
+        "path": "/abs/report.pdf",
+        "kind": "document",
+        "mimeType": "application/pdf",
+        "sizeBytes": 234567,
+        "text": "抽取出的纯文本...",
+        "truncated": true,
+        "warnings": []
+      }
+    ]
+  }
+}
+```
+
+桌面端随后在 `prompt`/`steer` 时：图片填入 `images` 字段（协议已支持），文档文本以
+`<file name="...">…</file>` 块追加到 `message`（与 CLI `@file` 约定一致，模型可识别附件边界）。
+
+错误响应（如 `items` 为空或解析整体失败）：
+
+```json
+{"type": "response", "command": "prepare_attachments", "success": false, "error": "items 不能为空"}
+```
+
+> 模型在对话中亦可主动调用 `parse_attachment` 工具解析用户提及的文件路径，复用同一解析核心。
+> 该工具由 gitpilot 内置扩展注册，桌面/CLI 加载扩展后自动激活。
+
 ### State
 
 #### get_state

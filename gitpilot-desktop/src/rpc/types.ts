@@ -48,10 +48,30 @@ export interface PlatformConnection {
 /** 思维级别（与 pi-agent-core ThinkingLevel 对齐） */
 export type ThinkingLevel = 'off' | 'low' | 'medium' | 'high';
 
-/** 图片内容（pi-ai ImageContent 的桌面版消费视图） */
+/** 图片内容（pi-ai ImageContent 的桌面版消费视图）。
+ * 与 sidecar 的扁平结构对齐：{ type, data(base64), mimeType }。 */
 export interface ImageContent {
 	type: 'image';
-	source: { kind: 'base64'; mediaType: string; data: string } | { kind: 'url'; url: string };
+	data: string;
+	mimeType: string;
+}
+
+/** 附件输入：可按路径提供（sidecar 读取本地文件），也可按内联 base64 提供（剪贴板粘贴/拖拽 blob）。 */
+export type AttachmentInput =
+	| { path: string; name?: string }
+	| { name: string; data: string; mimeType?: string };
+
+/** 预解析后的附件：图片带 image，文档/文本带 text，统一带元数据与 warnings（仅元数据，不含原文以免撑大 UI）。 */
+export interface PreparedAttachment {
+	name: string;
+	path?: string;
+	kind: 'image' | 'document' | 'text';
+	mimeType: string;
+	sizeBytes: number;
+	text?: string;
+	image?: ImageContent;
+	truncated?: boolean;
+	warnings?: string[];
 }
 
 /** Slash 命令来源信息（最小化） */
@@ -107,6 +127,8 @@ export type RpcCommand =
 	| { id?: string; type: 'follow_up'; message: string; images?: ImageContent[] }
 	| { id?: string; type: 'abort' }
 	| { id?: string; type: 'new_session'; parentSession?: string; cwd?: string }
+	// 附件预解析（路径或内联 base64 -> 文本/图片，结果随下一条 prompt 注入）
+	| { id?: string; type: 'prepare_attachments'; items: AttachmentInput[] }
 	| { id?: string; type: 'get_state' }
 	// 模型
 	| { id?: string; type: 'set_model'; provider: string; modelId: string }
@@ -165,6 +187,7 @@ export type RpcResponse =
 	| { id?: string; type: 'response'; command: 'follow_up'; success: true }
 	| { id?: string; type: 'response'; command: 'abort'; success: true }
 	| { id?: string; type: 'response'; command: 'new_session'; success: true; data: { cancelled: boolean } }
+	| { id?: string; type: 'response'; command: 'prepare_attachments'; success: true; data: { attachments: PreparedAttachment[] } }
 	| { id?: string; type: 'response'; command: 'get_state'; success: true; data: RpcSessionState }
 	| { id?: string; type: 'response'; command: 'set_model'; success: true; data: ModelInfo }
 	| { id?: string; type: 'response'; command: 'cycle_model'; success: true; data: { model: ModelInfo; thinkingLevel: ThinkingLevel; isScoped: boolean } | null }

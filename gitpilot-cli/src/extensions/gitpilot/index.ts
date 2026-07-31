@@ -4,6 +4,7 @@
  * 不依赖用户手动放置 ~/.gitpilot/agent/extensions/*.ts。
  */
 import type { ExtensionAPI } from "../../core/extensions/types.ts";
+import { createParseAttachmentToolDefinition } from "../../core/tools/parse-attachment.ts";
 import { getPlatformUrl } from "./config.ts";
 import { loadCliToken } from "./credentials.ts";
 import { platformModelExtension } from "./platform-model.ts";
@@ -20,4 +21,10 @@ export default function gitpilotPlatformExtension(pi: ExtensionAPI): void {
 
 	// 注册 /requirement 命令：列出负责人是我的需求并驱动 AI 设计开发。
 	registerRequirementCommand(pi);
+
+	// 注册 parse_attachment 工具：模型可在对话中主动解析用户上传/提及的任意文件
+	// （图片与 pdf/docx/xlsx/pptx 文档），与桌面端上传路径复用同一解析核心。
+	// 作为扩展工具注册而非内置工具，避免改动 pi 内置工具清单（影响 vendored 回归测试）；
+	// 注册后在桌面/CLI 加载本扩展时自动激活（见 _refreshToolRegistry 新工具自动激活逻辑）。
+	pi.registerTool(createParseAttachmentToolDefinition());
 }

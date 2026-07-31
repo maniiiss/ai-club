@@ -13,6 +13,7 @@
 
 import * as crypto from "node:crypto";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
+import { prepareAttachment } from "../../core/attachments/prepare-attachment.ts";
 import { SessionManager } from "../../core/session-manager.ts";
 import type {
 	ExtensionUIContext,
@@ -443,6 +444,27 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					await rebindSession();
 				}
 				return success(id, "new_session", result);
+			}
+
+			// =================================================================
+			// Attachments（桌面端上传附件预解析）
+			// 路径输入由 sidecar 读取本地文件，内联 base64 用于剪贴板粘贴/拖拽的 blob；
+			// 解析结果随 response 直接返回，下一条 prompt/steer 时由桌面端注入。
+			// =================================================================
+
+			case "prepare_attachments": {
+				const items = command.items;
+				if (!Array.isArray(items) || items.length === 0) {
+					return error(id, "prepare_attachments", "items 不能为空");
+				}
+				try {
+					const cwd = runtimeHost.cwd;
+					const attachments = await Promise.all(items.map((item) => prepareAttachment(item, { cwd })));
+					return success(id, "prepare_attachments", { attachments });
+				} catch (e) {
+					const message = e instanceof Error ? e.message : String(e);
+					return error(id, "prepare_attachments", `附件解析失败: ${message}`);
+				}
 			}
 
 			// =================================================================
