@@ -188,7 +188,9 @@ textarea:focus-visible {
 .conversation-timeline__preview p { display: -webkit-box; overflow: hidden; margin: 7px 0 0; color: var(--color-text-secondary); font-size: 12px; line-height: 1.6; -webkit-box-orient: vertical; -webkit-line-clamp: 3; }
 .conversation-timeline__entry:hover .conversation-timeline__preview,
 .conversation-timeline__entry:focus-within .conversation-timeline__preview { opacity: 1; transform: translate(0, -50%) scale(1); }
-.input-composer { position: absolute; z-index: 30; right: 0; bottom: 18px; left: 0; display: flex; justify-content: center; padding: 0 24px; }
+.input-composer { position: absolute; z-index: 30; right: 0; bottom: 18px; left: 0; display: flex; justify-content: center; padding: 0 24px; pointer-events: none; }
+/* 输入框定位容器会铺满正文底部；透明区域不得拦截右侧正文滚动条的点击。 */
+.input-composer :is(.input-composer__surface, .input-composer__palette, .input-composer__drop-hint) { pointer-events: auto; }
 .input-composer__surface { display: flex; width: min(900px, 100%); min-width: 0; flex-direction: column; border: 0; border-radius: 18px; background: rgba(32, 32, 32, 0.97); padding: 12px 14px 10px; box-shadow: 0 15px 42px rgba(0, 0, 0, 0.38); backdrop-filter: blur(12px); transition: box-shadow 140ms ease; }
 .input-composer__palette { width: min(900px, calc(100% - 48px)); }
 .input-composer__surface:focus-within { box-shadow: 0 17px 46px rgba(0, 0, 0, 0.48); }
@@ -312,11 +314,12 @@ textarea:focus-visible {
 .workbench-error { position: fixed; z-index: 65; right: 14px; bottom: 38px; display: flex; max-width: min(420px, calc(100vw - 28px)); max-height: 160px; align-items: flex-start; gap: 10px; overflow: auto; border: 1px solid rgba(239,68,68,0.45); border-left: 3px solid var(--color-error); background: #221416; padding: 8px 10px; color: #ffb1aa; font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; box-shadow: var(--shadow-md); }
 .workbench-error button { flex: 0 0 auto; border: 0; background: transparent; color: inherit; cursor: pointer; }
 .chat-execution { margin: 2px 0; font-family: var(--font-mono); }
-.chat-execution__summary { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; padding: 4px 0; color: var(--color-text-muted); font-size: 12px; cursor: pointer; }
+.chat-execution__summary { display: inline-flex; max-width: 100%; min-width: 0; align-items: center; gap: 5px; border: 0; background: transparent; padding: 4px 0; color: var(--color-text-muted); font-size: 12px; cursor: pointer; }
 .chat-execution__summary:hover, .chat-execution__summary:focus-visible { color: var(--color-primary-hover); }
 .chat-execution__summary.is-static { cursor: default; }
 .chat-execution__summary.is-static:hover { color: var(--color-text-muted); }
-.chat-execution__label { color: inherit; }
+/* 实时命令可很长；聊天流只保留一行摘要，完整内容通过 title 可查看。 */
+.chat-execution__label { display: block; min-width: 0; overflow: hidden; color: inherit; text-overflow: ellipsis; white-space: nowrap; }
 .chat-execution__label.is-running { background: linear-gradient(100deg, #777 0%, #777 34%, #f1f1f1 48%, #c9c9c9 54%, #777 68%, #777 100%); background-size: 260% 100%; animation: chat-execution-shimmer 3.8s linear infinite; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
 .chat-execution__spinner { display: inline-flex; color: var(--color-text-muted); animation: chat-execution-spin 0.9s linear infinite; }
 .chat-execution__chevron { flex: 0 0 auto; transition: transform 170ms cubic-bezier(0.22, 0.8, 0.25, 1); }

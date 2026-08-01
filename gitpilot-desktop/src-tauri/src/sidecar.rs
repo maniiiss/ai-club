@@ -5,15 +5,86 @@
 //! 不依赖 Tauri event listen 时序；agent 事件流 / extension UI 请求仍走 rpc:event。
 
 use std::collections::HashMap;
+use std::fs::{create_dir_all, File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
+use std::path::PathBuf;
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
+
+/**
+ * 为本地问题排查生成不含业务内容的协议摘要。
+ *
+ * 业务意图：最终正文缺失时，需要辨别模型事件、sidecar 转发和桌面渲染的边界；
+ * 只记录事件结构与字符数，不能把用户问题、思考内容、命令或令牌写入日志。
+ */
+fn protocol_event_summary(value: &Value) -> String {
+	let event_type = value.get("type").and_then(Value::as_str).unwrap_or("?");
+	match event_type {
+		"message_end" => {
+			let message = value.get("message");
+			let role = message.and_then(|item| item.get("role")).and_then(Value::as_str).unwrap_or("?");
+			let blocks = message.and_then(|item| item.get("content")).and_then(Value::as_array);
+			let block_types = blocks
+				.map(|items| {
+					items
+						.iter()
+						.map(|item| item.get("type").and_then(Value::as_str).unwrap_or("?"))
+						.collect::<Vec<_>>()
+						.join(",")
+				})
+				.unwrap_or_else(|| "-".to_string());
+			let text_lengths = blocks
+				.map(|items| {
+					items
+						.iter()
+						.filter(|item| item.get("type").and_then(Value::as_str) == Some("text"))
+						.map(|item| item.get("text").and_then(Value::as_str).map(|text| text.chars().count()).unwrap_or(0).to_string())
+						.collect::<Vec<_>>()
+						.join(",")
+				})
+				.unwrap_or_else(|| "-".to_string());
+			format!("type=message_end role={role} content_types=[{block_types}] text_chars=[{text_lengths}]")
+		}
+		"message_update" => {
+			let inner = value.get("assistantMessageEvent");
+			let delta_type = inner.and_then(|item| item.get("type")).and_then(Value::as_str).unwrap_or("?");
+			let delta_chars = inner
+				.and_then(|item| item.get("delta"))
+				.and_then(Value::as_str)
+				.map(|text| text.chars().count())
+				.unwrap_or(0);
+			format!("type=message_update delta_type={delta_type} delta_chars={delta_chars}")
+		}
+		_ => format!("type={event_type}"),
+	}
+}
+
+/** 开发期协议诊断写入仓库 .run-logs，路径不依赖 sidecar 的 resources 工作目录。 */
+fn open_protocol_log() -> Option<Arc<Mutex<File>>> {
+	let log_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+		.parent()?
+		.parent()?
+		.join(".run-logs")
+		.join("gitpilot-rpc-protocol.log");
+	create_dir_all(log_path.parent()?).ok()?;
+	let file = OpenOptions::new().create(true).append(true).open(log_path).ok()?;
+	Some(Arc::new(Mutex::new(file)))
+}
+
+/** 诊断文件不可用不能影响 sidecar 正常转发。 */
+fn write_protocol_log(log: Option<&Arc<Mutex<File>>>, line: &str) {
+	if let Some(file) = log {
+		if let Ok(mut writer) = file.lock() {
+			let _ = writeln!(writer, "{line}");
+		}
+	}
+}
 
 /// agent sidecar 桥接器。主进程持有一个实例，由 Tauri 状态管理。
 pub struct SidecarBridge {
@@ -43,17 +114,26 @@ impl SidecarBridge {
 		let pending: Arc<Mutex<HashMap<String, mpsc::Sender<Value>>>> = Arc::new(Mutex::new(HashMap::new()));
 		// sidecar 是否已证明可通信：ready 或任意合法 JSONL 输出都会置位，避免兼容旧版 sidecar 时误报超时。
 		let ready = Arc::new(AtomicBool::new(false));
+		let protocol_log = open_protocol_log();
+		write_protocol_log(protocol_log.as_ref(), "--- sidecar protocol diagnostics started ---");
+		let protocol_sequence = Arc::new(AtomicU64::new(0));
 
 		if let Some(stdout) = stdout {
 			let app_clone = app.clone();
 			let pending_clone = pending.clone();
 			let ready_clone = ready.clone();
+			let protocol_log_clone = protocol_log.clone();
+			let protocol_sequence_clone = protocol_sequence.clone();
 			std::thread::spawn(move || {
 				let reader = BufReader::new(stdout);
 				for line in reader.lines().flatten() {
-					eprintln!("[rpc] <- sidecar stdout: {}", line);
 					match serde_json::from_str::<Value>(&line) {
 						Ok(v) => {
+							let sequence = protocol_sequence_clone.fetch_add(1, Ordering::SeqCst) + 1;
+							let summary = protocol_event_summary(&v);
+							let diagnostic_line = format!("#{sequence} {summary}");
+							eprintln!("[rpc] <- sidecar stdout: {diagnostic_line}");
+							write_protocol_log(protocol_log_clone.as_ref(), &diagnostic_line);
 							// 合法协议输出（尤其是 response）已证明子进程可通信；不能只依赖新协议的 ready 信号。
 							ready_clone.store(true, Ordering::SeqCst);
 							// ready 信号：sidecar 完成初始化、可接收命令。据此通知前端就绪，不再转发为 rpc:event。
@@ -75,7 +155,9 @@ impl SidecarBridge {
 							}
 							// 非 response（agent 事件 / extension_ui / error）走 event
 							let res = app_clone.emit("rpc:event", v);
-							eprintln!("[rpc] emit rpc:event ok={}", res.is_ok());
+							let emit_line = format!("#{sequence} emit_rpc_event_ok={}", res.is_ok());
+							eprintln!("[rpc] {emit_line}");
+							write_protocol_log(protocol_log_clone.as_ref(), &emit_line);
 						}
 						Err(error) => {
 							// sidecar 可能误把诊断文本写到 stdout；只记录长度与解析失败原因，不能把模型上下文原文转发给界面。

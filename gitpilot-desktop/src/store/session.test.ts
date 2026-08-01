@@ -33,7 +33,7 @@ describe('最终 assistant 正文兜底', () => {
 });
 
 describe('流式正文与工具批次边界', () => {
-	it('后续正文到达前先归档中间工具，使正文、工具、正文按真实顺序展示', () => {
+	it('工具回合结束时立即归档步骤，不把它们留到下一轮思考或正文中', () => {
 		useWorkbenchStore.setState({ execution: { id: 'run-1', status: 'running', lastPrompt: '检查代码', steps: [] } });
 		const state = { messages: [] as UIMessage[], _streamingAssistantId: null as string | null, isStreaming: true };
 
@@ -42,6 +42,13 @@ describe('流式正文与工具批次边界', () => {
 			id: 'run-1', status: 'running', lastPrompt: '检查代码',
 			steps: [{ id: 'tool-1', toolCallId: 'tool-1', kind: 'command', status: 'succeeded', title: 'bash', startedAt: 1, result: 'ok' }],
 		} });
+		applyToStreamingState(state, { type: 'turn_end', toolResults: [{ role: 'toolResult' }] });
+
+		expect(state.messages.map((message) => [message.kind, message.text])).toEqual([
+			['text', '我先检查配置。'],
+			['execution', ''],
+		]);
+		expect(useWorkbenchStore.getState().execution.reportedStepIds).toEqual(['tool-1']);
 		applyToStreamingState(state, { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '配置已确认。' } });
 
 		expect(state.messages.map((message) => [message.kind, message.text])).toEqual([
@@ -51,6 +58,31 @@ describe('流式正文与工具批次边界', () => {
 		]);
 		expect(state.messages[0].streaming).toBe(false);
 		expect(state.messages[2].streaming).toBe(true);
+	});
+
+	it('连续的无正文工具回合合并为一个摘要，正文到来后再建立新的边界', () => {
+		useWorkbenchStore.setState({ execution: {
+			id: 'run-1', status: 'running', lastPrompt: '检查代码', steps: [],
+		} });
+		const state = { messages: [] as UIMessage[], _streamingAssistantId: null as string | null, isStreaming: true };
+
+		useWorkbenchStore.setState({ execution: {
+			id: 'run-1', status: 'running', lastPrompt: '检查代码',
+			steps: [{ id: 'tool-1', toolCallId: 'tool-1', kind: 'read', status: 'succeeded', title: 'read', startedAt: 1 }],
+		} });
+		applyToStreamingState(state, { type: 'turn_end', toolResults: [{ role: 'toolResult' }] });
+		useWorkbenchStore.setState((store) => ({ execution: {
+			...store.execution,
+			steps: [...store.execution.steps, { id: 'tool-2', toolCallId: 'tool-2', kind: 'edit', status: 'succeeded', title: 'edit', startedAt: 2 }],
+		} }));
+		applyToStreamingState(state, { type: 'turn_end', toolResults: [{ role: 'toolResult' }] });
+
+		expect(state.messages).toHaveLength(1);
+		expect(state.messages[0].kind).toBe('execution');
+		expect(state.messages[0].executionSteps?.map((step) => step.id)).toEqual(['tool-1', 'tool-2']);
+
+		applyToStreamingState(state, { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '修改完成。' } });
+		expect(state.messages.map((message) => message.kind)).toEqual(['execution', 'text']);
 	});
 });
 

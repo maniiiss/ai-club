@@ -39,6 +39,15 @@ describe('Agent 工作台执行事件', () => {
 		expect(answering.thinking).toBe('分析');
 	});
 
+	it('工具生命周期会覆盖旧思考阶段，避免将执行命令误标为正在思考', () => {
+		const thinking = reduceExecutionEvent(runningRun(), { type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: '准备执行命令' } }, 100);
+		const started = reduceExecutionEvent(thinking, { type: 'tool_execution_start', toolCallId: 'tool-1', toolName: 'bash', args: { command: 'npm test' } }, 120);
+		const ended = reduceExecutionEvent(started, { type: 'tool_execution_end', toolCallId: 'tool-1', toolName: 'bash', result: 'passed', isError: false }, 140);
+
+		expect(started).toMatchObject({ lastDeltaKind: 'tool', thinking: '准备执行命令' });
+		expect(ended).toMatchObject({ lastDeltaKind: 'tool', thinking: '准备执行命令' });
+	});
+
 	it('turn_end 不结束整次执行，agent_settled 才写入完成节点', () => {
 		const duringContinuation = reduceExecutionEvent(runningRun(), { type: 'turn_end' }, 150);
 		expect(duringContinuation).toMatchObject({ status: 'running', steps: [] });

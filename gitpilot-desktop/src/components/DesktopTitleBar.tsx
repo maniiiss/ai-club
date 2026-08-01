@@ -25,13 +25,13 @@ export function DesktopTitleBar() {
 	};
 
 	return (
-		<header className="desktop-titlebar">
-			<div className="desktop-titlebar__identity" data-tauri-drag-region>
+		<header className="desktop-titlebar" onMouseDown={startDragging}>
+			<div className="desktop-titlebar__identity">
 				<img className="desktop-titlebar__app-icon" src={appIcon} alt="GitPilot" />
 				<span className="desktop-titlebar__brand">GITPILOT</span>
 			</div>
 			{/* 已连接状态放在底栏，模型只保留输入区选择器，避免重复占用标题栏。 */}
-			<div className="desktop-titlebar__spacer" data-tauri-drag-region onMouseDown={startDragging} />
+			<div className="desktop-titlebar__spacer" />
 			<div className="desktop-titlebar__actions" onMouseDown={(event) => event.stopPropagation()}>
 				<button type="button" onClick={() => updateLayout({ leftCollapsed: !layout.leftCollapsed })} title={sidebarToggleLabel} aria-label={sidebarToggleLabel}>
 					{layout.leftCollapsed ? <ChevronsRight size={14} /> : <ChevronsLeft size={14} />}

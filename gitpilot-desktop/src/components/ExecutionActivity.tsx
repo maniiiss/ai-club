@@ -10,7 +10,10 @@ export function getExecutionActivityLabel(execution: ExecutionRun, isStreaming: 
 	if (activeTool) return describeExecutionActivity(activeTool);
 	// 正文已经在输出时模型处于回答阶段，由正文气泡本身体现进度，不再展示“正在思考”。
 	if (execution.lastDeltaKind === 'text') return null;
-	return execution.thinking?.trim() ? '正在思考' : 'Loading';
+	// thinking 文本是本次任务的历史记录；只有最近事件仍是 thinking_delta 时才表示模型正在思考。
+	// 工具已结束但正文尚未到达时，模型正在根据工具结果组织下一轮请求；显式说明该等待，不能回退成旧思考或无文字的转圈。
+	if (execution.lastDeltaKind === 'tool') return '正在整理工具结果…';
+	return execution.lastDeltaKind === 'thinking' && execution.thinking?.trim() ? '正在思考' : '正在准备…';
 }
 
 /** 从真实工具参数中提取用户可读的操作对象，例如 read 的文件路径。 */
@@ -100,7 +103,7 @@ export function ExecutionActivity({ isStreaming }: { isStreaming: boolean }) {
 	const selectStep = useWorkbenchStore((s) => s.selectStep);
 	const [expanded, setExpanded] = useState(false);
 	const label = getExecutionActivityLabel(execution, isStreaming);
-	const isLoading = label === 'Loading';
+	const isPending = label === '正在整理工具结果…' || label === '正在准备…';
 	const visibleSteps = getUnreportedExecutionSteps(execution);
 	const selected = visibleSteps.find((step) => step.id === selectedStepId) ?? visibleSteps.at(-1);
 	const canExpand = Boolean(execution.thinking?.trim()) || visibleSteps.length > 0;
@@ -114,9 +117,9 @@ export function ExecutionActivity({ isStreaming }: { isStreaming: boolean }) {
 
 	if (!label) return null;
 
-	const activityLabel = isLoading
-		? <span className="chat-execution__spinner" role="status" aria-label="加载中"><LoaderCircle size={14} aria-hidden="true" /></span>
-		: <span className="chat-execution__label is-running">{label}</span>;
+	const activityLabel = isPending
+		? <span className="chat-execution__label is-running" role="status" title={label}><LoaderCircle size={14} aria-hidden="true" className="chat-execution__spinner" />{label}</span>
+		: <span className="chat-execution__label is-running" title={label}>{label}</span>;
 
 	return (
 		<section className="chat-execution" aria-label="Agent 执行过程">

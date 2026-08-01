@@ -7,21 +7,23 @@ function run(steps: ExecutionRun['steps'], status: ExecutionRun['status'] = 'run
 }
 
 describe('聊天内执行摘要', () => {
-	it('仅在回答过程中展示正在运行的原始工具名；无思考文本时使用 Loading 状态', () => {
+	it('仅在回答过程中展示正在运行的原始工具名；无思考文本时说明准备阶段', () => {
 		expect(getExecutionActivityLabel(run([{ id: 'tool-1', kind: 'read', status: 'running', title: 'read', args: '{"path":"src/App.tsx"}', startedAt: 1 }]), true)).toBe('read src/App.tsx');
-		expect(getExecutionActivityLabel(run([{ id: 'tool-1', kind: 'edit', status: 'succeeded', title: 'edit', args: '{"path":"crm-ai/tests/test_api_chat.py"}', startedAt: 1 }]), true)).toBe('Loading');
-		expect(getExecutionActivityLabel(run([]), true)).toBe('Loading');
-		expect(getExecutionActivityLabel({ ...run([]), thinking: '正在判断调用关系' }, true)).toBe('正在思考');
+		expect(getExecutionActivityLabel(run([{ id: 'tool-1', kind: 'edit', status: 'succeeded', title: 'edit', args: '{"path":"crm-ai/tests/test_api_chat.py"}', startedAt: 1 }]), true)).toBe('正在准备…');
+		expect(getExecutionActivityLabel(run([]), true)).toBe('正在准备…');
+		expect(getExecutionActivityLabel({ ...run([]), lastDeltaKind: 'thinking', thinking: '正在判断调用关系' }, true)).toBe('正在思考');
 		expect(getExecutionActivityLabel(run([{ id: 'tool-1', kind: 'read', status: 'succeeded', title: 'read_file', startedAt: 1 }], 'completed'), false)).toBeNull();
 	});
 
-	it('正文已经在输出时不再展示 Loading，仅在模型尚未输出正文时展示', () => {
-		// 收到正文增量（text_delta）即表示进入回答阶段，Loading 指示必须隐藏，避免与正文气泡重复。
+	it('正文已经在输出时不再展示状态；工具结束后明确提示正在整理结果', () => {
+		// 收到正文增量（text_delta）即表示进入回答阶段，状态指示必须隐藏，避免与正文气泡重复。
 		expect(getExecutionActivityLabel({ ...run([]), lastDeltaKind: 'text' }, true)).toBeNull();
-		// 有真实思考增量时显示“正在思考”；空的初始阶段才显示 Loading 圆环。
+		// 有真实思考增量时显示“正在思考”；空的初始阶段显示准备提示。
 		expect(getExecutionActivityLabel({ ...run([]), lastDeltaKind: 'thinking', thinking: '分析' }, true)).toBe('正在思考');
 		// 工具运行中即便已收到正文，仍优先展示工具，避免掩盖实时执行动作。
 		expect(getExecutionActivityLabel({ ...run([{ id: 'tool-1', kind: 'read', status: 'running', title: 'read', args: '{"path":"a.ts"}', startedAt: 1 }]), lastDeltaKind: 'text' }, true)).toBe('read a.ts');
+		// 工具结束后仍可保留思考详情，但当前阶段已不是思考；明确提示正在等待模型整理工具结果。
+		expect(getExecutionActivityLabel({ ...run([{ id: 'tool-1', kind: 'command', status: 'succeeded', title: 'bash', startedAt: 1 }]), lastDeltaKind: 'tool', thinking: '准备执行命令' }, true)).toBe('正在整理工具结果…');
 	});
 
 	it('展开步骤时显示真实工具参数中的文件或命令', () => {

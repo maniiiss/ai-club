@@ -5,6 +5,22 @@
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 
+/**
+ * GitPilot 的产品级流式可见性规则。
+ *
+ * 业务意图：SYSTEM.md 可以替换领域指令，但不能让桌面端退化为只显示思考和工具记录；
+ * 这两条规则必须同时进入默认提示词与自定义提示词。
+ */
+const STREAMING_VISIBILITY_GUIDELINES = [
+	"Before the first tool call, the same assistant response MUST start with a concise user-visible plan: what you will inspect, what you expect to change, and how you will verify it. Then continue with the tool call; do not end the task after only the plan",
+	"During execution, before switching phase (for example inspect/read to locate, locate to edit/write, or edit/write to verify), MUST write one or two concise user-visible lines in this form: Finding: <what the real results established>. Next step: <what you will do now>. Put the text in the same assistant response immediately before the next tool call",
+	"Never make more than 6 tool calls after the latest user-visible plan or progress update. Before the next tool call, write another real concise Finding and Next step based only on completed tool results. Do not invent progress, but do not silently continue a long tool chain",
+] as const;
+
+function formatStreamingVisibilityContract(): string {
+	return `<gitpilot_streaming_contract>\n${STREAMING_VISIBILITY_GUIDELINES.map((guideline) => `- ${guideline}`).join("\n")}\n</gitpilot_streaming_contract>`;
+}
+
 export interface BuildSystemPromptOptions {
 	/** Custom system prompt (replaces default). */
 	customPrompt?: string;
@@ -66,6 +82,8 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 			prompt += formatSkillsForPrompt(skills);
 		}
 
+		// 自定义 SYSTEM.md 只替换领域提示词；产品级流式可见性规则仍须生效。
+		prompt += `\n\n${formatStreamingVisibilityContract()}`;
 		prompt += `\nCurrent working directory: ${promptCwd}`;
 
 		return prompt;
@@ -115,7 +133,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	// Always include these
 	addGuideline("Be concise in your responses");
 	// 流式界面必须先收到真实正文，再显示工具；纯正文回合会结束 Agent，因此正文和首批工具需要属于同一回复。
-	addGuideline("After thinking, the same assistant response MUST start with one short user-visible plain-text progress sentence before any tool call. Never emit a thinking-plus-tool-only response. Keep consecutive tool calls grouped; only send another progress sentence when the next action or finding materially changes");
+	for (const guideline of STREAMING_VISIBILITY_GUIDELINES) addGuideline(guideline);
 	addGuideline("Show file paths clearly when working with files");
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");

@@ -354,14 +354,26 @@ type SessionSetter = (partial: Partial<SessionStore> | ((s: SessionStore) => Par
 
 /**
  * 将最近一段正文之后尚未归档的工具步骤插入聊天流。
- * 每个摘要都是独立批次，因此下一次助手正文只会展示新发生的命令或文件编辑。
+ * 连续的无正文工具回合合并为一个可展开摘要，避免底层循环把聊天流拉得过长；
+ * 一旦有新的助手正文，flushExecutionBoundaryBeforeText 会自然建立新的显示边界。
  */
 function appendUnreportedExecutionBatch(set: SessionSetter): void {
 	const steps = getUnreportedExecutionSteps(useWorkbenchStore.getState().execution);
 	if (steps.length === 0) return;
-	set((state) => ({
-		messages: [...state.messages, { id: newId(), role: 'assistant', text: '', kind: 'execution', executionSteps: steps }],
-	}));
+	set((state) => {
+		const previous = state.messages.at(-1);
+		if (previous?.kind === 'execution' && previous.executionSteps) {
+			return {
+				messages: [
+					...state.messages.slice(0, -1),
+					{ ...previous, executionSteps: [...previous.executionSteps, ...steps] },
+				],
+			};
+		}
+		return {
+			messages: [...state.messages, { id: newId(), role: 'assistant', text: '', kind: 'execution', executionSteps: steps }],
+		};
+	});
 	useWorkbenchStore.getState().markExecutionStepsReported(steps.map((step) => step.id));
 }
 
@@ -428,13 +440,16 @@ export function applyEvent(set: SessionSetter, e: AgentSessionEvent): void {
 		return;
 	}
 
-	// 当前模型回合结束：只封口当前文本气泡。
+	// 当前模型回合结束：先封口当前正文；若本回合执行了工具，立即把已完成步骤归档。
+	// 业务意图：下一轮模型的 thinking_delta 只描述新的分析，不能与上一轮已完成命令混在同一个实时面板里。
 	// Agent 后续还可能执行重试、压缩或队列消息；整次任务是否完成必须等待 agent_settled。
 	if (type === 'turn_end') {
 		set((s) => {
 			const messages = s.messages.map((m) => (m.id === s._streamingAssistantId ? { ...m, streaming: false } : m));
 			return { messages, _streamingAssistantId: null };
 		});
+		const toolResults = (e as { toolResults?: unknown[] }).toolResults;
+		if (Array.isArray(toolResults) && toolResults.length > 0) appendUnreportedExecutionBatch(set);
 		return;
 	}
 

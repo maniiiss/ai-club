@@ -29,8 +29,13 @@ export interface ExecutionRun {
 	lastPrompt: string | null;
 	/** sidecar 推送的真实思考增量，仅在当前执行中的思考面板展示。 */
 	thinking?: string;
-	/** 最近一次到达的模型增量类型：thinking 表示仍在思考，text 表示已进入正文回答阶段。 */
-	lastDeltaKind?: 'thinking' | 'text';
+	/**
+	 * 最近一次到达的流式阶段。
+	 *
+	 * 业务意图：思考记录会保留到本次任务结束供用户展开查看，但不能用旧思考文本
+	 * 覆盖正在执行的工具或工具结束后的等待状态；因此工具生命周期必须显式切换为 tool。
+	 */
+	lastDeltaKind?: 'thinking' | 'tool' | 'text';
 	steps: ExecutionStep[];
 	/** 已归档到聊天正文后的工具步骤；后续实时面板只显示尚未归档的步骤。 */
 	reportedStepIds?: string[];
@@ -170,7 +175,13 @@ export function reduceExecutionEvent(run: ExecutionRun, event: AgentSessionEvent
 		endedAt: event.type === 'tool_execution_end' ? now : existing?.endedAt,
 	};
 	const steps = index < 0 ? [...run.steps, step] : run.steps.map((item, itemIndex) => (itemIndex === index ? step : item));
-	return { ...run, status: step.status === 'failed' ? 'failed' : run.status, steps };
+	return {
+		...run,
+		status: step.status === 'failed' ? 'failed' : run.status,
+		// 收到真实工具事件后，当前阶段不再是此前保留的 thinking_delta。
+		lastDeltaKind: 'tool',
+		steps,
+	};
 }
 
 function createRun(prompt: string): ExecutionRun {

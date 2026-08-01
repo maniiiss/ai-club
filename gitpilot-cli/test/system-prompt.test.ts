@@ -25,14 +25,40 @@ describe("buildSystemPrompt", () => {
 			expect(prompt).toContain("Show file paths clearly");
 		});
 
-		test("asks for one progress sentence before the first tool call", () => {
+		test("asks for a visible initial plan before the first tool call", () => {
 			const prompt = buildSystemPrompt({
 				contextFiles: [],
 				skills: [],
 				cwd: process.cwd(),
 			});
 
-			expect(prompt).toContain("After thinking, the same assistant response MUST start with one short user-visible plain-text progress sentence before any tool call");
+			expect(prompt).toContain("Before the first tool call, the same assistant response MUST start with a concise user-visible plan");
+		});
+
+		test("requires real phase updates and bounds silent tool chains", () => {
+			const prompt = buildSystemPrompt({
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("During execution, before switching phase");
+			expect(prompt).toContain("Finding: <what the real results established>. Next step: <what you will do now>");
+			expect(prompt).toContain("Never make more than 6 tool calls after the latest user-visible plan or progress update");
+		});
+
+		test("keeps streaming visibility rules when a custom system prompt replaces the default", () => {
+			const prompt = buildSystemPrompt({
+				customPrompt: "You are the project's domain-specific coding assistant.",
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("You are the project's domain-specific coding assistant.");
+			expect(prompt).toContain("<gitpilot_streaming_contract>");
+			expect(prompt).toContain("Before the first tool call, the same assistant response MUST start with a concise user-visible plan");
+			expect(prompt).toContain("Never make more than 6 tool calls after the latest user-visible plan or progress update");
 		});
 	});
 
@@ -56,7 +82,7 @@ describe("buildSystemPrompt", () => {
 			expect(prompt).toContain("- write:");
 		});
 
-		test("instructs models to resolve pi docs and examples under absolute base paths", () => {
+		test("instructs models to resolve GitPilot docs and examples under absolute base paths", () => {
 			const prompt = buildSystemPrompt({
 				contextFiles: [],
 				skills: [],
@@ -64,7 +90,7 @@ describe("buildSystemPrompt", () => {
 			});
 
 			expect(prompt).toContain(
-				"- When reading pi docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory",
+				"- When reading gitpilot docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory",
 			);
 		});
 	});
