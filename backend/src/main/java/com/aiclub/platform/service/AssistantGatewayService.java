@@ -62,7 +62,8 @@ public class AssistantGatewayService {
                     extractMessageContent(messageNode.path("content")),
                     usage == null ? null : usage.promptTokens(),
                     usage == null ? null : usage.completionTokens(),
-                    usage == null ? null : usage.totalTokens()
+                    usage == null ? null : usage.totalTokens(),
+                    usage == null ? null : usage.cachedTokens()
             );
         } catch (IOException | InterruptedException exception) {
             if (exception instanceof InterruptedException) {
@@ -192,7 +193,8 @@ public class AssistantGatewayService {
         return new AssistantGatewayResult(responseId, fullText.toString(),
                 lastUsage == null ? null : lastUsage.promptTokens(),
                 lastUsage == null ? null : lastUsage.completionTokens(),
-                lastUsage == null ? null : lastUsage.totalTokens());
+                lastUsage == null ? null : lastUsage.totalTokens(),
+                lastUsage == null ? null : lastUsage.cachedTokens());
     }
 
     private String buildStreamDeltaText(JsonNode deltaNode, ReasoningStreamState reasoningState) {
@@ -288,7 +290,14 @@ public class AssistantGatewayService {
         if (totalTokens == null && (promptTokens != null || completionTokens != null)) {
             totalTokens = (promptTokens == null ? 0 : promptTokens) + (completionTokens == null ? 0 : completionTokens);
         }
-        return new UsageTokens(promptTokens, completionTokens, totalTokens);
+        Integer cachedTokens = readUsageInt(usage, "cache_read_input_tokens");
+        if (cachedTokens == null) {
+            cachedTokens = readUsageInt(usage.path("prompt_tokens_details"), "cached_tokens");
+        }
+        if (cachedTokens == null) {
+            cachedTokens = readUsageInt(usage.path("input_tokens_details"), "cached_tokens");
+        }
+        return new UsageTokens(promptTokens, completionTokens, totalTokens, cachedTokens);
     }
 
     private Integer readUsageInt(JsonNode usage, String... keys) {
@@ -302,7 +311,7 @@ public class AssistantGatewayService {
     }
 
     /** 一次调用的 token 用量快照。 */
-    private record UsageTokens(Integer promptTokens, Integer completionTokens, Integer totalTokens) {
+    private record UsageTokens(Integer promptTokens, Integer completionTokens, Integer totalTokens, Integer cachedTokens) {
     }
 
     private HttpResponse<String> sendJsonRequest(String url, JsonNode payload) throws IOException, InterruptedException {        HttpRequest.Builder builder = HttpRequest.newBuilder()
@@ -392,10 +401,10 @@ public class AssistantGatewayService {
      * 一次 Chat Completions 调用的关键信息摘要。
      */
     public record AssistantGatewayResult(String responseId, String content,
-                                        Integer promptTokens, Integer completionTokens, Integer totalTokens) {
+                                        Integer promptTokens, Integer completionTokens, Integer totalTokens, Integer cachedTokens) {
         /** 兼容历史调用：不携带 token 用量的构造。 */
         public AssistantGatewayResult(String responseId, String content) {
-            this(responseId, content, null, null, null);
+            this(responseId, content, null, null, null, null);
         }
     }
 }

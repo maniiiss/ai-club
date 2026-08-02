@@ -558,7 +558,7 @@ public class ChatAssistantService {
                 );
                 if (usageHandle != null) {
                     UsageSink sink = usageHandle.sink();
-                    sink.setUsage(result.promptTokens(), result.completionTokens(), result.totalTokens());
+                    sink.setUsage(result.promptTokens(), result.completionTokens(), result.totalTokens(), result.cachedTokens());
                     sink.setOutputChars(result.content() == null ? 0 : result.content().length());
                     sink.setCorrelationId(result.responseId());
                     usageHandle.commit();
