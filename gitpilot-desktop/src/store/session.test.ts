@@ -29,6 +29,28 @@ describe('历史消息回放', () => {
 		expect(execBatch?.executionSteps).toHaveLength(1);
 		expect(execBatch?.executionSteps?.[0]).toMatchObject({ kind: 'read', title: 'read', status: 'succeeded' });
 	});
+
+	it('任务进行中（isStreaming）时最后一段不归档，避免进行中任务被误判为已归档', () => {
+		const messages = agentMessagesToUi([
+			{ role: 'user', content: [{ type: 'text', text: '改一下' }] },
+			{ role: 'assistant', content: [{ type: 'toolCall', name: 'edit_file', id: 't1', arguments: { path: 'a.ts', edits: [] } }] },
+		], true);
+
+		expect(messages.some((m) => m.kind === 'execution')).toBe(false);
+		expect(messages.some((m) => m.kind === 'changed_files')).toBe(false);
+		expect(messages.filter((m) => m.kind === 'text').map((m) => (m as { text: string }).text)).toEqual(['改一下']);
+	});
+
+	it('任务已完成时最后一段正常归档执行批次与改动文件', () => {
+		const messages = agentMessagesToUi([
+			{ role: 'user', content: [{ type: 'text', text: '改一下' }] },
+			{ role: 'assistant', content: [{ type: 'toolCall', name: 'edit_file', id: 't1', arguments: { path: 'a.ts', edits: [] } }, { type: 'text', text: '好了' }] },
+			{ role: 'toolResult', toolCallId: 't1', toolName: 'edit_file', content: [], details: { diff: '--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-a\n+b' } },
+		]);
+
+		expect(messages.some((m) => m.kind === 'execution')).toBe(true);
+		expect(messages.some((m) => m.kind === 'changed_files')).toBe(true);
+	});
 });
 
 describe('最终 assistant 正文兜底', () => {

@@ -626,11 +626,11 @@ export function applyEvent(set: SessionSetter, e: AgentSessionEvent): void {
  * 将历史消息转为聊天气泡。
  * toolResult 和仅含 toolCall/thinking 的 assistant 消息属于执行记录，不能作为聊天正文回放。
  *
- * 改动文件卡片按“一次执行”汇总：以 user 消息分段，段内累积所有 assistant 的编辑操作，
- * 在该段末尾（遇到下一个 user 或消息末尾时）追加一张汇总卡片。
- * 这样与实时 agent_settled 时一张汇总卡片对齐，避免分散到对话中间。
+ * 改动文件卡片与执行批次按“一次执行”汇总：以 user 消息分段，段内累积所有 assistant 的
+ * 工具步骤与编辑操作，在段末尾追加执行批次与改动文件卡片（与实时 agent_settled 归档顺序一致）。
+ * isStreaming 为真时最后一段是尚未完成的执行，不归档（由实时面板承接），避免进行中任务被误判为已归档。
  */
-export function agentMessagesToUi(messages: unknown[]): UIMessage[] {
+export function agentMessagesToUi(messages: unknown[], isStreaming = false): UIMessage[] {
 	const result: UIMessage[] = [];
 	let pendingOps: EditOperation[] = [];
 	let pendingSteps: ExecutionStep[] = [];
@@ -666,8 +666,11 @@ export function agentMessagesToUi(messages: unknown[]): UIMessage[] {
 		}
 		// toolResult 不进聊天流，其信息已通过对应 assistant 的解析函数累积。
 	});
-	flushExecutionBatch();
-	flushChangedFiles();
+	// 任务进行中时，最后一段是尚未完成的执行，不归档（由实时面板承接）；已完成则归档。
+	if (!isStreaming) {
+		flushExecutionBatch();
+		flushChangedFiles();
+	}
 	return result;
 }
 
@@ -1192,7 +1195,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			const res = await rpc.getMessages();
 			if (requestVersion !== sessionSwitchRequestVersion) return;
 			if (res.success && res.command === 'get_messages' && Array.isArray(res.data.messages)) {
-				set({ messages: agentMessagesToUi(res.data.messages), _streamingAssistantId: null, isStreaming: restoredStreaming, isSessionLoading: false, selectedSessionPath: sessionPath, guidanceQueue: [], isFlushingGuidance: false, isStopping: false });
+				set({ messages: agentMessagesToUi(res.data.messages, restoredStreaming), _streamingAssistantId: null, isStreaming: restoredStreaming, isSessionLoading: false, selectedSessionPath: sessionPath, guidanceQueue: [], isFlushingGuidance: false, isStopping: false });
 			} else {
 				set({ isSessionLoading: false, selectedSessionPath: sessionPath });
 			}
@@ -1207,7 +1210,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		try {
 			const res = await rpc.getMessages();
 			if (res.success && res.command === 'get_messages' && Array.isArray(res.data.messages)) {
-				set({ messages: agentMessagesToUi(res.data.messages), _streamingAssistantId: null, isStreaming: false });
+				set({ messages: agentMessagesToUi(res.data.messages, get().isStreaming), _streamingAssistantId: null, isStreaming: false });
 			}
 		} catch {}
 	},
