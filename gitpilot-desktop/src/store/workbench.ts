@@ -39,6 +39,10 @@ export interface ExecutionRun {
 	steps: ExecutionStep[];
 	/** 已归档到聊天正文后的工具步骤；后续实时面板只显示尚未归档的步骤。 */
 	reportedStepIds?: string[];
+	/** 本次执行开始时间，beginExecution 时记录。 */
+	startedAt?: number;
+	/** 本次执行结束时间，agent_settled 时记录。 */
+	endedAt?: number;
 }
 
 export interface LayoutPreferences {
@@ -189,6 +193,7 @@ export function reduceExecutionEvent(run: ExecutionRun, event: AgentSessionEvent
 		return {
 			...run,
 			status: 'completed',
+			endedAt: now,
 			steps: [...run.steps, { id: `complete-${now}`, kind: 'complete', status: 'succeeded', title: '回合完成', startedAt: now, endedAt: now }],
 		};
 	}
@@ -223,7 +228,7 @@ export function reduceExecutionEvent(run: ExecutionRun, event: AgentSessionEvent
 
 function createRun(prompt: string): ExecutionRun {
 	const now = Date.now();
-	return { id: `run-${now}`, status: 'running', lastPrompt: prompt, thinking: '', steps: [], reportedStepIds: [] };
+	return { id: `run-${now}`, status: 'running', lastPrompt: prompt, thinking: '', steps: [], reportedStepIds: [], startedAt: now };
 }
 
 /** 获取当前正文之后新产生、尚未显示为聊天批次的真实工具步骤。 */
@@ -303,3 +308,16 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 	},
 	consumeComposerPrefill: () => set({ composerPrefill: null }),
 }));
+
+/** 将毫秒格式化为可读时长：< 60s 显示“N秒”，< 1h 显示“N分N秒”，否则“N小时N分”。 */
+export function formatDuration(ms: number): string {
+	if (!Number.isFinite(ms) || ms < 0) return '0秒';
+	const totalSeconds = Math.floor(ms / 1000);
+	if (totalSeconds < 60) return `${totalSeconds}秒`;
+	const totalMinutes = Math.floor(totalSeconds / 60);
+	const seconds = totalSeconds % 60;
+	if (totalMinutes < 60) return seconds > 0 ? `${totalMinutes}分${seconds}秒` : `${totalMinutes}分`;
+	const hours = Math.floor(totalMinutes / 60);
+	const minutes = totalMinutes % 60;
+	return minutes > 0 ? `${hours}小时${minutes}分` : `${hours}小时`;
+}

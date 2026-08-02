@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { classifyExecutionKind, DEFAULT_LAYOUT, getUnreportedExecutionSteps, normalizeLayoutPreferences, reduceExecutionEvent, useWorkbenchStore, WORKBENCH_WIDTH_LIMITS, type ExecutionRun } from './workbench';
+import { classifyExecutionKind, DEFAULT_LAYOUT, formatDuration, getUnreportedExecutionSteps, normalizeLayoutPreferences, reduceExecutionEvent, useWorkbenchStore, WORKBENCH_WIDTH_LIMITS, type ExecutionRun } from './workbench';
 import { resolveWorkbenchShortcut } from '@/src/workbench/shortcuts';
 
 function runningRun(): ExecutionRun {
@@ -66,6 +66,22 @@ describe('Agent 工作台执行事件', () => {
 		useWorkbenchStore.getState().markExecutionStepsReported(firstBatch.map((step) => step.id));
 		const withSecond = reduceExecutionEvent(useWorkbenchStore.getState().execution, { type: 'tool_execution_end', toolCallId: 'tool-2', toolName: 'edit_file', result: 'second', isError: false }, 200);
 		expect(getUnreportedExecutionSteps(withSecond).map((step) => step.id)).toEqual(['tool-2']);
+	});
+
+	it('createRun 记录 startedAt，agent_settled 记录 endedAt', () => {
+		const run = { ...runningRun(), startedAt: 100 } as ExecutionRun;
+		const settled = reduceExecutionEvent(run, { type: 'agent_settled' }, 500);
+		expect(settled.status).toBe('completed');
+		expect(settled.endedAt).toBe(500);
+	});
+
+	it('formatDuration 按秒/分/时格式化', () => {
+		expect(formatDuration(0)).toBe('0秒');
+		expect(formatDuration(45_000)).toBe('45秒');
+		expect(formatDuration(60_000)).toBe('1分');
+		expect(formatDuration(90_000)).toBe('1分30秒');
+		expect(formatDuration(3_700_000)).toBe('1小时1分');
+		expect(formatDuration(7_200_000)).toBe('2小时');
 	});
 });
 
