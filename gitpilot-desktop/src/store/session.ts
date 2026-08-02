@@ -371,6 +371,8 @@ interface SessionStore {
 	/** 用户点击底栏状态时重新请求平台账户、模型与连通状态。 */
 	retryPlatformConnection: () => Promise<void>;
 	refreshSessionList: () => Promise<void>;
+	/** 执行扩展命令；命令自身的选择器通过 extension_ui_request 打开，不占用普通发送态。 */
+	executeCommand: (name: string, args?: string) => Promise<void>;
 	prompt: (message: string, attachments?: PreparedAttachment[]) => Promise<void>;
 	steer: (message: string, attachments?: PreparedAttachment[]) => Promise<void>;
 	sendGuidance: (message: string, attachments: PreparedAttachment[] | undefined, mode: GuidanceMode) => Promise<boolean>;
@@ -461,7 +463,12 @@ function applyGuidanceMessageStart(set: SessionSetter, event: AgentSessionEvent)
 			(candidate.status === 'applying' || candidate.status === 'queued') &&
 			(candidate.wireText === text || candidate.displayText === text),
 		);
-		if (!item) return {};
+		if (!item) {
+			// 扩展通过 sendUserMessage 触发的真实需求指令也要进入当前对话；
+			// 普通 prompt 已由输入框乐观插入，因此用末条正文去重，避免出现两个相同气泡。
+			if (!text.trim() || (state.messages.at(-1)?.role === 'user' && state.messages.at(-1)?.text === text)) return {};
+			return { messages: [...state.messages, { id: newId(), role: 'user', text, kind: 'text' }] };
+		}
 		return {
 			// 进入主对话后移出排队列表，避免列表卡片与已发送消息重复展示。
 			guidanceQueue: state.guidanceQueue.filter((candidate) => candidate.id !== item.id),
@@ -476,37 +483,39 @@ function applyGuidanceMessageStart(set: SessionSetter, event: AgentSessionEvent)
  * 一旦有新的助手正文，flushExecutionBoundaryBeforeText 会自然建立新的显示边界。
  */
 function appendUnreportedExecutionBatch(set: SessionSetter): void {
-	const steps = getUnreportedExecutionSteps(useWorkbenchStore.getState().execution);
+	const execution = useWorkbenchStore.getState().execution;
+	const steps = getUnreportedExecutionSteps(execution);
 	if (steps.length === 0) return;
+	// 整合改动文件、总耗时、思考文本进 execution UIMessage（不再单独出 changed_files 卡片）。
+	const changedFiles = aggregateChangedFiles(parseOpsFromSteps(execution.steps));
+	const durationMs = execution.startedAt && execution.endedAt ? execution.endedAt - execution.startedAt : undefined;
+	const thinking = execution.thinking?.trim() || undefined;
 	set((state) => {
 		const previous = state.messages.at(-1);
+		const meta = { ...(durationMs != null ? { durationMs } : {}), ...(thinking ? { thinking } : {}) };
 		if (previous?.kind === 'execution' && previous.executionSteps) {
 			return {
 				messages: [
 					...state.messages.slice(0, -1),
-					{ ...previous, executionSteps: [...previous.executionSteps, ...steps] },
+					{
+						...previous,
+						executionSteps: [...previous.executionSteps, ...steps],
+						changedFiles: [...(previous.changedFiles ?? []), ...changedFiles],
+						meta: { ...(previous.meta ?? {}), ...meta },
+					},
 				],
 			};
 		}
 		return {
-			messages: [...state.messages, { id: newId(), role: 'assistant', text: '', kind: 'execution', executionSteps: steps }],
+			messages: [...state.messages, {
+				id: newId(), role: 'assistant', text: '', kind: 'execution',
+				executionSteps: steps,
+				changedFiles: changedFiles.length > 0 ? changedFiles : undefined,
+				meta: Object.keys(meta).length > 0 ? meta : undefined,
+			}],
 		};
 	});
 	useWorkbenchStore.getState().markExecutionStepsReported(steps.map((step) => step.id));
-}
-
-/**
- * 执行完成后，从本轮 ExecutionStep 聚合改动文件列表并插入聊天流。
- * beginExecution 已按轮重置 execution，agent_settled 时 steps 恰为本轮全部步骤。
- * 无编辑操作时不插入卡片。
- */
-function appendChangedFilesCard(set: SessionSetter): void {
-	const steps = useWorkbenchStore.getState().execution.steps;
-	const files = aggregateChangedFiles(parseOpsFromSteps(steps));
-	if (files.length === 0) return;
-	set((state) => ({
-		messages: [...state.messages, { id: newId(), role: 'assistant' as const, text: '', kind: 'changed_files' as const, changedFiles: files }],
-	}));
 }
 
 /**
@@ -602,9 +611,8 @@ export function applyEvent(set: SessionSetter, e: AgentSessionEvent): void {
 			return { messages, _streamingAssistantId: null, isStreaming: false };
 		});
 		// 极少数工具可能在最后一段正文之后才结束；收敛时补建批次，不能让这些真实操作消失。
+		// 改动文件与总耗时已整合进 execution UIMessage（appendUnreportedExecutionBatch 内聚合）。
 		appendUnreportedExecutionBatch(set);
-		// 补建批次后插入本轮改动文件卡片（无编辑操作时不插入）。
-		appendChangedFilesCard(set);
 		return;
 	}
 
@@ -626,51 +634,62 @@ export function applyEvent(set: SessionSetter, e: AgentSessionEvent): void {
  * 将历史消息转为聊天气泡。
  * toolResult 和仅含 toolCall/thinking 的 assistant 消息属于执行记录，不能作为聊天正文回放。
  *
- * 改动文件卡片与执行批次按“一次执行”汇总：以 user 消息分段，段内累积所有 assistant 的
- * 工具步骤与编辑操作，在段末尾追加执行批次与改动文件卡片（与实时 agent_settled 归档顺序一致）。
- * isStreaming 为真时最后一段是尚未完成的执行，不归档（由实时面板承接），避免进行中任务被误判为已归档。
+ * 执行批次按“一次执行”汇总：以 user 消息分段，段内累积工具步骤、编辑操作与思考文本，
+ * 在段末尾追加一个 execution UIMessage（含 changedFiles/durationMs/thinking）。
+ * isStreaming 为真时最后一段不归档（由实时面板承接）。
  */
 export function agentMessagesToUi(messages: unknown[], isStreaming = false): UIMessage[] {
 	const result: UIMessage[] = [];
 	let pendingOps: EditOperation[] = [];
 	let pendingSteps: ExecutionStep[] = [];
-	/** 将当前段累积的工具步骤汇总为一个执行批次，追加到段末尾（与实时归档顺序一致：批次在前）。 */
+	let pendingThinking = '';
+	let segmentStartTs: number | null = null;
+	let lastTs: number | null = null;
+	const tsOf = (m: { timestamp?: unknown }): number | null => {
+		const t = typeof m.timestamp === 'string' ? Date.parse(m.timestamp) : NaN;
+		return Number.isNaN(t) ? null : t;
+	};
+	/** 将当前段累积的工具步骤、改动文件、思考与耗时汇总为一个 execution UIMessage。 */
 	const flushExecutionBatch = () => {
 		if (pendingSteps.length === 0) return;
-		result.push({ id: `hist-exec-${result.length}`, role: 'assistant' as const, text: '', kind: 'execution' as const, executionSteps: pendingSteps });
+		const changedFiles = aggregateChangedFiles(pendingOps);
+		const durationMs = segmentStartTs != null && lastTs != null ? lastTs - segmentStartTs : undefined;
+		const thinking = pendingThinking.trim() || undefined;
+		const meta = { ...(durationMs != null && durationMs > 0 ? { durationMs } : {}), ...(thinking ? { thinking } : {}) };
+		result.push({
+			id: `hist-exec-${result.length}`, role: 'assistant' as const, text: '', kind: 'execution' as const,
+			executionSteps: pendingSteps,
+			changedFiles: changedFiles.length > 0 ? changedFiles : undefined,
+			meta: Object.keys(meta).length > 0 ? meta : undefined,
+		});
 		pendingSteps = [];
-	};
-	/** 将当前段累积的编辑操作汇总为一张改动文件卡片，追加到段末尾。 */
-	const flushChangedFiles = () => {
-		if (pendingOps.length === 0) return;
-		const files = aggregateChangedFiles(pendingOps);
-		if (files.length > 0) {
-			result.push({ id: `hist-cf-${result.length}`, role: 'assistant' as const, text: '', kind: 'changed_files' as const, changedFiles: files });
-		}
 		pendingOps = [];
+		pendingThinking = '';
+		segmentStartTs = null;
+		lastTs = null;
 	};
 	messages.forEach((m, i) => {
-		const msg = m as { role?: string; content?: Array<{ type?: string; text?: string }> };
+		const msg = m as { role?: string; content?: Array<{ type?: string; text?: string; thinking?: string }>; timestamp?: string };
+		const ts = tsOf(msg);
 		if (msg.role === 'user') {
-			// 新段开始前，先把上一段的执行批次与改动文件卡片落到段尾（批次在前，与实时归档顺序一致）。
 			flushExecutionBatch();
-			flushChangedFiles();
+			segmentStartTs = ts;
+			lastTs = ts;
 			const text = (msg.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
 			if (text.trim()) result.push({ id: `hist-${i}`, role: 'user' as const, text, kind: 'text' as MessageKind });
 		} else if (msg.role === 'assistant') {
+			if (ts != null) lastTs = ts;
 			const text = (msg.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
 			if (text.trim()) result.push({ id: `hist-${i}`, role: 'assistant' as const, text, kind: 'text' as MessageKind });
-			// 累积该 assistant 的工具步骤与编辑操作，待段末尾汇总。
 			pendingSteps.push(...parseExecutionStepsFromMessages(messages, i));
 			pendingOps.push(...parseOpsFromMessages(messages, i));
+			pendingThinking += (msg.content ?? []).filter((c) => c.type === 'thinking').map((c) => c.thinking ?? '').join('');
+		} else if (msg.role === 'toolResult') {
+			if (ts != null) lastTs = ts;
 		}
-		// toolResult 不进聊天流，其信息已通过对应 assistant 的解析函数累积。
 	});
 	// 任务进行中时，最后一段是尚未完成的执行，不归档（由实时面板承接）；已完成则归档。
-	if (!isStreaming) {
-		flushExecutionBatch();
-		flushChangedFiles();
-	}
+	if (!isStreaming) flushExecutionBatch();
 	return result;
 }
 
@@ -891,6 +910,15 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		}
 	},
 
+	executeCommand: async (name, args) => {
+		try {
+			const response = await rpc.executeCommand(name, args);
+			if (!response.success) throw new Error(response.error || `执行命令 /${name} 失败`);
+		} catch (err) {
+			set({ error: err instanceof Error ? err.message : String(err) });
+		}
+	},
+
 	prompt: async (message: string, attachments?: PreparedAttachment[]) => {
 		const { images, messageSuffix, uiAttachments } = buildAttachmentPayload(attachments);
 		const promptMessage = messageSuffix ? `${message}${messageSuffix}` : message;
@@ -926,7 +954,15 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		try {
 			await rpc.prompt(promptMessage, images.length ? images : undefined);
 		} catch (err) {
-			set({ error: err instanceof Error ? err.message : String(err), isStreaming: false });
+			const message = err instanceof Error ? err.message : String(err);
+			set((state) => ({
+				error: message,
+				isStreaming: false,
+				isStopping: false,
+				_streamingAssistantId: null,
+				sessions: state.sessions.map((item) => item.path === state.selectedSessionPath ? { ...item, isStreaming: false } : item),
+			}));
+			useWorkbenchStore.getState().markExecutionStopped();
 		}
 	},
 

@@ -10,24 +10,26 @@ function applyToStreamingState(state: { messages: UIMessage[]; _streamingAssista
 }
 
 describe('历史消息回放', () => {
-	it('回放用户消息、助手正文，并按执行汇总工具调用为执行批次', () => {
+	it('回放用户消息、助手正文，并按执行汇总工具调用为执行批次（含思考与耗时）', () => {
 		const messages = agentMessagesToUi([
-			{ role: 'user', content: [{ type: 'text', text: '检查项目' }] },
-			{ role: 'assistant', content: [{ type: 'toolCall', name: 'read', arguments: { path: 'README.md' } }] },
-			{ role: 'toolResult', content: [{ type: 'text', text: '大段文件内容' }] },
-			{ role: 'assistant', content: [{ type: 'thinking', thinking: '分析中' }, { type: 'text', text: '检查完成' }] },
+			{ role: 'user', content: [{ type: 'text', text: '检查项目' }], timestamp: '2026-08-03T10:00:00Z' },
+			{ role: 'assistant', content: [{ type: 'toolCall', name: 'read', arguments: { path: 'README.md' } }], timestamp: '2026-08-03T10:00:05Z' },
+			{ role: 'toolResult', content: [{ type: 'text', text: '大段文件内容' }], timestamp: '2026-08-03T10:00:06Z' },
+			{ role: 'assistant', content: [{ type: 'thinking', thinking: '分析中' }, { type: 'text', text: '检查完成' }], timestamp: '2026-08-03T10:00:10Z' },
 		]);
 
-		// 用户与助手正文照常回放。
 		expect(messages.filter((m) => m.kind === 'text')).toEqual([
 			{ id: 'hist-0', role: 'user', text: '检查项目', kind: 'text' },
 			{ id: 'hist-3', role: 'assistant', text: '检查完成', kind: 'text' },
 		]);
-		// 工具调用汇总为一个执行批次，追加在段末（与实时归档顺序一致）。
 		const execBatch = messages.find((m) => m.kind === 'execution');
 		expect(execBatch).toBeTruthy();
 		expect(execBatch?.executionSteps).toHaveLength(1);
 		expect(execBatch?.executionSteps?.[0]).toMatchObject({ kind: 'read', title: 'read', status: 'succeeded' });
+		expect(execBatch?.meta?.thinking).toBe('分析中');
+		expect(execBatch?.meta?.durationMs).toBe(10_000);
+		// 改动文件已整合进 execution UIMessage，不再单独产出 changed_files kind。
+		expect(messages.some((m) => m.kind === 'changed_files')).toBe(false);
 	});
 
 	it('任务进行中（isStreaming）时最后一段不归档，避免进行中任务被误判为已归档', () => {
@@ -41,15 +43,17 @@ describe('历史消息回放', () => {
 		expect(messages.filter((m) => m.kind === 'text').map((m) => (m as { text: string }).text)).toEqual(['改一下']);
 	});
 
-	it('任务已完成时最后一段正常归档执行批次与改动文件', () => {
+	it('任务已完成时最后一段正常归档执行批次（含改动文件，不再单独 changed_files）', () => {
 		const messages = agentMessagesToUi([
-			{ role: 'user', content: [{ type: 'text', text: '改一下' }] },
-			{ role: 'assistant', content: [{ type: 'toolCall', name: 'edit_file', id: 't1', arguments: { path: 'a.ts', edits: [] } }, { type: 'text', text: '好了' }] },
-			{ role: 'toolResult', toolCallId: 't1', toolName: 'edit_file', content: [], details: { diff: '--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-a\n+b' } },
+			{ role: 'user', content: [{ type: 'text', text: '改一下' }], timestamp: '2026-08-03T10:00:00Z' },
+			{ role: 'assistant', content: [{ type: 'toolCall', name: 'edit_file', id: 't1', arguments: { path: 'a.ts', edits: [] } }, { type: 'text', text: '好了' }], timestamp: '2026-08-03T10:00:20Z' },
+			{ role: 'toolResult', toolCallId: 't1', toolName: 'edit_file', content: [], details: { diff: '--- a/a.ts\n+++ b/a.ts\n@@ -1 +1 @@\n-a\n+b' }, timestamp: '2026-08-03T10:00:15Z' },
 		]);
 
-		expect(messages.some((m) => m.kind === 'execution')).toBe(true);
-		expect(messages.some((m) => m.kind === 'changed_files')).toBe(true);
+		const execBatch = messages.find((m) => m.kind === 'execution');
+		expect(execBatch).toBeTruthy();
+		expect(execBatch?.changedFiles?.length).toBeGreaterThan(0);
+		expect(messages.some((m) => m.kind === 'changed_files')).toBe(false);
 	});
 });
 
