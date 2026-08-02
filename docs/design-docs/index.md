@@ -23,6 +23,8 @@
 - [GitPilot 多运行时智能体技术设计](gitpilot-multi-runtime-technical-design-v1.md) - GitPilot 产品入口、Pi Runtime 接入、运行时能力适配与 Hermes 渐进迁移方案
 - [GitPilot CLI 云端开发接力技术设计](gitpilot-cli-cloud-coding-handoff-technical-design-v1.md) - 内嵌 Pi Agent Core 的本地 Coding CLI、工作区与会话接力、云端 Codex Runtime 及安全结果回传
 - [GitPilot 桌面版技术设计](gitpilot-desktop-technical-design-v1.md) - Tauri 2 + React + bun sidecar 三进程模型，复用 RPC 协议只换 UI 层，类 Codex 原生 GUI 编码助手
+- [GitPilot Desktop shadcn UI 整体替换技术设计](gitpilot-desktop-shadcn-ui-replacement-technical-design-v1.md) - 基于 Radix、Mira 和 Tailwind v4 重建桌面渲染层，保留 Tauri/RPC/Agent 行为契约并分阶段迁移
+- [GitPilot 提问执行引导 P0 技术设计](gitpilot-execution-guidance-p0-technical-design-v1.md) - CLI 与 Desktop 的立即引导、完成后追加、队列展示和停止清队列语义
 - [AgentRuntime 统一聊天流式技术设计](agent-runtime-chat-streaming-technical-design-v1.md) - 多 Runtime 的 NDJSON 事件协议、Backend 转发和流式降级策略
 - [原生 API 工作台设计](api-studio-native-technical-design-v1.md) - 平台原生 API 资产与调试工作台
 - [API 管理设计](api-management-technical-design-v1.md) - API 工作台设计
@@ -60,6 +62,7 @@
 - [Hermes 技能架构](../exec-plans/active/hermes-skill-architecture-v1.md) - 智能助手架构
 - [模型 Token 用量设计](model-token-usage-technical-design-v1.md) - Token 计费设计（已 superseded，改用复用 agent_invocation_log）
 - [平台模型调用量统计设计](platform-model-usage-stats-technical-design-v1.md) - 模型为中心的平台级看板，补齐流式对话与 code-processing 覆盖盲区
+- [模型调用量缓存命中统计设计](model-usage-cache-hit-stats-technical-design-v1.md) - 缓存命中率与命中 token 数的采集、聚合与看板展示
 - [智能体调用量统计](agent-invocation-tracking-technical-design-v1.md) - 智能体调用统计
 
 ### 工程规范
