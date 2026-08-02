@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import { ChevronRight, LoaderCircle } from 'lucide-react';
 import { formatDuration, getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionRun, type ExecutionStep } from '@/src/store/workbench';
 import { Button } from '@/src/components/ui/button';
-import { ChangedFileItem } from './ChangedFilesCard';
 import type { ChangedFile } from '@/src/store/changed-files';
 import styles from './ExecutionActivity.module.css';
 
@@ -68,10 +67,20 @@ export function describeExecutionBatch(steps: ExecutionStep[]): string {
 	return labels.length > 0 ? labels.join('、') : `调用了${steps.length}个工具`;
 }
 
-/** 执行过程日志流：思考 + 每个步骤的标题与输出，按执行时间顺序。 */
-function ExecutionTrace({ steps, thinking }: { steps: ExecutionStep[]; thinking?: string }) {
+/** 将单个改动文件归纳为日志流里的一行普通文字，与思考、步骤保持同一风格。 */
+function describeChangedFile(file: ChangedFile): string {
+	const verb = file.status === 'added' ? '新增' : file.status === 'deleted' ? '删除' : '修改';
+	const parts = [`${verb} ${file.path}`];
+	if (file.added > 0) parts.push(`+${file.added}`);
+	if (file.removed > 0) parts.push(`-${file.removed}`);
+	return parts.join(' ');
+}
+
+/** 执行过程日志流：思考 + 每个步骤的标题与输出 + 改动文件，统一普通文字样式。 */
+function ExecutionTrace({ steps, thinking, changedFiles }: { steps: ExecutionStep[]; thinking?: string; changedFiles?: ChangedFile[] }) {
 	const visible = steps.filter((s) => s.kind !== 'complete');
-	if (!thinking?.trim() && visible.length === 0) return null;
+	const files = changedFiles ?? [];
+	if (!thinking?.trim() && visible.length === 0 && files.length === 0) return null;
 	return (
 		<div className={styles.trace}>
 			{thinking?.trim() && (
@@ -89,14 +98,18 @@ function ExecutionTrace({ steps, thinking }: { steps: ExecutionStep[]; thinking?
 					</div>
 				);
 			})}
+			{files.map((file) => (
+				<div key={file.path} className={styles.traceStep}>
+					<span className={styles.traceStepTitle}>{describeChangedFile(file)}</span>
+				</div>
+			))}
 		</div>
 	);
 }
 
 /**
  * 已完成执行批次。
- * 折叠态：总耗时 + 编辑文件列表（始终可见）。
- * 展开态：执行过程日志流（思考+步骤+输出）+ 编辑文件列表（总耗时仅折叠时显示，不重复）。
+ * 顶部始终显示总耗时（不随展开/折叠变化）；展开后显示执行过程日志流（思考+步骤+改动文件，统一普通文字样式）。
  * 总结（助手正文）在 ExecutionBatch 外，不折叠。
  */
 export function ExecutionBatch({ steps, thinking, durationMs, changedFiles }: {
@@ -106,28 +119,14 @@ export function ExecutionBatch({ steps, thinking, durationMs, changedFiles }: {
 	changedFiles?: ChangedFile[];
 }) {
 	const [expanded, setExpanded] = useState(false);
-	const hasFiles = Boolean(changedFiles && changedFiles.length > 0);
 	return (
 		<section className={`${styles.root} ${styles.batch}`} aria-label="已完成的 Agent 执行批次">
 			<Button type="button" variant="ghost" size="sm" className={styles.summary} onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
 				<ChevronRight size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
-				{!expanded && <span className={styles.duration}>总耗时 {formatDuration(durationMs ?? 0)}</span>}
+				<span className={styles.duration}>总耗时 {formatDuration(durationMs ?? 0)}</span>
 			</Button>
 			<div className={styles.divider} />
-			{expanded && (
-				<>
-					<span className={styles.sectionTitle}>执行过程</span>
-					<ExecutionTrace steps={steps} thinking={thinking} />
-				</>
-			)}
-			{hasFiles && (
-				<>
-					<span className={styles.duration}>编辑文件</span>
-					<div className={styles.filesList}>
-						{changedFiles!.map((file) => <ChangedFileItem key={file.path} file={file} />)}
-					</div>
-				</>
-			)}
+			{expanded && <ExecutionTrace steps={steps} thinking={thinking} changedFiles={changedFiles} />}
 		</section>
 	);
 }
