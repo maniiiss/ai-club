@@ -91,7 +91,9 @@ public class ModelUsageStatsService {
                 "  COALESCE(AVG(duration_ms), 0) AS avg_duration, " +
                 "  COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms), 0) AS p95_duration, " +
                 "  COUNT(DISTINCT CASE WHEN model_name IS NOT NULL AND model_name <> '' THEN model_name END) AS active_models, " +
-                "  COUNT(DISTINCT user_id) FILTER (WHERE user_id IS NOT NULL) AS distinct_users " +
+                "  COUNT(DISTINCT user_id) FILTER (WHERE user_id IS NOT NULL) AS distinct_users, " +
+                "  COALESCE(SUM(cached_tokens), 0) AS cached_tokens, " +
+                "  CASE WHEN COALESCE(SUM(prompt_tokens), 0) = 0 THEN NULL ELSE SUM(cached_tokens) * 1.0 / SUM(prompt_tokens) END AS cache_hit_rate " +
                 "FROM agent_invocation_log " + where.sql();
         Query q = entityManager.createNativeQuery(sql);
         where.applyParams(q);
@@ -108,13 +110,16 @@ public class ModelUsageStatsService {
         long p95Duration = toLong(row[8]);
         long activeModels = toLong(row[9]);
         long distinctUsers = toLong(row[10]);
+        long cachedTokens = toLong(row[11]);
+        Double cacheHitRate = row[12] == null ? null : ((Number) row[12]).doubleValue();
         double successRate = total == 0 ? 0.0 : (double) success / total;
         double tokenCoverage = total == 0 ? 0.0 : (double) tokenCount / total;
 
         return new ModelOverview(
                 total, success, failure, round(successRate),
                 totalPrompt, totalCompletion, totalTotal, round(tokenCoverage),
-                round(avgDuration), p95Duration, activeModels, distinctUsers);
+                round(avgDuration), p95Duration, activeModels, distinctUsers,
+                cachedTokens, cacheHitRate);
     }
 
     // ---------- by-model ----------
@@ -141,7 +146,9 @@ public class ModelUsageStatsService {
                 "  COALESCE(AVG(duration_ms), 0) AS avg_duration, " +
                 "  COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms), 0) AS p95, " +
                 "  COUNT(DISTINCT user_id) AS unique_users, " +
-                "  COALESCE(string_agg(DISTINCT NULLIF(nickname_snapshot, ''), ', '), '') AS unique_user_names " +
+                "  COALESCE(string_agg(DISTINCT NULLIF(nickname_snapshot, ''), ', '), '') AS unique_user_names, " +
+                "  COALESCE(SUM(cached_tokens), 0) AS cached_tokens, " +
+                "  CASE WHEN COALESCE(SUM(prompt_tokens), 0) = 0 THEN NULL ELSE SUM(cached_tokens) * 1.0 / SUM(prompt_tokens) END AS cache_hit_rate " +
                 "FROM agent_invocation_log " + where.sql() +
                 " GROUP BY " + modelNameExpr + ", " + providerExpr +
                 " ORDER BY total DESC LIMIT " + limit;
@@ -160,7 +167,9 @@ public class ModelUsageStatsService {
                     total, success, failure, round(successRate),
                     toLong(r[6]), toLong(r[7]), toLong(r[8]),
                     round(toDouble(r[9])), toLong(r[10]), toLong(r[11]),
-                    truncateUserNames((String) r[12])));
+                    truncateUserNames((String) r[12]),
+                    toLong(r[13]),
+                    r[14] == null ? null : ((Number) r[14]).doubleValue()));
         }
         return result;
     }
@@ -179,7 +188,9 @@ public class ModelUsageStatsService {
                 "  SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) AS success, " +
                 "  SUM(CASE WHEN status <> 'SUCCESS' THEN 1 ELSE 0 END) AS failure, " +
                 "  COALESCE(SUM(total_tokens), 0) AS total_tokens, " +
-                "  COALESCE(AVG(duration_ms), 0) AS avg_duration " +
+                "  COALESCE(AVG(duration_ms), 0) AS avg_duration, " +
+                "  COALESCE(SUM(cached_tokens), 0) AS cached_tokens, " +
+                "  CASE WHEN COALESCE(SUM(prompt_tokens), 0) = 0 THEN NULL ELSE SUM(cached_tokens) * 1.0 / SUM(prompt_tokens) END AS cache_hit_rate " +
                 "FROM agent_invocation_log " + where.sql() +
                 " GROUP BY bucket ORDER BY bucket ASC";
         Query q = entityManager.createNativeQuery(sql);
@@ -187,7 +198,7 @@ public class ModelUsageStatsService {
         List<Object[]> rows = q.getResultList();
         List<ModelTrendPoint> result = new ArrayList<>();
         for (Object[] r : rows) {
-            result.add(new ModelTrendPoint(toTime(r[0]), toLong(r[1]), toLong(r[2]), toLong(r[3]), toLong(r[4]), round(toDouble(r[5]))));
+            result.add(new ModelTrendPoint(toTime(r[0]), toLong(r[1]), toLong(r[2]), toLong(r[3]), toLong(r[4]), round(toDouble(r[5])), toLong(r[6]), r[7] == null ? null : ((Number) r[7]).doubleValue()));
         }
         return result;
     }
@@ -205,7 +216,9 @@ public class ModelUsageStatsService {
                 "  SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) AS success, " +
                 "  SUM(CASE WHEN status <> 'SUCCESS' THEN 1 ELSE 0 END) AS failure, " +
                 "  COALESCE(SUM(total_tokens), 0) AS total_tokens, " +
-                "  COALESCE(AVG(duration_ms), 0) AS avg_duration " +
+                "  COALESCE(AVG(duration_ms), 0) AS avg_duration, " +
+                "  COALESCE(SUM(cached_tokens), 0) AS cached_tokens, " +
+                "  CASE WHEN COALESCE(SUM(prompt_tokens), 0) = 0 THEN NULL ELSE SUM(cached_tokens) * 1.0 / SUM(prompt_tokens) END AS cache_hit_rate " +
                 "FROM agent_invocation_log " + where.sql() +
                 " GROUP BY " + providerExpr + " ORDER BY total DESC";
         Query q = entityManager.createNativeQuery(sql);
@@ -219,7 +232,7 @@ public class ModelUsageStatsService {
             double successRate = total == 0 ? 0.0 : (double) success / total;
             result.add(new ProviderBreakdown(
                     (String) r[0], total, success, failure, round(successRate),
-                    toLong(r[4]), round(toDouble(r[5]))));
+                    toLong(r[4]), round(toDouble(r[5])), toLong(r[6]), r[7] == null ? null : ((Number) r[7]).doubleValue()));
         }
         return result;
     }

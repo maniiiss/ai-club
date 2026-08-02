@@ -56,7 +56,7 @@ public final class ModelUsageStatsDtos {
                                 double avgDurationMs,
                                 long p95DurationMs,
                                 long activeModelCount,
-                                long distinctUsers) {
+                                long distinctUsers, long cachedTokens, Double cacheHitRate) {
     }
 
     /** 模型排行明细。 */
@@ -73,7 +73,7 @@ public final class ModelUsageStatsDtos {
                                  double avgDurationMs,
                                  long p95DurationMs,
                                  long uniqueUsers,
-                                 String uniqueUserNames) {
+                                 String uniqueUserNames, long cachedTokens, Double cacheHitRate) {
     }
 
     /** 调用趋势单点。 */
@@ -82,7 +82,7 @@ public final class ModelUsageStatsDtos {
                                   long success,
                                   long failure,
                                   long totalTokens,
-                                  double avgDurationMs) {
+                                  double avgDurationMs, long cachedTokens, Double cacheHitRate) {
     }
 
     /** 按供应商聚合。 */
@@ -92,6 +92,6 @@ public final class ModelUsageStatsDtos {
                                     long failure,
                                     double successRate,
                                     long totalTokens,
-                                    double avgDurationMs) {
+                                    double avgDurationMs, long cachedTokens, Double cacheHitRate) {
     }
 }
