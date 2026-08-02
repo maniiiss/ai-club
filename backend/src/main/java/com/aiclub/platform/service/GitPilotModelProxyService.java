@@ -116,7 +116,7 @@ public class GitPilotModelProxyService {
                 }
                 if (usageHandle != null) {
                     UsageSink sink = usageHandle.sink();
-                    sink.setUsage(usage.promptTokens, usage.completionTokens, usage.totalTokens);
+                    sink.setUsage(usage.promptTokens, usage.completionTokens, usage.totalTokens, usage.cachedTokens);
                     usageHandle.commit();
                 }
             } catch (RuntimeException | IOException ex) {
@@ -195,6 +195,7 @@ public class GitPilotModelProxyService {
         Integer promptTokens;
         Integer completionTokens;
         Integer totalTokens;
+        Integer cachedTokens;
 
         void observe(String jsonData, String provider) {
             try {
@@ -208,6 +209,20 @@ public class GitPilotModelProxyService {
                         if (p != null) promptTokens = p;
                         if (c != null) completionTokens = c;
                         if (t != null) totalTokens = t;
+                        Integer cached = readInt(usageNode, "cached_tokens");
+                        if (cached == null) {
+                            JsonNode details = usageNode.path("prompt_tokens_details");
+                            if (details.isObject()) {
+                                cached = readInt(details, "cached_tokens");
+                            }
+                        }
+                        if (cached == null) {
+                            JsonNode inputDetails = usageNode.path("input_tokens_details");
+                            if (inputDetails.isObject()) {
+                                cached = readInt(inputDetails, "cached_tokens");
+                            }
+                        }
+                        if (cached != null) cachedTokens = cached;
                     }
                 } else if ("ANTHROPIC".equals(provider)) {
                     String type = node.path("type").asText("");
@@ -216,6 +231,8 @@ public class GitPilotModelProxyService {
                         if (usageNode.isObject()) {
                             Integer p = readInt(usageNode, "input_tokens");
                             if (p != null) promptTokens = p;
+                            Integer cachedRead = readInt(usageNode, "cache_read_input_tokens");
+                            if (cachedRead != null) cachedTokens = cachedRead;
                         }
                     } else if ("message_delta".equals(type)) {
                         JsonNode usageNode = node.path("usage");
