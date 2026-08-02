@@ -96,7 +96,7 @@ function ExecutionTrace({ steps, thinking }: { steps: ExecutionStep[]; thinking?
 /**
  * 已完成执行批次。
  * 折叠态：总耗时 + 编辑文件列表（始终可见）。
- * 展开态：总耗时 + 执行过程日志流（思考+步骤+输出）+ 编辑文件列表。
+ * 展开态：执行过程日志流（思考+步骤+输出）+ 编辑文件列表（总耗时仅折叠时显示，不重复）。
  * 总结（助手正文）在 ExecutionBatch 外，不折叠。
  */
 export function ExecutionBatch({ steps, thinking, durationMs, changedFiles }: {
@@ -111,7 +111,7 @@ export function ExecutionBatch({ steps, thinking, durationMs, changedFiles }: {
 		<section className={`${styles.root} ${styles.batch}`} aria-label="已完成的 Agent 执行批次">
 			<Button type="button" variant="ghost" size="sm" className={styles.summary} onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
 				<ChevronRight size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
-				<span className={styles.duration}>总耗时 {formatDuration(durationMs ?? 0)}</span>
+				{!expanded && <span className={styles.duration}>总耗时 {formatDuration(durationMs ?? 0)}</span>}
 			</Button>
 			<div className={styles.divider} />
 			{expanded && (
@@ -122,7 +122,7 @@ export function ExecutionBatch({ steps, thinking, durationMs, changedFiles }: {
 			)}
 			{hasFiles && (
 				<>
-					<span className={styles.sectionTitle}>编辑文件</span>
+					<span className={styles.duration}>编辑文件</span>
 					<div className={styles.filesList}>
 						{changedFiles!.map((file) => <ChangedFileItem key={file.path} file={file} />)}
 					</div>
