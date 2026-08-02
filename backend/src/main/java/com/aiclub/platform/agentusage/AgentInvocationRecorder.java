@@ -154,6 +154,7 @@ public class AgentInvocationRecorder {
         entity.setPromptTokens(sink.getPromptTokens());
         entity.setCompletionTokens(sink.getCompletionTokens());
         entity.setTotalTokens(sink.getTotalTokens());
+        entity.setCachedTokens(sink.getCachedTokens());
         entity.setOutputChars(sink.getOutputChars());
         entity.setCostCredits(sink.getCostCredits());
         // 优先用 sink 中累计的 correlationId

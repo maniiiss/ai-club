@@ -12,6 +12,7 @@ public final class UsageSink {
     private Integer promptTokens;
     private Integer completionTokens;
     private Integer totalTokens;
+    private Integer cachedTokens;
     private Integer outputChars;
     private String correlationId;
     private Integer costCredits;
@@ -25,6 +26,14 @@ public final class UsageSink {
             this.totalTokens = (promptTokens == null ? 0 : promptTokens)
                     + (completionTokens == null ? 0 : completionTokens);
         }
+    }
+
+    /**
+     * 带 cached_tokens 的重载：在回写 prompt/completion/total 的同时记录缓存命中读取的输入 token。
+     */
+    public void setUsage(Integer promptTokens, Integer completionTokens, Integer totalTokens, Integer cachedTokens) {
+        setUsage(promptTokens, completionTokens, totalTokens);
+        this.cachedTokens = cachedTokens;
     }
 
     public void setOutputChars(Integer outputChars) {
@@ -42,6 +51,8 @@ public final class UsageSink {
     public Integer getPromptTokens() { return promptTokens; }
     public Integer getCompletionTokens() { return completionTokens; }
     public Integer getTotalTokens() { return totalTokens; }
+    public Integer getCachedTokens() { return cachedTokens; }
+    public void setCachedTokens(Integer cachedTokens) { this.cachedTokens = cachedTokens; }
     public Integer getOutputChars() { return outputChars; }
     public String getCorrelationId() { return correlationId; }
     public Integer getCostCredits() { return costCredits; }
