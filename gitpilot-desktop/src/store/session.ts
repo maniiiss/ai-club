@@ -646,8 +646,11 @@ export function agentMessagesToUi(messages: unknown[], isStreaming = false): UIM
 	let segmentStartTs: number | null = null;
 	let lastTs: number | null = null;
 	const tsOf = (m: { timestamp?: unknown }): number | null => {
-		const t = typeof m.timestamp === 'string' ? Date.parse(m.timestamp) : NaN;
-		return Number.isNaN(t) ? null : t;
+		const t = m.timestamp;
+		// pi-ai 持久化的 message.timestamp 是整数毫秒；兼容字符串 ISO。
+		if (typeof t === 'number' && Number.isFinite(t)) return t;
+		if (typeof t === 'string') { const p = Date.parse(t); return Number.isNaN(p) ? null : p; }
+		return null;
 	};
 	/** 将当前段累积的工具步骤、改动文件、思考与耗时汇总为一个 execution UIMessage。 */
 	const flushExecutionBatch = () => {
@@ -757,13 +760,17 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			// 首轮回答结束后 session 文件才会带上标题和首条消息，需要立即刷新左侧任务列表。
 			if (e.type === 'turn_end' || e.type === 'agent_settled') void get().refreshSessionList();
 		}));
-		unsubs.push(
-			onExtensionUI((req) => {
-				// 仅交互类（select/confirm/input/editor）进队列等待用户响应；
-				// notify/setStatus/setTitle/setWidget/set_editor_text 属状态更新，MVP 先忽略，后续迭代完善。
-			if (req.method === 'select' || req.method === 'confirm' || req.method === 'input' || req.method === 'editor') {
-				set((s) => ({ pendingExtensionUI: [...s.pendingExtensionUI, req] }));
-				useWorkbenchStore.getState().addApprovalStep(req);
+			unsubs.push(
+				onExtensionUI((req) => {
+					// 仅交互类（select/confirm/input/editor）进队列等待用户响应；
+					// notify 不需要回包，但错误通知必须进入桌面统一错误区，避免扩展失败后静默。
+					if (req.method === 'notify') {
+						if (req.notifyType === 'error') set({ error: req.message });
+						return;
+					}
+				if (req.method === 'select' || req.method === 'confirm' || req.method === 'input' || req.method === 'editor') {
+					set((s) => ({ pendingExtensionUI: [...s.pendingExtensionUI, req] }));
+					useWorkbenchStore.getState().addApprovalStep(req);
 				}
 			}),
 		);
