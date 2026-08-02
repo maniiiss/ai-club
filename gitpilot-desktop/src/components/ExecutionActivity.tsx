@@ -166,10 +166,13 @@ export function ExecutionActivity({ isStreaming }: { isStreaming: boolean }) {
 	return (
 		<section className={styles.root} aria-label="Agent 执行过程">
 			{elapsed != null && (
-				<span className={`${styles.label} ${styles.running}`} role="status">
-					<LoaderCircle size={14} aria-hidden="true" className={styles.spinner} />
-					<span className={styles.timer}>运行中 {formatDuration(elapsed)}</span>
-				</span>
+				<>
+					<span className={`${styles.label} ${styles.running}`} role="status">
+						<LoaderCircle size={14} aria-hidden="true" className={styles.spinner} />
+						<span className={styles.timer}>运行中 {formatDuration(elapsed)}</span>
+					</span>
+					{label && <div className={styles.divider} />}
+				</>
 			)}
 			{label && (canExpand ? (
 				<Button type="button" variant="ghost" size="sm" className={styles.summary} onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
