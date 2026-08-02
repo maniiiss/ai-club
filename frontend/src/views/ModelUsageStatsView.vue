@@ -75,6 +75,12 @@
         <div class="kpi-value">{{ overview?.activeModelCount ?? 0 }}</div>
         <div class="kpi-sub">独立用户 {{ overview?.distinctUsers ?? 0 }} / P95 {{ formatNumber(overview?.p95DurationMs ?? 0) }}ms</div>
       </div>
+      <div class="kpi-card">
+        <div class="kpi-label">缓存命中</div>
+        <div class="kpi-value">{{ formatNumber(overview?.cachedTokens ?? 0) }}</div>
+        <div class="kpi-sub" v-if="overview?.cacheHitRate != null">命中率 {{ formatPercent(overview.cacheHitRate) }}</div>
+        <div class="kpi-sub" v-else>命中率 -</div>
+      </div>
     </div>
 
     <!-- 图表区 -->
@@ -115,6 +121,15 @@
         </el-table-column>
         <el-table-column prop="totalTokens" label="总Token" width="120" sortable>
           <template #default="{ row }">{{ formatNumber(row.totalTokens) }}</template>
+        </el-table-column>
+        <el-table-column prop="cachedTokens" label="缓存命中Token" width="130" sortable>
+          <template #default="{ row }">{{ formatNumber(row.cachedTokens) }}</template>
+        </el-table-column>
+        <el-table-column label="缓存命中率" width="120" sortable>
+          <template #default="{ row }">
+            <span v-if="row.cacheHitRate != null">{{ formatPercent(row.cacheHitRate) }}</span>
+            <span v-else>-</span>
+          </template>
         </el-table-column>
         <el-table-column prop="avgDurationMs" label="平均耗时" width="110" sortable>
           <template #default="{ row }">{{ formatNumber(Math.round(row.avgDurationMs)) }}ms</template>
@@ -298,19 +313,22 @@ const trendLineOption = computed(() => {
   const buckets = trend.value.map((p) => p.bucket)
   const totals = trend.value.map((p) => p.total)
   const tokens = trend.value.map((p) => p.totalTokens)
+  const rates = trend.value.map((p) => (p.cacheHitRate == null ? null : Math.round(p.cacheHitRate * 100)))
   return {
     tooltip: { trigger: 'axis' },
-    legend: { data: ['调用数', 'Token 数'] },
-    grid: { left: '3%', right: '4%', bottom: '10%', containLabel: true },
+    legend: { data: ['调用数', 'Token 数', '缓存命中率'] },
+    grid: { left: '3%', right: '5%', bottom: '10%', containLabel: true },
     dataZoom: [{ type: 'inside' }],
     xAxis: { type: 'category', data: buckets, boundaryGap: false },
     yAxis: [
       { type: 'value', name: '调用数' },
-      { type: 'value', name: 'Token' }
+      { type: 'value', name: 'Token' },
+      { type: 'value', name: '命中率%', min: 0, max: 100, position: 'right', splitLine: { show: false } }
     ],
     series: [
       { name: '调用数', type: 'line', smooth: true, data: totals, itemStyle: { color: '#409eff' } },
-      { name: 'Token 数', type: 'line', smooth: true, yAxisIndex: 1, data: tokens, itemStyle: { color: '#67c23a' } }
+      { name: 'Token 数', type: 'line', smooth: true, yAxisIndex: 1, data: tokens, itemStyle: { color: '#67c23a' } },
+      { name: '缓存命中率', type: 'line', smooth: true, yAxisIndex: 2, data: rates, lineStyle: { type: 'dashed' }, itemStyle: { color: '#e6a23c' }, connectNulls: true }
     ]
   }
 })

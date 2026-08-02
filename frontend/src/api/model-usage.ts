@@ -43,6 +43,8 @@ export interface ModelOverview {
   p95DurationMs: number
   activeModelCount: number
   distinctUsers: number
+  cachedTokens: number
+  cacheHitRate: number | null
 }
 
 export interface ModelBreakdown {
@@ -60,6 +62,8 @@ export interface ModelBreakdown {
   p95DurationMs: number
   uniqueUsers: number
   uniqueUserNames: string
+  cachedTokens: number
+  cacheHitRate: number | null
 }
 
 export interface ModelTrendPoint {
@@ -69,6 +73,8 @@ export interface ModelTrendPoint {
   failure: number
   totalTokens: number
   avgDurationMs: number
+  cachedTokens: number
+  cacheHitRate: number | null
 }
 
 export interface ProviderBreakdown {
@@ -79,6 +85,8 @@ export interface ProviderBreakdown {
   successRate: number
   totalTokens: number
   avgDurationMs: number
+  cachedTokens: number
+  cacheHitRate: number | null
 }
 
 const cleanPayload = <T extends object>(payload: T): T =>
