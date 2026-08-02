@@ -14,19 +14,21 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { FileCode, Terminal, AlertCircle } from 'lucide-react';
 import type { UIMessage } from '@/src/store/session';
+import styles from './CodeCard.module.css';
 
-function DiffView({ text }: { text: string }) {
+/** unified diff 行级着色视图，供 CodeCard 与 ChangedFilesCard 复用。 */
+export function DiffView({ text }: { text: string }) {
 	const lines = text.split('\n');
 	return (
-		<pre className="overflow-x-auto rounded-md bg-[var(--color-code-bg)] p-3 text-xs leading-tight">
+		<pre className={styles.diff}>
 			{lines.map((line, i) => {
 				const cls = line.startsWith('+') && !line.startsWith('+++')
-					? 'bg-[var(--color-code-diff-add)] text-[var(--color-success)]'
+					? styles.diffAdd
 					: line.startsWith('-') && !line.startsWith('---')
-						? 'bg-[var(--color-code-diff-del)] text-[var(--color-error)]'
-						: 'text-[var(--color-text-secondary)]';
+						? styles.diffDel
+						: styles.diffLine;
 				return (
-					<div key={i} className={`px-1 ${cls}`}>
+					<div key={i} className={`${styles.diffRow} ${cls}`}>
 						{line || ' '}
 					</div>
 				);
@@ -40,10 +42,10 @@ export const CodeCard = memo(function CodeCard({ message }: { message: UIMessage
 
 	if (message.kind === 'diff') {
 		return (
-			<div className="my-2 overflow-hidden rounded-md border border-[var(--color-border)]">
-				<div className="flex items-center gap-2 bg-[var(--color-bg-elevated)] px-3 py-1.5 text-xs text-[var(--color-text-secondary)]">
+			<div className={styles.card}>
+				<div className={styles.cardHeader}>
 					<FileCode size={13} />
-					<span className="mono">{tool}</span>
+					<span className={styles.mono}>{tool}</span>
 				</div>
 				<DiffView text={message.text} />
 			</div>
@@ -52,32 +54,32 @@ export const CodeCard = memo(function CodeCard({ message }: { message: UIMessage
 
 	if (message.kind === 'bash') {
 		return (
-			<div className="my-2 overflow-hidden rounded-md border border-[var(--color-border)]">
-				<div className="flex items-center gap-2 bg-[var(--color-bg-elevated)] px-3 py-1.5 text-xs text-[var(--color-text-secondary)]">
+			<div className={styles.card}>
+				<div className={styles.cardHeader}>
 					<Terminal size={13} />
-					<span className="mono">bash</span>
+					<span className={styles.mono}>bash</span>
 				</div>
-				<pre className="overflow-x-auto bg-[var(--color-code-bg)] p-3 text-xs leading-tight text-[var(--color-text)]">{message.text || ' '}</pre>
+				<pre className={styles.code}>{message.text || ' '}</pre>
 			</div>
 		);
 	}
 
 	if (message.kind === 'file') {
 		return (
-			<div className="my-2 overflow-hidden rounded-md border border-[var(--color-border)]">
-				<div className="flex items-center gap-2 bg-[var(--color-bg-elevated)] px-3 py-1.5 text-xs text-[var(--color-text-secondary)]">
+			<div className={styles.card}>
+				<div className={styles.cardHeader}>
 					<FileCode size={13} />
-					<span className="mono">{tool}</span>
+					<span className={styles.mono}>{tool}</span>
 				</div>
-				<pre className="overflow-x-auto bg-[var(--color-code-bg)] p-3 text-xs leading-tight text-[var(--color-text-secondary)]">{message.text || ' '}</pre>
+				<pre className={`${styles.code} ${styles.secondaryCode}`}>{message.text || ' '}</pre>
 			</div>
 		);
 	}
 
 	if (message.kind === 'error') {
 		return (
-			<div className="my-2 flex items-start gap-2 rounded-md border border-[var(--color-error)]/40 bg-[var(--color-code-diff-del)] p-3 text-sm text-[var(--color-error)]">
-				<AlertCircle size={15} className="mt-0.5 shrink-0" />
+			<div className={styles.error}>
+				<AlertCircle size={15} />
 				<span>{message.text}</span>
 			</div>
 		);
@@ -85,7 +87,7 @@ export const CodeCard = memo(function CodeCard({ message }: { message: UIMessage
 
 	// text / thinking / image：走 Markdown
 	return (
-		<div className="chat-markdown prose prose-invert min-w-0 max-w-full text-[14px] font-normal leading-6 text-[var(--color-text)]">
+		<div className={styles.markdown}>
 			<ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown>
 		</div>
 	);

@@ -10,30 +10,33 @@ import { memo } from 'react';
 import { FileText, Image as ImageIcon } from 'lucide-react';
 import { CodeCard } from './CodeCard';
 import { ExecutionBatch } from './ExecutionActivity';
+import { ChangedFilesCard } from './ChangedFilesCard';
 import type { UIMessage } from '@/src/store/session';
+import { cn } from '@/src/lib/utils';
+import styles from './MessageBubble.module.css';
 
 const ROLE_ALIGN: Record<UIMessage['role'], string> = {
-	user: 'justify-end',
-	assistant: 'justify-start',
-	tool: 'justify-start',
-	system: 'justify-center',
+	user: styles.userAlign,
+	assistant: styles.assistantAlign,
+	tool: styles.assistantAlign,
+	system: styles.systemAlign,
 };
 
 /** 用户消息内的附件行：图片显示缩略图，文档/文本显示 chip。 */
 function AttachmentRow({ attachments }: { attachments: NonNullable<UIMessage['attachments']> }) {
 	return (
-		<div className="chat-message__attachments">
+		<div className={styles.attachments}>
 			{attachments.map((a, idx) =>
 				a.kind === 'image' && a.previewUrl ? (
 					<img
 						key={`${a.name}-${idx}`}
 						src={a.previewUrl}
 						alt={a.name}
-						className="chat-message__attachment-thumb"
+						className={styles.attachmentThumb}
 						title={a.name}
 					/>
 				) : (
-					<span key={`${a.name}-${idx}`} className="chat-message__attachment-chip" title={a.name}>
+					<span key={`${a.name}-${idx}`} className={styles.attachmentChip} title={a.name}>
 						{a.kind === 'image' ? <ImageIcon size={12} /> : <FileText size={12} />}
 						{a.name}
 					</span>
@@ -44,13 +47,17 @@ function AttachmentRow({ attachments }: { attachments: NonNullable<UIMessage['at
 }
 
 export const MessageBubble = memo(function MessageBubble({ message }: { message: UIMessage }) {
+	if (message.kind === 'changed_files' && message.changedFiles && message.changedFiles.length > 0) {
+		return <ChangedFilesCard files={message.changedFiles} />;
+	}
+
 	if (message.kind === 'execution') {
 		return message.executionSteps?.length ? <ExecutionBatch steps={message.executionSteps} /> : null;
 	}
 
 	if (message.role === 'tool') {
 		return (
-			<div className="my-1">
+			<div className={styles.tool}>
 				<CodeCard message={message} />
 			</div>
 		);
@@ -58,31 +65,39 @@ export const MessageBubble = memo(function MessageBubble({ message }: { message:
 
 	if (message.role === 'system') {
 		return (
-			<div className="my-2 flex justify-center">
-				<span className="rounded-full bg-[var(--color-bg-hover)] px-3 py-1 text-xs text-[var(--color-text-muted)]">{message.text}</span>
+			<div className={styles.system}>
+				<span>{message.text}</span>
 			</div>
 		);
 	}
 
 	const isUser = message.role === 'user';
+	const guidanceMode = message.meta?.guidanceMode === 'steer' || message.meta?.guidanceMode === 'followUp'
+		? message.meta.guidanceMode
+		: null;
+	const guidanceStatus = typeof message.meta?.guidanceStatus === 'string' ? message.meta.guidanceStatus : null;
+	const guidanceLabel = guidanceMode === 'steer' ? '引导' : '完成后追加';
+	const guidanceStatusLabel = guidanceStatus === 'submitting' ? '提交中' : guidanceStatus === 'queued' ? '等待执行' : guidanceStatus === 'applying' ? '正在应用' : guidanceStatus === 'applied' ? '已交给 GitPilot' : guidanceStatus === 'cancelled' ? '已取消' : guidanceStatus === 'failed' ? '发送失败' : null;
 	return (
-		<div className={`chat-message flex min-w-0 w-full ${ROLE_ALIGN[message.role]}`}>
+		<div className={`${styles.message} ${ROLE_ALIGN[message.role]}`}>
 			<div
-				className={`${isUser ? 'max-w-[78%] rounded-lg px-4 py-3' : 'w-full min-w-0 max-w-none px-1 py-1'} text-[14px] font-normal leading-6 ${
-					isUser
-						? 'bg-[var(--color-bg-hover)] text-[var(--color-text)]'
-						: 'bg-transparent text-[var(--color-text)]'
-				}`}
+				className={cn(styles.bubble, isUser ? styles.userBubble : styles.assistantBubble)}
 			>
+				{isUser && guidanceMode && (
+					<div className={styles.guidanceMeta}>
+						<span className={styles.guidanceMode}>{guidanceLabel}</span>
+						{guidanceStatusLabel && <span>{guidanceStatusLabel}</span>}
+					</div>
+				)}
 				{isUser && message.attachments && message.attachments.length > 0 && (
 					<AttachmentRow attachments={message.attachments} />
 				)}
 				{isUser ? (
-					<span className="whitespace-pre-wrap break-words">{message.text}</span>
+					<span className={styles.userText}>{message.text}</span>
 				) : (
 					<CodeCard message={message} />
 				)}
-				{message.streaming && <span className="ml-0.5 inline-block h-3.5 w-1.5 animate-pulse bg-[var(--color-primary-hover)] align-middle" />}
+				{message.streaming && <span className={styles.streaming} />}
 			</div>
 		</div>
 	);
