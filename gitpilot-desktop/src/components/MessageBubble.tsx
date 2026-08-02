@@ -6,7 +6,7 @@
  * - tool：灰色卡片（委托 CodeCard）
  * - system/error：居中提示
  */
-import { memo } from 'react';
+import { Fragment, memo, type ReactNode } from 'react';
 import { FileText, Image as ImageIcon } from 'lucide-react';
 import { CodeCard } from './CodeCard';
 import { ExecutionBatch } from './ExecutionActivity';
@@ -46,13 +46,32 @@ function AttachmentRow({ attachments }: { attachments: NonNullable<UIMessage['at
 	);
 }
 
+/** 用户命令与需求标题保持正文尺寸，仅用主题色细边框标识，避免变成大号标签。 */
+function renderHighlightedUserText(text: string) {
+	return text.split('\n').map((line, index, lines) => {
+		const requirement = line.match(/^(#\s+\[[^\]]+\]\s+)(.+)$/);
+		const slash = line.match(/^(\/[^\s]+)(.*)$/);
+		let content: ReactNode = line;
+		if (requirement) content = <>{requirement[1]}<mark className={styles.highlightToken}>{requirement[2]}</mark></>;
+		else if (slash) content = <><mark className={styles.highlightToken}>{slash[1].slice(1)}</mark>{slash[2]}</>;
+		return <Fragment key={`${index}-${line}`}>{content}{index < lines.length - 1 ? '\n' : ''}</Fragment>;
+	});
+}
+
 export const MessageBubble = memo(function MessageBubble({ message }: { message: UIMessage }) {
 	if (message.kind === 'changed_files' && message.changedFiles && message.changedFiles.length > 0) {
 		return <ChangedFilesCard files={message.changedFiles} />;
 	}
 
 	if (message.kind === 'execution') {
-		return message.executionSteps?.length ? <ExecutionBatch steps={message.executionSteps} /> : null;
+		return message.executionSteps?.length ? (
+			<ExecutionBatch
+				steps={message.executionSteps}
+				thinking={message.meta?.thinking as string | undefined}
+				durationMs={message.meta?.durationMs as number | undefined}
+				changedFiles={message.changedFiles}
+			/>
+		) : null;
 	}
 
 	if (message.role === 'tool') {
@@ -93,7 +112,7 @@ export const MessageBubble = memo(function MessageBubble({ message }: { message:
 					<AttachmentRow attachments={message.attachments} />
 				)}
 				{isUser ? (
-					<span className={styles.userText}>{message.text}</span>
+					<span className={styles.userText}>{renderHighlightedUserText(message.text)}</span>
 				) : (
 					<CodeCard message={message} />
 				)}

@@ -22,4 +22,19 @@
 .thinking pre { min-height: 0; flex: 1; overflow: auto; margin: 0; padding: 10px 12px; color: var(--gp-text-secondary); font-size: 10px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -160% 0; } }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* 执行批次重构：总耗时 / 执行过程日志流 / 编辑文件区 */
+.batch { border: 1px solid var(--gp-border); border-radius: var(--radius-md); background: var(--gp-surface); margin: 8px 0; padding: 2px 0 6px; }
+.duration { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--gp-text); font-family: var(--font-mono); }
+.divider { border-top: 1px solid var(--gp-border); margin: 6px 0; }
+.sectionTitle { display: block; font-size: 11px; color: var(--gp-text-muted); padding: 6px 12px 2px; }
+.timer { display: inline-flex; align-items: center; gap: 4px; }
+.filesList { padding: 0 4px 4px; }
+.trace { padding: 0 12px 8px; max-height: 320px; overflow: auto; }
+.thinkingBlock { margin: 6px 0; padding: 6px 8px; border-left: 2px solid var(--gp-border-strong); background: var(--gp-code-surface); color: var(--gp-text-secondary); font-size: 12px; }
+.thinkingBlock > span { display: block; color: var(--gp-text-muted); font-size: 11px; }
+.thinkingBlock > pre { margin: 4px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.traceStep { margin: 6px 0; }
+.traceStepTitle { display: block; font-size: 12px; color: var(--gp-text); font-family: var(--font-mono); }
+.traceStepOutput { margin: 2px 0 0 12px; padding: 6px 8px; background: var(--gp-code-surface); color: var(--gp-text-secondary); font-size: 11px; line-height: 1.55; max-height: 200px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: reduce) { .summary, .chevron, .expanded { transition: none; } .running, .spinner { animation: none; } }

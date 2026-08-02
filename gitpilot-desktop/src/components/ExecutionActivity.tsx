@@ -1,8 +1,10 @@
 /** 聊天流内的 Agent 执行摘要，所有信息均来自已归并的 sidecar 真实事件。 */
 import { useEffect, useState } from 'react';
 import { ChevronRight, LoaderCircle } from 'lucide-react';
-import { getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionRun, type ExecutionStep } from '@/src/store/workbench';
+import { formatDuration, getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionRun, type ExecutionStep } from '@/src/store/workbench';
 import { Button } from '@/src/components/ui/button';
+import { ChangedFileItem } from './ChangedFilesCard';
+import type { ChangedFile } from '@/src/store/changed-files';
 import styles from './ExecutionActivity.module.css';
 
 export function getExecutionActivityLabel(execution: ExecutionRun, isStreaming: boolean): string | null {
@@ -48,7 +50,7 @@ export function canExpandExecutionActivity(execution: ExecutionRun): boolean {
 	return Boolean(execution.thinking?.trim()) || execution.steps.some((step) => step.kind !== 'complete');
 }
 
-/** 将一批工具步骤归纳为紧凑摘要，避免把每个底层调用直接堆入聊天正文。 */
+/** 将一批工具步骤归纳为紧凑摘要（保留导出，历史调用方可能依赖）。 */
 export function describeExecutionBatch(steps: ExecutionStep[]): string {
 	const countByKind = new Map<ExecutionStep['kind'], number>();
 	for (const step of steps) countByKind.set(step.kind, (countByKind.get(step.kind) ?? 0) + 1);
@@ -66,48 +68,76 @@ export function describeExecutionBatch(steps: ExecutionStep[]): string {
 	return labels.length > 0 ? labels.join('、') : `调用了${steps.length}个工具`;
 }
 
-/** 已经完成一段正文的工具批次：默认收起，详情仍保留原始步骤与输出。 */
-export function ExecutionBatch({ steps }: { steps: ExecutionStep[] }) {
-	const selectStep = useWorkbenchStore((s) => s.selectStep);
-	const [expanded, setExpanded] = useState(false);
-	const [selectedId, setSelectedId] = useState<string | null>(steps.at(-1)?.id ?? null);
-	const selected = steps.find((step) => step.id === selectedId) ?? steps.at(-1);
+/** 执行过程日志流：思考 + 每个步骤的标题与输出，按执行时间顺序。 */
+function ExecutionTrace({ steps, thinking }: { steps: ExecutionStep[]; thinking?: string }) {
+	const visible = steps.filter((s) => s.kind !== 'complete');
+	if (!thinking?.trim() && visible.length === 0) return null;
+	return (
+		<div className={styles.trace}>
+			{thinking?.trim() && (
+				<div className={styles.thinkingBlock}>
+					<span>思考</span>
+					<pre>{thinking}</pre>
+				</div>
+			)}
+			{visible.map((step) => {
+				const output = step.error ?? step.result ?? step.partialResult ?? step.args;
+				return (
+					<div key={step.id} className={styles.traceStep}>
+						<span className={styles.traceStepTitle}>{describeExecutionStep(step)}</span>
+						{output && <pre className={styles.traceStepOutput}>{output}</pre>}
+					</div>
+				);
+			})}
+		</div>
+	);
+}
 
+/**
+ * 已完成执行批次。
+ * 折叠态：总耗时 + 编辑文件列表（始终可见）。
+ * 展开态：总耗时 + 执行过程日志流（思考+步骤+输出）+ 编辑文件列表。
+ * 总结（助手正文）在 ExecutionBatch 外，不折叠。
+ */
+export function ExecutionBatch({ steps, thinking, durationMs, changedFiles }: {
+	steps: ExecutionStep[];
+	thinking?: string;
+	durationMs?: number;
+	changedFiles?: ChangedFile[];
+}) {
+	const [expanded, setExpanded] = useState(false);
+	const hasFiles = Boolean(changedFiles && changedFiles.length > 0);
 	return (
 		<section className={`${styles.root} ${styles.batch}`} aria-label="已完成的 Agent 执行批次">
-			<Button type="button" variant="ghost" size="sm" className={styles.summary} onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
+			<Button type="button" variant="ghost" size="sm" className={styles.summary} onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
 				<ChevronRight size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
-				<span className={styles.label}>{describeExecutionBatch(steps)}</span>
+				<span className={styles.duration}>总耗时 {formatDuration(durationMs ?? 0)}</span>
 			</Button>
-			<div className={`${styles.expanded} ${expanded ? styles.expandedOpen : ''}`} aria-hidden={!expanded} inert={!expanded}>
-				<div className={styles.expandedInner}>
-					<div className={styles.steps} aria-label="本批执行步骤">
-						{steps.map((step) => (
-							<Button key={step.id} type="button" variant="ghost" size="sm" onClick={() => { setSelectedId(step.id); selectStep(step.id); }} className={`${styles.step} ${selected?.id === step.id ? styles.selected : ''}`}>
-								<span>{describeExecutionStep(step)}</span>
-							</Button>
-						))}
+			<div className={styles.divider} />
+			{expanded && (
+				<>
+					<span className={styles.sectionTitle}>执行过程</span>
+					<ExecutionTrace steps={steps} thinking={thinking} />
+				</>
+			)}
+			{hasFiles && (
+				<>
+					<span className={styles.sectionTitle}>编辑文件</span>
+					<div className={styles.filesList}>
+						{changedFiles!.map((file) => <ChangedFileItem key={file.path} file={file} />)}
 					</div>
-					{selected && <div className={styles.detail}>
-						<span className={styles.detailTitle}>{selected.kind === 'command' ? 'Shell' : selected.title || '工具输出'}</span>
-						<pre>{selected.error ?? selected.result ?? selected.partialResult ?? selected.args ?? ''}</pre>
-					</div>}
-				</div>
-			</div>
+				</>
+			)}
 		</section>
 	);
 }
 
-/** 展开后显示完整步骤；步骤区域固定最多五行高度，更多步骤可独立滚动。 */
+/** 运行中执行面板：实时计时 + 当前活动 + 可展开当前执行过程。 */
 export function ExecutionActivity({ isStreaming }: { isStreaming: boolean }) {
 	const execution = useWorkbenchStore((s) => s.execution);
-	const selectedStepId = useWorkbenchStore((s) => s.selectedStepId);
-	const selectStep = useWorkbenchStore((s) => s.selectStep);
 	const [expanded, setExpanded] = useState(false);
 	const label = getExecutionActivityLabel(execution, isStreaming);
-	const isPending = label === '正在整理工具结果…' || label === '正在准备…';
 	const visibleSteps = getUnreportedExecutionSteps(execution);
-	const selected = visibleSteps.find((step) => step.id === selectedStepId) ?? visibleSteps.at(-1);
 	const canExpand = Boolean(execution.thinking?.trim()) || visibleSteps.length > 0;
 
 	// 新问题会生成新的执行 run，面板必须回到收起状态，不能沿用上一次用户展开的详情。
@@ -117,39 +147,41 @@ export function ExecutionActivity({ isStreaming }: { isStreaming: boolean }) {
 		if (!canExpand) setExpanded(false);
 	}, [canExpand]);
 
-	if (!label) return null;
+	// 实时计时：运行中每秒刷新 now - startedAt。
+	const [now, setNow] = useState(Date.now());
+	useEffect(() => {
+		if (!isStreaming || !execution.startedAt) return;
+		const timer = setInterval(() => setNow(Date.now()), 1000);
+		return () => clearInterval(timer);
+	}, [isStreaming, execution.startedAt]);
+	const elapsed = execution.startedAt ? now - execution.startedAt : null;
 
+	// 没有活动文案也没有计时时不渲染面板。
+	if (!label && elapsed == null) return null;
+
+	const isPending = label === '正在整理工具结果…' || label === '正在准备…';
 	const activityLabel = isPending
-		? <span className={`${styles.label} ${styles.running}`} role="status" title={label}><LoaderCircle size={14} aria-hidden="true" className={styles.spinner} />{label}</span>
-		: <span className={`${styles.label} ${styles.running}`} title={label}>{label}</span>;
+		? <span className={`${styles.label} ${styles.running}`} role="status" title={label ?? ''}><LoaderCircle size={14} aria-hidden="true" className={styles.spinner} />{label}</span>
+		: <span className={`${styles.label} ${styles.running}`} title={label ?? ''}>{label}</span>;
 
 	return (
 		<section className={styles.root} aria-label="Agent 执行过程">
-			{canExpand ? (
-				<Button type="button" variant="ghost" size="sm" className={styles.summary} onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
+			{elapsed != null && (
+				<span className={`${styles.label} ${styles.running}`} role="status">
+					<LoaderCircle size={14} aria-hidden="true" className={styles.spinner} />
+					<span className={styles.timer}>运行中 {formatDuration(elapsed)}</span>
+				</span>
+			)}
+			{label && (canExpand ? (
+				<Button type="button" variant="ghost" size="sm" className={styles.summary} onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
 					<ChevronRight size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
 					{activityLabel}
 				</Button>
-			) : <span className={`${styles.summary} ${styles.static}`} aria-live="polite">{activityLabel}</span>}
+			) : <span className={`${styles.summary} ${styles.static}`} aria-live="polite">{activityLabel}</span>)}
 			{canExpand && (
 				<div className={`${styles.expanded} ${expanded ? styles.expandedOpen : ''}`} aria-hidden={!expanded} inert={!expanded}>
 					<div className={styles.expandedInner}>
-						{visibleSteps.length === 0 ? <div className={styles.thinking}>
-							<span className={styles.thinkingTitle}>思考过程</span>
-							<pre>{execution.thinking}</pre>
-						</div> : <>
-							<div className={styles.steps} aria-label="执行步骤">
-								{visibleSteps.map((step) => (
-									<Button key={step.id} type="button" variant="ghost" size="sm" onClick={() => selectStep(step.id)} className={`${styles.step} ${selected?.id === step.id ? styles.selected : ''}`}>
-										<span>{describeExecutionStep(step)}</span>
-								</Button>
-								))}
-							</div>
-							{selected && <div className={styles.detail}>
-								<span className={styles.detailTitle}>{selected.kind === 'command' ? 'Shell' : selected.title || '工具输出'}</span>
-								<pre>{selected.error ?? selected.result ?? selected.partialResult ?? selected.args ?? ''}</pre>
-							</div>}
-						</>}
+						<ExecutionTrace steps={visibleSteps} thinking={execution.thinking} />
 					</div>
 				</div>
 			)}
