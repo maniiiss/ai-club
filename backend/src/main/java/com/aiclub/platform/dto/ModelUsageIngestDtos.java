@@ -33,6 +33,7 @@ public final class ModelUsageIngestDtos {
      * @param promptTokens    输入 token，可空（provider 未返回时）
      * @param completionTokens 输出 token，可空
      * @param totalTokens      合计 token，可空（为空时由后端按输入+输出求和）
+     * @param cachedTokens     缓存命中读取的输入 token，可空（provider 未返回或不支持缓存）
      * @param durationMs      耗时毫秒
      * @param status          状态编码，对应 {@code InvocationStatus} 枚举名（SUCCESS/FAILURE 等）
      * @param occurredAt      调用发生时间（ISO-8601），可空
@@ -49,6 +50,7 @@ public final class ModelUsageIngestDtos {
                                        Integer promptTokens,
                                        Integer completionTokens,
                                        Integer totalTokens,
+                                       Integer cachedTokens,
                                        long durationMs,
                                        String status,
                                        String occurredAt) {

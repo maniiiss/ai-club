@@ -59,6 +59,7 @@ def report_model_usage(
         "promptTokens": usage.get("prompt_tokens"),
         "completionTokens": usage.get("completion_tokens"),
         "totalTokens": usage.get("total_tokens"),
+        "cachedTokens": usage.get("cached_tokens"),
         "durationMs": int(duration_ms),
         "status": status,
         "occurredAt": occurred_at,

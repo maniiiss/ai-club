@@ -78,7 +78,7 @@ public class ModelUsageIngestService {
                 .captureAuthContext(authSnapshot)
                 .build();
         UsageSink sink = new UsageSink();
-        sink.setUsage(item.promptTokens(), item.completionTokens(), item.totalTokens());
+        sink.setUsage(item.promptTokens(), item.completionTokens(), item.totalTokens(), item.cachedTokens());
         agentInvocationRecorder.record(ctx, sink, status, null, item.durationMs());
     }
 

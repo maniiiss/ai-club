@@ -408,6 +408,17 @@ def _extract_usage(body: dict[str, Any]) -> dict[str, int] | None:
         result["completion_tokens"] = int(completion)
     if total is not None:
         result["total_tokens"] = int(total)
+    # 缓存命中读取的输入 token：OpenAI prompt_tokens_details/input_tokens_details.cached_tokens 或 Anthropic cache_read_input_tokens
+    cached = None
+    for details_key in ("prompt_tokens_details", "input_tokens_details"):
+        details = usage.get(details_key)
+        if isinstance(details, dict) and details.get("cached_tokens") is not None:
+            cached = details.get("cached_tokens")
+            break
+    if cached is None:
+        cached = usage.get("cache_read_input_tokens")
+    if cached is not None:
+        result["cached_tokens"] = int(cached)
     return result
 
 
