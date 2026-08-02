@@ -49,6 +49,8 @@ export interface AgentUsageOverview {
   distinctUserCount: number
   unknownCallCount: number
   unknownCallSources: UnknownCallSource[]
+  cachedTokens: number
+  cacheHitRate: number | null
 }
 
 export interface AgentUsageTrendPoint {
@@ -58,6 +60,8 @@ export interface AgentUsageTrendPoint {
   failure: number
   totalTokens: number
   avgDurationMs: number
+  cachedTokens: number
+  cacheHitRate: number | null
 }
 
 export interface AgentUsageAgentBreakdown {
@@ -69,6 +73,8 @@ export interface AgentUsageAgentBreakdown {
   successRate: number
   avgDurationMs: number
   totalTokens: number
+  cachedTokens: number
+  cacheHitRate: number | null
 }
 
 export interface AgentUsageUserBreakdown {
@@ -79,6 +85,8 @@ export interface AgentUsageUserBreakdown {
   success: number
   totalTokens: number
   lastInvokedAt: string | null
+  cachedTokens: number
+  cacheHitRate: number | null
 }
 
 export interface AgentUsageModelBreakdown {
@@ -89,6 +97,8 @@ export interface AgentUsageModelBreakdown {
   totalTokens: number
   avgDurationMs: number
   p95DurationMs: number
+  cachedTokens: number
+  cacheHitRate: number | null
 }
 
 export interface AgentInvocationLogSummary {
@@ -108,6 +118,7 @@ export interface AgentInvocationLogSummary {
   promptTokens: number | null
   completionTokens: number | null
   totalTokens: number | null
+  cachedTokens: number | null
   inputChars: number | null
   outputChars: number | null
   errorCode: string | null
