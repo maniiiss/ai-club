@@ -156,6 +156,13 @@ public class AgentInvocationLogEntity {
     private Integer totalTokens;
 
     /**
+     * 缓存命中读取的输入 token 数（OpenAI cached_tokens / Anthropic cache_read_input_tokens 归一化）。
+     * null 表示上游未返回或 provider 不支持缓存。
+     */
+    @Column(name = "cached_tokens")
+    private Integer cachedTokens;
+
+    /**
      * 输入字符数（不依赖 usage 的降级指标）。
      */
     @Column(name = "input_chars")
@@ -269,6 +276,9 @@ public class AgentInvocationLogEntity {
 
     public Integer getTotalTokens() { return totalTokens; }
     public void setTotalTokens(Integer totalTokens) { this.totalTokens = totalTokens; }
+
+    public Integer getCachedTokens() { return cachedTokens; }
+    public void setCachedTokens(Integer cachedTokens) { this.cachedTokens = cachedTokens; }
 
     public Integer getInputChars() { return inputChars; }
     public void setInputChars(Integer inputChars) { this.inputChars = inputChars; }
