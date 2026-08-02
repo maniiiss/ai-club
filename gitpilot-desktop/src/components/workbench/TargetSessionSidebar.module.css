@@ -1,10 +1,10 @@
 .root { position: relative; display: flex; width: 100%; height: 100%; min-width: 0; flex-direction: column; background: linear-gradient(180deg, var(--gp-panel-deep) 0%, var(--gp-surface) 22%, var(--gp-surface) 100%); color: var(--gp-text); }
 .root::after { position: absolute; top: 0; right: 0; bottom: 0; width: 1px; background: linear-gradient(180deg, var(--gp-accent), transparent 34%, transparent 72%, var(--gp-warm)); content: ''; opacity: .4; pointer-events: none; }
-.header { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--gp-border); padding: 11px 12px 12px; box-shadow: 0 8px 20px var(--gp-shadow-color); }
+.header { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--gp-border); padding: 7px 10px 8px; box-shadow: 0 8px 20px var(--gp-shadow-color); }
 .headerCopy { min-width: 0; }
 .headerCopy > span, .sectionHeader > span { display: block; overflow: hidden; color: var(--gp-accent); font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: .14em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
-.headerCopy p { overflow: hidden; margin: 4px 0 0; color: var(--gp-text-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.header > button { flex: 0 0 auto; }
+.header > button { height: 28px; flex: 0 0 auto; gap: 6px; padding-inline: 8px; font-size: 12px; }
+.header > button > svg { width: 15px; height: 15px; }
 .scroll { min-height: 0; flex: 1; }
 .content { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; padding: 8px 8px 12px; }
 .projectBlock { min-width: 0; overflow: hidden; }

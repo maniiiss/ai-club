@@ -6,6 +6,7 @@
 .userBubble { max-width: min(78%, 720px); border: 1px solid var(--gp-border); border-radius: 12px; background: var(--secondary); padding: 12px 16px; color: var(--secondary-foreground); box-shadow: var(--shadow-md); }
 .assistantBubble { width: 100%; max-width: none; padding: 4px; }
 .userText { white-space: pre-wrap; overflow-wrap: anywhere; }
+.highlightToken { border: 1px solid color-mix(in srgb, var(--gp-action) 55%, var(--gp-border)); border-radius: 4px; background: color-mix(in srgb, var(--gp-action) 12%, transparent); padding: 0 2px; color: inherit; font: inherit; }
 .guidanceMeta { display: flex; align-items: center; gap: 7px; margin-bottom: 6px; color: color-mix(in srgb, var(--secondary-foreground) 65%, transparent); font-size: 11px; letter-spacing: .02em; }
 .guidanceMode { border: 1px solid color-mix(in srgb, var(--gp-action) 55%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--gp-action) 16%, transparent); padding: 2px 7px; color: var(--secondary-foreground); }
 .streaming { display: inline-block; width: 6px; height: 14px; margin-left: 2px; vertical-align: middle; background: var(--gp-action); animation: pulse 1s ease-in-out infinite; }

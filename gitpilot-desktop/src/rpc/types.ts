@@ -150,6 +150,8 @@ export type RpcCommand =
 	| { id?: string; type: 'set_session_name'; name: string }
 	| { id?: string; type: 'export_html'; outputPath?: string }
 	| { id?: string; type: 'get_commands' }
+	/** 执行扩展命令但不创建假的 slash 用户消息。 */
+	| { id?: string; type: 'execute_command'; name: string; args?: string }
 	// 桌面版登录后注入平台 gpt_ token（复用 sidecar saveCliToken）
 	| { id?: string; type: 'set_token'; platformUrl: string; token: string }
 	// 账户菜单的只读摘要与受控登出。
@@ -212,6 +214,7 @@ export type RpcResponse =
 	| { id?: string; type: 'response'; command: 'set_session_name'; success: true }
 	| { id?: string; type: 'response'; command: 'export_html'; success: true; data: { path: string } }
 	| { id?: string; type: 'response'; command: 'get_commands'; success: true; data: { commands: RpcSlashCommand[] } }
+	| { id?: string; type: 'response'; command: 'execute_command'; success: true }
 	| { id?: string; type: 'response'; command: 'set_token'; success: true }
 	| { id?: string; type: 'response'; command: 'get_platform_account'; success: true; data: PlatformAccount }
 	| { id?: string; type: 'response'; command: 'get_platform_connection'; success: true; data: PlatformConnection }

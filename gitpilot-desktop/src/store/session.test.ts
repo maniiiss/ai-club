@@ -43,6 +43,14 @@ describe('历史消息回放', () => {
 		expect(messages.filter((m) => m.kind === 'text').map((m) => (m as { text: string }).text)).toEqual(['改一下']);
 	});
 
+	it('需求扩展回放只展示编号和名称，避免把完整需求 Markdown 重复渲染到聊天区', () => {
+		const messages = agentMessagesToUi([
+			{ role: 'user', content: [{ type: 'text', text: '请基于以下需求完成技术设计与开发实现：\n\n# [#A1] 图片上传\n\n## 需求描述\n'.concat('很长的正文。'.repeat(1000)) }] },
+		]);
+
+		expect(messages[0]?.text).toBe('# [#A1] 图片上传\n已选择需求，开始技术设计与开发。');
+	});
+
 	it('任务已完成时最后一段正常归档执行批次（含改动文件，不再单独 changed_files）', () => {
 		const messages = agentMessagesToUi([
 			{ role: 'user', content: [{ type: 'text', text: '改一下' }], timestamp: '2026-08-03T10:00:00Z' },

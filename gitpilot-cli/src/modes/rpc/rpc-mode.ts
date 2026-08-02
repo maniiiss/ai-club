@@ -799,6 +799,22 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return success(id, "get_commands", { commands });
 			}
 
+			case "execute_command": {
+				const name = command.name.trim();
+				const registered = session.extensionRunner.getCommand(name);
+				if (!registered) return error(id, "execute_command", `未找到扩展命令：/${name}`);
+				const text = command.args?.trim() ? `/${name} ${command.args.trim()}` : `/${name}`;
+				// 交互式扩展命令可能等待 extension_ui_response；不能让 RPC response
+				// 阻塞桌面输入态，因此只在后台启动，异常通过统一 rpc:error 事件收敛。
+				void session.prompt(text, { source: "rpc" }).catch((commandError: unknown) => {
+					output({
+						type: "rpc:error",
+						message: `执行扩展命令 /${name} 失败：${commandError instanceof Error ? commandError.message : String(commandError)}`,
+					});
+				});
+				return success(id, "execute_command");
+			}
+
 			default: {
 				const unknownCommand = command as { type: string };
 				return error(id, unknownCommand.type, `Unknown command: ${unknownCommand.type}`);

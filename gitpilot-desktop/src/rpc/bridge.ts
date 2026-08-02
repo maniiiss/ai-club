@@ -159,6 +159,7 @@ export const rpc = {
 	setSessionName: (name: string) => send({ type: 'set_session_name', name }),
 	exportHtml: (outputPath?: string) => send({ type: 'export_html', outputPath }),
 	getCommands: () => send({ type: 'get_commands' }),
+	executeCommand: (name: string, args?: string) => send({ type: 'execute_command', name, args }),
 	setToken: (platformUrl: string, token: string) => send({ type: 'set_token', platformUrl, token }),
 	getPlatformAccount: () => send({ type: 'get_platform_account' }),
 	getPlatformConnection: () => send({ type: 'get_platform_connection' }),

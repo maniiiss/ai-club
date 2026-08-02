@@ -77,6 +77,8 @@ interface RequestOptions {
 	method?: string;
 	body?: unknown;
 	token?: string;
+	/** 外部调用可缩短超时；平台查询默认必须有上限，避免扩展命令永久阻塞。 */
+	timeoutMs?: number;
 }
 
 /** 发起平台请求并解包响应包络；非 2xx 或 success=false 抛 PlatformApiError。 */
@@ -85,23 +87,37 @@ export async function requestJson<T>(platformUrl: string, path: string, options:
 	if (options.body !== undefined) headers["content-type"] = "application/json";
 	if (options.token) headers.authorization = `Bearer ${options.token}`;
 
-	const response = await fetch(`${platformUrl}${path}`, {
-		method: options.method ?? "GET",
-		headers,
-		body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-	});
-	const text = await response.text();
-	let parsed: PlatformResponse<T>;
+	const controller = new AbortController();
+	const timeoutMs = options.timeoutMs ?? 15_000;
+	const timer = setTimeout(() => controller.abort(), timeoutMs);
 	try {
-		parsed = text ? (JSON.parse(text) as PlatformResponse<T>) : {};
-	} catch {
-		throw new PlatformApiError(response.status, `平台返回非 JSON 响应：${text.slice(0, 200)}`);
+		const response = await fetch(`${platformUrl}${path}`, {
+			method: options.method ?? "GET",
+			headers,
+			body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+			signal: controller.signal,
+		});
+		const text = await response.text();
+		let parsed: PlatformResponse<T>;
+		try {
+			parsed = text ? (JSON.parse(text) as PlatformResponse<T>) : {};
+		} catch {
+			throw new PlatformApiError(response.status, `平台返回非 JSON 响应：${text.slice(0, 200)}`);
+		}
+		if (!response.ok || parsed.success === false) {
+			const code = (parsed as { code?: string }).code;
+			throw new PlatformApiError(response.status, parsed.message || `平台请求失败：${response.status}`, code);
+		}
+		return parsed.data as T;
+	} catch (error) {
+		if (error instanceof PlatformApiError) throw error;
+		if (controller.signal.aborted || (error instanceof Error && error.name === "AbortError")) {
+			throw new PlatformApiError(408, `平台请求超时（${timeoutMs}ms），请检查平台服务或网络连接后重试。`, "TIMEOUT");
+		}
+		throw error;
+	} finally {
+		clearTimeout(timer);
 	}
-	if (!response.ok || parsed.success === false) {
-		const code = (parsed as { code?: string }).code;
-		throw new PlatformApiError(response.status, parsed.message || `平台请求失败：${response.status}`, code);
-	}
-	return parsed.data as T;
 }
 
 export const createDeviceAuthorization = (platformUrl: string) =>
@@ -175,7 +191,7 @@ export interface ListMyTasksParams {
 }
 
 /** 列出当前 CLI 用户负责的需求（workItemType=需求）。 */
-export const listMyTasks = (platformUrl: string, token: string, params: ListMyTasksParams = {}) => {
+export const listMyTasks = (platformUrl: string, token: string, params: ListMyTasksParams = {}, requestOptions: Pick<RequestOptions, "timeoutMs"> = {}) => {
 	const query = new URLSearchParams();
 	if (params.page != null) query.set("page", String(params.page));
 	if (params.size != null) query.set("size", String(params.size));
@@ -184,5 +200,5 @@ export const listMyTasks = (platformUrl: string, token: string, params: ListMyTa
 	if (params.projectId != null) query.set("projectId", String(params.projectId));
 	if (params.keyword) query.set("keyword", params.keyword);
 	const qs = query.toString();
-	return requestJson<PageResponse<CliTaskSummary>>(platformUrl, `/api/cli/tasks${qs ? `?${qs}` : ""}`, { token });
+	return requestJson<PageResponse<CliTaskSummary>>(platformUrl, `/api/cli/tasks${qs ? `?${qs}` : ""}`, { token, ...requestOptions });
 };

@@ -92,6 +92,8 @@ export type RpcCommand =
 
 	// Commands (available for invocation via prompt)
 	| { id?: string; type: "get_commands" }
+	/** 执行扩展命令但不把 slash 文本伪装成一条用户消息；交互请求通过事件异步返回。 */
+	| { id?: string; type: "execute_command"; name: string; args?: string }
 
 	// Token（桌面版登录后注入平台设备授权拿到的 gpt_ token，复用 saveCliToken 存凭据库）
 	| { id?: string; type: "set_token"; platformUrl: string; token: string }
@@ -270,6 +272,7 @@ export type RpcResponse =
 			success: true;
 			data: { commands: RpcSlashCommand[] };
 	  }
+	| { id?: string; type: "response"; command: "execute_command"; success: true }
 	| { id?: string; type: "response"; command: "set_token"; success: true }
 	| { id?: string; type: "response"; command: "get_platform_account"; success: true; data: RpcPlatformAccount }
 	| { id?: string; type: "response"; command: "get_platform_connection"; success: true; data: RpcPlatformConnection }

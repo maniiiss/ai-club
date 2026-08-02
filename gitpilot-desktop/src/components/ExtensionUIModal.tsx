@@ -16,6 +16,13 @@ import styles from './ExtensionUIModal.module.css';
 
 type RespondValue = { value: string } | { confirmed: boolean } | { cancelled: true };
 
+/** 将需求选择器的协议字符串拆成稳定的代码、名称和元信息，避免整行挤在一条按钮里。 */
+function parseRequirementOption(option: string): { code: string; name: string; meta: string } | null {
+	const match = option.match(/^\[([^\]]+)\]\s*(.*?)\s+·\s+(.+)$/);
+	if (!match) return null;
+	return { code: match[1], name: match[2].trim(), meta: match[3].trim() };
+}
+
 export function ExtensionUIModal() {
 	const req = useSessionStore((s) => s.pendingExtensionUI[0] ?? null);
 	const respond = useSessionStore((s) => s.respondExtensionUI);
@@ -37,27 +44,27 @@ export function ExtensionUIModal() {
 	return (
 		<Dialog open onOpenChange={(open) => { if (!open) close({ cancelled: true }); }}>
 			<DialogContent className={styles.content} aria-describedby="extension-ui-description">
-				<DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription id="extension-ui-description">来自当前 Agent 扩展的交互请求</DialogDescription></DialogHeader>
+				<DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription id="extension-ui-description">选择一条需求开始技术设计与开发</DialogDescription></DialogHeader>
 				<div className="p-5">
 					{(req.method === 'confirm' || req.method === 'select') && (
 						<p className="mb-3 text-sm text-[var(--muted-foreground)]">{req.method === 'confirm' ? req.message : ''}</p>
 					)}
 
 					{req.method === 'select' && (
-						<ScrollArea className="max-h-72 pr-2">
-						<div className="space-y-1">
-							{req.options.map((opt) => (
-								<Button
-									key={opt}
-									variant="ghost"
-									size="default"
-									onClick={() => close({ value: opt })}
-									className="w-full justify-start text-left text-[var(--muted-foreground)]"
-								>
-									{opt}
-								</Button>
-							))}
-						</div>
+						<ScrollArea className={styles.optionScroll} fitContent>
+							<div className={styles.optionList}>
+								{req.options.map((opt) => {
+									const parsed = parseRequirementOption(opt);
+									return (
+										<button key={opt} type="button" className={styles.option} onClick={() => close({ value: opt })} title={opt}>
+											{parsed ? <>
+												<span className={styles.optionCode}>{parsed.code}</span>
+												<span className={styles.optionCopy}><span className={styles.optionName}>{parsed.name}</span><span className={styles.optionMeta}>{parsed.meta}</span></span>
+											</> : <span className={styles.optionName}>{opt}</span>}
+										</button>
+									);
+								})}
+							</div>
 						</ScrollArea>
 					)}
 

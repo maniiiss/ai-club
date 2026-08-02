@@ -15,7 +15,9 @@
 .guidanceAction { height: 26px; gap: 4px; border-radius: 7px; padding: 0 9px; font-size: 11px; }
 .guidanceIconAction { width: 28px; height: 28px; color: var(--gp-text-muted); }
 .guidanceIconAction:hover { color: var(--gp-text); }
-.textarea { min-height: 44px; max-height: 200px; width: 100%; resize: none; border: 0 !important; border-color: transparent !important; background: transparent; box-shadow: none !important; color: var(--gp-text); font: 13px/1.55 var(--font-sans); outline: 0 !important; user-select: text; -webkit-user-select: text; }
+.composerRow { position: relative; isolation: isolate; min-width: 0; }
+.commandHighlight { position: absolute; z-index: 0; top: 8px; left: 12px; border: 1px solid color-mix(in srgb, var(--gp-action) 55%, var(--gp-border)); border-radius: 4px; background: color-mix(in srgb, var(--gp-action) 12%, transparent); padding: 0 2px; color: transparent; font: 13px/1.55 var(--font-sans); pointer-events: none; white-space: nowrap; }
+.textarea { position: relative; z-index: 1; min-height: 44px; max-height: 200px; width: 100%; resize: none; border: 0 !important; border-color: transparent !important; background: transparent; box-shadow: none !important; color: var(--gp-text); font: 13px/1.55 var(--font-sans); outline: 0 !important; user-select: text; -webkit-user-select: text; }
 .textarea:focus, .textarea:focus-visible { border: 0 !important; border-color: transparent !important; box-shadow: none !important; outline: 0 !important; }
 .textarea::placeholder { color: var(--gp-text-muted); }
 .toolbar { display: flex; min-height: 32px; align-items: center; gap: 10px; margin-top: 7px; }

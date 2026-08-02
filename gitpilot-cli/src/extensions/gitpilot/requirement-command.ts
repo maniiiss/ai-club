@@ -28,7 +28,7 @@ export function registerRequirementCommand(pi: ExtensionAPI): void {
 			// 2. 拉取需求首页
 			let page: PageResponse<CliTaskSummary>;
 			try {
-				page = await listMyTasks(platformUrl, token, { page: 1, size: 50 });
+				page = await listMyTasks(platformUrl, token, { page: 1, size: 50 }, { timeoutMs: 10_000 });
 			} catch (err) {
 				ctx.ui.notify(`拉取需求失败：${(err as Error).message}`, "error");
 				return;

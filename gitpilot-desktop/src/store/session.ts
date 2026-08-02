@@ -422,6 +422,18 @@ function messageTextFromEvent(message: unknown): string {
 		.join('');
 }
 
+/**
+ * 需求扩展会把完整需求 Markdown 注入模型上下文；桌面聊天只展示需求标题，
+ * 避免大段正文在 WebView 中重复渲染导致选中后卡顿，同时不影响 sidecar 的真实 prompt。
+ */
+function displayUserMessageText(text: string): string {
+	const title = text.match(/(?:^|\n)#\s+\[([^\]]+)\]\s+([^\r\n]+)/);
+	if (text.startsWith('请基于以下需求完成技术设计与开发实现：') && title) {
+		return `# [${title[1]}] ${title[2].trim()}\n已选择需求，开始技术设计与开发。`;
+	}
+	return text;
+}
+
 function updateGuidanceMessageStatus(
 	messages: UIMessage[],
 	item: GuidanceQueueItem,
@@ -466,8 +478,9 @@ function applyGuidanceMessageStart(set: SessionSetter, event: AgentSessionEvent)
 		if (!item) {
 			// 扩展通过 sendUserMessage 触发的真实需求指令也要进入当前对话；
 			// 普通 prompt 已由输入框乐观插入，因此用末条正文去重，避免出现两个相同气泡。
-			if (!text.trim() || (state.messages.at(-1)?.role === 'user' && state.messages.at(-1)?.text === text)) return {};
-			return { messages: [...state.messages, { id: newId(), role: 'user', text, kind: 'text' }] };
+			const displayText = displayUserMessageText(text);
+			if (!text.trim() || (state.messages.at(-1)?.role === 'user' && state.messages.at(-1)?.text === displayText)) return {};
+			return { messages: [...state.messages, { id: newId(), role: 'user', text: displayText, kind: 'text' }] };
 		}
 		return {
 			// 进入主对话后移出排队列表，避免列表卡片与已发送消息重复展示。
@@ -679,7 +692,8 @@ export function agentMessagesToUi(messages: unknown[], isStreaming = false): UIM
 			segmentStartTs = ts;
 			lastTs = ts;
 			const text = (msg.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
-			if (text.trim()) result.push({ id: `hist-${i}`, role: 'user' as const, text, kind: 'text' as MessageKind });
+			const displayText = displayUserMessageText(text);
+			if (displayText.trim()) result.push({ id: `hist-${i}`, role: 'user' as const, text: displayText, kind: 'text' as MessageKind });
 		} else if (msg.role === 'assistant') {
 			if (ts != null) lastTs = ts;
 			const text = (msg.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
@@ -1287,15 +1301,23 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	},
 
 	respondExtensionUI: async (req, value) => {
+		// 先关闭本地弹窗，再等待 sidecar 接收响应；网络或 sidecar 处理较慢时不能冻结整个工作台。
+		const startsRequirement = req.method === 'select' && req.title === '选择要设计开发的需求' && 'value' in value;
+		set((s) => ({
+			pendingExtensionUI: s.pendingExtensionUI.filter((r) => r.id !== req.id),
+			...(startsRequirement ? {
+				isStreaming: true,
+				sessions: s.sessions.map((item) => item.path === s.selectedSessionPath ? { ...item, isStreaming: true } : item),
+			} : {}),
+		}));
+		useWorkbenchStore.getState().resolveApprovalStep(req.id);
 		try {
 			if ('value' in value) await rpc.respondValue(req.id, value.value);
 			else if ('confirmed' in value) await rpc.respondConfirmed(req.id, value.confirmed);
 			else await rpc.respondCancelled(req.id);
-			// 移出待响应队列
-			set((s) => ({ pendingExtensionUI: s.pendingExtensionUI.filter((r) => r.id !== req.id) }));
-			useWorkbenchStore.getState().resolveApprovalStep(req.id);
 		} catch (err) {
-			set({ error: err instanceof Error ? err.message : String(err) });
+			set({ error: err instanceof Error ? err.message : String(err), ...(startsRequirement ? { isStreaming: false } : {}) });
+			if (startsRequirement) useWorkbenchStore.getState().markExecutionStopped();
 		}
 	},
 

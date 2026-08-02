@@ -1,4 +1,78 @@
 /* 扩展请求的业务尺寸只在该模态内生效，避免污染全局 Dialog 原语。 */
 .content {
-	width: min(520px, calc(100vw - 32px));
+	width: min(900px, calc(100vw - 32px));
+	max-width: min(900px, calc(100vw - 32px));
+}
+
+.optionScroll {
+	max-height: min(480px, 58vh);
+	padding-right: 6px;
+}
+
+.optionList {
+	display: grid;
+	gap: 6px;
+	min-width: 0;
+}
+
+.option {
+	display: flex;
+	width: 100%;
+	min-width: 0;
+	align-items: center;
+	gap: 12px;
+	border: 1px solid transparent;
+	border-radius: 8px;
+	background: transparent;
+	padding: 10px 12px;
+	color: var(--foreground);
+	text-align: left;
+	cursor: pointer;
+	transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.option:hover {
+	border-color: color-mix(in srgb, var(--gp-action) 35%, var(--border));
+	background: color-mix(in srgb, var(--gp-action) 8%, var(--card));
+}
+
+.option:focus-visible {
+	outline: 2px solid color-mix(in srgb, var(--gp-action) 65%, transparent);
+	outline-offset: -2px;
+}
+
+.optionCode {
+	flex: 0 0 auto;
+	border: 1px solid var(--border-strong);
+	border-radius: 5px;
+	padding: 3px 6px;
+	color: var(--muted-foreground);
+	font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+	font-size: 12px;
+}
+
+.optionCopy {
+	display: flex;
+	min-width: 0;
+	flex: 1;
+	flex-direction: column;
+	gap: 3px;
+}
+
+.optionName,
+.optionMeta {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.optionName {
+	font-size: 14px;
+	font-weight: 500;
+}
+
+.optionMeta {
+	color: var(--muted-foreground);
+	font-size: 12px;
 }

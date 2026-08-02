@@ -51,6 +51,13 @@ function guidanceStatusLabel(status: GuidanceQueueItem['status']): string {
 	return '发送失败';
 }
 
+/** 已选择的 slash 命令以主题色 token 呈现，参数仍保留在可编辑文本框中。 */
+function getCommandToken(text: string, commands: RpcSlashCommand[]): { name: string; prefix: string } | null {
+	const match = text.match(/^\/([^\s]+)(?:\s|$)/);
+	if (!match || !commands.some((command) => command.name === match[1])) return null;
+	return { name: match[1], prefix: match[0] };
+}
+
 /** 用稳定来源标识去重，避免 Tauri 重复投递同一个路径时出现两个附件 chip。 */
 export function attachmentInputKey(input: AttachmentInput): string {
 	if ('path' in input) return `path:${input.path.replace(/\\/g, '/').toLowerCase()}`;
@@ -86,6 +93,7 @@ export function InputBox() {
 	const isSessionLoading = useSessionStore((s) => s.isSessionLoading);
 	const commands = useSessionStore((s) => s.commands);
 	const prompt = useSessionStore((s) => s.prompt);
+	const executeCommand = useSessionStore((s) => s.executeCommand);
 	const sendGuidance = useSessionStore((s) => s.sendGuidance);
 	const replayQueuedGuidance = useSessionStore((s) => s.replayGuidance);
 	const removeGuidance = useSessionStore((s) => s.removeGuidance);
@@ -292,6 +300,17 @@ export function InputBox() {
 
 	const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
 		if (showPalette) return; // 命令面板接管键盘
+		// 命令已确认后，退格从参数起点删除整个命令前缀，避免逐字删除造成残留 slash。
+		if (commandToken && e.key === 'Backspace' && e.currentTarget.selectionStart === commandToken.prefix.length && e.currentTarget.selectionEnd === commandToken.prefix.length) {
+			e.preventDefault();
+			setText(text.slice(commandToken.prefix.length));
+			return;
+		}
+		if (commandToken && e.key === 'Delete' && e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0) {
+			e.preventDefault();
+			setText(text.slice(commandToken.prefix.length));
+			return;
+		}
 		if (e.key === 'Enter' && !e.shiftKey) {
 			e.preventDefault();
 			void send(e.altKey && isStreaming ? 'followUp' : undefined);
@@ -299,14 +318,22 @@ export function InputBox() {
 	};
 
 	const pickCommand = (name: string) => {
-		setText(`/${name} `);
 		setShowPalette(false);
+		// 需求命令本身就是选择器：选中命令后立即打开需求列表，不再要求用户额外发送一次。
+		if (name === 'requirement' && !isStreaming && !isSessionLoading) {
+			setText('');
+			void executeCommand(name);
+			return;
+		}
+		// 预留两个空格，让高亮边框与后续参数之间保持清晰间距；发送时空白不影响命令解析。
+		setText(`/${name}  `);
 		taRef.current?.focus();
 	};
 
 	const canSend = canSubmitPrompt(text, attachments.length, preparing || isSessionLoading) && !submitting && !isStopping && !isFlushingGuidance;
 	const visibleGuidance = guidanceQueue.slice(-5);
 	const hasComposerContent = text.trim().length > 0 || attachments.length > 0;
+	const commandToken = getCommandToken(text, commands);
 
 	return (
 		<div ref={rootRef} className={`${styles.root} ${isDragOver ? styles.dragOver : ''}`}>
@@ -374,18 +401,21 @@ export function InputBox() {
 						)}
 					</div>
 				)}
-				<Textarea
-					ref={taRef}
-					value={text}
-					onChange={(e) => setText(e.target.value)}
-					onKeyDown={onKey}
-					onPaste={onPaste}
-					disabled={isSessionLoading}
-					rows={1}
-					id="gitpilot-composer"
-					placeholder={isSessionLoading ? '正在加载任务…' : isStreaming ? '继续输入以排队后续修改…' : '描述任务，/ 查看命令，可附加文件'}
-					className={styles.textarea}
-				/>
+				<div className={styles.composerRow}>
+					<Textarea
+						ref={taRef}
+						value={text}
+						onChange={(e) => setText(e.target.value)}
+						onKeyDown={onKey}
+						onPaste={onPaste}
+						disabled={isSessionLoading}
+						rows={1}
+						id="gitpilot-composer"
+						placeholder={isSessionLoading ? '正在加载任务…' : isStreaming ? '继续输入以排队后续修改…' : '描述任务，/ 查看命令，可附加文件'}
+						className={styles.textarea}
+					/>
+					{commandToken && <span className={styles.commandHighlight} aria-hidden="true">/{commandToken.name}</span>}
+				</div>
 				<div className={styles.toolbar}>
 					<div className={styles.actions}>
 						<Button

@@ -56,7 +56,7 @@ export function TargetSessionSidebar() {
 	const currentFile = selectedSessionPath ?? sessionState?.sessionFile;
 
 	return <aside className={styles.root} aria-label="项目与任务">
-		<header className={styles.header}><div className={styles.headerCopy}><span>项目</span><p>工作目录与项目任务</p></div><Button type="button" variant="secondary" size="sm" onClick={() => addProject()} disabled={connection !== 'ready'} title="添加项目"><FolderOpen />添加</Button></header>
+		<header className={styles.header}><div className={styles.headerCopy}><span>项目</span></div><Button type="button" variant="secondary" size="sm" onClick={() => addProject()} disabled={connection !== 'ready'} title="添加项目"><FolderOpen />添加</Button></header>
 		<ScrollArea fitContent className={styles.scroll}><div className={styles.content}>
 			{projects.length === 0 ? <div className={styles.emptyState}>点「添加」选择工作目录</div> : projectTree.map((node) => <ProjectTreeItem key={node.project.path} node={node} depth={0} activeTaskPath={currentFile} canCreateTask={connection === 'ready'} onCreateTask={(path) => void newSession(path)} onSelectTask={(path) => void switchSession(path)} />)}
 			<Separator className={styles.separator} />

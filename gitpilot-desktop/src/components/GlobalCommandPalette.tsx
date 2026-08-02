@@ -18,6 +18,7 @@ export function GlobalCommandPalette({ onNewSession, onAbort }: GlobalCommandPal
 	const requestModelPicker = useWorkbenchStore((s) => s.requestModelPicker);
 	const commands = useSessionStore((s) => s.commands);
 	const prompt = useSessionStore((s) => s.prompt);
+	const executeCommand = useSessionStore((s) => s.executeCommand);
 
 	const builtIns = useMemo<Array<WorkbenchCommand & { execute: () => void }>>(() => [
 		{ id: 'new-task', label: '新建任务', description: '在当前项目创建新的 Agent 会话', shortcut: 'Ctrl N', execute: onNewSession },
@@ -27,8 +28,8 @@ export function GlobalCommandPalette({ onNewSession, onAbort }: GlobalCommandPal
 	], [onAbort, onNewSession, requestModelPicker]);
 	const all = useMemo<Array<WorkbenchCommand & { execute: () => void }>>(() => [
 		...builtIns,
-		...commands.map<WorkbenchCommand & { execute: () => void }>((command) => ({ id: `slash-${command.source}-${command.name}`, label: `/${command.name}`, description: command.description ?? '执行 sidecar 注册命令', execute: () => { void prompt(`/${command.name}`); } })),
-	], [builtIns, commands, prompt]);
+		...commands.map<WorkbenchCommand & { execute: () => void }>((command) => ({ id: `slash-${command.source}-${command.name}`, label: `/${command.name}`, description: command.description ?? '执行 sidecar 注册命令', execute: () => { void (command.source === 'extension' && command.name === 'requirement' ? executeCommand(command.name) : prompt(`/${command.name}`)); } })),
+	], [builtIns, commands, executeCommand, prompt]);
 	if (!open) return null;
 
 	const iconFor = (id: string) => id === 'new-task' ? <Plus /> : id === 'model' ? <Cpu /> : id === 'stop' ? <Square /> : <Type />;
