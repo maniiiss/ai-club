@@ -65,7 +65,8 @@ public final class AgentUsageStatsDtos {
             long p95DurationMs,
             long distinctUserCount,
             long unknownCallCount,
-            List<UnknownCallSource> unknownCallSources
+            List<UnknownCallSource> unknownCallSources,
+            long cachedTokens, Double cacheHitRate
     ) {
     }
 
@@ -84,7 +85,8 @@ public final class AgentUsageStatsDtos {
             long success,
             long failure,
             long totalTokens,
-            double avgDurationMs
+            double avgDurationMs,
+            long cachedTokens, Double cacheHitRate
     ) {
     }
 
@@ -99,7 +101,8 @@ public final class AgentUsageStatsDtos {
             long failure,
             double successRate,
             double avgDurationMs,
-            long totalTokens
+            long totalTokens,
+            long cachedTokens, Double cacheHitRate
     ) {
     }
 
@@ -113,7 +116,8 @@ public final class AgentUsageStatsDtos {
             long total,
             long success,
             long totalTokens,
-            String lastInvokedAt
+            String lastInvokedAt,
+            long cachedTokens, Double cacheHitRate
     ) {
     }
 
@@ -127,7 +131,8 @@ public final class AgentUsageStatsDtos {
             long total,
             long totalTokens,
             double avgDurationMs,
-            long p95DurationMs
+            long p95DurationMs,
+            long cachedTokens, Double cacheHitRate
     ) {
     }
 
@@ -151,6 +156,7 @@ public final class AgentUsageStatsDtos {
             Integer promptTokens,
             Integer completionTokens,
             Integer totalTokens,
+            Integer cachedTokens,
             Integer inputChars,
             Integer outputChars,
             String errorCode,
