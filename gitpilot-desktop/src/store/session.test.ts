@@ -10,7 +10,7 @@ function applyToStreamingState(state: { messages: UIMessage[]; _streamingAssista
 }
 
 describe('历史消息回放', () => {
-	it('只显示用户消息和带文本的助手回复，不回放工具输出或空工具调用', () => {
+	it('回放用户消息、助手正文，并按执行汇总工具调用为执行批次', () => {
 		const messages = agentMessagesToUi([
 			{ role: 'user', content: [{ type: 'text', text: '检查项目' }] },
 			{ role: 'assistant', content: [{ type: 'toolCall', name: 'read', arguments: { path: 'README.md' } }] },
@@ -18,10 +18,16 @@ describe('历史消息回放', () => {
 			{ role: 'assistant', content: [{ type: 'thinking', thinking: '分析中' }, { type: 'text', text: '检查完成' }] },
 		]);
 
-		expect(messages).toEqual([
+		// 用户与助手正文照常回放。
+		expect(messages.filter((m) => m.kind === 'text')).toEqual([
 			{ id: 'hist-0', role: 'user', text: '检查项目', kind: 'text' },
 			{ id: 'hist-3', role: 'assistant', text: '检查完成', kind: 'text' },
 		]);
+		// 工具调用汇总为一个执行批次，追加在段末（与实时归档顺序一致）。
+		const execBatch = messages.find((m) => m.kind === 'execution');
+		expect(execBatch).toBeTruthy();
+		expect(execBatch?.executionSteps).toHaveLength(1);
+		expect(execBatch?.executionSteps?.[0]).toMatchObject({ kind: 'read', title: 'read', status: 'succeeded' });
 	});
 });
 

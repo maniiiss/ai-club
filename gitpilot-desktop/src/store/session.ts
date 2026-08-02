@@ -36,7 +36,7 @@ import type {
 	ThinkingLevel,
 } from '@/src/rpc/types';
 import { getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionStep } from '@/src/store/workbench';
-import { aggregateChangedFiles, parseOpsFromMessages, parseOpsFromSteps, type ChangedFile, type EditOperation } from '@/src/store/changed-files';
+import { aggregateChangedFiles, parseExecutionStepsFromMessages, parseOpsFromMessages, parseOpsFromSteps, type ChangedFile, type EditOperation } from '@/src/store/changed-files';
 
 // ============================================================================
 // UI 消息模型
@@ -633,6 +633,13 @@ export function applyEvent(set: SessionSetter, e: AgentSessionEvent): void {
 export function agentMessagesToUi(messages: unknown[]): UIMessage[] {
 	const result: UIMessage[] = [];
 	let pendingOps: EditOperation[] = [];
+	let pendingSteps: ExecutionStep[] = [];
+	/** 将当前段累积的工具步骤汇总为一个执行批次，追加到段末尾（与实时归档顺序一致：批次在前）。 */
+	const flushExecutionBatch = () => {
+		if (pendingSteps.length === 0) return;
+		result.push({ id: `hist-exec-${result.length}`, role: 'assistant' as const, text: '', kind: 'execution' as const, executionSteps: pendingSteps });
+		pendingSteps = [];
+	};
 	/** 将当前段累积的编辑操作汇总为一张改动文件卡片，追加到段末尾。 */
 	const flushChangedFiles = () => {
 		if (pendingOps.length === 0) return;
@@ -645,18 +652,21 @@ export function agentMessagesToUi(messages: unknown[]): UIMessage[] {
 	messages.forEach((m, i) => {
 		const msg = m as { role?: string; content?: Array<{ type?: string; text?: string }> };
 		if (msg.role === 'user') {
-			// 新段开始前，先把上一段的改动文件汇总卡片落到段尾。
+			// 新段开始前，先把上一段的执行批次与改动文件卡片落到段尾（批次在前，与实时归档顺序一致）。
+			flushExecutionBatch();
 			flushChangedFiles();
 			const text = (msg.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
 			if (text.trim()) result.push({ id: `hist-${i}`, role: 'user' as const, text, kind: 'text' as MessageKind });
 		} else if (msg.role === 'assistant') {
 			const text = (msg.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
 			if (text.trim()) result.push({ id: `hist-${i}`, role: 'assistant' as const, text, kind: 'text' as MessageKind });
-			// 累积该 assistant 的编辑操作，待段末尾汇总。
+			// 累积该 assistant 的工具步骤与编辑操作，待段末尾汇总。
+			pendingSteps.push(...parseExecutionStepsFromMessages(messages, i));
 			pendingOps.push(...parseOpsFromMessages(messages, i));
 		}
-		// toolResult 不进聊天流，其编辑信息已通过对应 assistant 的 parseOpsFromMessages 累积。
+		// toolResult 不进聊天流，其信息已通过对应 assistant 的解析函数累积。
 	});
+	flushExecutionBatch();
 	flushChangedFiles();
 	return result;
 }

@@ -5,7 +5,7 @@
  * 聚合出本次执行实际编辑过的文件清单，供聊天流展示一张可展开 diff 的卡片。
  * 不访问文件系统或 Shell，纯函数便于单测。
  */
-import type { ExecutionStep } from '@/src/store/workbench';
+import { classifyExecutionKind, type ExecutionStep } from '@/src/store/workbench';
 
 /** 文件变更状态标记，对齐 Git 惯例。 */
 export type ChangeStatus = 'modified' | 'added' | 'deleted';
@@ -126,7 +126,9 @@ interface ToolResultMessage {
 	role: 'toolResult';
 	/** toolResult 的 toolCallId 与 toolCall 的 id 配对（字段名不同）。 */
 	toolCallId?: string;
+	content?: unknown;
 	details?: { diff?: unknown; patch?: unknown };
+	isError?: boolean;
 }
 
 /** 在 assistantIndex 之后寻找 id 匹配的 toolResult（同 turn，遇到下一条 user/assistant 停止）。 */
@@ -210,4 +212,47 @@ export function aggregateChangedFiles(ops: EditOperation[]): ChangedFile[] {
 		}
 	}
 	return [...map.values()];
+}
+
+/** 将工具参数/结果序列化为 ExecutionStep.args/result 用的字符串，与 workbench.stringifyPayload 对齐。 */
+function stringifyPayload(value: unknown): string | undefined {
+	if (value === undefined || value === null) return undefined;
+	if (typeof value === 'string') return value;
+	try {
+		return JSON.stringify(value, null, 2);
+	} catch {
+		return String(value);
+	}
+}
+
+/**
+ * 历史路径：以单条 assistant 消息为锚点，重建其所有工具调用为 ExecutionStep。
+ * 与实时 reduceExecutionEvent 对齐：kind 用 classifyExecutionKind，args/result 字符串化。
+ * 用于历史回放时重建 ExecutionBatch（“改动了xx文件、执行了xx命令”摘要）。
+ */
+export function parseExecutionStepsFromMessages(messages: unknown[], assistantIndex: number): ExecutionStep[] {
+	const assistant = messages[assistantIndex] as { content?: unknown[] };
+	const steps: ExecutionStep[] = [];
+	if (!Array.isArray(assistant?.content)) return steps;
+	for (const block of assistant.content) {
+		const tc = block as Partial<ToolCallBlock>;
+		if (tc.type !== 'toolCall' || typeof tc.name !== 'string') continue;
+		const toolCallId = tc.id ?? '';
+		const result = toolCallId ? findToolResult(messages, assistantIndex, toolCallId) : undefined;
+		const isError = result?.isError === true;
+		const payload = result ? { content: result.content, details: result.details } : undefined;
+		steps.push({
+			id: toolCallId || `step-${steps.length}`,
+			toolCallId: toolCallId || undefined,
+			kind: classifyExecutionKind(tc.name),
+			status: isError ? 'failed' : 'succeeded',
+			title: tc.name,
+			args: stringifyPayload(tc.arguments),
+			result: payload ? stringifyPayload(payload) : undefined,
+			error: isError && payload ? stringifyPayload(payload) : undefined,
+			startedAt: 0,
+			endedAt: 0,
+		});
+	}
+	return steps;
 }

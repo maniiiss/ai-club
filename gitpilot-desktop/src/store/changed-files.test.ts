@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	aggregateChangedFiles,
+	parseExecutionStepsFromMessages,
 	parseDiffStats,
 	parseOpsFromMessages,
 	parseOpsFromSteps,
@@ -197,5 +198,38 @@ describe('aggregateChangedFiles', () => {
 		const files = aggregateChangedFiles(ops);
 		expect(files.map((f) => f.path)).toEqual(['b.ts', 'a.ts']);
 		expect(files[0].editCount).toBe(2);
+	});
+});
+
+describe('parseExecutionStepsFromMessages', () => {
+	it('从 toolCall + toolResult 重建 ExecutionStep，kind 与 status 正确', () => {
+		const msgs: unknown[] = [
+			{ role: 'assistant', content: [
+				{ type: 'toolCall', name: 'edit_file', id: 't1', arguments: { path: 'a.ts', edits: [] } },
+				{ type: 'toolCall', name: 'run_bash', id: 't2', arguments: { command: 'npm test' } },
+			] },
+			{ role: 'toolResult', toolCallId: 't1', toolName: 'edit_file', content: [], details: { diff: 'd' }, isError: false },
+			{ role: 'toolResult', toolCallId: 't2', toolName: 'run_bash', content: [{ type: 'text', text: 'ok' }], isError: false },
+		];
+		const steps = parseExecutionStepsFromMessages(msgs, 0);
+		expect(steps).toHaveLength(2);
+		expect(steps[0]).toMatchObject({ id: 't1', toolCallId: 't1', kind: 'edit', status: 'succeeded', title: 'edit_file' });
+		expect(steps[0].args).toContain('a.ts');
+		expect(steps[1]).toMatchObject({ id: 't2', kind: 'command', status: 'succeeded', title: 'run_bash' });
+	});
+
+	it('isError 的 toolResult 标记为 failed 并填 error', () => {
+		const msgs: unknown[] = [
+			{ role: 'assistant', content: [{ type: 'toolCall', name: 'edit_file', id: 't1', arguments: { path: 'a.ts' } }] },
+			{ role: 'toolResult', toolCallId: 't1', toolName: 'edit_file', content: [{ type: 'text', text: '失败' }], isError: true },
+		];
+		const steps = parseExecutionStepsFromMessages(msgs, 0);
+		expect(steps[0].status).toBe('failed');
+		expect(steps[0].error).toContain('失败');
+	});
+
+	it('无 toolCall 的 assistant 返回空', () => {
+		const msgs: unknown[] = [{ role: 'assistant', content: [{ type: 'text', text: 'hi' }] }];
+		expect(parseExecutionStepsFromMessages(msgs, 0)).toHaveLength(0);
 	});
 });
