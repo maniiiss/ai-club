@@ -18,4 +18,24 @@ describe('项目树', () => {
 		]);
 		expect(standaloneTasks.map((task) => task.path)).toEqual(['session-2', 'session-1']);
 	});
+
+	it('保留 50+ 任务和超长名称的归属数据，交给侧栏负责截断与滚动', () => {
+		// 业务意图：大列表压力应先在树模型层保持完整顺序与归属，不能为了视觉截断丢失会话。
+		const tasks = Array.from({ length: 60 }, (_, index) => ({
+			path: `session-${index}`,
+			name: `这是一个用于验证侧栏最大宽度限制的超长任务名称-${index}-${'长'.repeat(24)}`,
+			firstMessage: '',
+			cwd: 'C:\\workspace\\a-very-long-project-directory-name\\nested',
+			modified: `2026-07-29T${String(index % 24).padStart(2, '0')}:00:00.000Z`,
+			messageCount: index + 1,
+		}));
+		const { projectTree } = buildProjectTree([
+			{ name: `一个用于验证项目名称截断的超长项目文件夹-${'项'.repeat(20)}`, path: 'C:\\workspace\\a-very-long-project-directory-name' },
+		], tasks);
+
+		expect(projectTree).toHaveLength(1);
+		expect(projectTree[0].tasks).toHaveLength(60);
+		expect(projectTree[0].tasks[0].name).toContain('超长任务名称');
+		expect(new Set(projectTree[0].tasks.map((task) => task.path))).toEqual(new Set(tasks.map((task) => task.path)));
+	});
 });

@@ -3,19 +3,22 @@
  *
  * - Enter 发送，Shift+Enter 换行
  * - 输入 / 触发命令面板（见 CommandPalette）
- * - 流式中输入为 steer（不打断当前回合），并显示停止按钮触发 abort
+ * - 流式中输入为 steer（不打断当前回合）；有输入时主按钮发送，没有输入时才显示停止按钮
  * - 模型与思维级别选择器置于悬浮编辑器底部操作栏，发送指令前可就近调整
  * - 附件：回形针按钮选文件 / 拖拽放入 / 粘贴图片，经 sidecar 解析后随消息注入
  *   （图片走 prompt.images，文档文本以 <file> 块追加；UI 仅展示 chip 与缩略图）
  */
-import { useEffect, useRef, useState } from 'react';
-import { ArrowUp, FileText, Image as ImageIcon, Loader2, Paperclip, Square, X } from 'lucide-react';
-import { useSessionStore } from '@/src/store/session';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { ArrowUp, CornerUpRight, FileText, Image as ImageIcon, Loader2, Paperclip, Pencil, Send, Square, Trash2, X } from 'lucide-react';
+import { useSessionStore, type GuidanceMode, type GuidanceQueueItem } from '@/src/store/session';
 import { CommandPalette } from './CommandPalette';
 import { ModelPicker } from './ModelPicker';
 import { useWorkbenchStore } from '@/src/store/workbench';
 import { isTauriEnv, rpc } from '@/src/rpc/bridge';
-import type { AttachmentInput, PreparedAttachment } from '@/src/rpc/types';
+import type { AttachmentInput, PreparedAttachment, RpcSlashCommand } from '@/src/rpc/types';
+import { Button } from '@/src/components/ui/button';
+import { Textarea } from '@/src/components/ui/textarea';
+import styles from './InputBox.module.css';
 
 /** 文件大小可读化（UI 展示用）。 */
 function formatSize(bytes: number): string {
@@ -24,12 +27,72 @@ function formatSize(bytes: number): string {
 	return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
 }
 
+/** 输入命中区的提交条件与视觉层解耦，避免附件/解析状态变化时按钮语义漂移。 */
+export function canSubmitPrompt(text: string, attachmentCount: number, preparing: boolean): boolean {
+	return (text.trim().length > 0 || attachmentCount > 0) && !preparing;
+}
+
+/** 透明命中层只负责布局，避免挡住中心区滚动条；真正控件再恢复指针事件。 */
+export const INPUT_COMPOSER_POINTER_POLICY = { overlay: 'none', interactive: 'auto' } as const;
+
+/** 运行中不能排队执行扩展命令；Prompt/Skill 命令仍交给 sidecar 展开。 */
+export function isExtensionQueueCommand(text: string, commands: RpcSlashCommand[]): boolean {
+	const match = text.match(/^\/(\S+)/);
+	if (!match) return false;
+	return commands.some((command) => command.name === match[1] && command.source === 'extension');
+}
+
+function guidanceStatusLabel(status: GuidanceQueueItem['status']): string {
+	if (status === 'submitting') return '发送中';
+	if (status === 'queued') return '已排队';
+	if (status === 'applying') return '处理中';
+	if (status === 'applied') return '已交给 GitPilot';
+	if (status === 'cancelled') return '已取消';
+	return '发送失败';
+}
+
+/** 用稳定来源标识去重，避免 Tauri 重复投递同一个路径时出现两个附件 chip。 */
+export function attachmentInputKey(input: AttachmentInput): string {
+	if ('path' in input) return `path:${input.path.replace(/\\/g, '/').toLowerCase()}`;
+	return `inline:${input.name}\u0000${input.mimeType ?? ''}\u0000${input.data}`;
+}
+
+/** 同一次拖拽或文件选择中，保留用户实际选择顺序但过滤重复来源。 */
+export function dedupeAttachmentInputs(items: AttachmentInput[]): AttachmentInput[] {
+	const seen = new Set<string>();
+	return items.filter((item) => {
+		const key = attachmentInputKey(item);
+		if (seen.has(key)) return false;
+		seen.add(key);
+		return true;
+	});
+}
+
+/** 合并解析结果时再次按路径去重，覆盖重复事件并发返回的竞态。 */
+function mergePreparedAttachments(previous: PreparedAttachment[], next: PreparedAttachment[]): PreparedAttachment[] {
+	const seen = new Set(previous.map((item) => item.path ? `path:${item.path.replace(/\\/g, '/').toLowerCase()}` : `meta:${item.name}\u0000${item.kind}\u0000${item.mimeType}\u0000${item.sizeBytes}`));
+	const merged = [...previous];
+	for (const item of next) {
+		const key = item.path ? `path:${item.path.replace(/\\/g, '/').toLowerCase()}` : `meta:${item.name}\u0000${item.kind}\u0000${item.mimeType}\u0000${item.sizeBytes}`;
+		if (seen.has(key)) continue;
+		seen.add(key);
+		merged.push(item);
+	}
+	return merged;
+}
+
 export function InputBox() {
 	const isStreaming = useSessionStore((s) => s.isStreaming);
+	const isSessionLoading = useSessionStore((s) => s.isSessionLoading);
 	const commands = useSessionStore((s) => s.commands);
 	const prompt = useSessionStore((s) => s.prompt);
-	const steer = useSessionStore((s) => s.steer);
+	const sendGuidance = useSessionStore((s) => s.sendGuidance);
+	const replayQueuedGuidance = useSessionStore((s) => s.replayGuidance);
+	const removeGuidance = useSessionStore((s) => s.removeGuidance);
 	const abort = useSessionStore((s) => s.abort);
+	const guidanceQueue = useSessionStore((s) => s.guidanceQueue);
+	const isFlushingGuidance = useSessionStore((s) => s.isFlushingGuidance);
+	const isStopping = useSessionStore((s) => s.isStopping);
 	const composerPrefill = useWorkbenchStore((s) => s.composerPrefill);
 	const consumeComposerPrefill = useWorkbenchStore((s) => s.consumeComposerPrefill);
 
@@ -39,13 +102,43 @@ export function InputBox() {
 	const [preparing, setPreparing] = useState(false);
 	const [prepareError, setPrepareError] = useState<string | null>(null);
 	const [isDragOver, setIsDragOver] = useState(false);
+	const [guidanceMode, setGuidanceMode] = useState<GuidanceMode>('steer');
+	const [submitting, setSubmitting] = useState(false);
+	const rootRef = useRef<HTMLDivElement>(null);
 	const taRef = useRef<HTMLTextAreaElement>(null);
+
+	/**
+	 * 输入框是悬浮层，实际高度会随引导队列、附件和多行文本变化。
+	 * 将它同步到工作区父节点，聊天滚动区才能把终点准确放在输入框顶部。
+	 */
+	useLayoutEffect(() => {
+		const root = rootRef.current;
+		const parent = root?.parentElement;
+		if (!root || !parent) return;
+
+		const updateComposerSpace = () => {
+			const bottomOffset = 16;
+			parent.style.setProperty('--gp-composer-bottom-space', `${root.getBoundingClientRect().height + bottomOffset}px`);
+		};
+
+		updateComposerSpace();
+		const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateComposerSpace);
+		observer?.observe(root);
+		return () => {
+			observer?.disconnect();
+			parent.style.removeProperty('--gp-composer-bottom-space');
+		};
+	}, []);
 
 	// / 开头且无空格时显示命令面板；/ 后的文本就是命令筛选条件。
 	useEffect(() => {
 		const m = text.match(/^\/(\S*)$/);
 		setShowPalette(m !== null);
 	}, [text]);
+
+	useEffect(() => {
+		if (!isStreaming) setGuidanceMode('steer');
+	}, [isStreaming]);
 
 	// 重试只复用用户文本，不自动重新执行有副作用的工具调用。
 	useEffect(() => {
@@ -66,10 +159,12 @@ export function InputBox() {
 	// Tauri 拖拽：webview 下 HTML5 drop 不给文件路径，用 onDragDropEvent 拿 paths。
 	useEffect(() => {
 		if (!isTauriEnv()) return;
+		let disposed = false;
 		let unlisten: (() => void) | undefined;
 		(async () => {
 			const { getCurrentWebview } = await import('@tauri-apps/api/webview');
-			unlisten = await getCurrentWebview().onDragDropEvent((event) => {
+			if (disposed) return;
+			const cleanup = await getCurrentWebview().onDragDropEvent((event) => {
 				if (event.payload.type === 'enter' || event.payload.type === 'over') {
 					setIsDragOver(true);
 				} else if (event.payload.type === 'leave') {
@@ -77,12 +172,17 @@ export function InputBox() {
 				} else if (event.payload.type === 'drop') {
 					setIsDragOver(false);
 					const paths = (event.payload as { paths?: string[] }).paths ?? [];
-					if (paths.length > 0) void addInputs(paths.map((p) => ({ path: p })));
+					const uniquePaths = [...new Set(paths.filter(Boolean))];
+					if (uniquePaths.length > 0) void addInputs(uniquePaths.map((p) => ({ path: p })));
 				}
 			});
+			if (disposed) cleanup();
+			else unlisten = cleanup;
 		})();
 		return () => {
+			disposed = true;
 			unlisten?.();
+			unlisten = undefined;
 		};
 		// addInputs 通过闭包引用最新 state，依赖项保持最小避免反复重订阅。
 		// eslint-disable-next-line react-hooks/exhaustive-deps
@@ -90,13 +190,14 @@ export function InputBox() {
 
 	/** 调 sidecar 预解析附件，结果追加到当前附件列表。 */
 	const addInputs = async (items: AttachmentInput[]) => {
-		if (items.length === 0) return;
+		const uniqueItems = dedupeAttachmentInputs(items);
+		if (uniqueItems.length === 0) return;
 		setPreparing(true);
 		setPrepareError(null);
 		try {
-			const resp = await rpc.prepareAttachments(items);
+			const resp = await rpc.prepareAttachments(uniqueItems);
 			if (resp.success && resp.command === 'prepare_attachments') {
-				setAttachments((prev) => [...prev, ...resp.data.attachments]);
+				setAttachments((prev) => mergePreparedAttachments(prev, resp.data.attachments));
 			} else if (!resp.success) {
 				setPrepareError(resp.error || '附件解析失败');
 			}
@@ -152,13 +253,20 @@ export function InputBox() {
 		);
 	};
 
-	const send = () => {
+	const send = async (modeOverride?: GuidanceMode) => {
 		const msg = text.trim();
 		// 附件存在时允许空文本发送（用户只发附件）；否则需要文本。
 		if (!msg && attachments.length === 0) return;
-		if (preparing) return;
+		if (preparing || submitting || isStopping || isFlushingGuidance) return;
 		if (isStreaming) {
-			steer(msg, attachments);
+			if (isExtensionQueueCommand(msg, commands)) {
+				setPrepareError('当前任务执行期间不能排队运行扩展命令，请停止任务后再执行。');
+				return;
+			}
+			setSubmitting(true);
+			const accepted = await sendGuidance(msg, attachments, modeOverride ?? guidanceMode);
+			setSubmitting(false);
+			if (!accepted) return;
 		} else {
 			prompt(msg || '（仅附件）', attachments);
 		}
@@ -168,11 +276,25 @@ export function InputBox() {
 		setPrepareError(null);
 	};
 
+	const editGuidance = (item: GuidanceQueueItem) => {
+		setText(item.displayText);
+		setAttachments([]);
+		setPrepareError(null);
+		requestAnimationFrame(() => taRef.current?.focus());
+	};
+
+	const replayGuidance = async (item: GuidanceQueueItem, mode: GuidanceMode) => {
+		if (!isStreaming || submitting || isStopping || isFlushingGuidance) return;
+		setSubmitting(true);
+		await replayQueuedGuidance(item.id, mode);
+		setSubmitting(false);
+	};
+
 	const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
 		if (showPalette) return; // 命令面板接管键盘
 		if (e.key === 'Enter' && !e.shiftKey) {
 			e.preventDefault();
-			send();
+			void send(e.altKey && isStreaming ? 'followUp' : undefined);
 		}
 	};
 
@@ -182,90 +304,140 @@ export function InputBox() {
 		taRef.current?.focus();
 	};
 
-	const canSend = (text.trim().length > 0 || attachments.length > 0) && !preparing;
+	const canSend = canSubmitPrompt(text, attachments.length, preparing || isSessionLoading) && !submitting && !isStopping && !isFlushingGuidance;
+	const visibleGuidance = guidanceQueue.slice(-5);
+	const hasComposerContent = text.trim().length > 0 || attachments.length > 0;
 
 	return (
-		<div className={`input-composer${isDragOver ? ' is-drag-over' : ''}`}>
+		<div ref={rootRef} className={`${styles.root} ${isDragOver ? styles.dragOver : ''}`}>
 			{showPalette && <CommandPalette commands={commands} query={text.slice(1)} onPick={pickCommand} onDismiss={() => setShowPalette(false)} />}
 			{isDragOver && (
-				<div className="input-composer__drop-hint">松开以附加文件</div>
+				<div className={styles.dropHint}>松开以附加文件</div>
 			)}
-			<div className="input-composer__surface">
+			<div className={styles.surface}>
+				{visibleGuidance.length > 0 && (
+					<div className={styles.guidanceList} aria-label="已发送引导">
+						{visibleGuidance.map((item) => (
+							<div key={item.id} className={styles.guidanceItem}>
+								<div className={styles.guidanceItemBody}>
+									<span className={styles.guidanceGrip} aria-hidden="true">⋮⋮</span>
+									<span className={styles.guidanceItemText} title={item.displayText}>{item.displayText}</span>
+									<span className={styles.guidanceItemStatus}>{guidanceStatusLabel(item.status)}</span>
+								</div>
+								<div className={styles.guidanceItemActions}>
+									<Button type="button" variant="secondary" size="sm" className={styles.guidanceAction} onClick={() => void replayGuidance(item, 'steer')} disabled={!isStreaming || submitting || isStopping || isFlushingGuidance} title="再次引导">
+										<CornerUpRight size={13} /> 引导
+									</Button>
+									<Button type="button" variant="ghost" size="icon-sm" className={styles.guidanceIconAction} onClick={() => editGuidance(item)} title="编辑后发送" aria-label="编辑后发送">
+										<Pencil size={14} />
+									</Button>
+									<Button type="button" variant="ghost" size="icon-sm" className={styles.guidanceIconAction} onClick={() => removeGuidance(item.id)} title="删除记录" aria-label="删除记录">
+										<Trash2 size={14} />
+									</Button>
+								</div>
+							</div>
+						))}
+					</div>
+				)}
 				{(attachments.length > 0 || preparing || prepareError) && (
-					<div className="input-composer__attachments">
+					<div className={styles.attachments}>
 						{attachments.map((a, idx) => (
-							<div key={`${a.name}-${idx}`} className="attachment-chip" title={a.warnings?.join('\n') || a.name}>
+							<div key={`${a.name}-${idx}`} className={styles.attachment} title={a.warnings?.join('\n') || a.name}>
 								{a.kind === 'image' ? <ImageIcon size={13} /> : <FileText size={13} />}
-								<span className="attachment-chip__name">{a.name}</span>
-								<span className="attachment-chip__size">{formatSize(a.sizeBytes)}</span>
-								<button
+								<span className={styles.attachmentName}>{a.name}</span>
+								<span className={styles.attachmentSize}>{formatSize(a.sizeBytes)}</span>
+								<Button
 									type="button"
-									className="attachment-chip__remove"
+									variant="ghost"
+									size="icon-sm"
+									className={styles.attachmentRemove}
 									onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))}
 									title="移除"
 								>
 									<X size={12} />
-								</button>
+								</Button>
 							</div>
 						))}
 						{preparing && (
-							<div className="attachment-chip is-loading">
-								<Loader2 size={13} className="spin" />
+							<div className={`${styles.attachment} ${styles.loading}`}>
+								<Loader2 size={13} className={styles.spin} />
 								<span>解析中…</span>
 							</div>
 						)}
 						{prepareError && (
-							<div className="attachment-chip is-error" title={prepareError}>
+							<div className={`${styles.attachment} ${styles.error}`} title={prepareError}>
 								<span>附件解析失败：{prepareError}</span>
-								<button type="button" className="attachment-chip__remove" onClick={() => setPrepareError(null)}>
+								<Button type="button" variant="ghost" size="icon-sm" className={styles.attachmentRemove} onClick={() => setPrepareError(null)}>
 									<X size={12} />
-								</button>
+								</Button>
 							</div>
 						)}
 					</div>
 				)}
-				<textarea
+				<Textarea
 					ref={taRef}
 					value={text}
 					onChange={(e) => setText(e.target.value)}
 					onKeyDown={onKey}
 					onPaste={onPaste}
+					disabled={isSessionLoading}
 					rows={1}
 					id="gitpilot-composer"
-					placeholder={isStreaming ? '输入指令引导当前回合…' : '描述任务，/ 查看命令，可附加文件'}
-					className="input-composer__textarea"
+					placeholder={isSessionLoading ? '正在加载任务…' : isStreaming ? '继续输入以排队后续修改…' : '描述任务，/ 查看命令，可附加文件'}
+					className={styles.textarea}
 				/>
-				<div className="input-composer__toolbar">
-					<div className="input-composer__actions">
-						<button
+				<div className={styles.toolbar}>
+					<div className={styles.actions}>
+						<Button
 							type="button"
+							variant="ghost"
+							size="icon-sm"
 							onClick={pickFiles}
-							className="input-composer__attach"
+							className={styles.attach}
 							title="附加文件"
-							disabled={preparing}
+							disabled={preparing || isSessionLoading}
 						>
 							<Paperclip size={16} />
-						</button>
+						</Button>
 						<ModelPicker />
-						{isStreaming ? (
-							<button
+						{(isStreaming && hasComposerContent) ? (
+							<Button
 								type="button"
-								onClick={() => abort()}
-								className="input-composer__send is-stop"
-								title="停止"
+								variant="default"
+								size="icon"
+								onClick={() => void send()}
+								disabled={!canSend}
+								className={styles.send}
+								title="发送引导"
+								aria-label="发送引导"
+							>
+								<Send size={15} />
+							</Button>
+						) : isStreaming || isStopping ? (
+							<Button
+								type="button"
+								variant="ghost"
+								size="icon"
+								onClick={() => void abort()}
+								disabled={isStopping}
+								className={`${styles.send} ${styles.stop}`}
+								title="停止当前任务并取消未执行引导"
+								aria-label="停止当前任务并取消未执行引导"
 							>
 								<Square size={15} />
-							</button>
+							</Button>
 						) : (
-							<button
+							<Button
 								type="button"
-								onClick={send}
-								disabled={!canSend}
-								className="input-composer__send"
+								variant="default"
+								size="icon"
+								onClick={() => void send()}
+								disabled={!canSend || isSessionLoading}
+								className={styles.send}
 								title="发送"
 							>
 								<ArrowUp size={16} />
-							</button>
+							</Button>
 						)}
 					</div>
 				</div>

@@ -4,11 +4,29 @@ import { TerminalSquare } from 'lucide-react';
 import '@xterm/xterm/css/xterm.css';
 import { closeTerminal, listenTerminalData, startTerminal, writeTerminal } from '@/src/desktop/terminal';
 import { useSessionStore } from '@/src/store/session';
+import { useThemeStore } from '@/src/store/theme';
+import styles from './TerminalPanel.module.css';
+
+function readTerminalTheme() {
+	const styles = getComputedStyle(document.documentElement);
+	return {
+		background: styles.getPropertyValue('--gp-terminal-background').trim(),
+		foreground: styles.getPropertyValue('--gp-terminal-foreground').trim(),
+		cursor: styles.getPropertyValue('--gp-terminal-cursor').trim(),
+		selectionBackground: styles.getPropertyValue('--gp-terminal-selection').trim(),
+	};
+}
 
 export function TerminalPanel() {
 	const currentProjectPath = useSessionStore((state) => state.currentProjectPath);
+	const theme = useThemeStore((state) => state.theme);
 	const hostRef = useRef<HTMLDivElement>(null);
+	const terminalRef = useRef<import('@xterm/xterm').Terminal | null>(null);
 	const [error, setError] = useState<string | null>(null);
+
+	useEffect(() => {
+		if (terminalRef.current) terminalRef.current.options = { theme: readTerminalTheme() };
+	}, [theme]);
 
 	useEffect(() => {
 		const host = hostRef.current;
@@ -31,13 +49,14 @@ export function TerminalPanel() {
 					cursorBlink: true,
 					fontSize: 14,
 					fontFamily: 'Cascadia Mono, Consolas, monospace',
-					theme: { background: '#090b0d', foreground: '#d5dee7', cursor: '#74c0fc', selectionBackground: '#27496d' },
+					theme: readTerminalTheme(),
 				});
 				const fit = new FitAddon();
 				terminal.loadAddon(fit);
 				terminal.open(host);
 				fit.fit();
 				terminal.focus();
+				terminalRef.current = terminal;
 				terminalDispose = () => terminal.dispose();
 
 				sessionId = await startTerminal(currentProjectPath);
@@ -68,14 +87,15 @@ export function TerminalPanel() {
 			disposeInput?.();
 			unlisten?.();
 			terminalDispose?.();
+			terminalRef.current = null;
 			if (sessionId) void closeTerminal(sessionId);
 		};
 	}, [currentProjectPath]);
 
 	return (
-		<div className="terminal-panel">
-			<div className="terminal-panel__header"><TerminalSquare size={15} /><span>Windows PowerShell</span><small>{currentProjectPath ?? '未选择工作目录'}</small></div>
-			{error ? <div className="terminal-panel__error">终端启动失败：{error}</div> : <div ref={hostRef} className="terminal-panel__viewport" />}
+		<div className={styles.root}>
+			<div className={styles.header}><TerminalSquare size={15} className={styles.icon} /><span>Windows PowerShell</span><small title={currentProjectPath ?? undefined}>{currentProjectPath ?? '未选择工作目录'}</small></div>
+			{error ? <div className={styles.error}>终端启动失败：{error}</div> : <div ref={hostRef} className={styles.viewport} />}
 		</div>
 	);
 }

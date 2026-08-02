@@ -103,6 +103,10 @@ impl SidecarBridge {
 	pub fn spawn(app: AppHandle, exe: &str, cwd: &str) -> Result<Self, String> {
 		let mut child = Command::new(exe)
 			.current_dir(cwd)
+			// Tauri 安装包将资源放在 resources/theme 与 resources/export-html；
+			// Bun 二进制默认按自身目录寻找 theme，因此显式指定资源根目录，保证
+			// 安装态和源码态都使用同一套主题、导出模板与运行时资产。
+			.env("PI_PACKAGE_DIR", cwd)
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::inherit())

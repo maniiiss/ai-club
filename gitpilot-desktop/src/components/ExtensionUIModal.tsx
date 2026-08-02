@@ -6,8 +6,13 @@
  * 始终处理队列首部请求，用户交互后通过 respondExtensionUI 回传结果。
  */
 import { useEffect, useState } from 'react';
-import { X } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
+import { Button } from '@/src/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/src/components/ui/dialog';
+import { Input } from '@/src/components/ui/input';
+import { Textarea } from '@/src/components/ui/textarea';
+import { ScrollArea } from '@/src/components/ui/scroll-area';
+import styles from './ExtensionUIModal.module.css';
 
 type RespondValue = { value: string } | { confirmed: boolean } | { cancelled: true };
 
@@ -20,18 +25,6 @@ export function ExtensionUIModal() {
 		setValue(req?.method === 'editor' ? req.prefill ?? '' : '');
 	}, [req]);
 
-	useEffect(() => {
-		if (!req) return;
-		const onKeyDown = (event: KeyboardEvent) => {
-			if (event.key === 'Escape') {
-				event.preventDefault();
-				respond(req, { cancelled: true });
-			}
-		};
-		window.addEventListener('keydown', onKeyDown);
-		return () => window.removeEventListener('keydown', onKeyDown);
-	}, [req, respond]);
-
 	if (!req) return null;
 
 	// 联合类型中仅 select/confirm/input/editor/setTitle 含 title，统一安全取值
@@ -42,37 +35,34 @@ export function ExtensionUIModal() {
 	};
 
 	return (
-		<div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50" onMouseDown={(event) => { if (event.target === event.currentTarget) close({ cancelled: true }); }}>
-			<div className="w-full max-w-md rounded-lg border border-[var(--color-border)] bg-[var(--color-bg-elevated)] shadow-lg" onMouseDown={(event) => event.stopPropagation()}>
-				<div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3">
-					<span className="text-sm font-medium text-[var(--color-text)]">{title}</span>
-					<button type="button" onClick={() => close({ cancelled: true })} className="text-[var(--color-text-muted)] hover:text-[var(--color-text)]">
-						<X size={15} />
-					</button>
-				</div>
-
-				<div className="p-4">
+		<Dialog open onOpenChange={(open) => { if (!open) close({ cancelled: true }); }}>
+			<DialogContent className={styles.content} aria-describedby="extension-ui-description">
+				<DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription id="extension-ui-description">来自当前 Agent 扩展的交互请求</DialogDescription></DialogHeader>
+				<div className="p-5">
 					{(req.method === 'confirm' || req.method === 'select') && (
-						<p className="mb-3 text-sm text-[var(--color-text-secondary)]">{req.method === 'confirm' ? req.message : ''}</p>
+						<p className="mb-3 text-sm text-[var(--muted-foreground)]">{req.method === 'confirm' ? req.message : ''}</p>
 					)}
 
 					{req.method === 'select' && (
+						<ScrollArea className="max-h-72 pr-2">
 						<div className="space-y-1">
 							{req.options.map((opt) => (
-								<button
+								<Button
 									key={opt}
-									type="button"
+									variant="ghost"
+									size="default"
 									onClick={() => close({ value: opt })}
-									className="block w-full rounded-md px-3 py-2 text-left text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-primary-muted)]"
+									className="w-full justify-start text-left text-[var(--muted-foreground)]"
 								>
 									{opt}
-								</button>
+								</Button>
 							))}
 						</div>
+						</ScrollArea>
 					)}
 
 					{req.method === 'input' && (
-						<input
+						<Input
 							autoFocus
 							value={value}
 							onChange={(e) => setValue(e.target.value)}
@@ -80,50 +70,42 @@ export function ExtensionUIModal() {
 							onKeyDown={(e) => {
 								if (e.key === 'Enter') close({ value });
 							}}
-							className="w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+							className="bg-[var(--background)]"
 						/>
 					)}
 
 					{req.method === 'editor' && (
-						<textarea
+						<Textarea
 							autoFocus
 							value={value}
 							onChange={(e) => setValue(e.target.value)}
 							rows={12}
-							className="mono w-full resize-y rounded-md border border-[var(--color-border)] bg-[var(--color-code-bg)] px-3 py-2 text-xs text-[var(--color-text)] outline-none focus:border-[var(--color-primary)]"
+							className="min-h-48 resize-y bg-[var(--gp-code-surface)] font-mono text-xs"
 						/>
 					)}
 				</div>
 
 				{(req.method === 'confirm' || req.method === 'input' || req.method === 'editor') && (
-					<div className="flex justify-end gap-2 border-t border-[var(--color-border)] px-4 py-3">
+					<DialogFooter>
 						{req.method === 'confirm' ? (
 							<>
-								<button type="button" onClick={() => close({ confirmed: false })} className="rounded-md px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]">
-									取消
-								</button>
-								<button type="button" onClick={() => close({ confirmed: true })} className="rounded-md bg-[var(--color-primary)] px-3 py-1.5 text-xs text-white hover:bg-[var(--color-primary-hover)]">
-									确认
-								</button>
+								<Button variant="ghost" onClick={() => close({ confirmed: false })}>取消</Button>
+								<Button onClick={() => close({ confirmed: true })}>确认</Button>
 							</>
 						) : (
 							<>
-								<button type="button" onClick={() => close({ cancelled: true })} className="rounded-md px-3 py-1.5 text-xs text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]">
-									取消
-								</button>
-								<button
-									type="button"
+								<Button variant="ghost" onClick={() => close({ cancelled: true })}>取消</Button>
+								<Button
 									onClick={() => close({ value })}
 									disabled={req.method === 'input' && !value}
-									className="rounded-md bg-[var(--color-primary)] px-3 py-1.5 text-xs text-white hover:bg-[var(--color-primary-hover)] disabled:opacity-40"
 								>
 									提交
-								</button>
+								</Button>
 							</>
 						)}
-					</div>
+					</DialogFooter>
 				)}
-			</div>
-		</div>
+			</DialogContent>
+		</Dialog>
 	);
 }

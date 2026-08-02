@@ -1,0 +1,63 @@
+/* xterm 只在终端组件边界内拥有覆盖样式，保持生命周期和视觉样式可独立调整。 */
+.root {
+	display: flex;
+	height: 100%;
+	min-height: 0;
+	flex-direction: column;
+	border: 1px solid var(--gp-border);
+	border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+	background: var(--gp-code-surface);
+}
+
+.header {
+	display: flex;
+	height: 31px;
+	min-height: 31px;
+	flex: 0 0 31px;
+	align-items: center;
+	gap: 7px;
+	min-width: 0;
+	border-bottom: 1px solid var(--gp-border);
+	padding: 0 10px;
+	color: var(--gp-text-secondary);
+	font-family: var(--font-mono);
+	font-size: 11px;
+}
+
+.icon { color: var(--gp-action); }
+
+.header small {
+	min-width: 0;
+	overflow: hidden;
+	margin-left: 5px;
+	color: var(--gp-text-muted);
+	font-size: 10px;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.viewport {
+	min-height: 0;
+	flex: 1;
+	padding: 5px 8px;
+	user-select: text;
+	-webkit-user-select: text;
+}
+
+.viewport :global(.xterm) {
+	height: 100%;
+}
+
+/* xterm 默认把 .xterm-viewport 背景写死为黑色，而主题背景只内联到内部的滚动层；
+ * 面板高度不是行高整数倍时底部/右侧会露出黑色缝隙，浅色主题下尤其明显，这里统一跟随终端背景色。 */
+.viewport :global(.xterm) :global(.xterm-viewport) {
+	background-color: var(--gp-terminal-background);
+}
+
+.error {
+	overflow: auto;
+	padding: 12px;
+	color: var(--gp-status-error);
+	font-family: var(--font-mono);
+	font-size: 11px;
+}

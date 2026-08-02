@@ -1,5 +1,7 @@
 /** 聊天区左侧缩略时间轴：用消息摘要表示整段会话，并支持跳转到对应正文。 */
 import type { UIMessage } from '@/src/store/session';
+import { Button } from '@/src/components/ui/button';
+import styles from './ConversationTimeline.module.css';
 
 const MAX_VISIBLE_ENTRIES = 20;
 
@@ -14,7 +16,7 @@ export interface ConversationTimelineEntry {
  */
 export function buildConversationTimelineEntries(messages: UIMessage[], maxEntries = MAX_VISIBLE_ENTRIES): ConversationTimelineEntry[] {
 	const questionIndexes = messages.reduce<number[]>((indexes, message, messageIndex) => {
-		if (message.role === 'user') indexes.push(messageIndex);
+		if (message.role === 'user' && !message.meta?.guidanceMode) indexes.push(messageIndex);
 		return indexes;
 	}, []);
 	if (questionIndexes.length === 0 || maxEntries <= 0) return [];
@@ -49,20 +51,22 @@ export function ConversationTimeline({ messages, activeMessageId, onSelect }: Co
 	), entries.at(-1)!);
 
 	return (
-		<nav className="conversation-timeline" aria-label="会话时间轴">
-			<div className="conversation-timeline__track">
+		<nav className={styles.root} aria-label="会话时间轴">
+			<div className={styles.track}>
 				{entries.map((entry) => {
 					const active = entry.id === closestActiveEntry.id;
 					const previewText = getConversationTimelinePreview(messages, entry);
 					return (
-						<div key={entry.id} className="conversation-timeline__entry">
-							<button
+						<div key={entry.id} className={styles.entry}>
+							<Button
 								type="button"
-								className={active ? 'is-active' : ''}
+								variant="ghost"
+								size="icon-sm"
+								className={`${styles.marker} ${active ? styles.active : ''}`}
 								onClick={() => onSelect(entry.id)}
 								aria-label={`跳转到第 ${entry.messageIndex + 1} 段${entry.label}`}
 							/>
-							<div className="conversation-timeline__preview" role="tooltip" aria-hidden="true">
+							<div className={styles.preview} role="tooltip" aria-hidden="true">
 								<span>第 {entry.messageIndex + 1} 段 · {entry.label}</span>
 								<p>{previewText}</p>
 							</div>

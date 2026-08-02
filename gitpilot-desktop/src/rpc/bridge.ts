@@ -143,7 +143,7 @@ export const rpc = {
 	prompt: (message: string, images?: ImageContent[]) => send({ type: 'prompt', message, images }),
 	steer: (message: string, images?: ImageContent[]) => send({ type: 'steer', message, images }),
 	followUp: (message: string, images?: ImageContent[]) => send({ type: 'follow_up', message, images }),
-	abort: () => send({ type: 'abort' }),
+	abort: (clearQueue = false) => send({ type: 'abort', clearQueue }),
 	prepareAttachments: (items: AttachmentInput[]) => send({ type: 'prepare_attachments', items }),
 	newSession: (cwd?: string, parentSession?: string) => send({ type: 'new_session', cwd, parentSession }),
 	getState: () => send({ type: 'get_state' }),
@@ -258,6 +258,8 @@ function mockResponseFor(cmd: RpcCommand & { id: string }): RpcResponse {
 			});
 			return { id, type: 'response', command: 'prepare_attachments', success: true, data: { attachments } };
 		}
+		case 'abort':
+			return { id, type: 'response', command: 'abort', success: true, data: { clearedSteering: 0, clearedFollowUp: 0 } };
 		default:
 			return { id, type: 'response', command: cmd.type, success: true } as RpcResponse;
 	}

@@ -41,6 +41,17 @@ export type CreateAgentSessionRuntimeFactory = (options: {
 }) => Promise<CreateAgentSessionRuntimeResult>;
 
 /**
+ * 被桌面端暂时切离但仍在执行的会话快照。
+ * 保留同一个 AgentSession 实例，切换任务时不能重新创建或 dispose，否则会触发 abort。
+ */
+interface SuspendedSessionRuntime {
+	session: AgentSession;
+	services: AgentSessionServices;
+	diagnostics: readonly AgentSessionRuntimeDiagnostic[];
+	modelFallbackMessage?: string;
+}
+
+/**
  * Thrown when /import references a JSONL file path that does not exist.
  */
 export class SessionImportFileNotFoundError extends Error {
@@ -67,9 +78,10 @@ function extractUserMessageText(content: string | Array<{ type: string; text?: s
 /**
  * Owns the current AgentSession plus its cwd-bound services.
  *
- * Session replacement methods tear down the current runtime first, then create
- * and apply the next runtime. If creation fails, the error is propagated to the
- * caller. The caller is responsible for user-facing error handling.
+ * Session replacement methods either tear down an idle runtime or suspend an
+ * active one before creating/applying the next runtime. If creation fails, the
+ * error is propagated to the caller. The caller is responsible for user-facing
+ * error handling.
  */
 export class AgentSessionRuntime {
 	private rebindSession?: (session: AgentSession) => Promise<void>;
@@ -79,6 +91,7 @@ export class AgentSessionRuntime {
 	private readonly createRuntime: CreateAgentSessionRuntimeFactory;
 	private _diagnostics: AgentSessionRuntimeDiagnostic[];
 	private _modelFallbackMessage?: string;
+	private readonly suspendedSessions = new Map<string, SuspendedSessionRuntime>();
 
 	constructor(
 		_session: AgentSession,
@@ -181,6 +194,33 @@ export class AgentSessionRuntime {
 		this._modelFallbackMessage = result.modelFallbackMessage;
 	}
 
+	private applySuspended(snapshot: SuspendedSessionRuntime): void {
+		this._session = snapshot.session;
+		this._services = snapshot.services;
+		this._diagnostics = [...snapshot.diagnostics];
+		this._modelFallbackMessage = snapshot.modelFallbackMessage;
+	}
+
+	/** 当前会话正在运行时只摘下 UI 订阅，保留 Agent 让它在后台继续执行。 */
+	private suspendCurrentIfRunning(): boolean {
+		const sessionFile = this.session.sessionFile;
+		if (!sessionFile || !this.session.isStreaming) return false;
+		this.suspendedSessions.set(resolvePath(sessionFile), {
+			session: this.session,
+			services: this.services,
+			diagnostics: this.diagnostics,
+			modelFallbackMessage: this.modelFallbackMessage,
+		});
+		return true;
+	}
+
+	/** 供 RPC 列表返回任务运行态，桌面侧栏可在当前任务离开视口后继续显示 loading。 */
+	isSessionStreaming(sessionPath: string): boolean {
+		const normalizedPath = resolvePath(sessionPath);
+		if (this.session.sessionFile && resolvePath(this.session.sessionFile) === normalizedPath) return this.session.isStreaming;
+		return this.suspendedSessions.get(normalizedPath)?.session.isStreaming ?? false;
+	}
+
 	private async finishSessionReplacement(withSession?: (ctx: ReplacedSessionContext) => Promise<void>): Promise<void> {
 		if (this.rebindSession) {
 			await this.rebindSession(this.session);
@@ -206,16 +246,33 @@ export class AgentSessionRuntime {
 		const previousSessionFile = this.session.sessionFile;
 		const sessionManager = SessionManager.open(sessionPath, undefined, options?.cwdOverride);
 		assertSessionCwdExists(sessionManager, this.cwd);
-		await this.teardownCurrent("resume", sessionManager.getSessionFile());
-		this.apply(
-			await this.createRuntime({
-				cwd: sessionManager.getCwd(),
-				agentDir: this.services.agentDir,
-				sessionManager,
-				sessionStartEvent: { type: "session_start", reason: "resume", previousSessionFile },
-				projectTrustContext: options?.projectTrustContextFactory?.(sessionManager.getCwd()),
-			}),
-		);
+		const sessionFile = sessionManager.getSessionFile();
+		if (!sessionFile) {
+			throw new Error("目标会话缺少 session 文件路径");
+		}
+		const targetSessionFile = resolvePath(sessionFile);
+		// 重复点击当前任务时保持现有 Agent，不创建第二个 runtime，也不改变执行状态。
+		if (this.session.sessionFile && resolvePath(this.session.sessionFile) === targetSessionFile) {
+			return { cancelled: false };
+		}
+		const suspended = this.suspendedSessions.get(targetSessionFile);
+		if (!this.suspendCurrentIfRunning()) {
+			await this.teardownCurrent("resume", sessionManager.getSessionFile());
+		}
+		if (suspended) {
+			this.suspendedSessions.delete(targetSessionFile);
+			this.applySuspended(suspended);
+		} else {
+			this.apply(
+				await this.createRuntime({
+					cwd: sessionManager.getCwd(),
+					agentDir: this.services.agentDir,
+					sessionManager,
+					sessionStartEvent: { type: "session_start", reason: "resume", previousSessionFile },
+					projectTrustContext: options?.projectTrustContextFactory?.(sessionManager.getCwd()),
+				}),
+			);
+		}
 		await this.finishSessionReplacement(options?.withSession);
 		return { cancelled: false };
 	}
@@ -242,7 +299,9 @@ export class AgentSessionRuntime {
 			sessionManager.newSession({ parentSession: options.parentSession });
 		}
 
-		await this.teardownCurrent("new", sessionManager.getSessionFile());
+		if (!this.suspendCurrentIfRunning()) {
+			await this.teardownCurrent("new", sessionManager.getSessionFile());
+		}
 		this.apply(
 			await this.createRuntime({
 				cwd: targetCwd,
@@ -402,6 +461,15 @@ export class AgentSessionRuntime {
 		});
 		this.beforeSessionInvalidate?.();
 		this.session.dispose();
+		for (const suspended of this.suspendedSessions.values()) {
+			if (suspended.session === this.session) continue;
+			await emitSessionShutdownEvent(suspended.session.extensionRunner, {
+				type: "session_shutdown",
+				reason: "quit",
+			});
+			suspended.session.dispose();
+		}
+		this.suspendedSessions.clear();
 	}
 }
 

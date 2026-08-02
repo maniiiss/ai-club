@@ -13,6 +13,9 @@ import { invoke } from '@tauri-apps/api/core';
 import { Loader2, ExternalLink, LogIn, AlertCircle } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
 import { rpc, isTauriEnv } from '@/src/rpc/bridge';
+import { Button } from '@/src/components/ui/button';
+import { Input } from '@/src/components/ui/input';
+import styles from './LoginPage.module.css';
 
 interface DeviceAuth {
 	deviceCode: string;
@@ -97,70 +100,75 @@ export function LoginPage() {
 	const displayError = localError || error;
 
 	return (
-		<div className="flex h-full items-center justify-center bg-[var(--color-bg)]">
-			<div className="w-full max-w-sm rounded-xl border border-[var(--color-border)] bg-[var(--color-bg-surface)] p-7 shadow-lg">
-				<div className="mb-5 flex items-center gap-2.5">
-					<div className="flex size-9 items-center justify-center rounded-lg bg-[var(--color-primary-muted)] text-[var(--color-primary-hover)]">
+		<div className={styles.page}>
+			<div className={styles.card}>
+				<div className={styles.brandRow}>
+						<div className={styles.logo}>
 						<LogIn size={18} />
 					</div>
 					<div>
-						<h1 className="text-base font-medium text-[var(--color-text)]">登录 AI Club 平台</h1>
-						<p className="text-xs text-[var(--color-text-muted)]">设备授权登录 GitPilot</p>
+						<h1 className={styles.title}>登录 AI Club 平台</h1>
+						<p className={styles.subtitle}>设备授权登录 GitPilot</p>
 					</div>
 				</div>
 
 				{phase !== 'polling' && phase !== 'done' && (
 					<>
-						<label className="mb-1.5 block text-xs text-[var(--color-text-secondary)]">平台地址</label>
-						<input
+						<label className={styles.label} htmlFor="platform-url">平台地址</label>
+						<Input
+							id="platform-url"
 							value={platformUrl}
 							onChange={(e) => setPlatformUrl(e.target.value)}
 							disabled={busy}
 							placeholder="https://gitpilot.example.com"
-							className="mb-4 w-full rounded-md border border-[var(--color-border)] bg-[var(--color-bg)] px-3 py-2 text-sm text-[var(--color-text)] outline-none focus:border-[var(--color-primary)] disabled:opacity-50"
+							className={styles.input}
 						/>
-						<button
+						<Button
 							type="button"
+							variant="default"
+							size="default"
 							onClick={start}
 							disabled={busy || !platformUrl.trim()}
-							className="flex w-full items-center justify-center gap-2 rounded-md bg-[var(--color-primary)] py-2 text-sm text-white transition-colors hover:bg-[var(--color-primary-hover)] disabled:opacity-50"
+							className={styles.submit}
 						>
 							{busy ? <Loader2 size={15} className="animate-spin" /> : <LogIn size={15} />}
 							{phase === 'requesting' ? '正在请求设备授权…' : '登录平台'}
-						</button>
+						</Button>
 					</>
 				)}
 
 				{phase === 'polling' && auth && (
-					<div className="py-2">
-						<p className="mb-3 text-sm text-[var(--color-text-secondary)]">已在浏览器打开授权页，请在浏览器中完成授权：</p>
-						<div className="mb-4 rounded-lg border border-dashed border-[var(--color-border-strong)] bg-[var(--color-bg-elevated)] p-4 text-center">
-							<div className="text-xs text-[var(--color-text-muted)]">验证码</div>
-							<div className="mono mt-1 text-2xl font-semibold tracking-widest text-[var(--color-primary-hover)]">{auth.userCode}</div>
+					<div className={styles.polling}>
+						<p className={styles.pollingDescription}>已在浏览器打开授权页，请在浏览器中完成授权：</p>
+						<div className={styles.codeBox}>
+							<div className={styles.codeLabel}>验证码</div>
+							<div className={styles.code}>{auth.userCode}</div>
 						</div>
-						<div className="flex items-center justify-center gap-2 text-xs text-[var(--color-text-muted)]">
+						<div className={styles.waiting}>
 							<Loader2 size={13} className="animate-spin" />
 							等待授权完成…
 						</div>
-						<button
+						<Button
 							type="button"
+							variant="link"
+							size="sm"
 							onClick={() => void invoke('open_platform_web', { platformUrl: auth.verificationUri })}
-							className="mt-3 flex items-center justify-center gap-1 text-xs text-[var(--color-primary-hover)] hover:underline"
+							className={styles.reopen}
 						>
 							<ExternalLink size={12} /> 重新打开授权页
-						</button>
+						</Button>
 					</div>
 				)}
 
 				{phase === 'done' && (
-					<div className="flex items-center justify-center gap-2 py-4 text-sm text-[var(--color-success)]">
+					<div className={styles.done}>
 						<Loader2 size={15} className="animate-spin" /> 登录成功，正在进入…
 					</div>
 				)}
 
 				{displayError && (
-					<div className="mt-4 flex items-start gap-2 rounded-md border border-[var(--color-error)]/40 bg-[var(--color-code-diff-del)] p-2.5 text-xs text-[var(--color-error)]">
-						<AlertCircle size={13} className="mt-0.5 shrink-0" />
+					<div className={styles.error}>
+						<AlertCircle size={13} className={styles.errorIcon} />
 						<span>{displayError}</span>
 					</div>
 				)}

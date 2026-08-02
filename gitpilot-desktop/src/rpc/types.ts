@@ -114,6 +114,8 @@ export interface SessionListItem {
 	modified: string;
 	messageCount: number;
 	firstMessage: string;
+	/** sidecar runtime 是否仍在执行，任务切换后用于保留左侧 loading 状态。 */
+	isStreaming?: boolean;
 }
 
 // ============================================================================
@@ -125,7 +127,8 @@ export type RpcCommand =
 	| { id?: string; type: 'prompt'; message: string; images?: ImageContent[]; streamingBehavior?: 'steer' | 'followUp' }
 	| { id?: string; type: 'steer'; message: string; images?: ImageContent[] }
 	| { id?: string; type: 'follow_up'; message: string; images?: ImageContent[] }
-	| { id?: string; type: 'abort' }
+	/** 停止当前执行；clearQueue=true 时同时取消尚未执行的引导。 */
+	| { id?: string; type: 'abort'; clearQueue?: boolean }
 	| { id?: string; type: 'new_session'; parentSession?: string; cwd?: string }
 	// 附件预解析（路径或内联 base64 -> 文本/图片，结果随下一条 prompt 注入）
 	| { id?: string; type: 'prepare_attachments'; items: AttachmentInput[] }
@@ -185,7 +188,13 @@ export type RpcResponse =
 	| { id?: string; type: 'response'; command: 'prompt'; success: true }
 	| { id?: string; type: 'response'; command: 'steer'; success: true }
 	| { id?: string; type: 'response'; command: 'follow_up'; success: true }
-	| { id?: string; type: 'response'; command: 'abort'; success: true }
+	| {
+			id?: string;
+			type: 'response';
+			command: 'abort';
+			success: true;
+			data?: { clearedSteering: number; clearedFollowUp: number };
+	  }
 	| { id?: string; type: 'response'; command: 'new_session'; success: true; data: { cancelled: boolean } }
 	| { id?: string; type: 'response'; command: 'prepare_attachments'; success: true; data: { attachments: PreparedAttachment[] } }
 	| { id?: string; type: 'response'; command: 'get_state'; success: true; data: RpcSessionState }

@@ -1,0 +1,64 @@
+/* shadcn Desktop 基础层：只负责文档级别的默认值，不承载业务布局。 */
+
+* {
+	border-color: var(--border);
+}
+
+/* 桌面工作台默认不是网页阅读器：导航、工具栏和状态区域不可被拖选；正文组件按需恢复文本选择。 */
+html,
+body,
+#root {
+	user-select: none;
+	-webkit-user-select: none;
+}
+
+::selection {
+	background: var(--primary-muted);
+	color: var(--foreground);
+}
+
+button,
+input,
+textarea,
+select {
+	font: inherit;
+}
+
+input,
+textarea,
+[contenteditable='true'] {
+	user-select: text;
+	-webkit-user-select: text;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+[role='button']:focus-visible,
+[role='menuitem']:focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: 2px;
+}
+
+.gp-overlay-root {
+	position: relative;
+	z-index: var(--z-overlay);
+}
+
+.gp-scrollbar::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+.gp-scrollbar::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+.gp-scrollbar::-webkit-scrollbar-thumb {
+	border-radius: 999px;
+	background: var(--border-strong);
+}
+
+.gp-scrollbar::-webkit-scrollbar-thumb:hover {
+	background: var(--muted-foreground);
+}

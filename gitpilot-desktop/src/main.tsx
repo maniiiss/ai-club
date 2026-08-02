@@ -7,6 +7,10 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import './index.css';
+import { initializeTheme } from './store/theme';
+
+// 在首帧渲染前恢复主题，避免从默认主题闪到用户上次选择的主题。
+initializeTheme();
 
 createRoot(document.getElementById('root')!).render(
 	<StrictMode>

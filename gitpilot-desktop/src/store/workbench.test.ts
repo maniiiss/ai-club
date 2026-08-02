@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { classifyExecutionKind, getUnreportedExecutionSteps, reduceExecutionEvent, useWorkbenchStore, type ExecutionRun } from './workbench';
+import { classifyExecutionKind, DEFAULT_LAYOUT, getUnreportedExecutionSteps, normalizeLayoutPreferences, reduceExecutionEvent, useWorkbenchStore, WORKBENCH_WIDTH_LIMITS, type ExecutionRun } from './workbench';
 import { resolveWorkbenchShortcut } from '@/src/workbench/shortcuts';
 
 function runningRun(): ExecutionRun {
@@ -72,7 +72,7 @@ describe('Agent 工作台执行事件', () => {
 describe('Agent 工作台本地交互状态', () => {
 	beforeEach(() => {
 		useWorkbenchStore.setState({
-			layout: { leftWidth: 272, rightWidth: 344, bottomOpen: false, leftCollapsed: false, rightCollapsed: false },
+			layout: { leftWidth: 272, rightWidth: 344, bottomOpen: false, bottomHeight: 220, leftCollapsed: false, rightCollapsed: false },
 			execution: { id: 'idle', status: 'idle', lastPrompt: null, steps: [] },
 			composerPrefill: null,
 		});
@@ -83,11 +83,35 @@ describe('Agent 工作台本地交互状态', () => {
 		expect(useWorkbenchStore.getState().layout).toMatchObject({ leftWidth: 310, bottomOpen: true });
 	});
 
+	it('把旧版或异常布局值限制在侧栏与执行面板的可用范围内', () => {
+		expect(normalizeLayoutPreferences({ leftWidth: 9999, rightWidth: -1, bottomOpen: 1 as never, leftCollapsed: 'yes' as never })).toEqual({
+		leftWidth: WORKBENCH_WIDTH_LIMITS.left.max,
+		rightWidth: WORKBENCH_WIDTH_LIMITS.right.min,
+		bottomOpen: false,
+		bottomHeight: DEFAULT_LAYOUT.bottomHeight,
+		leftCollapsed: false,
+		rightCollapsed: false,
+	});
+		expect(normalizeLayoutPreferences({})).toEqual(DEFAULT_LAYOUT);
+		useWorkbenchStore.getState().updateLayout({ leftWidth: 9999, rightWidth: -1 });
+		expect(useWorkbenchStore.getState().layout).toMatchObject({
+			leftWidth: WORKBENCH_WIDTH_LIMITS.left.max,
+			rightWidth: WORKBENCH_WIDTH_LIMITS.right.min,
+		});
+	});
+
 	it('重试只回填最后用户任务，不触发 prompt 或新执行', () => {
 		useWorkbenchStore.setState({ execution: { ...runningRun(), status: 'failed' } });
 		useWorkbenchStore.getState().prepareRetry();
 		expect(useWorkbenchStore.getState().composerPrefill).toBe('修复登录错误');
 		expect(useWorkbenchStore.getState().execution.status).toBe('failed');
+	});
+
+	it('执行面板和底部面板关闭后都能通过同一布局状态重新打开', () => {
+		useWorkbenchStore.getState().updateLayout({ rightCollapsed: true, bottomOpen: false });
+		expect(useWorkbenchStore.getState().layout).toMatchObject({ rightCollapsed: true, bottomOpen: false });
+		useWorkbenchStore.getState().updateLayout({ rightCollapsed: false, bottomOpen: true });
+		expect(useWorkbenchStore.getState().layout).toMatchObject({ rightCollapsed: false, bottomOpen: true });
 	});
 });
 

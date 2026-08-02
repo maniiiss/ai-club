@@ -430,8 +430,15 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "abort": {
+				const cleared = command.clearQueue ? session.clearQueue() : undefined;
 				await session.abort();
-				return success(id, "abort");
+				return success(
+					id,
+					"abort",
+					cleared
+						? { clearedSteering: cleared.steering.length, clearedFollowUp: cleared.followUp.length }
+						: undefined,
+				);
 			}
 
 			case "new_session": {
@@ -669,7 +676,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					command.scope === "all"
 						? await SessionManager.listAll()
 						: await SessionManager.list(sessionManager.getCwd(), sessionManager.getSessionDir());
-				return success(id, "list_sessions", { sessions });
+				return success(id, "list_sessions", {
+					sessions: sessions.map((item) => ({ ...item, isStreaming: runtimeHost.isSessionStreaming(item.path) })),
+				});
 			}
 
 			case "get_last_assistant_text": {

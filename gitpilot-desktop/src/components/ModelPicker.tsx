@@ -6,11 +6,16 @@
  * - 已登录显示当前模型，下拉切换平台 CHAT 模型
  * - 思维级别切换
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ChevronDown, Cpu, Brain, LogIn } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
 import { useWorkbenchStore } from '@/src/store/workbench';
 import type { ThinkingLevel } from '@/src/rpc/types';
+import { Button } from '@/src/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/src/components/ui/dropdown-menu';
+import { Popover, PopoverContent, PopoverTrigger } from '@/src/components/ui/popover';
+import { Command as CommandRoot, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/src/components/ui/command';
+import styles from './ModelPicker.module.css';
 
 /**
  * 只有一个启用档位的模型本质上是开关能力，例如 sidecar 回传 off/high。
@@ -49,7 +54,6 @@ export function ModelPicker() {
 
 	const [openModel, setOpenModel] = useState(false);
 	const [openThinking, setOpenThinking] = useState(false);
-	const pickerRef = useRef<HTMLDivElement>(null);
 
 	const currentModel = sessionState?.model;
 
@@ -57,39 +61,17 @@ export function ModelPicker() {
 		if (modelPickerRequest > 0) setOpenModel(true);
 	}, [modelPickerRequest]);
 
-	// 两个下拉均属于同一浮层组，点击其外侧空白区域或按 Esc 必须立即收起。
-	useEffect(() => {
-		if (!openModel && !openThinking) return;
-		const dismiss = (event: PointerEvent) => {
-			if (!pickerRef.current?.contains(event.target as Node)) {
-				setOpenModel(false);
-				setOpenThinking(false);
-			}
-		};
-		const onKeyDown = (event: KeyboardEvent) => {
-			if (event.key === 'Escape') {
-				setOpenModel(false);
-				setOpenThinking(false);
-			}
-		};
-		document.addEventListener('pointerdown', dismiss);
-		window.addEventListener('keydown', onKeyDown);
-		return () => {
-			document.removeEventListener('pointerdown', dismiss);
-			window.removeEventListener('keydown', onKeyDown);
-		};
-	}, [openModel, openThinking]);
-
 	// 登录态以 store.loggedIn 为准（登录流程标记），不依赖 sessionState.model（未选模型时为 unknown，会导致已登录仍显示"登录平台"）
 	if (!loggedIn) {
 		return (
-			<button
+			<Button
 				type="button"
+				variant="default"
+				size="sm"
 				onClick={() => prompt('/login')}
-				className="flex items-center gap-1.5 rounded-md bg-[var(--color-primary)] px-3 py-1.5 text-xs text-white transition-colors hover:bg-[var(--color-primary-hover)]"
 			>
 				<LogIn size={13} /> 登录平台
-			</button>
+			</Button>
 		);
 	}
 
@@ -99,79 +81,27 @@ export function ModelPicker() {
 	const currentThinkingLevel = sessionState?.thinkingLevel ?? 'off';
 
 	return (
-		<div ref={pickerRef} className="flex items-center gap-2">
+		<div className={styles.picker}>
 			{/* 模型选择 */}
-			<div className="relative">
-				<button
-					type="button"
-					onClick={() => { setOpenModel((o) => !o); setOpenThinking(false); }}
-					className="flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2.5 py-1.5 text-xs text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-hover)]"
-				>
-					<Cpu size={13} />
-					<span className="max-w-40 truncate">{currentModel?.name ?? '未选择'}</span>
-					<ChevronDown size={12} />
-				</button>
-				{openModel && (
-					<div className="absolute bottom-full left-0 z-40 mb-1 max-h-72 w-56 overflow-y-auto rounded-md border border-[var(--color-border)] bg-[var(--color-bg-elevated)] py-1 shadow-lg">
-						{models.length === 0 ? (
-							<div className="px-3 py-2 text-xs text-[var(--color-text-muted)]">加载中…</div>
-						) : (
-							models.map((m) => (
-								<button
-									key={`${m.provider}:${m.id}`}
-									type="button"
-									onClick={() => {
-										setModel(m.provider, m.id);
-										setOpenModel(false);
-									}}
-									className={`block w-full truncate px-3 py-2 text-left text-xs transition-colors hover:bg-[var(--color-primary-muted)] ${
-										m.id === currentModel?.id ? 'text-[var(--color-primary-hover)]' : 'text-[var(--color-text-secondary)]'
-									}`}
-								>
-									<div className="truncate">{m.name}</div>
-									<div className="truncate text-[10px] text-[var(--color-text-muted)]">{m.provider}</div>
-								</button>
-							))
-						)}
-					</div>
-				)}
-			</div>
+			<Popover open={openModel} onOpenChange={(value) => { setOpenModel(value); if (value) setOpenThinking(false); }}>
+				<PopoverTrigger asChild><Button type="button" variant="outline" size="sm" className={styles.modelTrigger}><Cpu /><span className={styles.modelName}>{currentModel?.name ?? '未选择'}</span><ChevronDown /></Button></PopoverTrigger>
+				<PopoverContent side="top" align="start" className={styles.modelPopover}>
+					<CommandRoot>
+					<CommandInput placeholder="搜索模型…" containerClassName={styles.search} className={styles.searchInput} style={{ outline: 'none', border: 'none', boxShadow: 'none' }} />
+						<CommandList className={styles.modelList}><CommandEmpty>{models.length === 0 ? '加载中…' : '没有匹配的模型'}</CommandEmpty>{models.map((m) => <CommandItem key={`${m.provider}:${m.id}`} value={`${m.name} ${m.provider}`} onSelect={() => { setModel(m.provider, m.id); setOpenModel(false); }} className={`${styles.modelItem} ${m.id === currentModel?.id ? styles.selected : ''}`}><span className={styles.modelCopy}><span>{m.name}</span><small>{m.provider}</small></span></CommandItem>)}</CommandList>
+					</CommandRoot>
+				</PopoverContent>
+			</Popover>
 
 			{/* 思维级别 */}
-			<div className="relative">
-				<button
-					type="button"
-					disabled={!thinkingSupported}
-					title={thinkingSupported ? undefined : '当前模型不支持思考'}
-					onClick={() => { setOpenThinking((o) => !o); setOpenModel(false); }}
-					className={`flex items-center gap-1.5 rounded-md border border-[var(--color-border)] px-2.5 py-1.5 text-xs transition-colors ${
-						thinkingSupported ? 'text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]' : 'cursor-not-allowed text-[var(--color-text-muted)]'
-					}`}
-				>
-					<Brain size={13} />
-					<span>{getThinkingLevelLabel(currentThinkingLevel, thinkingLevels)}</span>
-					{thinkingSupported && <ChevronDown size={12} />}
-				</button>
-				{thinkingSupported && openThinking && (
-					<div className="absolute bottom-full right-0 z-40 mb-1 w-32 overflow-hidden rounded-md border border-[var(--color-border)] bg-[var(--color-bg-elevated)] py-1 shadow-lg">
-						{thinkingOptions.map((option) => (
-							<button
-								key={option.value}
-								type="button"
-								onClick={() => {
-									setThinkingLevel(option.value);
-									setOpenThinking(false);
-								}}
-								className={`block w-full px-3 py-1.5 text-left text-xs transition-colors hover:bg-[var(--color-primary-muted)] ${
-									option.value === currentThinkingLevel ? 'text-[var(--color-primary-hover)]' : 'text-[var(--color-text-secondary)]'
-								}`}
-							>
-								{option.label}
-							</button>
-						))}
-					</div>
-				)}
-			</div>
+			<DropdownMenu open={openThinking} onOpenChange={(value) => { setOpenThinking(value); if (value) setOpenModel(false); }}>
+				<DropdownMenuTrigger asChild><Button type="button" variant="outline" size="sm" disabled={!thinkingSupported} title={thinkingSupported ? undefined : '当前模型不支持思考'}><Brain /><span>{getThinkingLevelLabel(currentThinkingLevel, thinkingLevels)}</span>{thinkingSupported && <ChevronDown />}</Button></DropdownMenuTrigger>
+				<DropdownMenuContent side="top" align="end" className="w-32">
+					<DropdownMenuLabel>思维级别</DropdownMenuLabel>
+					<DropdownMenuSeparator />
+					{thinkingOptions.map((option) => <DropdownMenuItem key={option.value} onSelect={() => setThinkingLevel(option.value)} className={option.value === currentThinkingLevel ? 'bg-[var(--primary-muted)] text-[var(--primary)]' : ''}>{option.label}</DropdownMenuItem>)}
+				</DropdownMenuContent>
+			</DropdownMenu>
 		</div>
 	);
 }

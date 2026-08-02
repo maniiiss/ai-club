@@ -1,0 +1,4 @@
+/* 扩展请求的业务尺寸只在该模态内生效，避免污染全局 Dialog 原语。 */
+.content {
+	width: min(520px, calc(100vw - 32px));
+}

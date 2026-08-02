@@ -1,0 +1,46 @@
+.root { display: flex; min-height: 0; flex: 1; flex-direction: column; background: var(--gp-background); color: var(--gp-text); }
+/* 业务意图：列宽立即切换，避免动画期间反复重排聊天正文；侧栏显隐交给下方合成层动画。 */
+.panels { display: grid; min-height: 0; flex: 1; overflow: hidden; background: var(--gp-background); }
+.pane { min-width: 0; min-height: 0; overflow: hidden; }
+.leftPane, .rightPane { background: var(--gp-surface); }
+.leftPane, .rightPane { transition: opacity 150ms ease, transform 180ms cubic-bezier(.22,.8,.25,1); }
+.leftPane[aria-hidden='true'] { pointer-events: none; opacity: 0; transform: translateX(-12px); }
+.rightPane[aria-hidden='true'] { pointer-events: none; opacity: 0; transform: translateX(12px); }
+.centerPane { background: var(--gp-panel-deep); }
+.resizeHandle { position: relative; z-index: 5; width: 1px; cursor: col-resize; background: var(--gp-border); outline: none; }
+.resizeHandle::before { position: absolute; inset: 0 -5px; content: ''; }
+.resizeHandle > span { display: none; }
+.resizeHandle:hover, .resizeHandle:focus-visible { background: var(--gp-border); }
+.bottom { display: flex; height: 0; min-height: 0; flex-direction: column; overflow: hidden; border-top: 1px solid transparent; background: var(--gp-surface); opacity: 0; pointer-events: none; transform: translateY(8px); visibility: hidden; transition: height 210ms cubic-bezier(0.22, 0.8, 0.25, 1), opacity 130ms ease, transform 210ms ease, border-color 170ms ease, visibility 0s linear 210ms; }
+.bottomOpen { border-top-color: var(--gp-border); opacity: 1; pointer-events: auto; transform: translateY(0); visibility: visible; transition-delay: 0s; }
+/* 拖动过程中关闭高度过渡，让面板实时跟随鼠标；结束后恢复动画。 */
+.bottomResizing { transition: none; }
+/* 底部面板顶部的水平拖拽条，悬停时高亮提示可上下调整高度。 */
+.bottomResizeHandle { position: relative; z-index: 6; height: 5px; flex-shrink: 0; margin-top: -2px; cursor: ns-resize; background: transparent; outline: none; }
+.bottomResizeHandle::before { position: absolute; inset: -3px 0; content: ''; }
+.bottomResizeHandle:hover, .bottomResizeHandle:focus-visible { background: var(--gp-action); }
+.bottomResizeHandle > span { display: none; }
+.bottomHeader { display: flex; min-height: 40px; align-items: center; border-bottom: 1px solid var(--gp-border); padding: 0 10px; }
+.bottomContent { min-height: 0; flex: 1; }
+.statusbar { position: relative; display: flex; min-height: 28px; align-items: center; gap: 10px; border-top: 1px solid var(--gp-border); background: var(--gp-surface-raised); padding: 0 38px; color: var(--gp-text-muted); font-family: var(--font-mono); font-size: 10px; }
+.statusbar > button { height: 24px; }
+.leftPanelToggle, .rightPanelToggle { position: absolute; top: 2px; width: 24px; height: 24px; padding: 0; }
+.leftPanelToggle { left: 4px; }
+.rightPanelToggle { right: 4px; }
+.path { min-width: 0; max-width: 65%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.grow { flex: 1; }
+.active { color: var(--gp-action); background: var(--gp-selection); }
+.mobileToggle { display: none; }
+.mobileSheet { width: min(86vw, 360px); }
+.mobileBody { min-height: 0; flex: 1; }
+@media (max-width: 900px) {
+	.panels { grid-template-columns: minmax(0, 1fr); }
+	.leftPane, .rightPane, .resizeHandle { display: none; }
+	.mobileToggle { display: inline-flex; }
+	.path { max-width: 48%; }
+	.statusbar { padding: 0 38px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.leftPane, .rightPane, .bottom { transition: none; }
+}

@@ -185,6 +185,8 @@ export interface SessionInfo {
 	messageCount: number;
 	firstMessage: string;
 	allMessagesText: string;
+	/** 当前 sidecar runtime 是否仍在执行；桌面端用于在任务切换后保留 loading 状态。 */
+	isStreaming?: boolean;
 }
 
 export type ReadonlySessionManager = Pick<

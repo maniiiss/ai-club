@@ -28,6 +28,13 @@ pub fn rpc_send(command: Value, state: State<'_, SidecarBridge>) -> Result<Value
 	state.send_command(command)
 }
 
+/// 在系统文件管理器中打开指定目录（Windows 资源管理器 / Finder 等）。
+/// 供侧边栏右键菜单「在文件夹中打开」使用，只打开目录本身，不选中文件。
+#[tauri::command]
+pub fn reveal_path(path: String) -> Result<(), String> {
+	open::that(&path).map_err(|err| format!("打开文件夹失败：{err}"))
+}
+
 /// 返回独立任务的工作目录：安装包使用用户安装的 GitPilot-desktop 目录，开发期使用桌面端源码根目录。
 #[tauri::command]
 pub fn gitpilot_root() -> Result<String, String> {

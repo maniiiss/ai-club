@@ -432,6 +432,8 @@ PR 评审检查清单：
 - 前端 `/model-usage-stats`（`ModelUsageStatsView`）：引入 ECharts（按需注册）做模型调用量排行、Token 分布、调用趋势可视化，与 `/agent-usage-stats`（按智能体/用户维度）互补。
 - 迁移 `V145__model_usage_stats_menu.sql` 注入菜单与 `SUPER_ADMIN` 授权。
 
+缓存命中指标：`agent_invocation_log` 增 `cached_tokens` 列（迁移 `V146`），各 LLM 响应 extractor 抽取并归一化 OpenAI `cached_tokens` / Anthropic `cache_read_input_tokens`，命中率 = `cached_tokens / prompt_tokens`（分母为 0 返回 null，前端显示 `-`）。模型与智能体两个看板均展示缓存命中 KPI、表格列与趋势线。详见 `docs/design-docs/model-usage-cache-hit-stats-technical-design-v1.md`。
+
 详细设计见 `docs/design-docs/platform-model-usage-stats-technical-design-v1.md`。
 未落地的旧设计 `docs/design-docs/model-token-usage-technical-design-v1.md` 已标记 superseded。
 
@@ -1076,7 +1078,8 @@ GitPilot CLI 已改为基于 pi-coding-agent 二开的本地执行平面：
 - `packages/gitpilot-agent-core` 收窄为 pi-runtime 专用的 Pi Agent 封装 + Handoff 协议层，已随 pi-runtime 升级到 `@earendil-works/*@0.81.1`（`getModel`/`getModels`/`streamSimple` 经 `pi-ai/compat` 兼容入口消费）；CLI 不再依赖该包。
 - 云端接力（项目关联、Git 快照、handoff 分支、Cloud Coding 工作区）尚未接入，相关代码（`gitstate/snapshot.ts`、handoff envelope、`HandoffSessionEnvelopeValidator`、`cloud_coding_sandbox_policy.py`）已停车到 `packages/gitpilot-agent-core/cloud/`，后续作为 Pi extension 接入；接力仍需遵循 `gitpilot-cli-cloud-coding-handoff-technical-design-v1.md` 的本地零污染和 Sandbox Worker 边界。
 - P0 已冻结 `HandoffSessionEnvelope v1` Schema/限制/敏感字段拒绝规则、CLI scope 和 `cloud-coding-sandbox-v1`。Cloud Coding 默认关闭，公众发布门槛为 `CONTAINER` Worker；Session 表、云端 REST 和公众端仍属于 P1。
-- `gitpilot-desktop` 是同一套本地执行平面的 Windows GUI：Tauri 主进程管理窗口、sidecar 和受限的应用内 PowerShell 终端，React 渲染层只消费 RPC 事件。终端入口只传递已选项目目录，Rust 规范化并校验后创建独立 PowerShell 进程；用户在可见终端面板的键盘输入经有大小限制的原生桥接写入该进程，终端输出以事件回传，不与 Agent sidecar 混用。桌面端 P0/P1 以自定义标题栏、可持久化三栏工作台、输出面板和按真实工具生命周期聚合的执行时间线提供 IDE 式操作感；它不把文件树/编辑器伪装成已实现能力。完整边界见 `docs/design-docs/gitpilot-desktop-technical-design-v1.md`。
+- `gitpilot-desktop` 是同一套本地执行平面的 Windows GUI：Tauri 主进程管理窗口、sidecar 和受限的应用内 PowerShell 终端，React 渲染层只消费 RPC 事件。终端入口只传递已选项目目录，Rust 规范化并校验后创建独立 PowerShell 进程；用户在可见终端面板的键盘输入经有大小限制的原生桥接写入该进程，终端输出以事件回传，不与 Agent sidecar 混用。桌面端 P0/P1 以自定义标题栏、可持久化三栏工作台、输出面板和按真实工具生命周期聚合的执行时间线提供 IDE 式操作感；它不把文件树/编辑器伪装成已实现能力。React 渲染层现以 shadcn/ui Graphite Workbench 作为唯一生产 UI：`TargetDesktopShell` 组合 `desktop`、`workbench`、`features` 三个边界，业务样式使用局部 CSS Module，`index.css` 仅保留入口与文档级基础，不改变 Zustand、RPC、Tauri 原生窗口、终端和 sidecar 安全边界。安装包中的 sidecar 由 Rust 按 target 后缀或 Tauri 规范化基名查找，并通过 `PI_PACKAGE_DIR` 指向 `resources`，保证主题与导出模板在 MSI/NSIS 安装态可解析。规划中的 Git 与代码审查工作台继续遵守该边界：确定性 Git 操作由 sidecar 的受限 `RepositoryService` 调用系统 Git，React 和 Rust 不获得任意 Git 命令；本地 Git 离线可用，AI 审查通过 backend 的通用审查编排复用 code-processing，结果绑定不可变 Git 快照，发布 MR 评论必须显式确认且不触发自动提交、Push、批准或合并。基础架构见 `docs/design-docs/gitpilot-desktop-technical-design-v1.md`，UI 替换方案见 `docs/design-docs/gitpilot-desktop-shadcn-ui-replacement-technical-design-v1.md`，Git 与代码审查方案见 `docs/design-docs/gitpilot-desktop-git-review-workbench-technical-design-v1.md`。
+- GitPilot 规划以内置精选 extension 形式提供 slopchop、goal、plan-mode 和 subagents：CLI 保留上游 Pi TUI，Desktop 对标准 extension UI 走 RPC，对 slopchop 的任意 TUI custom 组件使用 Git Review Workbench 原生适配。四个包在构建期精确锁定并打入 CLI/sidecar，运行时统一解析到 GitPilot 的 Pi SDK 与 `~/.gitpilot/agent`，不依赖安装机 npm、不静默更新。Goal、Plan 与 subagent 不合并为新的总状态机，只通过工具集合、自动续跑所有权和取消传播定义组合边界；subagent 仍是同一 OS 用户下的协作进程，不作为安全沙箱。详细方案见 `docs/design-docs/gitpilot-pi-productivity-extensions-technical-design-v1.md`。
 
 ## 8. 当前存在的架构边界
 

@@ -1,0 +1,37 @@
+/* 登录是独立状态页，使用局部布局保证后续工作台换肤不会影响设备授权流程。 */
+.page {
+	display: flex;
+	height: 100%;
+	align-items: center;
+	justify-content: center;
+	background: var(--gp-background);
+	padding: 24px;
+}
+
+.card {
+	width: 100%;
+	max-width: 384px;
+	border: 1px solid var(--gp-border);
+	border-radius: 12px;
+	background: var(--gp-surface);
+	padding: 28px;
+	box-shadow: var(--shadow-lg);
+}
+
+.brandRow { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+.logo { display: flex; width: 36px; height: 36px; align-items: center; justify-content: center; border-radius: 8px; background: var(--gp-selection); color: var(--gp-action); }
+.title { margin: 0; color: var(--gp-text); font-size: 16px; font-weight: 500; }
+.subtitle { margin: 2px 0 0; color: var(--gp-text-muted); font-size: 12px; }
+.label { display: block; margin-bottom: 6px; color: var(--gp-text-muted); font-size: 12px; }
+.input { margin-bottom: 16px; }
+.submit { width: 100%; }
+.polling { padding: 8px 0; }
+.pollingDescription { margin: 0 0 12px; color: var(--gp-text-muted); font-size: 14px; }
+.codeBox { margin-bottom: 16px; border: 1px dashed var(--gp-border-strong); border-radius: 8px; background: var(--gp-surface-raised); padding: 16px; text-align: center; }
+.codeLabel { color: var(--gp-text-muted); font-size: 12px; }
+.code { margin-top: 4px; color: var(--gp-action); font-family: var(--font-mono); font-size: 24px; font-weight: 600; letter-spacing: .18em; }
+.waiting { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--gp-text-muted); font-size: 12px; }
+.reopen { display: flex; margin: 12px auto 0; }
+.done { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 16px 0; color: var(--gp-status-success); font-size: 14px; }
+.error { display: flex; align-items: flex-start; gap: 8px; margin-top: 16px; border: 1px solid color-mix(in srgb, var(--gp-danger) 40%, transparent); border-radius: 6px; background: var(--gp-code-diff-del); padding: 10px; color: var(--gp-status-error); font-size: 12px; }
+.errorIcon { flex: 0 0 auto; margin-top: 2px; }

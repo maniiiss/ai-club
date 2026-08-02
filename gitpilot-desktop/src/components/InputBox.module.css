@@ -1,0 +1,45 @@
+.root { position: absolute; z-index: 30; right: 0; bottom: 16px; left: 0; display: flex; justify-content: center; padding: 0 18px; pointer-events: none; }
+.root::after { position: absolute; z-index: 0; top: 100%; right: -18px; left: -18px; height: 16px; background: var(--gp-panel-deep); content: ''; pointer-events: none; }
+.root > * { pointer-events: auto; }
+/* 业务意图：使用不透明表面替代实时背景模糊，避免侧栏切换时对聊天正文做大面积重绘。 */
+.surface { position: relative; z-index: 1; display: flex; width: min(860px, 100%); min-width: 0; flex-direction: column; overflow: hidden; border: 1px solid var(--gp-border-strong); border-radius: 14px; background: linear-gradient(180deg, var(--gp-surface-raised), var(--gp-surface)); padding: 12px 14px 10px; box-shadow: var(--shadow-lg), 0 0 0 1px var(--gp-accent-soft); transition: border-color 140ms ease, box-shadow 140ms ease; }
+.surface::before { position: absolute; top: 0; right: 14px; left: 14px; height: 2px; background: linear-gradient(90deg, var(--gp-accent), transparent 68%, var(--gp-warm)); content: ''; opacity: .85; }
+.surface:focus-within { border-color: color-mix(in srgb, var(--gp-accent) 65%, var(--gp-border)); box-shadow: 0 20px 54px var(--gp-shadow-color), 0 0 0 3px var(--gp-accent-soft); }
+.guidanceList { display: flex; max-height: 188px; flex-direction: column; gap: 6px; margin: -2px 0 8px; overflow-y: auto; padding: 0 0 2px; }
+.guidanceItem { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--gp-border); border-radius: 12px; background: color-mix(in srgb, var(--gp-surface) 78%, transparent); padding: 8px 8px 8px 10px; }
+.guidanceItemBody { display: flex; min-width: 0; align-items: center; gap: 8px; }
+.guidanceGrip { flex: 0 0 auto; color: var(--gp-text-dim); font-size: 14px; letter-spacing: -2px; line-height: 1; }
+.guidanceItemText { min-width: 0; overflow: hidden; color: var(--gp-text); font-size: 12px; line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.guidanceItemStatus { flex: 0 0 auto; color: var(--gp-text-muted); font-size: 10px; }
+.guidanceItemActions { display: flex; flex: 0 0 auto; align-items: center; gap: 2px; }
+.guidanceAction { height: 26px; gap: 4px; border-radius: 7px; padding: 0 9px; font-size: 11px; }
+.guidanceIconAction { width: 28px; height: 28px; color: var(--gp-text-muted); }
+.guidanceIconAction:hover { color: var(--gp-text); }
+.textarea { min-height: 44px; max-height: 200px; width: 100%; resize: none; border: 0 !important; border-color: transparent !important; background: transparent; box-shadow: none !important; color: var(--gp-text); font: 13px/1.55 var(--font-sans); outline: 0 !important; user-select: text; -webkit-user-select: text; }
+.textarea:focus, .textarea:focus-visible { border: 0 !important; border-color: transparent !important; box-shadow: none !important; outline: 0 !important; }
+.textarea::placeholder { color: var(--gp-text-muted); }
+.toolbar { display: flex; min-height: 32px; align-items: center; gap: 10px; margin-top: 7px; }
+.actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.send { display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: var(--gp-action); color: var(--primary-foreground); cursor: pointer; transition: background 140ms ease, transform 140ms ease, opacity 140ms ease; }
+.send:hover:not(:disabled) { background: var(--gp-action-hover); transform: translateY(-1px); }
+.send:disabled { cursor: not-allowed; opacity: .38; }
+.stop { background: color-mix(in srgb, var(--gp-danger) 18%, transparent); color: var(--gp-danger); }
+.stop:hover { background: color-mix(in srgb, var(--gp-danger) 28%, transparent); }
+.attach { display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border: 0; border-radius: 8px; background: transparent; color: var(--gp-text-muted); cursor: pointer; }
+.attach:hover:not(:disabled) { background: var(--gp-accent-soft); color: var(--gp-accent); }
+.attach:disabled { cursor: not-allowed; opacity: .4; }
+.dragOver .surface { box-shadow: 0 0 0 2px var(--gp-action), 0 17px 46px var(--gp-shadow-color); }
+.dropHint { position: absolute; z-index: 31; top: -28px; left: 50%; transform: translateX(-50%); border-radius: 999px; background: var(--gp-action); padding: 4px 12px; color: var(--primary-foreground); font-size: 12px; white-space: nowrap; }
+.attachments { display: flex; flex-wrap: wrap; gap: 6px; max-height: 120px; overflow-y: auto; padding: 2px 2px 8px; }
+.attachment { display: inline-flex; max-width: 220px; align-items: center; gap: 5px; border: 1px solid var(--gp-border); border-radius: 8px; background: var(--gp-accent-soft); padding: 4px 6px 4px 8px; color: var(--gp-text); font-size: 12px; line-height: 1.4; }
+.attachmentName { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.attachmentSize { flex-shrink: 0; color: var(--gp-text-muted); }
+.attachmentRemove { display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center; flex-shrink: 0; border: 0; border-radius: 50%; background: transparent; color: var(--gp-text-muted); }
+.attachmentRemove:hover { background: var(--gp-border); color: var(--gp-text); }
+.loading { color: var(--gp-text-muted); }
+.error { background: color-mix(in srgb, var(--gp-danger) 16%, transparent); color: var(--gp-danger); }
+.spin { animation: spin 900ms linear infinite; }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+@media (max-width: 900px) { .root { bottom: 10px; padding: 0 10px; } .guidanceItem { align-items: flex-start; flex-direction: column; gap: 6px; } .guidanceItemActions { align-self: flex-end; } }
+@media (prefers-reduced-motion: reduce) { .surface, .send { transition: none; } .spin { animation: none; } }

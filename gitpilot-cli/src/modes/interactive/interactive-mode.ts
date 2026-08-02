@@ -2449,7 +2449,12 @@ export class InteractiveMode {
 		// so they work correctly regardless of which editor is active
 		this.defaultEditor.onEscape = () => {
 			if (this.session.isStreaming) {
-				this.restoreQueuedMessagesToEditor({ abort: true });
+				const restored = this.restoreQueuedMessagesToEditor({ abort: true });
+				this.showStatus(
+					restored > 0
+						? `任务已停止，已恢复 ${restored} 条未执行引导；已完成的修改不会自动回滚`
+						: "任务已停止；已完成的修改不会自动回滚",
+				);
 			} else if (this.session.isBashRunning) {
 				this.session.abortBash();
 			} else if (this.isBashMode) {
@@ -2697,7 +2702,13 @@ export class InteractiveMode {
 			if (this.session.isStreaming) {
 				this.editor.addToHistory?.(text);
 				this.editor.setText("");
-				await this.session.prompt(text, { streamingBehavior: "steer" });
+				try {
+					await this.session.prompt(text, { streamingBehavior: "steer" });
+					this.showStatus("已加入当前任务，将在当前一轮工具执行结束后处理");
+				} catch (error) {
+					this.editor.setText(text);
+					this.showError(`引导未发送：${error instanceof Error ? error.message : String(error)}`);
+				}
 				this.updatePendingMessagesDisplay();
 				this.ui.requestRender();
 				return;
@@ -3612,7 +3623,13 @@ export class InteractiveMode {
 		if (this.session.isStreaming) {
 			this.editor.addToHistory?.(text);
 			this.editor.setText("");
-			await this.session.prompt(text, { streamingBehavior: "followUp" });
+			try {
+				await this.session.prompt(text, { streamingBehavior: "followUp" });
+				this.showStatus("已加入后续队列，将在当前任务完成后处理");
+			} catch (error) {
+				this.editor.setText(text);
+				this.showError(`后续引导未发送：${error instanceof Error ? error.message : String(error)}`);
+			}
 			this.updatePendingMessagesDisplay();
 			this.ui.requestRender();
 		}
@@ -3875,15 +3892,15 @@ export class InteractiveMode {
 		if (steeringMessages.length > 0 || followUpMessages.length > 0) {
 			this.pendingMessagesContainer.addChild(new Spacer(1));
 			for (const message of steeringMessages) {
-				const text = theme.fg("dim", `Steering: ${message}`);
+				const text = theme.fg("dim", `立即引导：${message}`);
 				this.pendingMessagesContainer.addChild(new TruncatedText(text, 1, 0));
 			}
 			for (const message of followUpMessages) {
-				const text = theme.fg("dim", `Follow-up: ${message}`);
+				const text = theme.fg("dim", `完成后追加：${message}`);
 				this.pendingMessagesContainer.addChild(new TruncatedText(text, 1, 0));
 			}
 			const dequeueHint = this.getAppKeyDisplay("app.message.dequeue");
-			const hintText = theme.fg("dim", `↳ ${dequeueHint} 编辑所有排队消息`);
+			const hintText = theme.fg("dim", `↳ ${dequeueHint} 取回全部排队消息`);
 			this.pendingMessagesContainer.addChild(new TruncatedText(hintText, 1, 0));
 		}
 	}

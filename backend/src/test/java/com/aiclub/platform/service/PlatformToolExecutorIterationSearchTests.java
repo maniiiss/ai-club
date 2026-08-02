@@ -329,7 +329,7 @@ class PlatformToolExecutorIterationSearchTests {
     }
 
     /**
-     * 搜索候选可以截断展示，但总数和状态分布必须基于完整筛选结果计算，避免 Assistant 把前五条误报成总量。
+     * 搜索候选可以截断展示，但总数和状态分布必须基于完整筛选结果计算，避免 Assistant 把前二十五条误报成总量。
      */
     @Test
     void shouldReturnExactWorkItemTotalAndStatusCountsWhenCandidatesAreTruncated() {
@@ -348,7 +348,7 @@ class PlatformToolExecutorIterationSearchTests {
                 1
         ));
 
-        for (int index = 1; index <= 7; index++) {
+        for (int index = 1; index <= 30; index++) {
             String status = index <= 4 ? "已完成" : "处理中";
             platformStoreService.createTask(new TaskRequest(
                     "统计缺陷 " + index,
@@ -388,16 +388,16 @@ class PlatformToolExecutorIterationSearchTests {
                 )
         ));
 
-        assertThat(result.candidates()).hasSize(5);
-        assertThat(result.summary()).contains("找到 7 个相关工作项").contains("展示前 5 个");
+        assertThat(result.candidates()).hasSize(25);
+        assertThat(result.summary()).contains("找到 30 个相关工作项").contains("展示前 25 个");
         assertThat(result.metadata())
-                .containsEntry("totalCount", 7)
-                .containsEntry("returnedCount", 5)
+                .containsEntry("totalCount", 30)
+                .containsEntry("returnedCount", 25)
                 .containsEntry("truncated", true)
                 .containsEntry("scopeType", "ITERATION")
                 .containsEntry("scopeDescription", "迭代范围");
         assertThat(result.metadata().get("statusCounts"))
-                .isEqualTo(Map.of("已完成", 4L, "进行中", 3L));
+                .isEqualTo(Map.of("已完成", 4L, "进行中", 26L));
     }
 
     @Test

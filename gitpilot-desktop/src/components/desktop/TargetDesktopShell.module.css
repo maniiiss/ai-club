@@ -1,0 +1,37 @@
+.shell {
+	position: relative;
+	display: flex;
+	height: 100%;
+	min-height: 0;
+	flex-direction: column;
+	overflow: hidden;
+	background: var(--gp-background);
+	color: var(--gp-text);
+}
+
+.error {
+	position: fixed;
+	z-index: 65;
+	right: 14px;
+	bottom: 40px;
+	display: flex;
+	max-width: min(420px, calc(100vw - 28px));
+	max-height: 160px;
+	align-items: flex-start;
+	gap: 10px;
+	overflow: auto;
+	border: 1px solid color-mix(in srgb, var(--gp-danger) 55%, var(--gp-border));
+	border-left: 3px solid var(--gp-danger);
+	background: color-mix(in srgb, var(--gp-danger) 12%, var(--gp-background));
+	padding: 8px 10px;
+	color: var(--gp-status-error);
+	font-size: 12px;
+	line-height: 1.5;
+	overflow-wrap: anywhere;
+	box-shadow: var(--shadow-md);
+}
+
+.error button {
+	flex: 0 0 auto;
+	color: inherit;
+}

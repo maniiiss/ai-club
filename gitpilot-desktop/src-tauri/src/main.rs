@@ -65,7 +65,7 @@ fn main() {
 			app.manage(commands::TerminalManager::default());
 			Ok(())
 		})
-		.invoke_handler(tauri::generate_handler![commands::rpc_send, commands::gitpilot_root, commands::terminal_start, commands::terminal_write, commands::terminal_close, auth::cli_login_start, auth::cli_login_poll, auth::open_platform_web])
+		.invoke_handler(tauri::generate_handler![commands::rpc_send, commands::gitpilot_root, commands::reveal_path, commands::terminal_start, commands::terminal_write, commands::terminal_close, auth::cli_login_start, auth::cli_login_poll, auth::open_platform_web])
 		.run(tauri::generate_context!())
 		.expect("启动 Tauri 应用失败");
 }
@@ -96,11 +96,19 @@ fn resolve_sidecar() -> Result<(String, String), Box<dyn std::error::Error>> {
 		return Ok((exe, cwd));
 	}
 
-	// sidecar 文件名（与 Tauri externalBin 命名约定 + build.sh 产物一致）
-	let sidecar_name = if cfg!(target_os = "windows") {
-		"gitpilot-rpc-x86_64-pc-windows-msvc.exe"
+	// sidecar 文件名：源码目录使用 target 后缀产物，Tauri 安装包会将 externalBin
+	// 规范化为不带 target 后缀的基名；两种形式都必须支持，否则安装态主窗口能启动
+	// 但本地 Coding Agent 不会被拉起。
+	let sidecar_names: &[&str] = if cfg!(target_os = "windows") {
+		&[
+			"gitpilot-rpc-x86_64-pc-windows-msvc.exe",
+			"gitpilot-rpc.exe",
+		]
 	} else {
-		"gitpilot-rpc-x86_64-unknown-linux-gnu"
+		&[
+			"gitpilot-rpc-x86_64-unknown-linux-gnu",
+			"gitpilot-rpc",
+		]
 	};
 
 	// 生产期：Tauri externalBin 放在主程序同级目录，资源在同级 resources/
@@ -108,17 +116,23 @@ fn resolve_sidecar() -> Result<(String, String), Box<dyn std::error::Error>> {
 		.parent()
 		.map(PathBuf::from)
 		.unwrap_or_else(|| PathBuf::from("."));
-	let prod_candidate = exe_dir.join(sidecar_name);
-	if prod_candidate.exists() {
-		return Ok((
-			prod_candidate.to_string_lossy().to_string(),
-			exe_dir.join("resources").to_string_lossy().to_string(),
-		));
+	for sidecar_name in sidecar_names {
+		let prod_candidate = exe_dir.join(sidecar_name);
+		if prod_candidate.exists() {
+			return Ok((
+				prod_candidate.to_string_lossy().to_string(),
+				exe_dir.join("resources").to_string_lossy().to_string(),
+			));
+		}
 	}
 
 	// 开发期 fallback：sidecar exe 在 binaries/，资源在 resources/（sidecar cwd 指向 resources/，相对路径读取 theme/、export-html/）
 	let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-	let dev_exe = manifest.join("binaries").join(sidecar_name);
+	let dev_exe = sidecar_names
+		.iter()
+		.map(|name| manifest.join("binaries").join(name))
+		.find(|path| path.exists())
+		.unwrap_or_else(|| manifest.join("binaries").join(sidecar_names[0]));
 	let dev_cwd = manifest.join("resources");
 	Ok((
 		dev_exe.to_string_lossy().to_string(),

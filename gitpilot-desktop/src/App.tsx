@@ -4,30 +4,19 @@
  * React 层只消费 IPC 事件与本地 UI 状态；项目文件、Git 与 Shell 能力仍只存在于 sidecar。
  */
 import { useEffect, type ReactNode } from 'react';
-import { Loader2, RefreshCw, WifiOff, X } from 'lucide-react';
+import { Loader2, RefreshCw, WifiOff } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
 import { useWorkbenchStore } from '@/src/store/workbench';
-import { SessionSidebar } from '@/src/components/SessionSidebar';
-import { ChatView } from '@/src/components/ChatView';
-import { InputBox } from '@/src/components/InputBox';
-import { ExtensionUIModal } from '@/src/components/ExtensionUIModal';
 import { LoginPage } from '@/src/components/LoginPage';
-import { DesktopTitleBar } from '@/src/components/DesktopTitleBar';
-import { WorkbenchLayout } from '@/src/components/WorkbenchLayout';
-import { GlobalCommandPalette } from '@/src/components/GlobalCommandPalette';
-import { DesktopContextMenu } from '@/src/components/DesktopContextMenu';
-import { TerminalPanel } from '@/src/components/TerminalPanel';
+import { TargetContextMenu } from '@/src/components/desktop/TargetContextMenu';
+import { TargetUIGallery } from '@/src/components/desktop/TargetUIGallery';
+import { Button } from '@/src/components/ui/button';
+import { TargetDesktopShell } from '@/src/components/desktop/TargetDesktopShell';
 import { resolveWorkbenchShortcut } from '@/src/workbench/shortcuts';
-
-function ExecutionOutputPanel() {
-	const execution = useWorkbenchStore((s) => s.execution);
-	const selectedStepId = useWorkbenchStore((s) => s.selectedStepId);
-	const step = execution.steps.find((item) => item.id === selectedStepId) ?? execution.steps.at(-1);
-	const text = step?.result ?? step?.partialResult ?? step?.args ?? '选择执行步骤后，这里会显示 sidecar 返回的原始输出。';
-	return <div className="execution-output"><span className="pane-eyebrow">OUTPUT {step ? `· ${step.title}` : ''}</span><pre>{text}</pre></div>;
-}
+import styles from './App.module.css';
 
 export default function App() {
+	const galleryRequested = import.meta.env.DEV && (new URLSearchParams(window.location.search).has('ui-gallery') || import.meta.env.VITE_UI_GALLERY === '1');
 	const connection = useSessionStore((s) => s.connection);
 	const loggedIn = useSessionStore((s) => s.loggedIn);
 	const error = useSessionStore((s) => s.error);
@@ -44,9 +33,10 @@ export default function App() {
 	const requestModelPicker = useWorkbenchStore((s) => s.requestModelPicker);
 
 	useEffect(() => {
+		if (galleryRequested) return;
 		void connect();
 		return () => { void disconnect(); };
-	}, [connect, disconnect]);
+	}, [connect, disconnect, galleryRequested]);
 
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {
@@ -62,26 +52,17 @@ export default function App() {
 	}, [abort, closeGlobalPalette, globalPaletteOpen, isStreaming, newSession, openGlobalPalette, pendingExtensionUI.length, requestModelPicker]);
 
 	let content: ReactNode;
-	if (connection === 'connecting' || connection === 'idle') {
-		content = <div className="app-loading"><Loader2 size={22} className="animate-spin" /><span>正在连接本地 Coding Agent…</span></div>;
+	if (galleryRequested) {
+		content = <TargetUIGallery />;
+	} else if (connection === 'connecting' || connection === 'idle') {
+		content = <div className={styles.loading}><Loader2 size={22} className="animate-spin" /><span>正在连接本地 Coding Agent…</span></div>;
 	} else if (connection === 'disconnected') {
-		content = <div className="app-disconnected"><WifiOff size={28} /><div><p>与 Coding Agent 的连接已断开</p><small>sidecar 进程可能已退出</small></div><button type="button" onClick={() => void connect()}><RefreshCw size={13} />重新连接</button></div>;
+		content = <div className={styles.disconnected}><WifiOff size={28} /><div><p>与 Coding Agent 的连接已断开</p><small>sidecar 进程可能已退出</small></div><Button type="button" variant="outline" size="sm" onClick={() => void connect()}><RefreshCw />重新连接</Button></div>;
 	} else if (!loggedIn) {
 		content = <LoginPage />;
 	} else {
-		content = <div className="app-workbench">
-		<DesktopTitleBar />
-		<WorkbenchLayout
-			left={<SessionSidebar />}
-			center={<main className="workbench-conversation"><ChatView /><InputBox /></main>}
-			bottom={<ExecutionOutputPanel />}
-			terminal={<TerminalPanel />}
-		/>
-		<ExtensionUIModal />
-		<GlobalCommandPalette onNewSession={() => void newSession()} onAbort={() => void abort()} />
-		{error && <div className="workbench-error"><span>{error}</span><button type="button" onClick={clearError} aria-label="关闭错误提示"><X size={14} /></button></div>}
-		</div>;
+		content = <TargetDesktopShell newSession={newSession} abort={abort} error={error} clearError={clearError} />;
 	}
 
-	return <><DesktopContextMenu />{content}</>;
+	return <TargetContextMenu>{content}</TargetContextMenu>;
 }

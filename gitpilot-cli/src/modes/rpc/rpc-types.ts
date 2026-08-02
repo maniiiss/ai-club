@@ -39,7 +39,8 @@ export type RpcCommand =
 	| { id?: string; type: "prompt"; message: string; images?: ImageContent[]; streamingBehavior?: "steer" | "followUp" }
 	| { id?: string; type: "steer"; message: string; images?: ImageContent[] }
 	| { id?: string; type: "follow_up"; message: string; images?: ImageContent[] }
-	| { id?: string; type: "abort" }
+	/** 中止当前执行；clearQueue 用于桌面端停止时同步取消未执行引导。 */
+	| { id?: string; type: "abort"; clearQueue?: boolean }
 	| { id?: string; type: "new_session"; parentSession?: string; cwd?: string }
 	// Attachments（桌面端上传附件预解析：路径或内联 base64 -> 文本/图片，结果随下一条 prompt 注入）
 	| { id?: string; type: "prepare_attachments"; items: AttachmentInput[] }
@@ -145,7 +146,13 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "prompt"; success: true }
 	| { id?: string; type: "response"; command: "steer"; success: true }
 	| { id?: string; type: "response"; command: "follow_up"; success: true }
-	| { id?: string; type: "response"; command: "abort"; success: true }
+	| {
+			id?: string;
+			type: "response";
+			command: "abort";
+			success: true;
+			data?: { clearedSteering: number; clearedFollowUp: number };
+	  }
 	| { id?: string; type: "response"; command: "new_session"; success: true; data: { cancelled: boolean } }
 	// Attachments（预解析附件，结果不触发事件流，直接随 response 返回）
 	| { id?: string; type: "response"; command: "prepare_attachments"; success: true; data: { attachments: PreparedAttachment[] } }

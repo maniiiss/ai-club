@@ -1,8 +1,11 @@
 /** 面向整个工作台的命令面板；slash 命令仍保留在输入框附近。 */
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Command, CornerDownLeft, Cpu, Plus, Square, Type } from 'lucide-react';
+import { useMemo } from 'react';
+import { CornerDownLeft, Cpu, Plus, Square, Type } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
 import { useWorkbenchStore, type WorkbenchCommand } from '@/src/store/workbench';
+import { Command as CommandRoot, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/src/components/ui/command';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/src/components/ui/dialog';
+import styles from './GlobalCommandPalette.module.css';
 
 interface GlobalCommandPaletteProps {
 	onNewSession: () => void;
@@ -15,9 +18,6 @@ export function GlobalCommandPalette({ onNewSession, onAbort }: GlobalCommandPal
 	const requestModelPicker = useWorkbenchStore((s) => s.requestModelPicker);
 	const commands = useSessionStore((s) => s.commands);
 	const prompt = useSessionStore((s) => s.prompt);
-	const [query, setQuery] = useState('');
-	const [active, setActive] = useState(0);
-	const inputRef = useRef<HTMLInputElement>(null);
 
 	const builtIns = useMemo<Array<WorkbenchCommand & { execute: () => void }>>(() => [
 		{ id: 'new-task', label: '新建任务', description: '在当前项目创建新的 Agent 会话', shortcut: 'Ctrl N', execute: onNewSession },
@@ -29,43 +29,24 @@ export function GlobalCommandPalette({ onNewSession, onAbort }: GlobalCommandPal
 		...builtIns,
 		...commands.map<WorkbenchCommand & { execute: () => void }>((command) => ({ id: `slash-${command.source}-${command.name}`, label: `/${command.name}`, description: command.description ?? '执行 sidecar 注册命令', execute: () => { void prompt(`/${command.name}`); } })),
 	], [builtIns, commands, prompt]);
-	const filtered = useMemo(() => {
-		const needle = query.trim().toLowerCase();
-		return all.filter((item) => !needle || `${item.label} ${item.description}`.toLowerCase().includes(needle));
-	}, [all, query]);
-
-	useEffect(() => {
-		if (!open) return;
-		setQuery('');
-		setActive(0);
-		requestAnimationFrame(() => inputRef.current?.focus());
-	}, [open]);
-	useEffect(() => setActive(0), [query]);
-	useEffect(() => {
-		if (!open) return;
-		const onKeyDown = (event: KeyboardEvent) => {
-			if (event.key === 'Escape') { event.preventDefault(); close(); }
-			if (event.key === 'ArrowDown') { event.preventDefault(); setActive((value) => Math.min(value + 1, Math.max(0, filtered.length - 1))); }
-			if (event.key === 'ArrowUp') { event.preventDefault(); setActive((value) => Math.max(value - 1, 0)); }
-			if (event.key === 'Enter') { event.preventDefault(); const item = filtered[active]; if (item) { close(); item.execute(); } }
-		};
-		window.addEventListener('keydown', onKeyDown);
-		return () => window.removeEventListener('keydown', onKeyDown);
-	}, [active, close, filtered, open]);
 	if (!open) return null;
 
-	return <div className="global-palette-backdrop" role="presentation" onMouseDown={close}>
-		<div className="global-palette" role="dialog" aria-modal="true" aria-label="命令面板" onMouseDown={(event) => event.stopPropagation()}>
-			<div className="global-palette__search"><Command size={16} /><input ref={inputRef} value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索操作、模型或 / 命令…" /></div>
-			<div className="global-palette__list">
-				{filtered.map((item, index) => <button key={item.id} type="button" onMouseEnter={() => setActive(index)} onClick={() => { close(); item.execute(); }} className={index === active ? 'is-active' : ''}>
-					<span>{item.id === 'new-task' ? <Plus size={15} /> : item.id === 'model' ? <Cpu size={15} /> : item.id === 'stop' ? <Square size={14} /> : <Type size={15} />}</span>
-					<span className="global-palette__copy"><b>{item.label}</b><small>{item.description}</small></span>
-					{item.shortcut && <kbd>{item.shortcut}</kbd>}
-				</button>)}
-				{filtered.length === 0 && <p className="global-palette__empty">没有匹配的工作台命令</p>}
-			</div>
-			<div className="global-palette__footer"><CornerDownLeft size={12} /> 执行 <span>↑↓ 选择</span><span>Esc 关闭</span></div>
-		</div>
-	</div>;
+	const iconFor = (id: string) => id === 'new-task' ? <Plus /> : id === 'model' ? <Cpu /> : id === 'stop' ? <Square /> : <Type />;
+	return <Dialog open={open} onOpenChange={(next) => { if (!next) close(); }}>
+		<DialogContent className={`${styles.dialog} p-0`} aria-describedby="global-command-description">
+			<DialogHeader className="sr-only"><DialogTitle>命令面板</DialogTitle><DialogDescription id="global-command-description">搜索并执行工作台操作</DialogDescription></DialogHeader>
+			<CommandRoot>
+				<CommandInput placeholder="搜索操作、模型或 / 命令…" />
+				<CommandList>
+					<CommandEmpty>没有匹配的工作台命令</CommandEmpty>
+					{all.map((item) => <CommandItem key={item.id} value={`${item.label} ${item.description}`} onSelect={() => { close(); item.execute(); }}>
+						<span className={styles.itemIcon}>{iconFor(item.id)}</span>
+						<span className={styles.itemCopy}><b>{item.label}</b><small>{item.description}</small></span>
+						{item.shortcut && <kbd>{item.shortcut}</kbd>}
+					</CommandItem>)}
+				</CommandList>
+				<div className={styles.footer}><CornerDownLeft /> 执行 <span>↑↓ 选择</span><span>Esc 关闭</span></div>
+			</CommandRoot>
+		</DialogContent>
+	</Dialog>;
 }

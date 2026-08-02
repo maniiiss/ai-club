@@ -2,6 +2,8 @@
 import { useEffect, useState } from 'react';
 import { ChevronRight, LoaderCircle } from 'lucide-react';
 import { getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionRun, type ExecutionStep } from '@/src/store/workbench';
+import { Button } from '@/src/components/ui/button';
+import styles from './ExecutionActivity.module.css';
 
 export function getExecutionActivityLabel(execution: ExecutionRun, isStreaming: boolean): string | null {
 	if (!isStreaming) return null;
@@ -72,22 +74,22 @@ export function ExecutionBatch({ steps }: { steps: ExecutionStep[] }) {
 	const selected = steps.find((step) => step.id === selectedId) ?? steps.at(-1);
 
 	return (
-		<section className="chat-execution chat-execution--batch" aria-label="已完成的 Agent 执行批次">
-			<button type="button" className="chat-execution__summary" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
-				<ChevronRight size={13} aria-hidden="true" className={`chat-execution__chevron ${expanded ? 'is-expanded' : ''}`} />
-				<span className="chat-execution__label">{describeExecutionBatch(steps)}</span>
-			</button>
-			<div className={`chat-execution__expanded ${expanded ? 'is-expanded' : ''}`} aria-hidden={!expanded} inert={!expanded}>
-				<div className="chat-execution__expanded-inner">
-					<div className="chat-execution__steps" aria-label="本批执行步骤">
+		<section className={`${styles.root} ${styles.batch}`} aria-label="已完成的 Agent 执行批次">
+			<Button type="button" variant="ghost" size="sm" className={styles.summary} onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
+				<ChevronRight size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
+				<span className={styles.label}>{describeExecutionBatch(steps)}</span>
+			</Button>
+			<div className={`${styles.expanded} ${expanded ? styles.expandedOpen : ''}`} aria-hidden={!expanded} inert={!expanded}>
+				<div className={styles.expandedInner}>
+					<div className={styles.steps} aria-label="本批执行步骤">
 						{steps.map((step) => (
-							<button key={step.id} type="button" onClick={() => { setSelectedId(step.id); selectStep(step.id); }} className={`chat-execution__step ${selected?.id === step.id ? 'is-selected' : ''}`}>
+							<Button key={step.id} type="button" variant="ghost" size="sm" onClick={() => { setSelectedId(step.id); selectStep(step.id); }} className={`${styles.step} ${selected?.id === step.id ? styles.selected : ''}`}>
 								<span>{describeExecutionStep(step)}</span>
-							</button>
+							</Button>
 						))}
 					</div>
-					{selected && <div className="chat-execution__detail">
-						<span className="chat-execution__detail-title">{selected.kind === 'command' ? 'Shell' : selected.title || '工具输出'}</span>
+					{selected && <div className={styles.detail}>
+						<span className={styles.detailTitle}>{selected.kind === 'command' ? 'Shell' : selected.title || '工具输出'}</span>
 						<pre>{selected.error ?? selected.result ?? selected.partialResult ?? selected.args ?? ''}</pre>
 					</div>}
 				</div>
@@ -118,33 +120,33 @@ export function ExecutionActivity({ isStreaming }: { isStreaming: boolean }) {
 	if (!label) return null;
 
 	const activityLabel = isPending
-		? <span className="chat-execution__label is-running" role="status" title={label}><LoaderCircle size={14} aria-hidden="true" className="chat-execution__spinner" />{label}</span>
-		: <span className="chat-execution__label is-running" title={label}>{label}</span>;
+		? <span className={`${styles.label} ${styles.running}`} role="status" title={label}><LoaderCircle size={14} aria-hidden="true" className={styles.spinner} />{label}</span>
+		: <span className={`${styles.label} ${styles.running}`} title={label}>{label}</span>;
 
 	return (
-		<section className="chat-execution" aria-label="Agent 执行过程">
+		<section className={styles.root} aria-label="Agent 执行过程">
 			{canExpand ? (
-				<button type="button" className="chat-execution__summary" onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
-					<ChevronRight size={13} aria-hidden="true" className={`chat-execution__chevron ${expanded ? 'is-expanded' : ''}`} />
+				<Button type="button" variant="ghost" size="sm" className={styles.summary} onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
+					<ChevronRight size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
 					{activityLabel}
-				</button>
-			) : <span className="chat-execution__summary is-static" aria-live="polite">{activityLabel}</span>}
+				</Button>
+			) : <span className={`${styles.summary} ${styles.static}`} aria-live="polite">{activityLabel}</span>}
 			{canExpand && (
-				<div className={`chat-execution__expanded ${expanded ? 'is-expanded' : ''}`} aria-hidden={!expanded} inert={!expanded}>
-					<div className="chat-execution__expanded-inner">
-						{visibleSteps.length === 0 ? <div className="chat-execution__thinking">
-							<span className="chat-execution__thinking-title">思考过程</span>
+				<div className={`${styles.expanded} ${expanded ? styles.expandedOpen : ''}`} aria-hidden={!expanded} inert={!expanded}>
+					<div className={styles.expandedInner}>
+						{visibleSteps.length === 0 ? <div className={styles.thinking}>
+							<span className={styles.thinkingTitle}>思考过程</span>
 							<pre>{execution.thinking}</pre>
 						</div> : <>
-							<div className="chat-execution__steps" aria-label="执行步骤">
+							<div className={styles.steps} aria-label="执行步骤">
 								{visibleSteps.map((step) => (
-									<button key={step.id} type="button" onClick={() => selectStep(step.id)} className={`chat-execution__step ${selected?.id === step.id ? 'is-selected' : ''}`}>
+									<Button key={step.id} type="button" variant="ghost" size="sm" onClick={() => selectStep(step.id)} className={`${styles.step} ${selected?.id === step.id ? styles.selected : ''}`}>
 										<span>{describeExecutionStep(step)}</span>
-									</button>
+								</Button>
 								))}
 							</div>
-							{selected && <div className="chat-execution__detail">
-								<span className="chat-execution__detail-title">{selected.kind === 'command' ? 'Shell' : selected.title || '工具输出'}</span>
+							{selected && <div className={styles.detail}>
+								<span className={styles.detailTitle}>{selected.kind === 'command' ? 'Shell' : selected.title || '工具输出'}</span>
 								<pre>{selected.error ?? selected.result ?? selected.partialResult ?? selected.args ?? ''}</pre>
 							</div>}
 						</>}

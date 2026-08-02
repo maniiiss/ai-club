@@ -45,6 +45,8 @@ export interface LayoutPreferences {
 	leftWidth: number;
 	rightWidth: number;
 	bottomOpen: boolean;
+	/** 底部面板（终端/输出）高度，允许用户上下拖动调整。 */
+	bottomHeight: number;
 	leftCollapsed: boolean;
 	rightCollapsed: boolean;
 }
@@ -57,18 +59,53 @@ export interface WorkbenchCommand {
 }
 
 const LAYOUT_KEY = 'gitpilot-desktop.workbench-layout';
-const DEFAULT_LAYOUT: LayoutPreferences = {
+/** 面板宽度边界与拖动手柄保持一致，避免旧版 localStorage 或异常输入撑破工作台。 */
+export const WORKBENCH_WIDTH_LIMITS = {
+	left: { min: 220, max: 420 },
+	right: { min: 280, max: 520 },
+} as const;
+
+/** 底部面板高度边界：与拖动手柄保持一致，避免终端被拖到不可用或撑出视口。 */
+export const WORKBENCH_BOTTOM_HEIGHT_LIMITS = {
+	min: 120,
+	max: 520,
+} as const;
+
+export const DEFAULT_LAYOUT: LayoutPreferences = {
 	leftWidth: 272,
 	rightWidth: 344,
 	bottomOpen: false,
+	bottomHeight: 220,
 	leftCollapsed: false,
 	rightCollapsed: false,
 };
 
+function boundedWidth(value: unknown, fallback: number, limits: { min: number; max: number }): number {
+	if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+	return Math.round(Math.max(limits.min, Math.min(limits.max, value)));
+}
+
+/**
+ * 归一化持久化布局与 action patch。
+ *
+ * 业务意图：侧栏名称、操作区和执行面板必须始终拥有可预期的最小/最大空间；
+ * 即使用户升级前保存了异常值，恢复布局也不能让中心工作区变成负宽度或不可用窄条。
+ */
+export function normalizeLayoutPreferences(value: Partial<LayoutPreferences> | null | undefined): LayoutPreferences {
+	return {
+		leftWidth: boundedWidth(value?.leftWidth, DEFAULT_LAYOUT.leftWidth, WORKBENCH_WIDTH_LIMITS.left),
+		rightWidth: boundedWidth(value?.rightWidth, DEFAULT_LAYOUT.rightWidth, WORKBENCH_WIDTH_LIMITS.right),
+		bottomOpen: value?.bottomOpen === true,
+		bottomHeight: boundedWidth(value?.bottomHeight, DEFAULT_LAYOUT.bottomHeight, WORKBENCH_BOTTOM_HEIGHT_LIMITS),
+		leftCollapsed: value?.leftCollapsed === true,
+		rightCollapsed: value?.rightCollapsed === true,
+	};
+}
+
 function loadLayout(): LayoutPreferences {
 	try {
 		const stored = localStorage.getItem(LAYOUT_KEY);
-		return stored ? { ...DEFAULT_LAYOUT, ...(JSON.parse(stored) as Partial<LayoutPreferences>) } : DEFAULT_LAYOUT;
+		return stored ? normalizeLayoutPreferences(JSON.parse(stored) as Partial<LayoutPreferences>) : DEFAULT_LAYOUT;
 	} catch {
 		return DEFAULT_LAYOUT;
 	}
@@ -226,7 +263,7 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 	modelPickerRequest: 0,
 	composerPrefill: null,
 	updateLayout: (patch) => {
-		const layout = { ...get().layout, ...patch };
+		const layout = normalizeLayoutPreferences({ ...get().layout, ...patch });
 		saveLayout(layout);
 		set({ layout });
 	},
