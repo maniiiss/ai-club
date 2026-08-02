@@ -144,7 +144,7 @@ class TaskRequirementAiServiceTests {
                 "chat-key"
         ));
         when(modelConfigService.invokePromptWithUsage(any(ModelConfigService.ResolvedModelConfig.class), anyString(), anyString(), anyInt(), anyBoolean()))
-                .thenReturn(new ModelConfigService.ModelInvocation("# 用户故事\n\n补充说明", null, null, null));
+                .thenReturn(new ModelConfigService.ModelInvocation("# 用户故事\n\n补充说明", null, null, null, null));
 
         TaskRequirementAiResult result = taskRequirementAiService.generate(1L, new TaskRequirementAiRequest("STANDARDIZE", null));
 
@@ -193,7 +193,7 @@ class TaskRequirementAiServiceTests {
                             }
                           ]
                         }
-                        """, null, null, null));
+                        """, null, null, null, null));
 
         TaskRequirementAiResult result = taskRequirementAiService.generate(1L, new TaskRequirementAiRequest("BREAKDOWN", 4L));
 
@@ -241,7 +241,7 @@ class TaskRequirementAiServiceTests {
                             }
                           ]
                         }
-                        """, null, null, null));
+                        """, null, null, null, null));
 
         TaskRequirementAiResult result = taskRequirementAiService.generate(1L, new TaskRequirementAiRequest("TEST_CASES", 5L));
 
@@ -307,7 +307,7 @@ class TaskRequirementAiServiceTests {
                             }
                           ]
                         }
-                        """, null, null, null));
+                        """, null, null, null, null));
 
         TaskRequirementAiResult result = taskRequirementAiService.generate(1L, new TaskRequirementAiRequest("TEST_CASES", 6L));
 
@@ -336,8 +336,8 @@ class TaskRequirementAiServiceTests {
                 "chat-key"
         ));
         when(modelConfigService.invokePromptWithUsage(any(ModelConfigService.ResolvedModelConfig.class), anyString(), anyString(), anyInt(), anyBoolean()))
-                .thenReturn(new ModelConfigService.ModelInvocation("", null, null, null))
-                .thenReturn(new ModelConfigService.ModelInvocation("## 功能测试\n1. 验证登录", null, null, null));
+                .thenReturn(new ModelConfigService.ModelInvocation("", null, null, null, null))
+                .thenReturn(new ModelConfigService.ModelInvocation("## 功能测试\n1. 验证登录", null, null, null, null));
 
         TaskRequirementAiResult result = taskRequirementAiService.generate(1L, new TaskRequirementAiRequest("TEST_CASES", 7L));
 

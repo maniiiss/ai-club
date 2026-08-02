@@ -214,7 +214,7 @@ public class AgentExecutionService {
         return agentInvocationRecorder.trackWithUsage(context, sink -> {
             ModelConfigService.ModelInvocation invocation = modelConfigService.invokeVisionPromptWithUsage(
                     resolved, systemPrompt, textPrompt, images, 1500);
-            sink.setUsage(invocation.promptTokens(), invocation.completionTokens(), invocation.totalTokens());
+            sink.setUsage(invocation.promptTokens(), invocation.completionTokens(), invocation.totalTokens(), invocation.cachedTokens());
             sink.setOutputChars(invocation.text() == null ? 0 : invocation.text().length());
             return invocation.text();
         });
@@ -1169,7 +1169,7 @@ public class AgentExecutionService {
         return agentInvocationRecorder.trackWithUsage(ctx, sink -> {
             ModelConfigService.ModelInvocation inv =
                     modelConfigService.invokePromptWithUsage(modelConfigId, systemPrompt, userPrompt);
-            sink.setUsage(inv.promptTokens(), inv.completionTokens(), inv.totalTokens());
+            sink.setUsage(inv.promptTokens(), inv.completionTokens(), inv.totalTokens(), inv.cachedTokens());
             sink.setOutputChars(inv.text() == null ? 0 : inv.text().length());
             return inv.text();
         });

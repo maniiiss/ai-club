@@ -79,7 +79,7 @@ class ApiTestCaseAiServiceTests {
         when(aiModelConfigRepository.findAllByEnabledTrueAndModelTypeOrderByIdAsc(ModelConfigService.MODEL_TYPE_CHAT)).thenReturn(List.of(chatModel));
         when(modelConfigService.resolveModelConfig(3L)).thenReturn(resolved(chatModel));
         when(modelConfigService.invokePromptWithUsage(any(ModelConfigService.ResolvedModelConfig.class), anyString(), anyString(), anyInt(), anyBoolean()))
-                .thenReturn(new ModelConfigService.ModelInvocation(aiJson(9), null, null, null));
+                .thenReturn(new ModelConfigService.ModelInvocation(aiJson(9), null, null, null, null));
 
         ApiTestCaseAiResult result = apiTestCaseAiService.generate(10L, 101L, new ApiTestGenerationRequest(null));
 
@@ -111,7 +111,7 @@ class ApiTestCaseAiServiceTests {
         when(aiModelConfigRepository.findAllByEnabledTrueAndModelTypeOrderByIdAsc(ModelConfigService.MODEL_TYPE_CHAT)).thenReturn(List.of(chatModel));
         when(modelConfigService.resolveModelConfig(3L)).thenReturn(resolved(chatModel));
         when(modelConfigService.invokePromptWithUsage(any(ModelConfigService.ResolvedModelConfig.class), anyString(), anyString(), anyInt(), anyBoolean()))
-                .thenReturn(new ModelConfigService.ModelInvocation(aiJson(1), null, null, null));
+                .thenReturn(new ModelConfigService.ModelInvocation(aiJson(1), null, null, null, null));
 
         apiTestCaseAiService.generate(10L, 101L, new ApiTestGenerationRequest(null));
 

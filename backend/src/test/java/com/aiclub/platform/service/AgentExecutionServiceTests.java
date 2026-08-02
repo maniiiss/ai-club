@@ -112,7 +112,7 @@ class AgentExecutionServiceTests {
                 contains("生成 AI 可执行计划")
         )).thenReturn(new ModelConfigService.ModelInvocation("""
                 {"summary":"AI 计划已生成","executionMarkdown":"# 计划","recommendedMode":"SEQUENTIAL","shards":[],"manualItems":[],"notes":[]}
-                """, null, null, null));
+                """, null, null, null, null));
 
         String output = agentExecutionService.runAgent(11L, "仓库：demo");
 
@@ -528,7 +528,7 @@ class AgentExecutionServiceTests {
                 .thenReturn(Optional.of(agent));
         when(modelConfigService.resolveModelConfig(8L)).thenReturn(resolved);
         when(modelConfigService.invokeVisionPromptWithUsage(eq(resolved), eq("按序号描述图片"), eq("描述界面"), eq(images), eq(1500)))
-                .thenReturn(new ModelConfigService.ModelInvocation("{\"images\":[]}", 10, 5, 15));
+                .thenReturn(new ModelConfigService.ModelInvocation("{\"images\":[]}", 10, 5, 15, null));
 
         AgentEntity resolvedAgent = agentExecutionService.resolveImageUnderstandingAgent().orElseThrow();
         String output = agentExecutionService.runVisionAgent(resolvedAgent, images, "描述界面");

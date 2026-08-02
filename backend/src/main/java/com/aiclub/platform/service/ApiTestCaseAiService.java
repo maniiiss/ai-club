@@ -82,7 +82,7 @@ public class ApiTestCaseAiService {
                     2800,
                     false
             );
-            sink.setUsage(inv.promptTokens(), inv.completionTokens(), inv.totalTokens());
+            sink.setUsage(inv.promptTokens(), inv.completionTokens(), inv.totalTokens(), inv.cachedTokens());
             sink.setOutputChars(inv.text() == null ? 0 : inv.text().length());
             return inv.text();
         });

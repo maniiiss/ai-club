@@ -262,7 +262,7 @@ public class ModelConfigService {
                     .build();
             return agentInvocationRecorder.trackWithUsage(fallbackCtx, sink -> {
                 ModelInvocation inv = doInvokePromptWithUsage(config, systemPrompt, userPrompt, maxTokens, jsonMode);
-                sink.setUsage(inv.promptTokens(), inv.completionTokens(), inv.totalTokens());
+                sink.setUsage(inv.promptTokens(), inv.completionTokens(), inv.totalTokens(), inv.cachedTokens());
                 sink.setOutputChars(charLength(inv.text()));
                 return inv;
             });
@@ -651,7 +651,7 @@ public class ModelConfigService {
             return new ModelInvocation(text,
                     usage == null ? null : usage.input(),
                     usage == null ? null : usage.output(),
-                    usage == null ? null : usage.total());
+                    usage == null ? null : usage.total(), usage == null ? null : usage.cached());
         }
         if (response.statusCode() == 404) {
             return invokeOpenAiChatCompletionsPromptWithUsage(baseUrl, config, systemPrompt, userPrompt, maxTokens, jsonMode);
@@ -698,7 +698,7 @@ public class ModelConfigService {
                     extractOpenAiText(tree),
                     usage == null ? null : usage.input(),
                     usage == null ? null : usage.output(),
-                    usage == null ? null : usage.total()
+                    usage == null ? null : usage.total(), usage == null ? null : usage.cached()
             );
         }
         if (response.statusCode() == 404) {
@@ -735,7 +735,7 @@ public class ModelConfigService {
                 extractOpenAiChatText(tree),
                 usage == null ? null : usage.input(),
                 usage == null ? null : usage.output(),
-                usage == null ? null : usage.total()
+                usage == null ? null : usage.total(), usage == null ? null : usage.cached()
         );
     }
 
@@ -778,7 +778,7 @@ public class ModelConfigService {
                 extractAnthropicText(tree),
                 usage == null ? null : usage.input(),
                 usage == null ? null : usage.output(),
-                usage == null ? null : usage.total()
+                usage == null ? null : usage.total(), usage == null ? null : usage.cached()
         );
     }
 
@@ -814,7 +814,7 @@ public class ModelConfigService {
         return new ModelInvocation(text,
                 usage == null ? null : usage.input(),
                 usage == null ? null : usage.output(),
-                usage == null ? null : usage.total());
+                usage == null ? null : usage.total(), usage == null ? null : usage.cached());
     }
 
     private ModelInvocation invokeAnthropicPromptWithUsage(ResolvedModelConfig config,
@@ -851,7 +851,7 @@ public class ModelConfigService {
         return new ModelInvocation(text,
                 usage == null ? null : usage.input(),
                 usage == null ? null : usage.output(),
-                usage == null ? null : usage.total());
+                usage == null ? null : usage.total(), usage == null ? null : usage.cached());
     }
 
     private String extractOpenAiText(JsonNode body) {
@@ -883,7 +883,8 @@ public class ModelConfigService {
         if (inputTokens == null && outputTokens == null && totalTokens == null) {
             return null;
         }
-        return new ModelInvocationUsage(inputTokens, outputTokens, totalTokens);
+        Integer cachedTokens = jsonIntOrNull(usage.path("input_tokens_details").path("cached_tokens"));
+        return new ModelInvocationUsage(inputTokens, outputTokens, totalTokens, cachedTokens);
     }
 
     /**
@@ -900,7 +901,8 @@ public class ModelConfigService {
         if (prompt == null && completion == null && total == null) {
             return null;
         }
-        return new ModelInvocationUsage(prompt, completion, total);
+        Integer cachedTokens = jsonIntOrNull(usage.path("prompt_tokens_details").path("cached_tokens"));
+        return new ModelInvocationUsage(prompt, completion, total, cachedTokens);
     }
 
     /**
@@ -917,7 +919,8 @@ public class ModelConfigService {
             return null;
         }
         Integer total = (inputTokens == null ? 0 : inputTokens) + (outputTokens == null ? 0 : outputTokens);
-        return new ModelInvocationUsage(inputTokens, outputTokens, total);
+        Integer cachedTokens = jsonIntOrNull(usage.path("cache_read_input_tokens"));
+        return new ModelInvocationUsage(inputTokens, outputTokens, total, cachedTokens);
     }
 
     private String extractOpenAiChatText(JsonNode body) {
@@ -1121,7 +1124,7 @@ public class ModelConfigService {
     /**
      * 模型调用返回结果，含文本和 usage 信息。
      */
-    public record ModelInvocation(String text, Integer promptTokens, Integer completionTokens, Integer totalTokens) {
+    public record ModelInvocation(String text, Integer promptTokens, Integer completionTokens, Integer totalTokens, Integer cachedTokens) {
     }
 
     /**
@@ -1138,7 +1141,7 @@ public class ModelConfigService {
     /**
      * OpenAI / Anthropic usage 的私有解析中间类型。
      */
-    private record ModelInvocationUsage(Integer input, Integer output, Integer total) {
+    private record ModelInvocationUsage(Integer input, Integer output, Integer total, Integer cached) {
     }
 
     /**
