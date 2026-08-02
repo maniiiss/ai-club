@@ -18,6 +18,8 @@ export interface ProjectTreeTask {
 	cwd: string;
 	modified?: string;
 	messageCount: number;
+	/** 任务是否正在流式执行，用于侧栏显示“进行中”加载图标。 */
+	isStreaming?: boolean;
 }
 
 function isWithinProject(path: string, projectPath: string): boolean {

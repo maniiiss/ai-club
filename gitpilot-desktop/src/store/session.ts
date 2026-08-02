@@ -36,7 +36,7 @@ import type {
 	ThinkingLevel,
 } from '@/src/rpc/types';
 import { getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionStep } from '@/src/store/workbench';
-import { aggregateChangedFiles, parseOpsFromMessages, parseOpsFromSteps, type ChangedFile } from '@/src/store/changed-files';
+import { aggregateChangedFiles, parseOpsFromMessages, parseOpsFromSteps, type ChangedFile, type EditOperation } from '@/src/store/changed-files';
 
 // ============================================================================
 // UI 消息模型
@@ -300,6 +300,7 @@ function currentSessionListItem(state: RpcSessionState | null, cwd: string | und
 		modified: now,
 		messageCount: state.messageCount,
 		firstMessage: '',
+		isStreaming: state.isStreaming,
 	};
 }
 
@@ -623,22 +624,41 @@ export function applyEvent(set: SessionSetter, e: AgentSessionEvent): void {
 
 /**
  * 将历史消息转为聊天气泡。
- * toolResult 和仅含 toolCall/thinking 的 assistant 消息属于执行记录，不能作为聊天正文回放；
- * 但 assistant 若有编辑类 toolCall，则在其文本气泡后追加一张改动文件卡片（历史回放可见）。
+ * toolResult 和仅含 toolCall/thinking 的 assistant 消息属于执行记录，不能作为聊天正文回放。
+ *
+ * 改动文件卡片按“一次执行”汇总：以 user 消息分段，段内累积所有 assistant 的编辑操作，
+ * 在该段末尾（遇到下一个 user 或消息末尾时）追加一张汇总卡片。
+ * 这样与实时 agent_settled 时一张汇总卡片对齐，避免分散到对话中间。
  */
 export function agentMessagesToUi(messages: unknown[]): UIMessage[] {
-	return messages.flatMap((m, i) => {
-		const msg = m as { role?: string; content?: Array<{ type?: string; text?: string }> };
-		if (msg.role !== 'user' && msg.role !== 'assistant') return [];
-		const text = (msg.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
-		const out: UIMessage[] = [];
-		if (text.trim()) out.push({ id: `hist-${i}`, role: msg.role as MessageRole, text, kind: 'text' as MessageKind });
-		if (msg.role === 'assistant') {
-			const files = aggregateChangedFiles(parseOpsFromMessages(messages, i));
-			if (files.length > 0) out.push({ id: `hist-cf-${i}`, role: 'assistant', text: '', kind: 'changed_files', changedFiles: files });
+	const result: UIMessage[] = [];
+	let pendingOps: EditOperation[] = [];
+	/** 将当前段累积的编辑操作汇总为一张改动文件卡片，追加到段末尾。 */
+	const flushChangedFiles = () => {
+		if (pendingOps.length === 0) return;
+		const files = aggregateChangedFiles(pendingOps);
+		if (files.length > 0) {
+			result.push({ id: `hist-cf-${result.length}`, role: 'assistant' as const, text: '', kind: 'changed_files' as const, changedFiles: files });
 		}
-		return out;
+		pendingOps = [];
+	};
+	messages.forEach((m, i) => {
+		const msg = m as { role?: string; content?: Array<{ type?: string; text?: string }> };
+		if (msg.role === 'user') {
+			// 新段开始前，先把上一段的改动文件汇总卡片落到段尾。
+			flushChangedFiles();
+			const text = (msg.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
+			if (text.trim()) result.push({ id: `hist-${i}`, role: 'user' as const, text, kind: 'text' as MessageKind });
+		} else if (msg.role === 'assistant') {
+			const text = (msg.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
+			if (text.trim()) result.push({ id: `hist-${i}`, role: 'assistant' as const, text, kind: 'text' as MessageKind });
+			// 累积该 assistant 的编辑操作，待段末尾汇总。
+			pendingOps.push(...parseOpsFromMessages(messages, i));
+		}
+		// toolResult 不进聊天流，其编辑信息已通过对应 assistant 的 parseOpsFromMessages 累积。
 	});
+	flushChangedFiles();
+	return result;
 }
 
 // ============================================================================
@@ -703,7 +723,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			applyEvent(set, e);
 			if (e.type === 'agent_settled') void get().flushGuidanceQueue();
 			// 首轮回答结束后 session 文件才会带上标题和首条消息，需要立即刷新左侧任务列表。
-			if (e.type === 'turn_end') void get().refreshSessionList();
+			if (e.type === 'turn_end' || e.type === 'agent_settled') void get().refreshSessionList();
 		}));
 		unsubs.push(
 			onExtensionUI((req) => {
@@ -720,6 +740,11 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		// 后端可能在桌面应用运行期间停止；周期探测只影响底栏状态，不阻塞本地 Agent 会话。
 		const connectionPoll = window.setInterval(() => void get().refreshPlatformConnection(), 10_000);
 		unsubs.push(() => window.clearInterval(connectionPoll));
+		// 切换任务后后台 runtime 仍可能继续执行；低频刷新只在存在进行中任务时更新侧栏 loading。
+		const sessionPoll = window.setInterval(() => {
+			if (get().sessions.some((session) => session.isStreaming)) void get().refreshSessionList();
+		}, 4_000);
+		unsubs.push(() => window.clearInterval(sessionPoll));
 
 		// rpc:ready 可能在 listen 注册前已发出（Rust setup 时即 emit），
 		// 不依赖 ready 事件，直接拉取状态；失败由 refreshAll 内部 catch 记录 error。
@@ -869,7 +894,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		// 空白会话不占用任务列表；用户发送第一句后才立即显示为任务，回合结束再由 sidecar 扫描结果校正。
 		const created = currentSessionListItem(get().sessionState, get().currentProjectPath ?? undefined);
 		if (created) {
-			const provisional: SessionListItem = { ...created, firstMessage: message, messageCount: Math.max(1, created.messageCount) };
+				const provisional: SessionListItem = { ...created, firstMessage: message, messageCount: Math.max(1, created.messageCount), isStreaming: true };
 			set((state) => {
 				if (state.hiddenSessionPaths.includes(provisional.path)) return {};
 				const index = state.sessions.findIndex((item) => item.path === provisional.path);
@@ -880,6 +905,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 					modified: provisional.modified,
 					messageCount: Math.max(existing.messageCount, provisional.messageCount),
 					firstMessage: existing.firstMessage || message,
+					isStreaming: true,
 				};
 				return { sessions: state.sessions.map((item, itemIndex) => (itemIndex === index ? updated : item)) };
 			});
@@ -1144,11 +1170,13 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			if (requestVersion !== sessionSwitchRequestVersion) return;
 			await get().refreshAll();
 			if (requestVersion !== sessionSwitchRequestVersion) return;
+			// 被切回的会话可能仍在后台执行；保留 get_state 返回的流式状态，不能被历史回放清成 idle。
+			const restoredStreaming = get().sessionState?.isStreaming ?? get().isStreaming;
 			// 直接读取本次切换对应的历史，避免更晚发起的切换被旧响应覆盖。
 			const res = await rpc.getMessages();
 			if (requestVersion !== sessionSwitchRequestVersion) return;
 			if (res.success && res.command === 'get_messages' && Array.isArray(res.data.messages)) {
-				set({ messages: agentMessagesToUi(res.data.messages), _streamingAssistantId: null, isStreaming: false, isSessionLoading: false, selectedSessionPath: sessionPath, guidanceQueue: [], isFlushingGuidance: false, isStopping: false });
+				set({ messages: agentMessagesToUi(res.data.messages), _streamingAssistantId: null, isStreaming: restoredStreaming, isSessionLoading: false, selectedSessionPath: sessionPath, guidanceQueue: [], isFlushingGuidance: false, isStopping: false });
 			} else {
 				set({ isSessionLoading: false, selectedSessionPath: sessionPath });
 			}
