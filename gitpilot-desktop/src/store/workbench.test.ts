@@ -113,6 +113,16 @@ describe('Agent 工作台本地交互状态', () => {
 		useWorkbenchStore.getState().updateLayout({ rightCollapsed: false, bottomOpen: true });
 		expect(useWorkbenchStore.getState().layout).toMatchObject({ rightCollapsed: false, bottomOpen: true });
 	});
+
+	it('resetExecution 清空上一会话残留步骤与选中态，避免跨会话实时归档错位', () => {
+		useWorkbenchStore.setState({
+			execution: { ...runningRun(), reportedStepIds: ['tool-1'], steps: [{ id: 'tool-1', kind: 'edit', status: 'succeeded', title: 'edit', startedAt: 0, args: '{"path":"a.ts"}' }] },
+			selectedStepId: 'tool-1',
+		});
+		useWorkbenchStore.getState().resetExecution();
+		expect(useWorkbenchStore.getState().execution).toMatchObject({ id: 'idle', status: 'idle', lastPrompt: null, steps: [] });
+		expect(useWorkbenchStore.getState().selectedStepId).toBeNull();
+	});
 });
 
 describe('工作台快捷键优先级', () => {

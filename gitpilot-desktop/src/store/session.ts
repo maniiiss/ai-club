@@ -1064,6 +1064,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			const taskCwd = cwd ?? get().currentProjectPath ?? undefined;
 			// 空任务没有历史记录可选中，创建时立即取消旧任务高亮。
 			set({ sessionState: null, selectedSessionPath: null, isSessionLoading: false, messages: [], _streamingAssistantId: null, isStreaming: false, guidanceQueue: [], isFlushingGuidance: false, isStopping: false });
+			// 切换会话清空执行状态，避免上一会话步骤残留导致跨会话实时归档错位。
+			useWorkbenchStore.getState().resetExecution();
 			await rpc.newSession(taskCwd);
 			await get().refreshAll();
 		} catch (err) {
@@ -1079,6 +1081,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			saveCurrentProject(rootPath);
 			// 空任务没有历史记录可选中，创建时立即取消旧任务高亮。
 			set({ currentProjectPath: rootPath, sessionState: null, selectedSessionPath: null, isSessionLoading: false, messages: [], _streamingAssistantId: null, isStreaming: false, guidanceQueue: [], isFlushingGuidance: false, isStopping: false });
+			// 切换会话清空执行状态，避免上一会话步骤残留导致跨会话实时归档错位。
+			useWorkbenchStore.getState().resetExecution();
 			await rpc.newSession(rootPath);
 			await get().refreshAll();
 			const sessionPath = get().sessionState?.sessionFile;
@@ -1166,6 +1170,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			}
 			// 先更新侧栏选中态并清空旧正文，给用户明确反馈；RPC 与历史回显在后台继续完成。
 			set({ selectedSessionPath: sessionPath, isSessionLoading: true, sessionState: null, messages: [], _streamingAssistantId: null, isStreaming: false, guidanceQueue: [], isFlushingGuidance: false, isStopping: false });
+			// 切换会话清空执行状态，避免上一会话步骤残留导致跨会话实时归档错位（挂起会话切回时改由历史回放兜底）。
+			useWorkbenchStore.getState().resetExecution();
 			await rpc.switchSession(sessionPath);
 			if (requestVersion !== sessionSwitchRequestVersion) return;
 			await get().refreshAll();

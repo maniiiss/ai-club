@@ -245,6 +245,8 @@ interface WorkbenchStore {
 	/** 将一批已显示在聊天区的工具步骤标记为已归档，避免后续正文重复展示。 */
 	markExecutionStepsReported: (stepIds: string[]) => void;
 	markExecutionStopped: () => void;
+	/** 切换/新建会话时重置执行状态，避免上一会话的步骤残留导致跨会话实时归档错位。 */
+	resetExecution: () => void;
 	addApprovalStep: (request: RpcExtensionUIRequest) => void;
 	resolveApprovalStep: (requestId: string) => void;
 	selectStep: (id: string | null) => void;
@@ -278,6 +280,7 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 		return { execution: { ...state.execution, reportedStepIds } };
 	}),
 	markExecutionStopped: () => set((state) => ({ execution: { ...state.execution, status: 'stopped' } })),
+	resetExecution: () => set({ execution: { id: 'idle', status: 'idle', lastPrompt: null, steps: [] }, selectedStepId: null }),
 	addApprovalStep: (request) => {
 		const now = Date.now();
 		const detail = 'message' in request ? request.message : 'title' in request ? request.title : 'sidecar 正在等待用户输入';
