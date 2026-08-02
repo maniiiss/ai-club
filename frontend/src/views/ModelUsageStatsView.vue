@@ -44,6 +44,22 @@
             :value="p.code"
           />
         </el-select>
+        <el-select
+          v-model="filters.agentTypes"
+          multiple
+          collapse-tags
+          collapse-tags-tooltip
+          clearable
+          placeholder="来源"
+          style="width: 220px"
+        >
+          <el-option
+            v-for="t in options?.agentTypes ?? []"
+            :key="t.code"
+            :label="t.label"
+            :value="t.code"
+          />
+        </el-select>
         <el-radio-group v-model="filters.granularity">
           <el-radio-button value="day">日</el-radio-button>
           <el-radio-button value="week">周</el-radio-button>
@@ -92,6 +108,10 @@
       <el-card class="chart-card" shadow="never" v-loading="loading.overview">
         <template #header><span>Token 输入/输出分布</span></template>
         <v-chart class="chart" :option="tokenPieOption" autoresize />
+      </el-card>
+      <el-card class="chart-card" shadow="never" v-loading="loading.bySource">
+        <template #header><span>调用量来源分布</span></template>
+        <v-chart class="chart" :option="sourceBarOption" autoresize />
       </el-card>
     </div>
 
@@ -160,14 +180,16 @@ import {
   getModelUsageOptions,
   getModelUsageOverview,
   getModelUsageByModel,
-  getModelUsageTrend
+  getModelUsageTrend,
+  getModelUsageBySource
 } from '@/api/model-usage'
 import type {
   ModelBreakdown,
   ModelOverview,
   ModelTrendPoint,
   ModelUsageOptions,
-  ModelUsageQueryPayload
+  ModelUsageQueryPayload,
+  SourceBreakdown
 } from '@/api/model-usage'
 
 // 按需注册 ECharts 模块，避免全量引入增大打包体积。
@@ -181,19 +203,22 @@ interface Filters {
   range: [string, string] | null
   modelNames: string[]
   providers: string[]
+  agentTypes: string[]
   granularity: 'day' | 'week' | 'month'
 }
 
 const options = ref<ModelUsageOptions | null>(null)
 const overview = ref<ModelOverview | null>(null)
 const byModel = ref<ModelBreakdown[]>([])
+const bySource = ref<SourceBreakdown[]>([])
 const trend = ref<ModelTrendPoint[]>([])
-const loading = reactive({ overview: false, byModel: false, trend: false })
+const loading = reactive({ overview: false, byModel: false, bySource: false, trend: false })
 
 const filters = reactive<Filters>({
   range: defaultRange(),
   modelNames: [],
   providers: [],
+  agentTypes: [],
   granularity: 'day'
 })
 
@@ -222,6 +247,7 @@ function buildPayload(): ModelUsageQueryPayload {
   }
   if (filters.modelNames.length) payload.modelNames = [...filters.modelNames]
   if (filters.providers.length) payload.providers = [...filters.providers]
+  if (filters.agentTypes.length) payload.agentTypes = [...filters.agentTypes]
   return payload
 }
 
@@ -255,6 +281,17 @@ async function loadByModel() {
   }
 }
 
+async function loadBySource() {
+  loading.bySource = true
+  try {
+    bySource.value = await getModelUsageBySource(buildPayload())
+  } catch (e) {
+    ElMessage.error('加载来源分布失败')
+  } finally {
+    loading.bySource = false
+  }
+}
+
 async function loadTrend() {
   loading.trend = true
   try {
@@ -269,6 +306,7 @@ async function loadTrend() {
 function reload() {
   loadOverview()
   loadByModel()
+  loadBySource()
   loadTrend()
 }
 
@@ -306,6 +344,29 @@ const tokenPieOption = computed(() => {
         { name: '输出 Token', value: output, itemStyle: { color: '#e6a23c' } }
       ]
     }]
+  }
+})
+
+const sourceBarOption = computed(() => {
+  // Top 15 来源 + 其余合并为「其他」，避免 20 个类型切片过碎。
+  const top = bySource.value.slice(0, 15)
+  const rest = bySource.value.slice(15)
+  const names: string[] = []
+  const data: (number | { value: number; itemStyle: { color: string } })[] = []
+  for (const r of top) {
+    names.push(r.label || r.agentType)
+    data.push(r.total)
+  }
+  if (rest.length) {
+    names.push('其他')
+    data.push({ value: rest.reduce((s, r) => s + r.total, 0), itemStyle: { color: '#909399' } })
+  }
+  return {
+    tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
+    grid: { left: '3%', right: '6%', bottom: '3%', containLabel: true },
+    xAxis: { type: 'value' },
+    yAxis: { type: 'category', data: names, inverse: true },
+    series: [{ name: '调用数', type: 'bar', data, itemStyle: { color: '#409eff' } }]
   }
 })
 
@@ -414,7 +475,7 @@ function sortByUniqueUsers(a: ModelBreakdown, b: ModelBreakdown) {
 }
 .chart-row {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 16px;
 }
 .chart-card.full {

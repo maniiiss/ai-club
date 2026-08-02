@@ -47,7 +47,7 @@ class InternalModelUsageControllerTests {
         List<ModelUsageIngestItem> events = java.util.stream.IntStream.range(0, count)
                 .mapToObj(i -> new ModelUsageIngestItem(
                         "k" + i, "CODE_REVIEW", "OPENAI", "gpt-4o", null, 1L, null, (long) i, null,
-                        10, 5, 15, 100L, "SUCCESS", null))
+                        10, 5, 15, null, 100L, "SUCCESS", null))
                 .toList();
         return new ModelUsageIngestRequest(events);
     }

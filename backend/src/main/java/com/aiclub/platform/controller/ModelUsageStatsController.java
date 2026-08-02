@@ -9,6 +9,7 @@ import com.aiclub.platform.dto.ModelUsageStatsDtos.ModelTrendPoint;
 import com.aiclub.platform.dto.ModelUsageStatsDtos.ModelUsageOptions;
 import com.aiclub.platform.dto.ModelUsageStatsDtos.ModelUsageQueryRequest;
 import com.aiclub.platform.dto.ModelUsageStatsDtos.ProviderBreakdown;
+import com.aiclub.platform.dto.ModelUsageStatsDtos.SourceBreakdown;
 import com.aiclub.platform.service.ModelUsageStatsService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -69,5 +70,12 @@ public class ModelUsageStatsController {
     @OperationLog(actionCode = "MODEL_USAGE_BY_PROVIDER", actionName = "按供应商统计")
     public ApiResponse<List<ProviderBreakdown>> byProvider(@Valid @RequestBody ModelUsageQueryRequest request) {
         return ApiResponse.success(modelUsageStatsService.getByProvider(request));
+    }
+
+    @PostMapping("/by-source")
+    @RequirePermission("system:model-usage:view")
+    @OperationLog(actionCode = "MODEL_USAGE_BY_SOURCE", actionName = "按调用来源统计")
+    public ApiResponse<List<SourceBreakdown>> bySource(@Valid @RequestBody ModelUsageQueryRequest request) {
+        return ApiResponse.success(modelUsageStatsService.getBySource(request));
     }
 }

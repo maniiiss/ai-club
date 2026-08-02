@@ -21,6 +21,7 @@ public final class ModelUsageStatsDtos {
      * @param endTime    结束时间，空则取当前
      * @param modelNames 模型名过滤（按 model_name）
      * @param providers  供应商过滤（OPENAI/ANTHROPIC/HERMES 等）
+     * @param agentTypes 调用来源过滤（按 agent_type，AgentType 枚举名）
      * @param granularity 趋势粒度 day/week/month
      * @param limit      排行榜返回条数，默认 20
      */
@@ -28,6 +29,7 @@ public final class ModelUsageStatsDtos {
                                         String endTime,
                                         List<String> modelNames,
                                         List<String> providers,
+                                        List<String> agentTypes,
                                         String granularity,
                                         Integer limit) {
     }
@@ -41,7 +43,9 @@ public final class ModelUsageStatsDtos {
     }
 
     /** 看板筛选项集合。 */
-    public record ModelUsageOptions(List<ModelOptionItem> models, List<OptionItem> providers) {
+    public record ModelUsageOptions(List<ModelOptionItem> models,
+                                    List<OptionItem> providers,
+                                    List<OptionItem> agentTypes) {
     }
 
     /** 平台总览。 */
@@ -93,5 +97,16 @@ public final class ModelUsageStatsDtos {
                                     double successRate,
                                     long totalTokens,
                                     double avgDurationMs, long cachedTokens, Double cacheHitRate) {
+    }
+
+    /** 按调用来源（智能体类型）聚合。 */
+    public record SourceBreakdown(String agentType,
+                                  String label,
+                                  long total,
+                                  long success,
+                                  long failure,
+                                  double successRate,
+                                  long totalTokens,
+                                  double avgDurationMs, long cachedTokens, Double cacheHitRate) {
     }
 }

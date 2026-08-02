@@ -1,5 +1,6 @@
 package com.aiclub.platform.service;
 
+import com.aiclub.platform.agentusage.AgentType;
 import com.aiclub.platform.dto.ModelUsageStatsDtos.ModelBreakdown;
 import com.aiclub.platform.dto.ModelUsageStatsDtos.ModelOptionItem;
 import com.aiclub.platform.dto.ModelUsageStatsDtos.ModelOverview;
@@ -8,6 +9,7 @@ import com.aiclub.platform.dto.ModelUsageStatsDtos.ModelUsageOptions;
 import com.aiclub.platform.dto.ModelUsageStatsDtos.ModelUsageQueryRequest;
 import com.aiclub.platform.dto.ModelUsageStatsDtos.OptionItem;
 import com.aiclub.platform.dto.ModelUsageStatsDtos.ProviderBreakdown;
+import com.aiclub.platform.dto.ModelUsageStatsDtos.SourceBreakdown;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
@@ -71,7 +73,13 @@ public class ModelUsageStatsService {
         for (String code : providerCodes) {
             providers.add(new OptionItem(code, code));
         }
-        return new ModelUsageOptions(models, providers);
+
+        // 调用来源下拉：枚举全集 + 中文名，与智能体调用统计口径一致。
+        List<OptionItem> agentTypes = new ArrayList<>();
+        for (AgentType type : AgentType.values()) {
+            agentTypes.add(new OptionItem(type.name(), type.getDisplayName()));
+        }
+        return new ModelUsageOptions(models, providers, agentTypes);
     }
 
     // ---------- overview ----------
@@ -237,6 +245,41 @@ public class ModelUsageStatsService {
         return result;
     }
 
+    // ---------- by-source ----------
+
+    @SuppressWarnings("unchecked")
+    public List<SourceBreakdown> getBySource(ModelUsageQueryRequest request) {
+        TimeWindow window = resolveWindow(request);
+        WhereClause where = buildWhere(request, window);
+
+        String sql = "SELECT agent_type, " +
+                "  COUNT(*) AS total, " +
+                "  SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) AS success, " +
+                "  SUM(CASE WHEN status <> 'SUCCESS' THEN 1 ELSE 0 END) AS failure, " +
+                "  COALESCE(SUM(total_tokens), 0) AS total_tokens, " +
+                "  COALESCE(AVG(duration_ms), 0) AS avg_duration, " +
+                "  COALESCE(SUM(cached_tokens), 0) AS cached_tokens, " +
+                "  CASE WHEN COALESCE(SUM(prompt_tokens), 0) = 0 THEN NULL ELSE SUM(cached_tokens) * 1.0 / SUM(prompt_tokens) END AS cache_hit_rate " +
+                "FROM agent_invocation_log " + where.sql() +
+                " GROUP BY agent_type ORDER BY total DESC";
+        Query q = entityManager.createNativeQuery(sql);
+        where.applyParams(q);
+        List<Object[]> rows = q.getResultList();
+        List<SourceBreakdown> result = new ArrayList<>();
+        for (Object[] r : rows) {
+            String typeCode = String.valueOf(r[0]);
+            long total = toLong(r[1]);
+            long success = toLong(r[2]);
+            long failure = toLong(r[3]);
+            double successRate = total == 0 ? 0.0 : (double) success / total;
+            result.add(new SourceBreakdown(
+                    typeCode, resolveSourceLabel(typeCode),
+                    total, success, failure, round(successRate),
+                    toLong(r[4]), round(toDouble(r[5])), toLong(r[6]), r[7] == null ? null : ((Number) r[7]).doubleValue()));
+        }
+        return result;
+    }
+
     // ---------- helpers ----------
 
     private record TimeWindow(LocalDateTime start, LocalDateTime end) {
@@ -297,7 +340,24 @@ public class ModelUsageStatsService {
             sb.append("AND provider IN (:providers) ");
             params.add(new Object[]{"providers", request.providers()});
         }
+        if (request.agentTypes() != null && !request.agentTypes().isEmpty()) {
+            sb.append("AND agent_type IN (:agentTypes) ");
+            params.add(new Object[]{"agentTypes", request.agentTypes()});
+        }
         return new WhereClause(sb.toString(), params);
+    }
+
+    /**
+     * 解析智能体类型的中文名。code-processing 回传的类型可能不在枚举中，兜底返回原值，
+     * 保证看板不会因未知类型而报错或丢弃数据。
+     */
+    private static String resolveSourceLabel(String typeCode) {
+        if (typeCode == null) return "";
+        try {
+            return AgentType.valueOf(typeCode).getDisplayName();
+        } catch (IllegalArgumentException ex) {
+            return typeCode;
+        }
     }
 
     private static String resolveGranularity(String input) {

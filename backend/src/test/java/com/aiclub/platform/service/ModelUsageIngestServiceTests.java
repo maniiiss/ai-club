@@ -39,7 +39,7 @@ class ModelUsageIngestServiceTests {
     private ModelUsageIngestItem item(String usageKey, String agentType, String status) {
         return new ModelUsageIngestItem(
                 usageKey, agentType, "OPENAI", "gpt-4o", 7L, 101L, 5L, 2001L, "REVIEW",
-                120, 45, 165, 2300L, status, "2026-07-26T10:00:00Z");
+                120, 45, 165, 30, 2300L, status, "2026-07-26T10:00:00Z");
     }
 
     @Test

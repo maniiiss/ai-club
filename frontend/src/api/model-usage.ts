@@ -19,6 +19,7 @@ export interface OptionItem {
 export interface ModelUsageOptions {
   models: ModelOptionItem[]
   providers: OptionItem[]
+  agentTypes: OptionItem[]
 }
 
 export interface ModelUsageQueryPayload {
@@ -26,6 +27,7 @@ export interface ModelUsageQueryPayload {
   endTime?: string
   modelNames?: string[]
   providers?: string[]
+  agentTypes?: string[]
   granularity?: 'day' | 'week' | 'month'
   limit?: number
 }
@@ -89,6 +91,20 @@ export interface ProviderBreakdown {
   cacheHitRate: number | null
 }
 
+/** 按调用来源（智能体类型）聚合的分布项。 */
+export interface SourceBreakdown {
+  agentType: string
+  label: string
+  total: number
+  success: number
+  failure: number
+  successRate: number
+  totalTokens: number
+  avgDurationMs: number
+  cachedTokens: number
+  cacheHitRate: number | null
+}
+
 const cleanPayload = <T extends object>(payload: T): T =>
   Object.fromEntries(
     Object.entries(payload).filter(
@@ -132,6 +148,14 @@ export const getModelUsageTrend = async (payload: ModelUsageQueryPayload) => {
 export const getModelUsageByProvider = async (payload: ModelUsageQueryPayload) => {
   const { data } = await http.post<ApiResponse<ProviderBreakdown[]>>(
     '/api/model-usage-stats/by-provider',
+    cleanPayload(payload)
+  )
+  return data.data
+}
+
+export const getModelUsageBySource = async (payload: ModelUsageQueryPayload) => {
+  const { data } = await http.post<ApiResponse<SourceBreakdown[]>>(
+    '/api/model-usage-stats/by-source',
     cleanPayload(payload)
   )
   return data.data
