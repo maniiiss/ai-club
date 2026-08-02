@@ -114,18 +114,22 @@ export function parseOpsFromSteps(steps: ExecutionStep[]): EditOperation[] {
 
 interface ToolCallBlock {
 	type: 'toolCall';
-	toolName: string;
-	toolCallId?: string;
-	args?: { path?: unknown; content?: unknown };
+	/** 工具名，pi-ai 持久化时序列化为 name 字段（非 toolName）。 */
+	name: string;
+	/** toolCall 唯一标识，pi-ai 持久化时序列化为 id 字段（非 toolCallId）。 */
+	id?: string;
+	/** 工具参数，pi-ai 持久化时序列化为 arguments 字段（非 args）。 */
+	arguments?: { path?: unknown; content?: unknown };
 }
 
 interface ToolResultMessage {
 	role: 'toolResult';
+	/** toolResult 的 toolCallId 与 toolCall 的 id 配对（字段名不同）。 */
 	toolCallId?: string;
 	details?: { diff?: unknown; patch?: unknown };
 }
 
-/** 在 assistantIndex 之后寻找 toolCallId 匹配的 toolResult（同 turn，遇到下一条 user/assistant 停止）。 */
+/** 在 assistantIndex 之后寻找 id 匹配的 toolResult（同 turn，遇到下一条 user/assistant 停止）。 */
 function findToolResult(messages: unknown[], assistantIndex: number, toolCallId: string): ToolResultMessage | undefined {
 	for (let j = assistantIndex + 1; j < messages.length; j++) {
 		const m = messages[j] as { role?: string };
@@ -141,6 +145,8 @@ function findToolResult(messages: unknown[], assistantIndex: number, toolCallId:
 /**
  * 历史路径解析器：以单条 assistant 消息为锚点，提取其 toolCall 并配对后续 toolResult。
  * agentMessagesToUi 在 flatMap 中对每条 assistant 调用一次，得到该轮编辑操作。
+ * 注意：持久化的 AgentMessage 中 toolCall block 用 name/arguments/id 字段
+ * （与流式 tool_execution_* 事件的 toolName/args/toolCallId 不同），勿混用。
  */
 export function parseOpsFromMessages(messages: unknown[], assistantIndex: number): EditOperation[] {
 	const assistant = messages[assistantIndex] as { content?: unknown[] };
@@ -148,10 +154,10 @@ export function parseOpsFromMessages(messages: unknown[], assistantIndex: number
 	if (!Array.isArray(assistant?.content)) return ops;
 	for (const block of assistant.content) {
 		const tc = block as Partial<ToolCallBlock>;
-		if (tc.type !== 'toolCall' || typeof tc.toolName !== 'string') continue;
-		if (!isEditToolName(tc.toolName)) continue;
-		const toolCallId = tc.toolCallId ?? '';
-		const args = tc.args ?? {};
+		if (tc.type !== 'toolCall' || typeof tc.name !== 'string') continue;
+		if (!isEditToolName(tc.name)) continue;
+		const toolCallId = tc.id ?? '';
+		const args = tc.arguments ?? {};
 		const path = typeof args.path === 'string' ? args.path : '';
 		if (!path) continue;
 		const result = toolCallId ? findToolResult(messages, assistantIndex, toolCallId) : undefined;
@@ -159,9 +165,9 @@ export function parseOpsFromMessages(messages: unknown[], assistantIndex: number
 		const patch = typeof result?.details?.patch === 'string' ? result.details.patch : undefined;
 		if (diff) {
 			const stats = parseDiffStats(diff);
-			ops.push({ toolCallId, toolName: tc.toolName, path, diff, patch, ...stats });
+			ops.push({ toolCallId, toolName: tc.name, path, diff, patch, ...stats });
 		} else {
-			ops.push({ toolCallId, toolName: tc.toolName, path, status: 'modified', added: contentLineCount(args.content), removed: 0 });
+			ops.push({ toolCallId, toolName: tc.name, path, status: 'modified', added: contentLineCount(args.content), removed: 0 });
 		}
 	}
 	return ops;

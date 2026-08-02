@@ -91,7 +91,8 @@ describe('parseOpsFromSteps', () => {
 	});
 });
 
-/** 构造 assistant 含 toolCall + 紧随 toolResult 的消息序列。 */
+/** 构造 assistant 含 toolCall + 紧随 toolResult 的消息序列。
+ *  字段对齐 pi-ai 真实持久化结构：toolCall block 用 name/arguments/id（非 toolName/args/toolCallId）。 */
 function turn(editPath: string, diff: string, toolCallId = 'tc1'): unknown[] {
 	return [
 		{ role: 'user', content: [{ type: 'text', text: '改一下' }] },
@@ -99,7 +100,7 @@ function turn(editPath: string, diff: string, toolCallId = 'tc1'): unknown[] {
 			role: 'assistant',
 			content: [
 				{ type: 'text', text: '好的' },
-				{ type: 'toolCall', toolName: 'edit', toolCallId, args: { path: editPath, edits: [{ oldText: 'a', newText: 'b' }] } },
+				{ type: 'toolCall', name: 'edit', id: toolCallId, arguments: { path: editPath, edits: [{ oldText: 'a', newText: 'b' }] } },
 			],
 		},
 		{ role: 'toolResult', toolCallId, toolName: 'edit', content: [], details: { diff, patch: 'p' } },
@@ -118,7 +119,7 @@ describe('parseOpsFromMessages', () => {
 
 	it('write 工具无 details 时降级 modified + content 行数', () => {
 		const msgs: unknown[] = [
-			{ role: 'assistant', content: [{ type: 'toolCall', toolName: 'write', toolCallId: 'w1', args: { path: 'src/n.ts', content: 'x\ny' } }] },
+			{ role: 'assistant', content: [{ type: 'toolCall', name: 'write', id: 'w1', arguments: { path: 'src/n.ts', content: 'x\ny' } }] },
 			{ role: 'toolResult', toolCallId: 'w1', toolName: 'write', content: [] },
 		];
 		const ops = parseOpsFromMessages(msgs, 0);
@@ -128,7 +129,7 @@ describe('parseOpsFromMessages', () => {
 
 	it('跳过非编辑类 toolCall', () => {
 		const msgs: unknown[] = [
-			{ role: 'assistant', content: [{ type: 'toolCall', toolName: 'read', toolCallId: 'r1', args: { path: 'src/a.ts' } }] },
+			{ role: 'assistant', content: [{ type: 'toolCall', name: 'read', id: 'r1', arguments: { path: 'src/a.ts' } }] },
 			{ role: 'toolResult', toolCallId: 'r1', toolName: 'read', content: [] },
 		];
 		expect(parseOpsFromMessages(msgs, 0)).toHaveLength(0);
@@ -136,7 +137,7 @@ describe('parseOpsFromMessages', () => {
 
 	it('toolCallId 不匹配时不计入 diff', () => {
 		const msgs: unknown[] = [
-			{ role: 'assistant', content: [{ type: 'toolCall', toolName: 'edit', toolCallId: 'tc1', args: { path: 'a.ts' } }] },
+			{ role: 'assistant', content: [{ type: 'toolCall', name: 'edit', id: 'tc1', arguments: { path: 'a.ts' } }] },
 			{ role: 'toolResult', toolCallId: 'other', toolName: 'edit', content: [], details: { diff: 'diff' } },
 		];
 		const ops = parseOpsFromMessages(msgs, 0);
