@@ -495,30 +495,44 @@ function applyGuidanceMessageStart(set: SessionSetter, event: AgentSessionEvent)
  * 连续的无正文工具回合合并为一个可展开摘要，避免底层循环把聊天流拉得过长；
  * 一旦有新的助手正文，flushExecutionBoundaryBeforeText 会自然建立新的显示边界。
  */
-function appendUnreportedExecutionBatch(set: SessionSetter): void {
+function appendUnreportedExecutionBatch(set: SessionSetter, isFinal = false): void {
 	const execution = useWorkbenchStore.getState().execution;
 	const steps = getUnreportedExecutionSteps(execution);
-	if (steps.length === 0) return;
-	// 整合改动文件、总耗时、思考文本进 execution UIMessage（不再单独出 changed_files 卡片）。
-	const changedFiles = aggregateChangedFiles(parseOpsFromSteps(execution.steps));
-	const durationMs = execution.startedAt && execution.endedAt ? execution.endedAt - execution.startedAt : undefined;
+	// isFinal（agent_settled）时即使没有新步骤，也要把整次任务的总耗时回填到最近 execution 批次。
+	if (steps.length === 0 && !isFinal) return;
+	// 改动文件只统计本批未归档步骤，避免跨批次合并时重复累计。
+	const changedFiles = steps.length > 0 ? aggregateChangedFiles(parseOpsFromSteps(steps)) : [];
+	// 最终批次用整次任务的 startedAt->endedAt；中间批次（turn_end/message_end）execution.endedAt 尚未设置，
+	// 改用本批步骤的最早 startedAt->最晚 endedAt 估算，避免显示“总耗时0秒”。
+	const stepTimes = steps
+		.flatMap((s) => [s.startedAt, s.endedAt])
+		.filter((t): t is number => typeof t === 'number' && Number.isFinite(t));
+	const durationMs = execution.startedAt && execution.endedAt
+		? execution.endedAt - execution.startedAt
+		: stepTimes.length >= 2 ? Math.max(...stepTimes) - Math.min(...stepTimes) : undefined;
 	const thinking = execution.thinking?.trim() || undefined;
 	set((state) => {
-		const previous = state.messages.at(-1);
 		const meta = { ...(durationMs != null ? { durationMs } : {}), ...(thinking ? { thinking } : {}) };
-		if (previous?.kind === 'execution' && previous.executionSteps) {
-			return {
-				messages: [
-					...state.messages.slice(0, -1),
-					{
-						...previous,
-						executionSteps: [...previous.executionSteps, ...steps],
-						changedFiles: [...(previous.changedFiles ?? []), ...changedFiles],
-						meta: { ...(previous.meta ?? {}), ...meta },
-					},
-				],
-			};
+		// 合并到当前用户段内最近的 execution 批次（跨正文），让一次任务的工具步骤聚合成一个批次，
+		// 而不是每个模型回合各出一个带框批次；遇到 user 消息即停止，不跨段合并。
+		let lastExecIndex = -1;
+		for (let i = state.messages.length - 1; i >= 0; i--) {
+			const msg = state.messages[i];
+			if (msg.kind === 'execution') { lastExecIndex = i; break; }
+			if (msg.role === 'user') break;
 		}
+		if (lastExecIndex >= 0) {
+			const target = state.messages[lastExecIndex];
+			const messages = [...state.messages];
+			messages[lastExecIndex] = {
+				...target,
+				executionSteps: steps.length > 0 ? [...(target.executionSteps ?? []), ...steps] : target.executionSteps,
+				changedFiles: changedFiles.length > 0 ? [...(target.changedFiles ?? []), ...changedFiles] : target.changedFiles,
+				meta: { ...(target.meta ?? {}), ...meta },
+			};
+			return { messages };
+		}
+		if (steps.length === 0) return {};
 		return {
 			messages: [...state.messages, {
 				id: newId(), role: 'assistant', text: '', kind: 'execution',
@@ -528,7 +542,7 @@ function appendUnreportedExecutionBatch(set: SessionSetter): void {
 			}],
 		};
 	});
-	useWorkbenchStore.getState().markExecutionStepsReported(steps.map((step) => step.id));
+	if (steps.length > 0) useWorkbenchStore.getState().markExecutionStepsReported(steps.map((step) => step.id));
 }
 
 /**
@@ -625,7 +639,8 @@ export function applyEvent(set: SessionSetter, e: AgentSessionEvent): void {
 		});
 		// 极少数工具可能在最后一段正文之后才结束；收敛时补建批次，不能让这些真实操作消失。
 		// 改动文件与总耗时已整合进 execution UIMessage（appendUnreportedExecutionBatch 内聚合）。
-		appendUnreportedExecutionBatch(set);
+		// isFinal=true：把整次任务的总耗时回填到当前段最近的 execution 批次。
+		appendUnreportedExecutionBatch(set, true);
 		return;
 	}
 

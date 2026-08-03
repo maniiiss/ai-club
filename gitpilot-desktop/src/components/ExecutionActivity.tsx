@@ -123,7 +123,7 @@ export function ExecutionBatch({ steps, thinking, durationMs, changedFiles }: {
 		<section className={`${styles.root} ${styles.batch}`} aria-label="已完成的 Agent 执行批次">
 			<Button type="button" variant="ghost" size="sm" className={styles.summary} onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
 				<ChevronRight size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
-				<span className={styles.duration}>总耗时 {formatDuration(durationMs ?? 0)}</span>
+				<span className={styles.duration}>{durationMs != null ? `总耗时 ${formatDuration(durationMs)}` : '执行过程'}</span>
 			</Button>
 			<div className={styles.divider} />
 			{expanded && <ExecutionTrace steps={steps} thinking={thinking} changedFiles={changedFiles} />}
