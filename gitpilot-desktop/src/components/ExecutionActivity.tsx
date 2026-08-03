@@ -108,8 +108,7 @@ function ExecutionTrace({ steps, thinking, changedFiles }: { steps: ExecutionSte
 }
 
 /**
- * 已完成执行批次。
- * 顶部始终显示总耗时（不随展开/折叠变化）；展开后显示执行过程日志流（思考+步骤+改动文件，统一普通文字样式）。
+ * 已完成执行批次：无边框普通文字（与运行中计时同款样式），顶部始终显示总耗时，展开后看执行过程日志流。
  * 总结（助手正文）在 ExecutionBatch 外，不折叠。
  */
 export function ExecutionBatch({ steps, thinking, durationMs, changedFiles }: {
@@ -120,12 +119,11 @@ export function ExecutionBatch({ steps, thinking, durationMs, changedFiles }: {
 }) {
 	const [expanded, setExpanded] = useState(false);
 	return (
-		<section className={`${styles.root} ${styles.batch}`} aria-label="已完成的 Agent 执行批次">
+		<section className={styles.root} aria-label="已完成的 Agent 执行批次">
 			<Button type="button" variant="ghost" size="sm" className={styles.summary} onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
 				<ChevronRight size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
-				<span className={styles.duration}>{durationMs != null ? `总耗时 ${formatDuration(durationMs)}` : '执行过程'}</span>
+				<span className={styles.label}>{durationMs != null ? `总耗时 ${formatDuration(durationMs)}` : '执行过程'}</span>
 			</Button>
-			<div className={styles.divider} />
 			{expanded && <ExecutionTrace steps={steps} thinking={thinking} changedFiles={changedFiles} />}
 		</section>
 	);
@@ -145,6 +143,10 @@ export function ExecutionActivity({ isStreaming }: { isStreaming: boolean }) {
 	useEffect(() => {
 		if (!canExpand) setExpanded(false);
 	}, [canExpand]);
+	// 总结正文开始输出时收起执行过程详情（工具已结束，正文是结论）。
+	useEffect(() => {
+		if (execution.lastDeltaKind === 'text') setExpanded(false);
+	}, [execution.lastDeltaKind]);
 
 	// 实时计时：运行中每秒刷新 now - startedAt。
 	const [now, setNow] = useState(Date.now());
