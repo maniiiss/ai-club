@@ -76,28 +76,47 @@ function describeChangedFile(file: ChangedFile): string {
 	return parts.join(' ');
 }
 
-/** 执行过程日志流：思考 + 每个步骤的标题与输出 + 改动文件，统一普通文字样式。 */
+/** 思考块：默认只显示标题，点击展开思考内容（执行过程详情默认收起）。 */
+function ThinkingBlock({ thinking }: { thinking: string }) {
+	const [expanded, setExpanded] = useState(false);
+	return (
+		<div className={styles.thinkingBlock}>
+			<span className={styles.traceStepTitle} role="button" tabIndex={0} onClick={() => setExpanded((v) => !v)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded((v) => !v); } }}>思考</span>
+			{expanded && <pre>{thinking}</pre>}
+		</div>
+	);
+}
+
+/** 单个执行步骤：默认只显示标题，点击展开输出。 */
+function TraceStep({ step }: { step: ExecutionStep }) {
+	const [expanded, setExpanded] = useState(false);
+	const output = step.error ?? step.result ?? step.partialResult ?? step.args;
+	const hasOutput = Boolean(output);
+	return (
+		<div className={styles.traceStep}>
+			<span
+				className={styles.traceStepTitle}
+				role={hasOutput ? 'button' : undefined}
+				tabIndex={hasOutput ? 0 : undefined}
+				onClick={hasOutput ? () => setExpanded((v) => !v) : undefined}
+				onKeyDown={hasOutput ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded((v) => !v); } } : undefined}
+			>
+				{describeExecutionStep(step)}
+			</span>
+			{expanded && output && <pre className={styles.traceStepOutput}>{output}</pre>}
+		</div>
+	);
+}
+
+/** 执行过程日志流：思考 + 每个步骤标题 + 改动文件，统一普通文字样式；详情点击展开。 */
 function ExecutionTrace({ steps, thinking, changedFiles }: { steps: ExecutionStep[]; thinking?: string; changedFiles?: ChangedFile[] }) {
 	const visible = steps.filter((s) => s.kind !== 'complete');
 	const files = changedFiles ?? [];
 	if (!thinking?.trim() && visible.length === 0 && files.length === 0) return null;
 	return (
 		<div className={styles.trace}>
-			{thinking?.trim() && (
-				<div className={styles.thinkingBlock}>
-					<span>思考</span>
-					<pre>{thinking}</pre>
-				</div>
-			)}
-			{visible.map((step) => {
-				const output = step.error ?? step.result ?? step.partialResult ?? step.args;
-				return (
-					<div key={step.id} className={styles.traceStep}>
-						<span className={styles.traceStepTitle}>{describeExecutionStep(step)}</span>
-						{output && <pre className={styles.traceStepOutput}>{output}</pre>}
-					</div>
-				);
-			})}
+			{thinking?.trim() && <ThinkingBlock thinking={thinking} />}
+			{visible.map((step) => <TraceStep key={step.id} step={step} />)}
 			{files.map((file) => (
 				<div key={file.path} className={styles.traceStep}>
 					<span className={styles.traceStepTitle}>{describeChangedFile(file)}</span>
@@ -125,6 +144,7 @@ export function ExecutionBatch({ steps, thinking, durationMs, changedFiles }: {
 				<span className={styles.label}>{durationMs != null ? `总耗时 ${formatDuration(durationMs)}` : '执行过程'}</span>
 			</Button>
 			{expanded && <ExecutionTrace steps={steps} thinking={thinking} changedFiles={changedFiles} />}
+			<div className={styles.divider} />
 		</section>
 	);
 }
