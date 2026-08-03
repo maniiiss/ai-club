@@ -512,7 +512,7 @@ function appendUnreportedExecutionBatch(set: SessionSetter, isFinal = false): vo
 		: stepTimes.length >= 2 ? Math.max(...stepTimes) - Math.min(...stepTimes) : undefined;
 	const thinking = execution.thinking?.trim() || undefined;
 	set((state) => {
-		const meta = { ...(durationMs != null ? { durationMs } : {}), ...(thinking ? { thinking } : {}) };
+		const meta = { ...(durationMs != null ? { durationMs } : {}), ...(thinking ? { thinking } : {}), ...(isFinal ? { isFinal: true } : {}) };
 		// 合并到当前用户段内最近的 execution 批次（跨正文），让一次任务的工具步骤聚合成一个批次，
 		// 而不是每个模型回合各出一个带框批次；遇到 user 消息即停止，不跨段合并。
 		let lastExecIndex = -1;
@@ -686,7 +686,7 @@ export function agentMessagesToUi(messages: unknown[], isStreaming = false): UIM
 		const changedFiles = aggregateChangedFiles(pendingOps);
 		const durationMs = segmentStartTs != null && lastTs != null ? lastTs - segmentStartTs : undefined;
 		const thinking = pendingThinking.trim() || undefined;
-		const meta = { ...(durationMs != null && durationMs > 0 ? { durationMs } : {}), ...(thinking ? { thinking } : {}) };
+		const meta = { ...(durationMs != null && durationMs > 0 ? { durationMs } : {}), ...(thinking ? { thinking } : {}), isFinal: true };
 		result.push({
 			id: `hist-exec-${result.length}`, role: 'assistant' as const, text: '', kind: 'execution' as const,
 			executionSteps: pendingSteps,

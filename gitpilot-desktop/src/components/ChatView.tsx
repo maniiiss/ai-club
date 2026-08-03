@@ -4,9 +4,10 @@
  * 渲染累积的 UI 消息列表，自动滚动到底部。
  * 流式时保留底部跟随；用户上滚查看历史时不强制跟随。
  */
-import { useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Sparkles } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
+import { Button } from '@/src/components/ui/button';
 import { MessageBubble } from './MessageBubble';
 import { ExecutionActivity } from './ExecutionActivity';
 import { ConversationTimeline } from './ConversationTimeline';
@@ -21,13 +22,22 @@ export function isChatScrollAtBottom(scrollHeight: number, scrollTop: number, cl
 
 export function ChatView() {
 	const messages = useSessionStore((s) => s.messages);
+	const isStreaming = useSessionStore((s) => s.isStreaming);
 	// 尚未交给 GitPilot 的引导只在输入框队列中展示；真正开始执行后回到主对话，避免两处重复。
+	// 运行中隐藏尚未封口的执行批次（isFinal !== true），避免“总耗时”在任务未完成时提前出现。
 	const conversationMessages = useMemo(() => messages.filter((message) => {
+		if (isStreaming && message.kind === 'execution' && message.meta?.isFinal !== true) return false;
 		if (!message.meta?.guidanceMode) return true;
 		const status = message.meta.guidanceStatus;
 		return status === 'applied' || status === 'failed';
-	}), [messages]);
-	const isStreaming = useSessionStore((s) => s.isStreaming);
+	}), [messages, isStreaming]);
+	// 运行中面板固定在当前回复（最近一条 user 消息）之后，不随输出内容下移。
+	const lastUserIndex = useMemo(() => {
+		for (let i = conversationMessages.length - 1; i >= 0; i--) {
+			if (conversationMessages[i].role === 'user') return i;
+		}
+		return -1;
+	}, [conversationMessages]);
 	const isSessionLoading = useSessionStore((s) => s.isSessionLoading);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const stickToBottom = useRef(true);
@@ -145,17 +155,19 @@ export function ChatView() {
 							</div>
 						</div>
 					) : (
-						<div className={styles.messages}>
-							{conversationMessages.map((m) => (
-								<div key={m.id} ref={(node) => {
-									if (node) messageNodes.current.set(m.id, node);
-									else messageNodes.current.delete(m.id);
-								}}>
-									<MessageBubble message={m} />
-								</div>
-							))}
-							<ExecutionActivity isStreaming={isStreaming} />
-						</div>
+							<div className={styles.messages}>
+								{conversationMessages.map((m, i) => (
+									<Fragment key={m.id}>
+										<div ref={(node) => {
+											if (node) messageNodes.current.set(m.id, node);
+											else messageNodes.current.delete(m.id);
+										}}>
+											<MessageBubble message={m} />
+										</div>
+										{i === lastUserIndex && isStreaming && <ExecutionActivity isStreaming={isStreaming} />}
+									</Fragment>
+								))}
+							</div>
 					)}
 					</div>
 				</div>
@@ -163,9 +175,9 @@ export function ChatView() {
 			{/* 不在底部时显示回到底部按钮，定位在输入框正上方 */}
 			{showScrollToBottom && (
 				<div className={styles.scrollBottomBar}>
-					<button type="button" className={styles.scrollBottomBtn} onClick={scrollToBottom} aria-label="回到底部">
+					<Button type="button" variant="unstyled" size="icon" className={styles.scrollBottomBtn} onClick={scrollToBottom} aria-label="回到底部">
 						<ChevronDown size={18} />
-					</button>
+					</Button>
 				</div>
 			)}
 		</div>
