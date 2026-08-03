@@ -12,7 +12,15 @@ import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
-import type { RpcCommand, RpcResponse, RpcSessionState, RpcSlashCommand } from "./rpc-types.ts";
+import type {
+	RpcAgentSessionEvent,
+	RpcCommand,
+	RpcDesktopSessionSnapshot,
+	RpcResponse,
+	RpcSessionListItem,
+	RpcSessionState,
+	RpcSlashCommand,
+} from "./rpc-types.ts";
 
 // ============================================================================
 // Types
@@ -46,7 +54,7 @@ export interface ModelInfo {
 	reasoning: boolean;
 }
 
-export type RpcEventListener = (event: AgentSessionEvent) => void;
+export type RpcEventListener = (event: RpcAgentSessionEvent) => void;
 
 // ============================================================================
 // RPC Client
@@ -364,11 +372,29 @@ export class RpcClient {
 
 	/**
 	 * Switch to a different session file.
+	 * 新协议下成功切换会附带原子快照（session/execution/messages/eventCursor），
+	 * 旧 sidecar 不返回 snapshot 时为 undefined，调用方需回退到 get_state/get_messages。
 	 * @returns Object with `cancelled: true` if an extension cancelled the switch
 	 */
-	async switchSession(sessionPath: string): Promise<{ cancelled: boolean }> {
+	async switchSession(sessionPath: string): Promise<{ cancelled: boolean; snapshot?: RpcDesktopSessionSnapshot }> {
 		const response = await this.send({ type: "switch_session", sessionPath });
 		return this.getData(response);
+	}
+
+	/**
+	 * 原子取得当前会话状态、消息与执行快照，供应用启动/重连/刷新使用（设计文档 §8.3）。
+	 */
+	async getSessionSnapshot(): Promise<RpcDesktopSessionSnapshot> {
+		const response = await this.send({ type: "get_session_snapshot" });
+		return this.getData(response);
+	}
+
+	/**
+	 * 列出会话，每条附带运行态摘要（isStreaming + execution summary）。
+	 */
+	async listSessions(scope?: "current" | "all"): Promise<RpcSessionListItem[]> {
+		const response = await this.send({ type: "list_sessions", scope });
+		return this.getData<{ sessions: RpcSessionListItem[] }>(response).sessions;
 	}
 
 	/**
@@ -516,9 +542,9 @@ export class RpcClient {
 				return;
 			}
 
-			// Otherwise it's an event
+			// Otherwise it's an event（附带 session/run/sequence 传输层元数据）
 			for (const listener of this.eventListeners) {
-				listener(data as AgentSessionEvent);
+				listener(data as RpcAgentSessionEvent);
 			}
 		} catch {
 			// Ignore non-JSON lines

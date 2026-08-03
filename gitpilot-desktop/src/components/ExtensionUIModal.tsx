@@ -56,12 +56,12 @@ export function ExtensionUIModal() {
 								{req.options.map((opt) => {
 									const parsed = parseRequirementOption(opt);
 									return (
-										<button key={opt} type="button" className={styles.option} onClick={() => close({ value: opt })} title={opt}>
+										<Button key={opt} type="button" variant="unstyled" size="default" className={styles.option} onClick={() => close({ value: opt })} title={opt}>
 											{parsed ? <>
 												<span className={styles.optionCode}>{parsed.code}</span>
 												<span className={styles.optionCopy}><span className={styles.optionName}>{parsed.name}</span><span className={styles.optionMeta}>{parsed.meta}</span></span>
 											</> : <span className={styles.optionName}>{opt}</span>}
-										</button>
+										</Button>
 									);
 								})}
 							</div>

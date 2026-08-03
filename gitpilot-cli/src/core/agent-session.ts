@@ -52,6 +52,13 @@ import { sleep } from "../utils/sleep.ts";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.ts";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.ts";
 import {
+	AgentExecutionSnapshotManager,
+	EXECUTION_RUN_ENTRY_CUSTOM_TYPE,
+	type AgentExecutionSnapshot,
+	type AgentExecutionSummary,
+	type ExecutionRunEntryV1,
+} from "./agent-execution-state.ts";
+import {
 	type CompactionResult,
 	calculateContextTokens,
 	collectEntriesForBranchSummary,
@@ -312,6 +319,16 @@ export class AgentSession {
 	private _idleWaitPromise: Promise<void> | undefined;
 	private _resolveIdleWait: (() => void) | undefined;
 
+	/**
+	 * 权威执行快照管理器：维护当前 run 的 runId、状态、阶段、计时、活动工具与序号。
+	 * 在 `_emit` 中随每个事件更新，保证 suspended session 也持续刷新。
+	 */
+	private readonly _executionSnapshot = new AgentExecutionSnapshotManager();
+	/** 标记当前 run 是否被 abort 中断，供 settle 时判定 stopped 终态。 */
+	private _runAborted = false;
+	/** 不可恢复错误（如压缩重试后仍上下文溢出）的强制失败原因，供 settle 时判定 failed 终态。 */
+	private _runForcedFailure: string | undefined;
+
 	/** Tracks pending steering messages for UI display. Removed when delivered. */
 	private _steeringMessages: string[] = [];
 	/** Tracks pending follow-up messages for UI display. Removed when delivered. */
@@ -544,6 +561,9 @@ export class AgentSession {
 
 	/** Emit an event to all listeners */
 	private _emit(event: AgentSessionEvent): void {
+		// 权威执行快照在事件分发前更新，保证 suspended session 也持续刷新，
+		// 且 RPC 监听器读到的 snapshot.sequence 与本事件对齐。
+		this._executionSnapshot.applyEvent(event);
 		for (const l of this._eventListeners) {
 			l(event);
 		}
@@ -578,12 +598,83 @@ export class AgentSession {
 
 	private async _emitAgentSettled(): Promise<void> {
 		this._isAgentRunActive = false;
+		// 收口当前 run：写入终态、endedAt，并追加一条低频 settled custom entry。
+		if (this._executionSnapshot.isRunning) {
+			const outcome = this._resolveRunOutcome();
+			this._executionSnapshot.settle(outcome.status, outcome.lastError);
+			this._appendExecutionRunEntry();
+		}
+		this._runAborted = false;
+		this._runForcedFailure = undefined;
 		try {
 			await this._extensionRunner.emit({ type: "agent_settled" });
 			this._emit({ type: "agent_settled" });
 		} finally {
 			this._resolveIdleWaitIfIdle();
 		}
+	}
+
+	/**
+	 * 根据最后一次助手消息与中断/强制失败标记，判定本次 run 的终态。
+	 * - abort 中断 -> stopped
+	 * - 不可恢复错误（含重试耗尽、压缩重试后仍溢出） -> failed
+	 * - 其它 -> completed
+	 * 单工具失败不在此判定，run 是否能继续以 settled outcome 为准。
+	 */
+	private _resolveRunOutcome(): { status: "completed" | "failed" | "stopped"; lastError?: string } {
+		if (this._runForcedFailure) {
+			return { status: "failed", lastError: this._runForcedFailure };
+		}
+		if (this._runAborted) {
+			return { status: "stopped" };
+		}
+		const lastAssistant = this._findLastAssistantMessage();
+		if (lastAssistant && lastAssistant.stopReason === "error") {
+			return { status: "failed", lastError: lastAssistant.errorMessage };
+		}
+		return { status: "completed" };
+	}
+
+	/**
+	 * run settled 时追加 `gitpilot.execution-run.v1` custom entry，
+	 * 用于应用退出后恢复精确总耗时。仅在每个 run 结束时追加一次，持久化失败不影响 settle。
+	 */
+	private _appendExecutionRunEntry(): void {
+		const snapshot = this._executionSnapshot.getSnapshot();
+		if (!snapshot.runId || snapshot.startedAt === undefined || snapshot.endedAt === undefined) {
+			return;
+		}
+		if (snapshot.status === "idle" || snapshot.status === "running") {
+			return;
+		}
+		const entry: ExecutionRunEntryV1 = {
+			version: 1,
+			runId: snapshot.runId,
+			status: snapshot.status,
+			startedAt: snapshot.startedAt,
+			endedAt: snapshot.endedAt,
+			rootUserTimestamp: snapshot.rootUserTimestamp,
+			lastSequence: snapshot.sequence,
+		};
+		try {
+			this.sessionManager.appendCustomEntry(EXECUTION_RUN_ENTRY_CUSTOM_TYPE, entry);
+		} catch {
+			// 持久化失败不应影响 settle 流程。
+		}
+	}
+
+	/** 从 prompt 消息中提取触发本次 run 的根用户消息时间戳。 */
+	private _extractRootUserTimestamp(messages: AgentMessage | AgentMessage[]): number | undefined {
+		const list = Array.isArray(messages) ? messages : [messages];
+		for (const msg of list) {
+			if (msg.role === "user") {
+				const timestamp = (msg as { timestamp?: number }).timestamp;
+				if (typeof timestamp === "number") {
+					return timestamp;
+				}
+			}
+		}
+		return undefined;
 	}
 
 	// Track last assistant message for auto-compaction check
@@ -880,6 +971,29 @@ export class AgentSession {
 		return !this._isAgentRunActive;
 	}
 
+	/**
+	 * 当前会话的权威执行快照（只读副本）。
+	 * 包含 runId、状态、阶段、计时、活动工具与序号，是运行态的唯一事实来源。
+	 */
+	get executionSnapshot(): AgentExecutionSnapshot {
+		return this._executionSnapshot.getSnapshot();
+	}
+
+	/**
+	 * 当前会话的执行摘要（不含活动工具参数与输出），供列表等场景使用。
+	 */
+	get executionSummary(): AgentExecutionSummary {
+		return this._executionSnapshot.getSummary();
+	}
+
+	/**
+	 * 回写扩展等待用户确认的状态（如 extension UI pending request）。
+	 * 由 RPC/Extension UI bridge 调用，仅在 running 时生效。
+	 */
+	setExtensionWaiting(waiting: boolean): void {
+		this._executionSnapshot.setWaitingConfirmation(waiting);
+	}
+
 	/** Current effective system prompt (includes any per-turn extension modifications) */
 	get systemPrompt(): string {
 		return this.agent.state.systemPrompt;
@@ -1057,6 +1171,10 @@ export class AgentSession {
 	// =========================================================================
 
 	private async _runAgentPrompt(messages: AgentMessage | AgentMessage[]): Promise<void> {
+		// 开始一次新的权威 run：生成 runId、记录 startedAt、重置终态标记。
+		this._runAborted = false;
+		this._runForcedFailure = undefined;
+		this._executionSnapshot.beginRun(this._extractRootUserTimestamp(messages));
 		this._isAgentRunActive = true;
 		try {
 			await this.agent.prompt(messages);
@@ -1538,6 +1656,10 @@ export class AgentSession {
 	 * Abort current operation and wait for agent to become idle.
 	 */
 	async abort(): Promise<void> {
+		// 标记当前 run 被中断，settle 时据此判定 stopped 终态。
+		if (this._isAgentRunActive) {
+			this._runAborted = true;
+		}
 		this.abortRetry();
 		this.agent.abort();
 		await this.waitForIdle();
@@ -1986,14 +2108,17 @@ export class AgentSession {
 			}
 
 			if (this._overflowRecoveryAttempted) {
+				const overflowFailureMessage =
+					"一次压缩重试后上下文溢出恢复失败。请尝试减少上下文或切换到更大上下文窗口的模型。";
+				// 压缩重试后仍溢出属于不可恢复错误，标记本次 run 为 failed。
+				this._runForcedFailure = overflowFailureMessage;
 				this._emit({
 					type: "compaction_end",
 					reason: "overflow",
 					result: undefined,
 					aborted: false,
 					willRetry: false,
-					errorMessage:
-						"一次压缩重试后上下文溢出恢复失败。请尝试减少上下文或切换到更大上下文窗口的模型。",
+					errorMessage: overflowFailureMessage,
 				});
 				return false;
 			}

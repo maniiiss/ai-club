@@ -331,6 +331,8 @@ interface SessionStore {
 	isSessionLoading: boolean;
 	messages: UIMessage[];
 	isStreaming: boolean;
+	/** sidecar 宣告的 RPC 能力列表，Desktop 据此启用快照链路或回退旧推断。 */
+	rpcCapabilities: string[];
 
 	// 会话列表与模型
 	loggedIn: boolean;
@@ -367,6 +369,8 @@ interface SessionStore {
 	connect: () => Promise<void>;
 	disconnect: () => Promise<void>;
 	refreshAll: () => Promise<void>;
+	/** 用 get_session_snapshot 原子恢复当前会话消息与执行态（重连/启动后调用）。 */
+	loadSessionSnapshot: () => Promise<void>;
 	refreshPlatformConnection: () => Promise<void>;
 	/** 用户点击底栏状态时重新请求平台账户、模型与连通状态。 */
 	retryPlatformConnection: () => Promise<void>;
@@ -495,50 +499,35 @@ function applyGuidanceMessageStart(set: SessionSetter, event: AgentSessionEvent)
  * 连续的无正文工具回合合并为一个可展开摘要，避免底层循环把聊天流拉得过长；
  * 一旦有新的助手正文，flushExecutionBoundaryBeforeText 会自然建立新的显示边界。
  */
-function appendUnreportedExecutionBatch(set: SessionSetter, isFinal = false): void {
+function appendUnreportedExecutionBatch(set: SessionSetter): void {
 	const execution = useWorkbenchStore.getState().execution;
 	const steps = getUnreportedExecutionSteps(execution);
-	// isFinal（agent_settled）时即使没有新步骤，也要把整次任务的总耗时回填到最近 execution 批次。
-	if (steps.length === 0 && !isFinal) return;
+	if (steps.length === 0) return;
 	// 改动文件只统计本批未归档步骤，避免跨批次合并时重复累计。
-	const changedFiles = steps.length > 0 ? aggregateChangedFiles(parseOpsFromSteps(steps)) : [];
-	// 最终批次用整次任务的 startedAt->endedAt；中间批次（turn_end/message_end）execution.endedAt 尚未设置，
-	// 改用本批步骤的最早 startedAt->最晚 endedAt 估算，避免显示“总耗时0秒”。
-	const stepTimes = steps
-		.flatMap((s) => [s.startedAt, s.endedAt])
-		.filter((t): t is number => typeof t === 'number' && Number.isFinite(t));
-	const durationMs = execution.startedAt && execution.endedAt
-		? execution.endedAt - execution.startedAt
-		: stepTimes.length >= 2 ? Math.max(...stepTimes) - Math.min(...stepTimes) : undefined;
+	const changedFiles = aggregateChangedFiles(parseOpsFromSteps(steps));
 	const thinking = execution.thinking?.trim() || undefined;
 	set((state) => {
-		const meta = { ...(durationMs != null ? { durationMs } : {}), ...(thinking ? { thinking } : {}), ...(isFinal ? { isFinal: true } : {}) };
-		// 合并到当前用户段内最近的 execution 批次（跨正文），让一次任务的工具步骤聚合成一个批次，
-		// 而不是每个模型回合各出一个带框批次；遇到 user 消息即停止，不跨段合并。
-		let lastExecIndex = -1;
-		for (let i = state.messages.length - 1; i >= 0; i--) {
-			const msg = state.messages[i];
-			if (msg.kind === 'execution') { lastExecIndex = i; break; }
-			if (msg.role === 'user') break;
-		}
-		if (lastExecIndex >= 0) {
-			const target = state.messages[lastExecIndex];
+		const meta = thinking ? { thinking } : undefined;
+		const lastMessage = state.messages.at(-1);
+		// 只有连续且中间没有助手正文的工具回合才允许合并；正文一旦出现，就必须建立新的时间线边界。
+		if (steps.length > 0 && lastMessage?.kind === 'execution') {
+			const lastExecIndex = state.messages.length - 1;
+			const target = lastMessage;
 			const messages = [...state.messages];
 			messages[lastExecIndex] = {
 				...target,
-				executionSteps: steps.length > 0 ? [...(target.executionSteps ?? []), ...steps] : target.executionSteps,
+				executionSteps: [...(target.executionSteps ?? []), ...steps],
 				changedFiles: changedFiles.length > 0 ? [...(target.changedFiles ?? []), ...changedFiles] : target.changedFiles,
-				meta: { ...(target.meta ?? {}), ...meta },
+				meta: meta ? { ...(target.meta ?? {}), ...meta } : target.meta,
 			};
 			return { messages };
 		}
-		if (steps.length === 0) return {};
 		return {
 			messages: [...state.messages, {
 				id: newId(), role: 'assistant', text: '', kind: 'execution',
 				executionSteps: steps,
 				changedFiles: changedFiles.length > 0 ? changedFiles : undefined,
-				meta: Object.keys(meta).length > 0 ? meta : undefined,
+				meta,
 			}],
 		};
 	});
@@ -633,14 +622,24 @@ export function applyEvent(set: SessionSetter, e: AgentSessionEvent): void {
 
 	// agent_settled 是 sidecar 透传的真实空闲边界，包含工具执行、自动重试、压缩和后续回合。
 	if (type === 'agent_settled') {
+		const execution = useWorkbenchStore.getState().execution;
+		const durationMs = execution.startedAt != null && execution.endedAt != null
+			? Math.max(0, execution.endedAt - execution.startedAt)
+			: undefined;
 		set((s) => {
 			const messages = s.messages.map((m) => (m.id === s._streamingAssistantId ? { ...m, streaming: false } : m));
+			if (durationMs != null) {
+				for (let index = messages.length - 1; index >= 0; index -= 1) {
+					if (messages[index].role !== 'user') continue;
+					messages[index] = { ...messages[index], meta: { ...(messages[index].meta ?? {}), executionDurationMs: durationMs } };
+					break;
+				}
+			}
 			return { messages, _streamingAssistantId: null, isStreaming: false };
 		});
 		// 极少数工具可能在最后一段正文之后才结束；收敛时补建批次，不能让这些真实操作消失。
-		// 改动文件与总耗时已整合进 execution UIMessage（appendUnreportedExecutionBatch 内聚合）。
-		// isFinal=true：把整次任务的总耗时回填到当前段最近的 execution 批次。
-		appendUnreportedExecutionBatch(set, true);
+		// 总耗时固定回填到本轮 user 消息，执行批次只负责展示真实工具步骤。
+		appendUnreportedExecutionBatch(set);
 		return;
 	}
 
@@ -663,9 +662,36 @@ export function applyEvent(set: SessionSetter, e: AgentSessionEvent): void {
  * toolResult 和仅含 toolCall/thinking 的 assistant 消息属于执行记录，不能作为聊天正文回放。
  *
  * 执行批次按“一次执行”汇总：以 user 消息分段，段内累积工具步骤、编辑操作与思考文本，
- * 在段末尾追加一个 execution UIMessage（含 changedFiles/durationMs/thinking）。
+	 * 在段末尾追加一个 execution UIMessage（含 changedFiles/thinking），并把整段耗时回填到对应 user 消息。
  * isStreaming 为真时最后一段不归档（由实时面板承接）。
  */
+function messageTimestamp(message: { timestamp?: unknown }): number | null {
+	const timestamp = message.timestamp;
+	// pi-ai 持久化的 message.timestamp 是整数毫秒；兼容字符串 ISO。
+	if (typeof timestamp === 'number' && Number.isFinite(timestamp)) return timestamp;
+	if (typeof timestamp === 'string') {
+		const parsed = Date.parse(timestamp);
+		return Number.isNaN(parsed) ? null : parsed;
+	}
+	return null;
+}
+
+/** 切回运行中任务时，从最后一条用户消息恢复执行标题与真实计时起点。 */
+export function getRunningExecutionSeed(messages: unknown[], now = Date.now()): { prompt: string; startedAt: number } | null {
+	for (let index = messages.length - 1; index >= 0; index -= 1) {
+		const message = messages[index] as { role?: string; content?: Array<{ type?: string; text?: string }>; timestamp?: unknown };
+		if (message.role !== 'user') continue;
+		const rawText = (message.content ?? []).filter((content) => content.type === 'text').map((content) => content.text ?? '').join('');
+		const prompt = displayUserMessageText(rawText).trim();
+		const timestamp = messageTimestamp(message);
+		return {
+			prompt,
+			startedAt: timestamp != null && timestamp > 0 && timestamp <= now ? timestamp : now,
+		};
+	}
+	return null;
+}
+
 export function agentMessagesToUi(messages: unknown[], isStreaming = false): UIMessage[] {
 	const result: UIMessage[] = [];
 	let pendingOps: EditOperation[] = [];
@@ -673,42 +699,51 @@ export function agentMessagesToUi(messages: unknown[], isStreaming = false): UIM
 	let pendingThinking = '';
 	let segmentStartTs: number | null = null;
 	let lastTs: number | null = null;
-	const tsOf = (m: { timestamp?: unknown }): number | null => {
-		const t = m.timestamp;
-		// pi-ai 持久化的 message.timestamp 是整数毫秒；兼容字符串 ISO。
-		if (typeof t === 'number' && Number.isFinite(t)) return t;
-		if (typeof t === 'string') { const p = Date.parse(t); return Number.isNaN(p) ? null : p; }
-		return null;
-	};
-	/** 将当前段累积的工具步骤、改动文件、思考与耗时汇总为一个 execution UIMessage。 */
+	let segmentUserIndex = -1;
+	/** 将当前段耗时回填到 user 消息，并把工具步骤、改动文件和思考汇总为 execution UIMessage。 */
 	const flushExecutionBatch = () => {
-		if (pendingSteps.length === 0) return;
-		const changedFiles = aggregateChangedFiles(pendingOps);
 		const durationMs = segmentStartTs != null && lastTs != null ? lastTs - segmentStartTs : undefined;
+		if (segmentUserIndex >= 0 && durationMs != null && durationMs >= 0) {
+			const userMessage = result[segmentUserIndex];
+			result[segmentUserIndex] = { ...userMessage, meta: { ...(userMessage.meta ?? {}), executionDurationMs: durationMs } };
+		}
+		if (pendingSteps.length === 0) {
+			pendingOps = [];
+			pendingThinking = '';
+			segmentStartTs = null;
+			lastTs = null;
+			segmentUserIndex = -1;
+			return;
+		}
+		const changedFiles = aggregateChangedFiles(pendingOps);
 		const thinking = pendingThinking.trim() || undefined;
-		const meta = { ...(durationMs != null && durationMs > 0 ? { durationMs } : {}), ...(thinking ? { thinking } : {}), isFinal: true };
+		const meta = thinking ? { thinking } : undefined;
 		result.push({
 			id: `hist-exec-${result.length}`, role: 'assistant' as const, text: '', kind: 'execution' as const,
 			executionSteps: pendingSteps,
 			changedFiles: changedFiles.length > 0 ? changedFiles : undefined,
-			meta: Object.keys(meta).length > 0 ? meta : undefined,
+			meta,
 		});
 		pendingSteps = [];
 		pendingOps = [];
 		pendingThinking = '';
 		segmentStartTs = null;
 		lastTs = null;
+		segmentUserIndex = -1;
 	};
 	messages.forEach((m, i) => {
 		const msg = m as { role?: string; content?: Array<{ type?: string; text?: string; thinking?: string }>; timestamp?: string };
-		const ts = tsOf(msg);
+		const ts = messageTimestamp(msg);
 		if (msg.role === 'user') {
 			flushExecutionBatch();
 			segmentStartTs = ts;
 			lastTs = ts;
 			const text = (msg.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
 			const displayText = displayUserMessageText(text);
-			if (displayText.trim()) result.push({ id: `hist-${i}`, role: 'user' as const, text: displayText, kind: 'text' as MessageKind });
+			if (displayText.trim()) {
+				segmentUserIndex = result.length;
+				result.push({ id: `hist-${i}`, role: 'user' as const, text: displayText, kind: 'text' as MessageKind });
+			}
 		} else if (msg.role === 'assistant') {
 			if (ts != null) lastTs = ts;
 			const text = (msg.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
@@ -738,6 +773,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	isSessionLoading: false,
 	messages: [],
 	isStreaming: false,
+	rpcCapabilities: [],
 	loggedIn: false,
 	platformAccount: null,
 	sessions: [],
@@ -816,7 +852,46 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
 		// rpc:ready 可能在 listen 注册前已发出（Rust setup 时即 emit），
 		// 不依赖 ready 事件，直接拉取状态；失败由 refreshAll 内部 catch 记录 error。
-		void get().refreshAll();
+		void get().refreshAll().then(() => {
+			// 重连/启动后若 sidecar 支持快照，用 get_session_snapshot 一次性恢复消息与执行态，
+			// 避免渲染层在 sidecar 仍持有运行中会话时显示空正文或丢失运行指示（设计文档 §9.4）。
+			void get().loadSessionSnapshot();
+		});
+	},
+
+	/**
+	 * 用 get_session_snapshot 原子恢复当前会话消息与执行态（重连/启动后调用）。
+	 * 仅在 sidecar 宣告 session_execution_snapshot_v1 时启用；旧 sidecar 静默跳过。
+	 */
+	loadSessionSnapshot: async () => {
+		if (!get().rpcCapabilities.includes('session_execution_snapshot_v1')) return;
+		// 切换进行中时不抢夺乐观选中态，避免覆盖正由 switchSession 处理的目标会话。
+		if (get().isSessionLoading) return;
+		try {
+			const res = await rpc.getSessionSnapshot();
+			if (!res.success || res.command !== 'get_session_snapshot') return;
+			const snapshot = res.data;
+			// 切换期间可能已改变选中会话；仅当快照仍属于当前会话时应用，避免竞态覆盖。
+			const selectedPath = get().selectedSessionPath;
+			if (selectedPath && snapshot.session.sessionFile && snapshot.session.sessionFile !== selectedPath) return;
+			const restoredStreaming = snapshot.execution.status === 'running';
+			const restoredMessages = agentMessagesToUi(snapshot.messages, restoredStreaming);
+			const prompt = [...restoredMessages].reverse().find((message) => message.role === 'user')?.text ?? null;
+			// 仅在确有运行态或本地执行已被重置时重建，避免覆盖正在实时归并的步骤。
+			const currentExecution = useWorkbenchStore.getState().execution;
+			if (restoredStreaming || currentExecution.status === 'idle') {
+				useWorkbenchStore.getState().hydrateExecutionSnapshot(snapshot.execution, prompt ?? undefined);
+			}
+			set({
+				sessionState: snapshot.session,
+				messages: restoredMessages,
+				isStreaming: restoredStreaming,
+				_streamingAssistantId: null,
+				rpcCapabilities: snapshot.session.rpcCapabilities ?? get().rpcCapabilities,
+			});
+		} catch {
+			// 快照恢复失败不阻塞会话；后续 refreshAll/switchSession 会兜底。
+		}
 	},
 
 	disconnect: async () => {
@@ -840,6 +915,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 					next.selectedSessionPath = stateRes.data.sessionFile ?? null;
 					next.isStreaming = stateRes.data.isStreaming;
 				}
+				// 能力列表始终同步，即使本次状态因切换竞态被跳过，也用于后续快照链路判断。
+				next.rpcCapabilities = stateRes.data.rpcCapabilities ?? [];
 				next.connection = 'ready';
 			}
 		} catch (err) {
@@ -1255,10 +1332,37 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			}
 			// 先更新侧栏选中态并清空旧正文，给用户明确反馈；RPC 与历史回显在后台继续完成。
 			set({ selectedSessionPath: sessionPath, isSessionLoading: true, sessionState: null, messages: [], _streamingAssistantId: null, isStreaming: false, guidanceQueue: [], isFlushingGuidance: false, isStopping: false });
-			// 切换会话清空执行状态，避免上一会话步骤残留导致跨会话实时归档错位（挂起会话切回时改由历史回放兜底）。
+			// 切换会话清空执行状态，避免上一会话步骤残留导致跨会话实时归档错位（挂起会话切回时改由快照/历史回放兜底）。
 			useWorkbenchStore.getState().resetExecution();
-			await rpc.switchSession(sessionPath);
+			const switchRes = await rpc.switchSession(sessionPath);
 			if (requestVersion !== sessionSwitchRequestVersion) return;
+			// 新协议（switch_session_snapshot_v1）：成功切换附带原子快照，一次性恢复状态/消息/执行，
+			// 避免 switch_session -> get_state -> get_messages 多请求竞态。
+			const switchedOk = switchRes.success && switchRes.command === 'switch_session' && !switchRes.data.cancelled;
+			const snapshot = switchedOk ? switchRes.data.snapshot : undefined;
+			if (snapshot) {
+				const restoredStreaming = snapshot.execution.status === 'running';
+				const restoredMessages = agentMessagesToUi(snapshot.messages, restoredStreaming);
+				const prompt = [...restoredMessages].reverse().find((message) => message.role === 'user')?.text ?? session.firstMessage ?? '';
+				// 用权威快照重建执行态（含 runId/lastSequence 序号守卫基准），替代从消息时间戳推断 startedAt。
+				useWorkbenchStore.getState().hydrateExecutionSnapshot(snapshot.execution, prompt);
+				set({
+					sessionState: snapshot.session,
+					selectedSessionPath: sessionPath,
+					messages: restoredMessages,
+					_streamingAssistantId: null,
+					isStreaming: restoredStreaming,
+					isSessionLoading: false,
+					guidanceQueue: [],
+					isFlushingGuidance: false,
+					isStopping: false,
+					rpcCapabilities: snapshot.session.rpcCapabilities ?? get().rpcCapabilities,
+				});
+				// 侧栏运行态由已有轮询维护；切换后补刷一次列表以立即反映目标会话状态。
+				void get().refreshSessionList();
+				return;
+			}
+			// 旧 sidecar 兼容路径：无 snapshot 时回退 get_state + get_messages + 消息时间戳推断（getRunningExecutionSeed）。
 			await get().refreshAll();
 			if (requestVersion !== sessionSwitchRequestVersion) return;
 			// 被切回的会话可能仍在后台执行；保留 get_state 返回的流式状态，不能被历史回放清成 idle。
@@ -1267,7 +1371,15 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			const res = await rpc.getMessages();
 			if (requestVersion !== sessionSwitchRequestVersion) return;
 			if (res.success && res.command === 'get_messages' && Array.isArray(res.data.messages)) {
-				set({ messages: agentMessagesToUi(res.data.messages, restoredStreaming), _streamingAssistantId: null, isStreaming: restoredStreaming, isSessionLoading: false, selectedSessionPath: sessionPath, guidanceQueue: [], isFlushingGuidance: false, isStopping: false });
+				const restoredMessages = agentMessagesToUi(res.data.messages, restoredStreaming);
+				if (restoredStreaming) {
+					const seed = getRunningExecutionSeed(res.data.messages);
+					const fallbackPrompt = [...restoredMessages].reverse().find((message) => message.role === 'user')?.text
+						?? session.firstMessage
+						?? '';
+					useWorkbenchStore.getState().restoreRunningExecution(seed?.prompt || fallbackPrompt, seed?.startedAt);
+				}
+				set({ messages: restoredMessages, _streamingAssistantId: null, isStreaming: restoredStreaming, isSessionLoading: false, selectedSessionPath: sessionPath, guidanceQueue: [], isFlushingGuidance: false, isStopping: false });
 			} else {
 				set({ isSessionLoading: false, selectedSessionPath: sessionPath });
 			}

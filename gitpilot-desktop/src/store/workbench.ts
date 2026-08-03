@@ -4,7 +4,7 @@
  * 该 store 只保存布局与 sidecar 已经推送到渲染层的执行事件，不能访问文件、Shell 或网络。
  */
 import { create } from 'zustand';
-import type { AgentSessionEvent, RpcExtensionUIRequest } from '@/src/rpc/types';
+import type { AgentSessionEvent, AgentExecutionSnapshot, RpcExtensionUIRequest } from '@/src/rpc/types';
 
 export type ExecutionKind = 'plan' | 'read' | 'edit' | 'command' | 'verify' | 'complete' | 'other';
 export type ExecutionStatus = 'running' | 'succeeded' | 'failed' | 'waiting';
@@ -43,6 +43,10 @@ export interface ExecutionRun {
 	startedAt?: number;
 	/** 本次执行结束时间，agent_settled 时记录。 */
 	endedAt?: number;
+	/** 当前 run 在 sidecar 的权威 runId（仅 hydrateExecutionSnapshot 后存在），用于序号守卫。 */
+	runId?: string;
+	/** 已应用的最新事件序号（仅 hydrateExecutionSnapshot 后存在），丢弃 sequence <= lastSequence 的旧事件。 */
+	lastSequence?: number;
 }
 
 export interface LayoutPreferences {
@@ -189,10 +193,10 @@ export function reduceExecutionEvent(run: ExecutionRun, event: AgentSessionEvent
 	// turn_end 只表示一个模型回合结束；后台工具、重试或队列回合仍可能继续。
 	// 只有 agent_settled 才是整次 Agent 执行真正完成的业务边界。
 	if (event.type === 'agent_settled') {
-		if (run.status !== 'running') return run;
+		if (run.status === 'idle' || run.status === 'completed' || run.status === 'stopped') return run;
 		return {
 			...run,
-			status: 'completed',
+			status: run.status === 'failed' ? 'failed' : 'completed',
 			endedAt: now,
 			steps: [...run.steps, { id: `complete-${now}`, kind: 'complete', status: 'succeeded', title: '回合完成', startedAt: now, endedAt: now }],
 		};
@@ -219,16 +223,24 @@ export function reduceExecutionEvent(run: ExecutionRun, event: AgentSessionEvent
 	const steps = index < 0 ? [...run.steps, step] : run.steps.map((item, itemIndex) => (itemIndex === index ? step : item));
 	return {
 		...run,
-		status: step.status === 'failed' ? 'failed' : run.status,
+		// 单个工具失败可能被 Agent 自主重试或绕过，不能提前把整轮任务判定为失败并阻断 agent_settled 写入结束时间。
+		status: run.status,
 		// 收到真实工具事件后，当前阶段不再是此前保留的 thinking_delta。
 		lastDeltaKind: 'tool',
 		steps,
 	};
 }
 
-function createRun(prompt: string): ExecutionRun {
-	const now = Date.now();
-	return { id: `run-${now}`, status: 'running', lastPrompt: prompt, thinking: '', steps: [], reportedStepIds: [], startedAt: now };
+function createRun(prompt: string, startedAt = Date.now(), restored = false): ExecutionRun {
+	return {
+		id: `${restored ? 'restored-run' : 'run'}-${startedAt}`,
+		status: 'running',
+		lastPrompt: prompt,
+		thinking: '',
+		steps: [],
+		reportedStepIds: [],
+		startedAt,
+	};
 }
 
 /** 获取当前正文之后新产生、尚未显示为聊天批次的真实工具步骤。 */
@@ -246,6 +258,13 @@ interface WorkbenchStore {
 	composerPrefill: string | null;
 	updateLayout: (patch: Partial<LayoutPreferences>) => void;
 	beginExecution: (prompt: string) => void;
+	/** 切回仍在后台执行的会话时恢复计时起点，避免顶部“运行中”因本地 Workbench 已重置而消失。 */
+	restoreRunningExecution: (prompt: string, startedAt?: number) => void;
+	/**
+	 * 用 sidecar 权威执行快照重建本地 ExecutionRun（设计文档 §10.1）。
+	 * 替代新协议主路径上从消息时间戳推断 startedAt 的旧逻辑；同时绑定 runId/lastSequence 作为序号守卫基准。
+	 */
+	hydrateExecutionSnapshot: (snapshot: AgentExecutionSnapshot, prompt?: string) => void;
 	applyExecutionEvent: (event: AgentSessionEvent) => void;
 	/** 将一批已显示在聊天区的工具步骤标记为已归档，避免后续正文重复展示。 */
 	markExecutionStepsReported: (stepIds: string[]) => void;
@@ -275,8 +294,60 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 		set({ layout });
 	},
 	beginExecution: (prompt) => set({ execution: createRun(prompt), selectedStepId: null }),
+	restoreRunningExecution: (prompt, startedAt) => {
+		const now = Date.now();
+		const safeStartedAt = typeof startedAt === 'number' && Number.isFinite(startedAt) && startedAt > 0 && startedAt <= now
+			? startedAt
+			: now;
+		set({ execution: createRun(prompt, safeStartedAt, true), selectedStepId: null });
+	},
+	hydrateExecutionSnapshot: (snapshot, prompt) => {
+		// 用权威快照重建活动工具步骤；快照只保留仍在运行的工具，已结束工具由消息历史恢复。
+		const steps: ExecutionStep[] = snapshot.activeTools.map((tool) => ({
+			id: tool.toolCallId,
+			toolCallId: tool.toolCallId,
+			kind: classifyExecutionKind(tool.toolName),
+			status: tool.status === 'waiting' ? 'waiting' : tool.status === 'failed' ? 'failed' : tool.status === 'succeeded' ? 'succeeded' : 'running',
+			title: tool.toolName,
+			args: stringifyPayload(tool.args),
+			partialResult: stringifyPayload(tool.partialResult),
+			result: stringifyPayload(tool.result),
+			startedAt: tool.startedAt,
+			endedAt: tool.endedAt,
+		}));
+		const run: ExecutionRun = {
+			id: snapshot.runId ?? `run-${snapshot.updatedAt}`,
+			status: snapshot.status,
+			lastPrompt: prompt ?? null,
+			thinking: '',
+			steps,
+			reportedStepIds: [],
+			startedAt: snapshot.startedAt,
+			endedAt: snapshot.endedAt,
+			runId: snapshot.runId ?? undefined,
+			lastSequence: snapshot.sequence,
+		};
+		set({ execution: run, selectedStepId: null });
+	},
 	applyExecutionEvent: (event) => {
-		const execution = reduceExecutionEvent(get().execution, event);
+		const current = get().execution;
+		const eventRunId = typeof event.runId === 'string' ? event.runId : undefined;
+		const eventSequence = typeof event.sequence === 'number' ? event.sequence : undefined;
+		// 序号守卫（设计文档 §8.4/§10.1）：仅当事件携带 runId+sequence 时启用，
+		// 丢弃旧 run 事件和已被 snapshot 覆盖的旧序号事件，解决切换竞态。
+		// 旧 sidecar 事件不带元数据，守卫自动放行，保留原行为。
+		if (eventRunId !== undefined && eventSequence !== undefined) {
+			if (current.runId !== undefined && current.runId !== eventRunId) return; // 旧 run 事件
+			if (current.runId === eventRunId && current.lastSequence !== undefined && eventSequence <= current.lastSequence) return; // 已应用
+		}
+		const reduced = reduceExecutionEvent(current, event);
+		// 推进 lastSequence（仅同 run 事件），并在新 run 首个携带元数据的事件时绑定 runId。
+		const nextRunId = current.runId ?? eventRunId;
+		const sameRun = nextRunId === undefined || nextRunId === eventRunId;
+		const nextSequence = eventRunId !== undefined && eventSequence !== undefined && sameRun
+			? Math.max(current.lastSequence ?? 0, eventSequence)
+			: current.lastSequence;
+		const execution: ExecutionRun = { ...reduced, runId: nextRunId, lastSequence: nextSequence };
 		set({ execution, selectedStepId: get().selectedStepId ?? execution.steps.at(-1)?.id ?? null });
 	},
 	markExecutionStepsReported: (stepIds) => set((state) => {

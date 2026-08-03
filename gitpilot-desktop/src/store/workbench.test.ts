@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { classifyExecutionKind, DEFAULT_LAYOUT, formatDuration, getUnreportedExecutionSteps, normalizeLayoutPreferences, reduceExecutionEvent, useWorkbenchStore, WORKBENCH_WIDTH_LIMITS, type ExecutionRun } from './workbench';
 import { resolveWorkbenchShortcut } from '@/src/workbench/shortcuts';
 
@@ -46,6 +46,15 @@ describe('Agent 工作台执行事件', () => {
 
 		expect(started).toMatchObject({ lastDeltaKind: 'tool', thinking: '准备执行命令' });
 		expect(ended).toMatchObject({ lastDeltaKind: 'tool', thinking: '准备执行命令' });
+	});
+
+	it('单个工具失败不提前终止整轮，agent_settled 仍写入真实结束时间', () => {
+		const failedStep = reduceExecutionEvent(runningRun(), { type: 'tool_execution_end', toolCallId: 'tool-1', toolName: 'bash', result: 'failed', isError: true }, 140);
+		expect(failedStep.status).toBe('running');
+		expect(failedStep.steps[0].status).toBe('failed');
+
+		const completed = reduceExecutionEvent(failedStep, { type: 'agent_settled' }, 16_000);
+		expect(completed).toMatchObject({ status: 'completed', endedAt: 16_000 });
 	});
 
 	it('turn_end 不结束整次执行，agent_settled 才写入完成节点', () => {
@@ -138,6 +147,89 @@ describe('Agent 工作台本地交互状态', () => {
 		useWorkbenchStore.getState().resetExecution();
 		expect(useWorkbenchStore.getState().execution).toMatchObject({ id: 'idle', status: 'idle', lastPrompt: null, steps: [] });
 		expect(useWorkbenchStore.getState().selectedStepId).toBeNull();
+	});
+
+	it('切回仍在执行的任务时恢复运行状态和原始计时起点', () => {
+		vi.spyOn(Date, 'now').mockReturnValue(20_000);
+		useWorkbenchStore.getState().restoreRunningExecution('继续检查项目', 5_000);
+
+		expect(useWorkbenchStore.getState().execution).toMatchObject({
+			id: 'restored-run-5000',
+			status: 'running',
+			lastPrompt: '继续检查项目',
+			startedAt: 5_000,
+			steps: [],
+		});
+		vi.restoreAllMocks();
+	});
+
+	it('hydrateExecutionSnapshot 用权威快照重建执行态并绑定 runId/lastSequence', () => {
+		useWorkbenchStore.getState().hydrateExecutionSnapshot(
+			{
+				runId: 'run-abc',
+				status: 'running',
+				phase: 'tool',
+				startedAt: 1_000,
+				updatedAt: 5_000,
+				sequence: 42,
+				activeTools: [
+					{ toolCallId: 't1', toolName: 'bash', status: 'running', args: { cmd: 'ls' }, startedAt: 4_000, sequence: 40 },
+				],
+			},
+			'分析日志',
+		);
+		const execution = useWorkbenchStore.getState().execution;
+		expect(execution).toMatchObject({
+			id: 'run-abc',
+			status: 'running',
+			lastPrompt: '分析日志',
+			startedAt: 1_000,
+			runId: 'run-abc',
+			lastSequence: 42,
+		});
+		expect(execution.steps).toHaveLength(1);
+		expect(execution.steps[0]).toMatchObject({ id: 't1', toolCallId: 't1', kind: 'command', status: 'running', title: 'bash' });
+	});
+
+	it('序号守卫丢弃已被快照覆盖的旧序号事件与旧 run 事件', () => {
+		useWorkbenchStore.getState().hydrateExecutionSnapshot({
+			runId: 'run-abc',
+			status: 'running',
+			phase: 'tool',
+			startedAt: 1_000,
+			updatedAt: 5_000,
+			sequence: 42,
+			activeTools: [],
+		});
+
+		// sequence <= lastSequence：丢弃（已被快照覆盖）。
+		useWorkbenchStore.getState().applyExecutionEvent({ type: 'tool_execution_start', toolCallId: 'stale', toolName: 'bash', runId: 'run-abc', sequence: 10 });
+		expect(useWorkbenchStore.getState().execution.steps).toEqual([]);
+
+		// 不同 runId：丢弃（旧 run 事件）。
+		useWorkbenchStore.getState().applyExecutionEvent({ type: 'tool_execution_start', toolCallId: 'old', toolName: 'bash', runId: 'run-old', sequence: 99 });
+		expect(useWorkbenchStore.getState().execution.steps).toEqual([]);
+
+		// 新序号事件：应用并推进 lastSequence。
+		useWorkbenchStore.getState().applyExecutionEvent({ type: 'tool_execution_start', toolCallId: 'fresh', toolName: 'read', runId: 'run-abc', sequence: 50 });
+		const execution = useWorkbenchStore.getState().execution;
+		expect(execution.steps.map((s) => s.id)).toEqual(['fresh']);
+		expect(execution.lastSequence).toBe(50);
+	});
+
+	it('旧 sidecar 事件不带 runId/sequence 时守卫放行，保留原行为', () => {
+		useWorkbenchStore.getState().hydrateExecutionSnapshot({
+			runId: 'run-abc',
+			status: 'running',
+			phase: 'tool',
+			startedAt: 1_000,
+			updatedAt: 5_000,
+			sequence: 42,
+			activeTools: [],
+		});
+		// 不带元数据的事件（旧 sidecar）不应被守卫丢弃。
+		useWorkbenchStore.getState().applyExecutionEvent({ type: 'tool_execution_start', toolCallId: 'legacy', toolName: 'bash' });
+		expect(useWorkbenchStore.getState().execution.steps.map((s) => s.id)).toEqual(['legacy']);
 	});
 });
 

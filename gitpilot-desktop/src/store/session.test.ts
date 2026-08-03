@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyEvent, agentMessagesToUi, filterDesktopThinkingLevels, getAssistantMessageEndText, platformConnectionStateFromResponse, shouldSkipProjectSwitch, type UIMessage } from './session';
+import { applyEvent, agentMessagesToUi, filterDesktopThinkingLevels, getAssistantMessageEndText, getRunningExecutionSeed, platformConnectionStateFromResponse, shouldSkipProjectSwitch, type UIMessage } from './session';
 import { useWorkbenchStore } from './workbench';
 
 function applyToStreamingState(state: { messages: UIMessage[]; _streamingAssistantId: string | null; isStreaming: boolean }, event: Parameters<typeof applyEvent>[1]) {
@@ -10,6 +10,16 @@ function applyToStreamingState(state: { messages: UIMessage[]; _streamingAssista
 }
 
 describe('历史消息回放', () => {
+	it('切回运行中任务时从最后一条用户消息恢复计时起点', () => {
+		const seed = getRunningExecutionSeed([
+			{ role: 'user', content: [{ type: 'text', text: '上一轮' }], timestamp: 1_000 },
+			{ role: 'assistant', content: [{ type: 'text', text: '已完成' }], timestamp: 2_000 },
+			{ role: 'user', content: [{ type: 'text', text: '继续检查项目' }], timestamp: '1970-01-01T00:00:05.000Z' },
+		], 20_000);
+
+		expect(seed).toEqual({ prompt: '继续检查项目', startedAt: 5_000 });
+	});
+
 	it('回放用户消息、助手正文，并按执行汇总工具调用为执行批次（含思考与耗时）', () => {
 		const messages = agentMessagesToUi([
 			{ role: 'user', content: [{ type: 'text', text: '检查项目' }], timestamp: '2026-08-03T10:00:00Z' },
@@ -19,7 +29,7 @@ describe('历史消息回放', () => {
 		]);
 
 		expect(messages.filter((m) => m.kind === 'text')).toEqual([
-			{ id: 'hist-0', role: 'user', text: '检查项目', kind: 'text' },
+			{ id: 'hist-0', role: 'user', text: '检查项目', kind: 'text', meta: { executionDurationMs: 10_000 } },
 			{ id: 'hist-3', role: 'assistant', text: '检查完成', kind: 'text' },
 		]);
 		const execBatch = messages.find((m) => m.kind === 'execution');
@@ -27,7 +37,7 @@ describe('历史消息回放', () => {
 		expect(execBatch?.executionSteps).toHaveLength(1);
 		expect(execBatch?.executionSteps?.[0]).toMatchObject({ kind: 'read', title: 'read', status: 'succeeded' });
 		expect(execBatch?.meta?.thinking).toBe('分析中');
-		expect(execBatch?.meta?.durationMs).toBe(10_000);
+		expect(messages[0].meta?.executionDurationMs).toBe(10_000);
 		// 改动文件已整合进 execution UIMessage，不再单独产出 changed_files kind。
 		expect(messages.some((m) => m.kind === 'changed_files')).toBe(false);
 	});
@@ -123,6 +133,49 @@ describe('流式正文与工具批次边界', () => {
 
 		applyToStreamingState(state, { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '修改完成。' } });
 		expect(state.messages.map((message) => message.kind)).toEqual(['execution', 'text']);
+
+		useWorkbenchStore.setState((store) => ({ execution: {
+			...store.execution,
+			steps: [...store.execution.steps, { id: 'tool-3', toolCallId: 'tool-3', kind: 'verify', status: 'succeeded', title: 'test', startedAt: 3, endedAt: 4 }],
+		} }));
+		applyToStreamingState(state, { type: 'turn_end', toolResults: [{ role: 'toolResult' }] });
+
+		expect(state.messages.map((message) => message.kind)).toEqual(['execution', 'text', 'execution']);
+		expect(state.messages[0].executionSteps?.map((step) => step.id)).toEqual(['tool-1', 'tool-2']);
+		expect(state.messages[2].executionSteps?.map((step) => step.id)).toEqual(['tool-3']);
+	});
+
+	it('任务收敛时只给最后一个执行批次回填总耗时，不跨正文合并步骤', () => {
+		useWorkbenchStore.setState({ execution: {
+			id: 'run-1', status: 'completed', lastPrompt: '检查代码', startedAt: 1_000, endedAt: 38_000,
+			steps: [{ id: 'tool-1', toolCallId: 'tool-1', kind: 'read', status: 'succeeded', title: 'read', startedAt: 2_000, endedAt: 3_000 }],
+			reportedStepIds: ['tool-1'],
+		} });
+		const state = {
+			messages: [
+				{ id: 'user-1', role: 'user' as const, text: '检查代码', kind: 'text' as const },
+				{ id: 'exec-1', role: 'assistant' as const, text: '', kind: 'execution' as const, executionSteps: [useWorkbenchStore.getState().execution.steps[0]] },
+				{ id: 'text-1', role: 'assistant' as const, text: '最终总结', kind: 'text' as const },
+			] as UIMessage[],
+			_streamingAssistantId: null as string | null,
+			isStreaming: true,
+		};
+
+		applyToStreamingState(state, { type: 'agent_settled' });
+
+		expect(state.messages.map((message) => message.kind)).toEqual(['text', 'execution', 'text']);
+		expect(state.messages[0].meta).toMatchObject({ executionDurationMs: 37_000 });
+		expect(state.messages[1].executionSteps).toHaveLength(1);
+	});
+
+	it('无工具任务也会把历史总耗时回填到用户请求，而不是依赖 execution 批次', () => {
+		const messages = agentMessagesToUi([
+			{ role: 'user', content: [{ type: 'text', text: '直接回答' }], timestamp: '2026-08-03T10:00:00Z' },
+			{ role: 'assistant', content: [{ type: 'text', text: '回答完成' }], timestamp: '2026-08-03T10:00:05Z' },
+		]);
+
+		expect(messages.map((message) => message.kind)).toEqual(['text', 'text']);
+		expect(messages[0].meta?.executionDurationMs).toBe(5_000);
 	});
 });
 

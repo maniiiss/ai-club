@@ -165,6 +165,8 @@ describe("AgentSession bash and persistence characterization", () => {
 			"message",
 			"message",
 			"message",
+			// 每次 run settled 时追加一条 `gitpilot.execution-run.v1` custom entry，记录精确总耗时。
+			"custom",
 		]);
 		expect(harness.session.messages.map((message) => message.role)).toEqual([
 			"custom",
@@ -214,12 +216,16 @@ describe("AgentSession bash and persistence characterization", () => {
 		await harness.session.abort();
 		await promptPromise;
 
-		const lastEntry = harness.sessionManager.getEntries()[harness.sessionManager.getEntries().length - 1];
-		expect(lastEntry?.type).toBe("message");
-		if (lastEntry?.type === "message") {
-			expect(lastEntry.message.role).toBe("assistant");
-			if (lastEntry.message.role === "assistant") {
-				expect(lastEntry.message.stopReason).toBe("aborted");
+		// run settled 后会追加一条 `gitpilot.execution-run.v1` custom entry，因此取最后一条 message 条目。
+		const lastMessageEntry = harness.sessionManager
+			.getEntries()
+			.filter((entry) => entry.type === "message")
+			.pop();
+		expect(lastMessageEntry?.type).toBe("message");
+		if (lastMessageEntry?.type === "message") {
+			expect(lastMessageEntry.message.role).toBe("assistant");
+			if (lastMessageEntry.message.role === "assistant") {
+				expect(lastMessageEntry.message.stopReason).toBe("aborted");
 			}
 		}
 	});

@@ -23,6 +23,7 @@
 - [GitPilot 多运行时智能体技术设计](gitpilot-multi-runtime-technical-design-v1.md) - GitPilot 产品入口、Pi Runtime 接入、运行时能力适配与 Hermes 渐进迁移方案
 - [GitPilot CLI 云端开发接力技术设计](gitpilot-cli-cloud-coding-handoff-technical-design-v1.md) - 内嵌 Pi Agent Core 的本地 Coding CLI、工作区与会话接力、云端 Codex Runtime 及安全结果回传
 - [GitPilot 桌面版技术设计](gitpilot-desktop-technical-design-v1.md) - Tauri 2 + React + bun sidecar 三进程模型，复用 RPC 协议只换 UI 层，类 Codex 原生 GUI 编码助手
+- [GitPilot CLI 会话执行快照与 Desktop 恢复技术设计](gitpilot-cli-session-execution-snapshot-technical-design-v1.md) - CLI Core 统一维护多任务运行快照、精确耗时和事件游标，Desktop 通过兼容 RPC 在切换与重连后恢复执行状态
 - [GitPilot Desktop shadcn UI 整体替换技术设计](gitpilot-desktop-shadcn-ui-replacement-technical-design-v1.md) - 基于 Radix、Mira 和 Tailwind v4 重建桌面渲染层，保留 Tauri/RPC/Agent 行为契约并分阶段迁移
 - [GitPilot Desktop Git 与代码审查工作台技术设计](gitpilot-desktop-git-review-workbench-technical-design-v1.md) - 受限 sidecar Git、不可变审查快照、结构化 finding、平台治理与 GitLab 显式发布
 - [GitPilot Pi 生产力扩展技术设计](gitpilot-pi-productivity-extensions-technical-design-v1.md) - 内置 slopchop、goal、plan-mode、subagents 的 CLI/Desktop 双宿主适配、离线打包和自主委派边界

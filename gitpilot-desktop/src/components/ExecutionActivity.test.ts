@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { canExpandExecutionActivity, describeExecutionActivity, describeExecutionBatch, describeExecutionStep, getExecutionActivityLabel } from './ExecutionActivity';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { canExpandExecutionActivity, describeExecutionActivity, describeExecutionBatch, describeExecutionStep, ExecutionBatch, ExecutionTimer, getExecutionActivityLabel, getExecutionTimingLabel } from './ExecutionActivity';
 import type { ExecutionRun } from '@/src/store/workbench';
 
 function run(steps: ExecutionRun['steps'], status: ExecutionRun['status'] = 'running'): ExecutionRun {
@@ -44,5 +46,27 @@ describe('聊天内执行摘要', () => {
 			{ id: 'bash-2', kind: 'command', status: 'succeeded', title: 'bash', startedAt: 2 },
 			{ id: 'edit-1', kind: 'edit', status: 'succeeded', title: 'edit', startedAt: 3 },
 		])).toBe('运行了2个命令、编辑了1个文件');
+	});
+
+	it('执行批次直接展示真实工具摘要，不再出现“执行过程”占位文案', () => {
+		const steps = [{ id: 'read-1', kind: 'read' as const, status: 'succeeded' as const, title: 'read', args: '{"path":"README.md"}', startedAt: 1, endedAt: 2 }];
+		const html = renderToStaticMarkup(createElement(ExecutionBatch, { steps }));
+
+		expect(html).toContain('read README.md');
+		expect(html).not.toContain('执行过程');
+		expect(html).not.toContain('divider');
+	});
+
+	it('完成后在同一头部位置把运行计时替换为真实总耗时', () => {
+		expect(getExecutionTimingLabel(true, 1_000, undefined, 17_000)).toBe('运行中 16秒');
+		expect(getExecutionTimingLabel(false, undefined, 16_000, 17_000)).toBe('总耗时 16秒');
+		const html = renderToStaticMarkup(createElement(ExecutionTimer, {
+			isRunning: false,
+			durationMs: 16_000,
+			steps: [{ id: 'read-1', kind: 'read', status: 'succeeded', title: 'read', startedAt: 1, endedAt: 2 }],
+		}));
+		expect(html).toContain('总耗时 16秒');
+		expect(html).toContain('divider');
+		expect(html).toContain('aria-expanded="false"');
 	});
 });

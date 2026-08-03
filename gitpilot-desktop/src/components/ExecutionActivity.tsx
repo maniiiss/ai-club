@@ -1,6 +1,6 @@
 /** 聊天流内的 Agent 执行摘要，所有信息均来自已归并的 sidecar 真实事件。 */
 import { useEffect, useState } from 'react';
-import { ChevronRight, LoaderCircle } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { formatDuration, getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionRun, type ExecutionStep } from '@/src/store/workbench';
 import { Button } from '@/src/components/ui/button';
 import type { ChangedFile } from '@/src/store/changed-files';
@@ -109,12 +109,18 @@ function TraceStep({ step }: { step: ExecutionStep }) {
 }
 
 /** 执行过程日志流：思考 + 每个步骤标题 + 改动文件，统一普通文字样式；详情点击展开。 */
-function ExecutionTrace({ steps, thinking, changedFiles }: { steps: ExecutionStep[]; thinking?: string; changedFiles?: ChangedFile[] }) {
+function ExecutionTrace({ steps, thinking, changedFiles, progressTexts = [] }: {
+	steps: ExecutionStep[];
+	thinking?: string;
+	changedFiles?: ChangedFile[];
+	progressTexts?: string[];
+}) {
 	const visible = steps.filter((s) => s.kind !== 'complete');
 	const files = changedFiles ?? [];
-	if (!thinking?.trim() && visible.length === 0 && files.length === 0) return null;
+	if (!thinking?.trim() && visible.length === 0 && files.length === 0 && progressTexts.length === 0) return null;
 	return (
 		<div className={styles.trace}>
+			{progressTexts.map((text, index) => <div key={`${index}-${text}`} className={styles.progressText}>{text}</div>)}
 			{thinking?.trim() && <ThinkingBlock thinking={thinking} />}
 			{visible.map((step) => <TraceStep key={step.id} step={step} />)}
 			{files.map((file) => (
@@ -127,29 +133,77 @@ function ExecutionTrace({ steps, thinking, changedFiles }: { steps: ExecutionSte
 }
 
 /**
- * 已完成执行批次：无边框普通文字（与运行中计时同款样式），顶部始终显示总耗时，展开后看执行过程日志流。
+ * 已完成执行批次：折叠标题直接说明真实操作，避免使用没有信息量的“执行过程”占位文案。
  * 总结（助手正文）在 ExecutionBatch 外，不折叠。
  */
-export function ExecutionBatch({ steps, thinking, durationMs, changedFiles }: {
+export function ExecutionBatch({ steps, thinking, changedFiles }: {
 	steps: ExecutionStep[];
 	thinking?: string;
-	durationMs?: number;
 	changedFiles?: ChangedFile[];
 }) {
 	const [expanded, setExpanded] = useState(false);
+	const summaryLabel = steps.length === 1 ? describeExecutionStep(steps[0]) : describeExecutionBatch(steps);
 	return (
 		<section className={styles.root} aria-label="已完成的 Agent 执行批次">
-			<Button type="button" variant="ghost" size="sm" className={styles.summary} onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
+			<Button type="button" variant="unstyled" size="sm" className={styles.summary} onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
 				<ChevronRight size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
-				<span className={styles.label}>{durationMs != null ? `总耗时 ${formatDuration(durationMs)}` : '执行过程'}</span>
+				<span className={styles.label}>{summaryLabel}</span>
 			</Button>
 			{expanded && <ExecutionTrace steps={steps} thinking={thinking} changedFiles={changedFiles} />}
+		</section>
+	);
+}
+
+/** 根据当前执行状态生成固定头部文案；完成后在原位置把“运行中”替换为“总耗时”。 */
+export function getExecutionTimingLabel(isRunning: boolean, startedAt: number | undefined, durationMs: number | undefined, now: number): string | null {
+	if (isRunning && startedAt != null) return `运行中 ${formatDuration(Math.max(0, now - startedAt))}`;
+	if (!isRunning && durationMs != null) return `总耗时 ${formatDuration(Math.max(0, durationMs))}`;
+	return null;
+}
+
+/** 运行状态头固定在对应用户请求之后；完成后可在总耗时下展开整轮执行详情。 */
+export function ExecutionTimer({ isRunning, startedAt, durationMs, steps = [], thinking, changedFiles = [], progressTexts = [], isCollapsing = false }: {
+	isRunning: boolean;
+	startedAt?: number;
+	durationMs?: number;
+	steps?: ExecutionStep[];
+	thinking?: string;
+	changedFiles?: ChangedFile[];
+	progressTexts?: string[];
+	isCollapsing?: boolean;
+}) {
+	const [now, setNow] = useState(Date.now);
+	const [expanded, setExpanded] = useState(false);
+	useEffect(() => {
+		if (!isRunning || startedAt == null) return;
+		const timer = setInterval(() => setNow(Date.now()), 1000);
+		return () => clearInterval(timer);
+	}, [isRunning, startedAt]);
+	useEffect(() => {
+		if (isRunning) setExpanded(false);
+	}, [isRunning]);
+	const label = getExecutionTimingLabel(isRunning, startedAt, durationMs, now);
+	if (!label) return null;
+	const canExpand = !isRunning && (steps.length > 0 || Boolean(thinking?.trim()) || changedFiles.length > 0 || progressTexts.length > 0);
+	const statusLabel = <span className={`${styles.label} ${isRunning ? styles.running : ''}`}>{label}</span>;
+
+	return (
+		<section className={`${styles.root} ${isCollapsing ? styles.settling : ''}`} aria-label={isRunning ? 'Agent 运行计时' : 'Agent 总耗时'}>
+			{canExpand ? (
+				<Button type="button" variant="unstyled" size="sm" className={styles.summary} onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
+					<ChevronRight size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
+					{statusLabel}
+				</Button>
+			) : (
+				<span className={styles.statusLine} role="status"><span className={styles.timer}>{statusLabel}</span></span>
+			)}
+			{canExpand && expanded && <ExecutionTrace steps={steps} thinking={thinking} changedFiles={changedFiles} progressTexts={progressTexts} />}
 			<div className={styles.divider} />
 		</section>
 	);
 }
 
-/** 运行中执行面板：实时计时 + 当前活动 + 可展开当前执行过程。 */
+/** 当前思考或工具活动跟随最新正文向下推进，可展开查看尚未归档的执行过程。 */
 export function ExecutionActivity({ isStreaming }: { isStreaming: boolean }) {
 	const execution = useWorkbenchStore((s) => s.execution);
 	const [expanded, setExpanded] = useState(false);
@@ -168,40 +222,21 @@ export function ExecutionActivity({ isStreaming }: { isStreaming: boolean }) {
 		if (execution.lastDeltaKind === 'text') setExpanded(false);
 	}, [execution.lastDeltaKind]);
 
-	// 实时计时：运行中每秒刷新 now - startedAt。
-	const [now, setNow] = useState(Date.now());
-	useEffect(() => {
-		if (!isStreaming || !execution.startedAt) return;
-		const timer = setInterval(() => setNow(Date.now()), 1000);
-		return () => clearInterval(timer);
-	}, [isStreaming, execution.startedAt]);
-	const elapsed = execution.startedAt ? now - execution.startedAt : null;
-
-	// 没有活动文案也没有计时时不渲染面板。
-	if (!label && elapsed == null) return null;
+	if (!label) return null;
 
 	const isPending = label === '正在整理工具结果…' || label === '正在准备…';
-	const activityLabel = isPending
-		? <span className={`${styles.label} ${styles.running}`} role="status" title={label ?? ''}><LoaderCircle size={14} aria-hidden="true" className={styles.spinner} />{label}</span>
-		: <span className={`${styles.label} ${styles.running}`} title={label ?? ''}>{label}</span>;
+	const activityLabel = (
+		<span className={`${styles.label} ${styles.running}`} role={isPending ? 'status' : undefined} title={label ?? ''}>{label}</span>
+	);
 
 	return (
 		<section className={styles.root} aria-label="Agent 执行过程">
-			{elapsed != null && (
-				<>
-					<span className={`${styles.label} ${styles.running}`} role="status">
-						<LoaderCircle size={14} aria-hidden="true" className={styles.spinner} />
-						<span className={styles.timer}>运行中 {formatDuration(elapsed)}</span>
-					</span>
-					{label && <div className={styles.divider} />}
-				</>
-			)}
-			{label && (canExpand ? (
-				<Button type="button" variant="ghost" size="sm" className={styles.summary} onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
+			{canExpand ? (
+				<Button type="button" variant="unstyled" size="sm" className={styles.summary} onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
 					<ChevronRight size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
 					{activityLabel}
 				</Button>
-			) : <span className={`${styles.summary} ${styles.static}`} aria-live="polite">{activityLabel}</span>)}
+			) : <span className={`${styles.summary} ${styles.static}`} aria-live="polite">{activityLabel}</span>}
 			{canExpand && (
 				<div className={`${styles.expanded} ${expanded ? styles.expandedOpen : ''}`} aria-hidden={!expanded} inert={!expanded}>
 					<div className={styles.expandedInner}>

@@ -11,6 +11,7 @@ import com.aiclub.platform.dto.ModelTestResult;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.request.AiModelConfigRequest;
 import com.aiclub.platform.repository.AiModelConfigRepository;
+import com.aiclub.platform.repository.SelfUpgradePatrolPlanRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -55,6 +56,7 @@ public class ModelConfigService {
     private static final Duration MODEL_REQUEST_TIMEOUT = Duration.ofSeconds(120);
 
     private final AiModelConfigRepository aiModelConfigRepository;
+    private final SelfUpgradePatrolPlanRepository selfUpgradePatrolPlanRepository;
     private final TokenCipherService tokenCipherService;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
@@ -67,9 +69,11 @@ public class ModelConfigService {
     private AgentInvocationRecorder agentInvocationRecorder;
 
     public ModelConfigService(AiModelConfigRepository aiModelConfigRepository,
+                              SelfUpgradePatrolPlanRepository selfUpgradePatrolPlanRepository,
                               TokenCipherService tokenCipherService,
                               ObjectMapper objectMapper) {
         this.aiModelConfigRepository = aiModelConfigRepository;
+        this.selfUpgradePatrolPlanRepository = selfUpgradePatrolPlanRepository;
         this.tokenCipherService = tokenCipherService;
         this.objectMapper = objectMapper;
         this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
@@ -113,7 +117,13 @@ public class ModelConfigService {
 
     @Transactional
     public void deleteConfig(Long id) {
-        aiModelConfigRepository.delete(requireConfig(id));
+        requireConfig(id);
+        // 删除前检查是否有巡检计划引用该模型，避免数据库外键约束报错
+        long patrolCount = selfUpgradePatrolPlanRepository.countByAiModelConfig_Id(id);
+        if (patrolCount > 0) {
+            throw new IllegalStateException("该模型被 " + patrolCount + " 个自升级巡检计划引用，请先修改或删除相关巡检计划后再删除模型");
+        }
+        aiModelConfigRepository.deleteById(id);
     }
 
     public ModelTestResult testConfig(Long id) {

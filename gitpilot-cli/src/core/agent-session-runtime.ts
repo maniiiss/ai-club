@@ -2,6 +2,12 @@ import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { resolvePath } from "../utils/paths.ts";
 import type { AgentSession } from "./agent-session.ts";
+import {
+	EXECUTION_RUN_ENTRY_CUSTOM_TYPE,
+	restoreExecutionSnapshotFromEntry,
+	type AgentExecutionSnapshot,
+	type AgentExecutionSummary,
+} from "./agent-execution-state.ts";
 import type { AgentSessionRuntimeDiagnostic, AgentSessionServices } from "./agent-session-services.ts";
 import type {
 	ProjectTrustContext,
@@ -219,6 +225,68 @@ export class AgentSessionRuntime {
 		const normalizedPath = resolvePath(sessionPath);
 		if (this.session.sessionFile && resolvePath(this.session.sessionFile) === normalizedPath) return this.session.isStreaming;
 		return this.suspendedSessions.get(normalizedPath)?.session.isStreaming ?? false;
+	}
+
+	/**
+	 * 查询目标会话的权威执行快照。
+	 *
+	 * 查询规则（设计文档 §7）：
+	 * 1. 目标是当前 session，直接读取内存快照；
+	 * 2. 目标在 suspendedSessions，读取保存的同一 AgentSession 实例的内存快照；
+	 * 3. 目标未加载，从 SessionManager 最后一条 `gitpilot.execution-run.v1` 恢复终态摘要；
+	 *    不为仅查看而创建完整 AgentSession runtime。
+	 */
+	getSessionExecutionSnapshot(sessionPath: string): AgentExecutionSnapshot | undefined {
+		const normalizedPath = resolvePath(sessionPath);
+		if (this.session.sessionFile && resolvePath(this.session.sessionFile) === normalizedPath) {
+			return this.session.executionSnapshot;
+		}
+		const suspended = this.suspendedSessions.get(normalizedPath);
+		if (suspended) {
+			return suspended.session.executionSnapshot;
+		}
+		return this._restoreExecutionSnapshotFromHistory(sessionPath);
+	}
+
+	/** 查询目标会话的执行摘要（不含活动工具参数与输出），供 list_sessions 使用。 */
+	getSessionExecutionSummary(sessionPath: string): AgentExecutionSummary | undefined {
+		const snapshot = this.getSessionExecutionSnapshot(sessionPath);
+		if (!snapshot) return undefined;
+		return {
+			runId: snapshot.runId,
+			status: snapshot.status,
+			phase: snapshot.phase,
+			startedAt: snapshot.startedAt,
+			endedAt: snapshot.endedAt,
+			updatedAt: snapshot.updatedAt,
+			sequence: snapshot.sequence,
+			activeToolCount: snapshot.activeTools.length,
+			activeToolName: snapshot.activeTools[0]?.toolName,
+		};
+	}
+
+	/**
+	 * 从未加载会话的 JSONL 历史恢复终态快照。
+	 * 只读取最后一条 `gitpilot.execution-run.v1` custom entry；没有则返回 undefined
+	 * （旧会话由调用方降级到首尾消息时间戳推断）。
+	 */
+	private _restoreExecutionSnapshotFromHistory(sessionPath: string): AgentExecutionSnapshot | undefined {
+		try {
+			const sessionManager = SessionManager.open(sessionPath);
+			const entries = sessionManager.getEntries();
+			for (let i = entries.length - 1; i >= 0; i -= 1) {
+				const entry = entries[i];
+				if (entry.type === "custom" && entry.customType === EXECUTION_RUN_ENTRY_CUSTOM_TYPE) {
+					const timestamp = new Date(entry.timestamp).getTime();
+					const restored = restoreExecutionSnapshotFromEntry(timestamp, entry.data);
+					if (restored) return restored;
+				}
+			}
+			return undefined;
+		} catch {
+			// 会话文件不存在或无法解析时静默降级。
+			return undefined;
+		}
 	}
 
 	private async finishSessionReplacement(withSession?: (ctx: ReplacedSessionContext) => Promise<void>): Promise<void> {

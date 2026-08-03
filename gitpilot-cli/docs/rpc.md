@@ -256,12 +256,33 @@ Response:
     "sessionName": "my-feature-work",
     "autoCompactionEnabled": true,
     "messageCount": 5,
-    "pendingMessageCount": 0
+    "pendingMessageCount": 0,
+    "rpcCapabilities": [
+      "session_execution_snapshot_v1",
+      "session_event_metadata_v1",
+      "switch_session_snapshot_v1"
+    ],
+    "execution": {
+      "runId": null,
+      "status": "idle",
+      "phase": "idle",
+      "updatedAt": 1719500000000,
+      "sequence": 0,
+      "activeTools": []
+    }
   }
 }
 ```
 
 The `model` field is a full [Model](#model) object or `null`. The `sessionName` field is the display name set via `set_session_name`, or omitted if not set.
+
+`rpcCapabilities` lists the capabilities the sidecar supports. Clients must not assume capabilities from the application version; only enable new code paths when the corresponding capability is present. The v1 capabilities are:
+
+- `session_execution_snapshot_v1`: `get_state`, `list_sessions`, `get_session_snapshot` and `switch_session` carry authoritative `execution` snapshots (runId, status, phase, startedAt/endedAt, activeTools, sequence).
+- `session_event_metadata_v1`: real-time events are enriched with `sessionFile`, `sessionId`, `runId`, `sequence`, and `emittedAt`.
+- `switch_session_snapshot_v1`: `switch_session` success responses include an atomic `snapshot`.
+
+`execution` is the [Execution Snapshot](#execution-snapshot) for the current session. It is the single source of truth for whether a run is in progress, its phase, and its precise timing. Old sidecars omit both fields; clients fall back to inferring from `isStreaming` and message timestamps.
 
 #### get_messages
 
@@ -673,13 +694,40 @@ Load a different session file. Can be cancelled by a `session_before_switch` ext
 
 Response:
 ```json
-{"type": "response", "command": "switch_session", "success": true, "data": {"cancelled": false}}
+{"type": "response", "command": "switch_session", "success": true, "data": {"cancelled": false, "snapshot": {...}}}
 ```
 
 If an extension cancelled the switch:
 ```json
 {"type": "response", "command": "switch_session", "success": true, "data": {"cancelled": true}}
 ```
+
+When the sidecar advertises `switch_session_snapshot_v1` and the switch succeeds, `data.snapshot` is an atomic [Session Snapshot](#session-snapshot) for the target session. Clients should consume it directly instead of issuing separate `get_state` / `get_messages` requests, which avoids the multi-request race during task switching. When the sidecar lacks the capability, `snapshot` is omitted and clients fall back to the legacy multi-request path.
+
+#### get_session_snapshot
+
+Atomically retrieve the current session state, messages, and execution snapshot in a single response. Use this on application startup, sidecar reconnect, or explicit refresh to recover the full current state without races.
+
+```json
+{"type": "get_session_snapshot"}
+```
+
+Response (see [Session Snapshot](#session-snapshot)):
+```json
+{
+  "type": "response",
+  "command": "get_session_snapshot",
+  "success": true,
+  "data": {
+    "session": {...},
+    "execution": {...},
+    "messages": [...],
+    "eventCursor": 42
+  }
+}
+```
+
+`eventCursor` is the execution snapshot's `sequence` at the time of the snapshot. After applying the snapshot, clients should drop any already-buffered events with `sequence <= eventCursor` (matched by `sessionFile + runId + sequence`), then apply the remaining events in order.
 
 #### fork
 
@@ -901,6 +949,27 @@ Each command has:
 ## Events
 
 Events are streamed to stdout as JSON lines during agent operation. Events do NOT include an `id` field (only responses do).
+
+### Event Metadata
+
+When the sidecar advertises `session_event_metadata_v1`, every event is enriched with transport-layer metadata. The original event `type` and fields are preserved, so older clients can ignore the extra fields.
+
+```json
+{
+  "type": "message_update",
+  "...original event fields...": "...",
+  "sessionFile": "/path/to/session.jsonl",
+  "sessionId": "abc123",
+  "runId": "urn:uuid:...",
+  "sequence": 17,
+  "emittedAt": 1719500000123
+}
+```
+
+- `sequence` is monotonic within a single session and reflects the authoritative execution snapshot's sequence at the moment the event was emitted. It is only meaningful for events with a non-null `runId`.
+- Clients must compare `sessionFile + runId + sequence` together; sequence is not comparable across sessions or runs.
+- During task switching, buffer target-session events and drop any with `sequence <= snapshot.eventCursor` after the atomic snapshot arrives, then apply the rest in order.
+- `runId` is `null`/omitted for idle-period events (e.g. `thinking_level_changed`); such events are not subject to run-scoped deduplication.
 
 ### Event Types
 
@@ -1628,3 +1697,56 @@ process.on("SIGINT", () => {
     agent.stdin.write(JSON.stringify({ type: "abort" }) + "\n");
 });
 ```
+
+## Execution Snapshot
+
+The execution snapshot is the CLI Core's authoritative view of what a session is doing right now. It is returned in `get_state` (`execution`), `list_sessions` (per-item `execution` summary), and the atomic [Session Snapshot](#session-snapshot). Clients must not infer run state from message timestamps when a snapshot is available.
+
+```json
+{
+  "runId": "urn:uuid:...",
+  "status": "running",
+  "phase": "tool",
+  "startedAt": 1719500000000,
+  "endedAt": 1719500012000,
+  "updatedAt": 1719500009000,
+  "sequence": 42,
+  "rootUserTimestamp": 1719500000000,
+  "activeTools": [
+    {
+      "toolCallId": "call_1",
+      "toolName": "bash",
+      "status": "running",
+      "args": {...},
+      "partialResult": "...",
+      "startedAt": 1719500008000,
+      "sequence": 40
+    }
+  ],
+  "lastError": "optional error message for failed runs"
+}
+```
+
+- `status`: `idle` | `running` | `completed` | `failed` | `stopped`.
+- `phase`: `preparing` | `thinking` | `responding` | `tool` | `retrying` | `compacting` | `queued_continuation` | `waiting_confirmation` | `settling` | `idle`.
+- `runId` is generated when a user prompt begins a run and is preserved across automatic retry, auto-compaction, and queued continuation within that run. A single tool failure does not end the run; the final status is determined at `agent_settled`.
+- `startedAt` / `endedAt` mark the precise run boundaries. `endedAt` is written only on `agent_settled`, abort, or unrecoverable failure.
+- `activeTools` supports parallel tools, keyed by `toolCallId`. Tools are removed from this array when they reach a terminal state; full tool history is recovered from assistant tool calls and tool results in messages.
+- `sequence` is monotonic per session and used for event deduplication (see [Event Metadata](#event-metadata)).
+
+When a session is not currently loaded, the snapshot is restored from the last `gitpilot.execution-run.v1` custom entry persisted at run settle. Sessions created before this feature existed have no such entry; clients fall back to inferring duration from message timestamps and must not use that to judge whether a run is in progress.
+
+## Session Snapshot
+
+The atomic session snapshot bundles state, messages, and the execution snapshot from a single moment. It is returned by `get_session_snapshot` and (when the capability is present) by a successful `switch_session`.
+
+```json
+{
+  "session": { "...RpcSessionState fields...": "..." },
+  "execution": { "...Execution Snapshot fields...": "..." },
+  "messages": [...],
+  "eventCursor": 42
+}
+```
+
+`eventCursor` equals `execution.sequence`. After hydrating from a snapshot, drop buffered events whose `sessionFile + runId + sequence` indicates they were already reflected (sequence <= eventCursor within the same run), then apply newer events in order.

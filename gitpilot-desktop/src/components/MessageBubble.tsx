@@ -68,7 +68,6 @@ export const MessageBubble = memo(function MessageBubble({ message }: { message:
 			<ExecutionBatch
 				steps={message.executionSteps}
 				thinking={message.meta?.thinking as string | undefined}
-				durationMs={message.meta?.durationMs as number | undefined}
 				changedFiles={message.changedFiles}
 			/>
 		) : null;

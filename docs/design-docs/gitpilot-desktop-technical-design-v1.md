@@ -131,7 +131,8 @@ SidecarBridge
 | `steer` / `follow_up` | 流式中插入指令 | 不打断当前回合 |
 | `abort` | 停止按钮 / Esc | 中止当前 agent 循环 |
 | `new_session` | 侧栏"新会话" | parentSession 支持会话树 |
-| `get_state` | 窗口加载 / 重连后 | 恢复会话树、当前模型、思维级别 |
+| `get_state` | 窗口加载 / 重连后 | 恢复会话树、当前模型、思维级别；v1 起附带 `rpcCapabilities` 与权威 `execution` 快照 |
+| `get_session_snapshot` | 启动 / 重连 / 刷新 | v1 新增：原子取得会话状态、消息与执行快照，避免 `get_state`+`get_messages` 多请求竞态 |
 | `set_model` / `cycle_model` | `/model` 面板 / Ctrl+L | 平台 CHAT 模型列表 |
 | `set_thinking_level` / `cycle_thinking_level` | 思维级别选择器 | |
 | `get_available_models` | 模型面板打开时 | 拉取平台已配置 CHAT 模型 |
@@ -143,10 +144,18 @@ SidecarBridge
 
 | RPC 事件（stdout） | React 渲染 | 说明 |
 |---|---|---|
-| `AgentSessionEvent` 流 | 对话气泡 + 增量 token | 工具调用渲染成代码卡片 |
-| `response`（带 id） | Promise resolve | 命令结果回传渲染层 |
+| `AgentSessionEvent` 流 | 对话气泡 + 增量 token | 工具调用渲染成代码卡片；v1 起事件附带 `sessionFile/sessionId/runId/sequence/emittedAt` 元数据，用于切换竞态去重 |
+| `response`（带 id） | Promise resolve | 命令结果回传渲染层；`switch_session` 成功响应 v1 起附带原子 `snapshot` |
 | `extension_ui_request` | 弹出对应模态（见第 7 节） | 扩展请求 UI 交互 |
 | slash 命令清单 | 命令面板 | 启动时缓存到 Zustand |
+
+### 6.3 执行快照与恢复（v1 已落地）
+
+CLI Core 是会话执行状态（runId、状态、阶段、计时、活动工具、事件序号）的唯一事实来源，详见 [GitPilot CLI 会话执行快照技术设计](gitpilot-cli-session-execution-snapshot-technical-design-v1.md)。桌面端按 `rpcCapabilities` 启用新链路：
+
+- `switch_session` 成功时直接消费附带快照（`hydrateExecutionSnapshot`），一次性恢复状态/消息/执行，不再发 `get_state`+`get_messages`；旧 sidecar 无快照时回退原多请求路径与消息时间戳推断（`getRunningExecutionSeed`）。
+- 实时事件按 `sessionFile + runId + sequence` 去重：快照 `eventCursor` 之后的旧事件被丢弃，解决切换/重连竞态。
+- `isStreaming` 在新协议主路径由快照 `status === "running"` 派生；运行中/总耗时、过程折叠与正文展示等视觉行为仍由 React 负责，未下沉到 CLI。
 
 ## 7. Extension UI 与 Slash 命令映射
 

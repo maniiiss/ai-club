@@ -12,6 +12,7 @@
  */
 
 import * as crypto from "node:crypto";
+import type { AgentSessionEvent } from "../../core/agent-session.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { prepareAttachment } from "../../core/attachments/prepare-attachment.ts";
 import { SessionManager } from "../../core/session-manager.ts";
@@ -30,13 +31,17 @@ import {
 import { killTrackedDetachedChildren } from "../../utils/shell.ts";
 import { type Theme, theme } from "../interactive/theme/theme.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
-import type {
-	RpcCommand,
-	RpcExtensionUIRequest,
-	RpcExtensionUIResponse,
-	RpcResponse,
-	RpcSessionState,
-	RpcSlashCommand,
+import {
+	RPC_CAPABILITIES,
+	type RpcAgentSessionEvent,
+	type RpcCommand,
+	type RpcDesktopSessionSnapshot,
+	type RpcExtensionUIRequest,
+	type RpcExtensionUIResponse,
+	type RpcResponse,
+	type RpcSessionListItem,
+	type RpcSessionState,
+	type RpcSlashCommand,
 } from "./rpc-types.ts";
 import { getPlatformUrl, setPlatformUrl } from "../../extensions/gitpilot/config.ts";
 import { deleteCliToken, loadCliToken, saveCliToken } from "../../extensions/gitpilot/credentials.ts";
@@ -44,12 +49,18 @@ import { getCurrentCreditAccount, getCurrentUser, revokeCliToken } from "../../e
 
 // Re-export types for consumers
 export type {
+	RpcAgentSessionEvent,
 	RpcCommand,
+	RpcDesktopSessionSnapshot,
 	RpcExtensionUIRequest,
 	RpcExtensionUIResponse,
 	RpcResponse,
+	RpcSessionExecutionSnapshot,
+	RpcSessionExecutionSummary,
+	RpcSessionListItem,
 	RpcSessionState,
 } from "./rpc-types.ts";
+export { RPC_CAPABILITIES } from "./rpc-types.ts";
 
 /**
  * Run in RPC mode.
@@ -78,6 +89,56 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 	const error = (id: string | undefined, command: string, message: string): RpcResponse => {
 		return { id, type: "response", command, success: false, error: message };
+	};
+
+	/** 构造当前会话状态 DTO，附带能力列表与权威执行快照（设计文档 §8.1）。 */
+	const buildSessionState = (): RpcSessionState => ({
+		model: session.model,
+		thinkingLevel: session.thinkingLevel,
+		isStreaming: session.isStreaming,
+		isCompacting: session.isCompacting,
+		steeringMode: session.steeringMode,
+		followUpMode: session.followUpMode,
+		sessionFile: session.sessionFile,
+		sessionId: session.sessionId,
+		sessionName: session.sessionName,
+		autoCompactionEnabled: session.autoCompactionEnabled,
+		messageCount: session.messages.length,
+		pendingMessageCount: session.pendingMessageCount,
+		rpcCapabilities: [...RPC_CAPABILITIES],
+		execution: session.executionSnapshot,
+	});
+
+	/**
+	 * 构造原子会话快照：会话状态、消息与执行快照来自同一会话同一时刻，
+	 * eventCursor 对齐当前快照序号，供 Desktop 丢弃旧事件（设计文档 §8.3）。
+	 */
+	const buildDesktopSnapshot = (): RpcDesktopSessionSnapshot => {
+		const execution = session.executionSnapshot;
+		return {
+			session: buildSessionState(),
+			execution,
+			messages: session.messages,
+			eventCursor: execution.sequence,
+		};
+	};
+
+	/**
+	 * 为实时事件附加传输层元数据后输出（设计文档 §8.4）。
+	 * sequence 取自事件分发后刷新的执行快照，保证与 snapshot 对齐；
+	 * runId 为 null（idle 期间事件）时不参与 run 级去重。
+	 */
+	const emitEvent = (event: AgentSessionEvent): void => {
+		const execution = session.executionSnapshot;
+		const enriched: RpcAgentSessionEvent = {
+			...event,
+			sessionFile: session.sessionFile,
+			sessionId: session.sessionId,
+			runId: execution.runId ?? undefined,
+			sequence: execution.sequence,
+			emittedAt: Date.now(),
+		};
+		output(enriched);
 	};
 
 	// Pending extension UI requests waiting for response
@@ -357,7 +418,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		unsubscribe?.();
 		unsubscribeBackpressure?.();
 		unsubscribe = session.subscribe((event) => {
-			output(event);
+			emitEvent(event);
 			if (event.type === "agent_settled") {
 				void checkShutdownRequested();
 			}
@@ -479,21 +540,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "get_state": {
-				const state: RpcSessionState = {
-					model: session.model,
-					thinkingLevel: session.thinkingLevel,
-					isStreaming: session.isStreaming,
-					isCompacting: session.isCompacting,
-					steeringMode: session.steeringMode,
-					followUpMode: session.followUpMode,
-					sessionFile: session.sessionFile,
-					sessionId: session.sessionId,
-					sessionName: session.sessionName,
-					autoCompactionEnabled: session.autoCompactionEnabled,
-					messageCount: session.messages.length,
-					pendingMessageCount: session.pendingMessageCount,
-				};
-				return success(id, "get_state", state);
+				return success(id, "get_state", buildSessionState());
 			}
 
 			// =================================================================
@@ -622,7 +669,14 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (!result.cancelled) {
 					await rebindSession();
 				}
-				return success(id, "switch_session", result);
+				// 切换成功时附带原子快照，避免 Desktop 再发 get_state/get_messages 多请求竞态。
+				const snapshot = result.cancelled ? undefined : buildDesktopSnapshot();
+				return success(id, "switch_session", { cancelled: result.cancelled, snapshot });
+			}
+
+			case "get_session_snapshot": {
+				// 原子取得当前会话状态、消息与执行快照，供应用启动/重连/刷新使用。
+				return success(id, "get_session_snapshot", buildDesktopSnapshot());
 			}
 
 			case "fork": {
@@ -670,15 +724,18 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			case "list_sessions": {
 				// scope=all 跨所有项目目录列会话（SessionManager.listAll），每条带 cwd 供前端按项目分组；
-				// 否则只列当前 cwd 的会话。
+				// 否则只列当前 cwd 的会话。每条附带运行态摘要，桌面侧栏可在任务离开视口后继续显示运行标记。
 				const sessionManager = session.sessionManager;
 				const sessions =
 					command.scope === "all"
 						? await SessionManager.listAll()
 						: await SessionManager.list(sessionManager.getCwd(), sessionManager.getSessionDir());
-				return success(id, "list_sessions", {
-					sessions: sessions.map((item) => ({ ...item, isStreaming: runtimeHost.isSessionStreaming(item.path) })),
-				});
+				const items: RpcSessionListItem[] = sessions.map((item) => ({
+					...item,
+					isStreaming: runtimeHost.isSessionStreaming(item.path),
+					execution: runtimeHost.getSessionExecutionSummary(item.path),
+				}));
+				return success(id, "list_sessions", { sessions: items });
 			}
 
 			case "get_last_assistant_text": {

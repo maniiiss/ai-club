@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { bridgeLifecycle, initBridge, destroyBridge } = vi.hoisted(() => ({
+const { bridgeLifecycle, initBridge, destroyBridge, rpcMocks } = vi.hoisted(() => ({
 	bridgeLifecycle: {
 		ready: new Set<() => void>(),
 		disconnect: new Set<() => void>(),
@@ -10,6 +10,11 @@ const { bridgeLifecycle, initBridge, destroyBridge } = vi.hoisted(() => ({
 	},
 	initBridge: vi.fn(async () => undefined),
 	destroyBridge: vi.fn(async () => undefined),
+	rpcMocks: {
+		switchSession: vi.fn(async () => ({ success: false })),
+		getState: vi.fn(async () => ({ success: false })),
+		getMessages: vi.fn(async () => ({ success: false })),
+	},
 }));
 
 vi.mock('@/src/rpc/bridge', () => ({
@@ -37,10 +42,11 @@ vi.mock('@/src/rpc/bridge', () => ({
 		bridgeLifecycle.extension.add(callback);
 		return () => bridgeLifecycle.extension.delete(callback);
 	},
-	rpc: new Proxy({}, { get: () => vi.fn(async () => ({ success: false })) }),
+	rpc: new Proxy(rpcMocks, { get: (target, property) => Reflect.get(target, property) ?? vi.fn(async () => ({ success: false })) }),
 }));
 
 import { useSessionStore } from './session';
+import { useWorkbenchStore } from './workbench';
 
 describe('桌面会话生命周期契约', () => {
 	beforeEach(() => {
@@ -51,6 +57,7 @@ describe('桌面会话生命周期契约', () => {
 		bridgeLifecycle.extension.clear();
 		initBridge.mockClear();
 		destroyBridge.mockClear();
+		Object.values(rpcMocks).forEach((mock) => mock.mockReset().mockResolvedValue({ success: false }));
 		(globalThis as { window?: Window }).window = {
 			setInterval: ((callback: TimerHandler) => setInterval(callback, 10_000)) as typeof window.setInterval,
 			clearInterval: ((handle: number) => clearInterval(handle)) as typeof window.clearInterval,
@@ -92,5 +99,83 @@ describe('桌面会话生命周期契约', () => {
 		expect(bridgeLifecycle.ready.size).toBe(0);
 		expect(bridgeLifecycle.disconnect.size).toBe(0);
 		expect(useSessionStore.getState().connection).toBe('idle');
+	});
+
+	it('切回仍在执行的任务时恢复运行中状态和原始计时起点', async () => {
+		const sessionPath = 'C:\\sessions\\running.jsonl';
+		rpcMocks.switchSession.mockResolvedValue({ success: true } as never);
+		rpcMocks.getState.mockResolvedValue({
+			success: true,
+			command: 'get_state',
+			data: {
+				thinkingLevel: 'off', isStreaming: true, isCompacting: false, steeringMode: 'all', followUpMode: 'all',
+				sessionFile: sessionPath, sessionId: 'running', autoCompactionEnabled: true, messageCount: 1, pendingMessageCount: 0,
+			},
+		} as never);
+		rpcMocks.getMessages.mockResolvedValue({
+			success: true,
+			command: 'get_messages',
+			data: { messages: [{ role: 'user', content: [{ type: 'text', text: '继续检查项目' }], timestamp: 5_000 }] },
+		} as never);
+		useSessionStore.setState({
+			sessions: [{ path: sessionPath, id: 'running', cwd: 'C:\\workspace', created: '', modified: '', messageCount: 1, firstMessage: '继续检查项目', isStreaming: true }],
+			projects: [{ path: 'C:\\workspace', name: 'workspace' }],
+			selectedSessionPath: null,
+			sessionState: null,
+			isSessionLoading: false,
+			isStreaming: false,
+		});
+
+		await useSessionStore.getState().switchSession(sessionPath);
+
+		expect(useSessionStore.getState()).toMatchObject({ selectedSessionPath: sessionPath, isStreaming: true, isSessionLoading: false });
+		expect(useWorkbenchStore.getState().execution).toMatchObject({ status: 'running', lastPrompt: '继续检查项目', startedAt: 5_000 });
+	});
+
+	it('switch_session 附带原子快照时一次性恢复状态/消息/执行，不再发 get_messages', async () => {
+		const sessionPath = 'C:\\sessions\\running.jsonl';
+		const execution = {
+			runId: 'run-xyz', status: 'running', phase: 'tool', startedAt: 8_000, updatedAt: 9_000, sequence: 7,
+			activeTools: [{ toolCallId: 't1', toolName: 'bash', status: 'running', startedAt: 8_500, sequence: 5 }],
+		};
+		rpcMocks.switchSession.mockResolvedValue({
+			success: true,
+			command: 'switch_session',
+			data: {
+				cancelled: false,
+				snapshot: {
+					session: {
+						thinkingLevel: 'off', isStreaming: true, isCompacting: false, steeringMode: 'all', followUpMode: 'all',
+						sessionFile: sessionPath, sessionId: 'running', autoCompactionEnabled: true, messageCount: 1, pendingMessageCount: 0,
+						rpcCapabilities: ['session_execution_snapshot_v1', 'session_event_metadata_v1', 'switch_session_snapshot_v1'],
+						execution,
+					},
+					execution,
+					messages: [{ role: 'user', content: [{ type: 'text', text: '分析日志' }], timestamp: 8_000 }],
+					eventCursor: 7,
+				},
+			},
+		} as never);
+		useSessionStore.setState({
+			sessions: [{ path: sessionPath, id: 'running', cwd: 'C:\\workspace', created: '', modified: '', messageCount: 1, firstMessage: '分析日志', isStreaming: true }],
+			projects: [{ path: 'C:\\workspace', name: 'workspace' }],
+			selectedSessionPath: null,
+			sessionState: null,
+			isSessionLoading: false,
+			isStreaming: false,
+			rpcCapabilities: [],
+		});
+
+		await useSessionStore.getState().switchSession(sessionPath);
+
+		// 新协议主路径：直接消费快照，跳过 get_state/get_messages 多请求。
+		expect(rpcMocks.getMessages).not.toHaveBeenCalled();
+		const state = useSessionStore.getState();
+		expect(state).toMatchObject({ selectedSessionPath: sessionPath, isStreaming: true, isSessionLoading: false });
+		expect(state.sessionState?.sessionFile).toBe(sessionPath);
+		expect(state.rpcCapabilities).toContain('session_execution_snapshot_v1');
+		expect(state.messages.some((message) => message.role === 'user' && message.text.includes('分析日志'))).toBe(true);
+		// 执行态由权威快照重建：runId/startedAt 来自快照，而非消息时间戳推断。
+		expect(useWorkbenchStore.getState().execution).toMatchObject({ runId: 'run-xyz', status: 'running', startedAt: 8_000, lastSequence: 7 });
 	});
 });

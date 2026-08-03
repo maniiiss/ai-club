@@ -7,7 +7,11 @@
 
 import type { AgentMessage, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { ImageContent, Model } from "@earendil-works/pi-ai";
-import type { SessionStats } from "../../core/agent-session.ts";
+import type { AgentSessionEvent, SessionStats } from "../../core/agent-session.ts";
+import type {
+	AgentExecutionSnapshot,
+	AgentExecutionSummary,
+} from "../../core/agent-execution-state.ts";
 import type { AttachmentInput, PreparedAttachment } from "../../core/attachments/prepare-attachment.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
@@ -29,6 +33,66 @@ export interface RpcPlatformAccount {
 export interface RpcPlatformConnection {
 	connected: boolean;
 }
+
+// ============================================================================
+// 执行快照（设计文档 §8）
+// ============================================================================
+
+/** RPC 传输用的执行快照，直接复用 CLI Core 的权威类型。 */
+export type RpcSessionExecutionSnapshot = AgentExecutionSnapshot;
+
+/** RPC 传输用的执行摘要（不含活动工具参数与输出），供列表场景使用。 */
+export type RpcSessionExecutionSummary = AgentExecutionSummary;
+
+/**
+ * v1 能力编码。Desktop 不按版本号硬编码行为，只按能力字段启用对应链路。
+ * 旧 sidecar 不宣告这些能力，新 Desktop 自动回退前端推断。
+ */
+export const RPC_CAPABILITY_SESSION_EXECUTION_SNAPSHOT_V1 = "session_execution_snapshot_v1";
+export const RPC_CAPABILITY_SESSION_EVENT_METADATA_V1 = "session_event_metadata_v1";
+export const RPC_CAPABILITY_SWITCH_SESSION_SNAPSHOT_V1 = "switch_session_snapshot_v1";
+
+/** 当前 sidecar 宣告的全部能力。 */
+export const RPC_CAPABILITIES: readonly string[] = [
+	RPC_CAPABILITY_SESSION_EXECUTION_SNAPSHOT_V1,
+	RPC_CAPABILITY_SESSION_EVENT_METADATA_V1,
+	RPC_CAPABILITY_SWITCH_SESSION_SNAPSHOT_V1,
+];
+
+/**
+ * 实时事件传输层元数据（设计文档 §8.4）。
+ * 不污染 Core 原始 AgentSessionEvent 类型，仅在 RPC 输出时附加。
+ * 保留事件原有 `type`，不新增外层 envelope，旧客户端可忽略额外字段。
+ */
+export interface RpcSessionEventMetadata {
+	sessionFile?: string;
+	sessionId: string;
+	runId?: string;
+	sequence: number;
+	emittedAt: number;
+}
+
+/** 附带传输层元数据的实时事件。 */
+export type RpcAgentSessionEvent = AgentSessionEvent & RpcSessionEventMetadata;
+
+/**
+ * 原子会话快照（设计文档 §8.3）。
+ * 应用启动、sidecar 重连和显式刷新当前任务时一次取得会话状态、消息和执行快照，
+ * 避免switch_session -> get_state -> get_messages 多请求竞态。
+ */
+export interface RpcDesktopSessionSnapshot {
+	session: RpcSessionState;
+	execution: RpcSessionExecutionSnapshot;
+	messages: AgentMessage[];
+	/** 当前快照对应的事件游标，Desktop 据此丢弃 sequence <= eventCursor 的旧事件。 */
+	eventCursor: number;
+}
+
+/** list_sessions 返回的会话条目，附带运行态摘要。 */
+export type RpcSessionListItem = SessionInfo & {
+	isStreaming?: boolean;
+	execution?: RpcSessionExecutionSummary;
+};
 
 // ============================================================================
 // RPC Commands (stdin)
@@ -86,6 +150,8 @@ export type RpcCommand =
 	| { id?: string; type: "list_sessions"; scope?: "current" | "all" }
 	| { id?: string; type: "get_last_assistant_text" }
 	| { id?: string; type: "set_session_name"; name: string }
+	/** 原子取得当前会话状态、消息与执行快照，供应用启动/重连/刷新使用（设计文档 §8.3）。 */
+	| { id?: string; type: "get_session_snapshot" }
 
 	// Messages
 	| { id?: string; type: "get_messages" }
@@ -136,6 +202,10 @@ export interface RpcSessionState {
 	autoCompactionEnabled: boolean;
 	messageCount: number;
 	pendingMessageCount: number;
+	/** 当前 sidecar 宣告的能力列表，Desktop 据此启用新链路或回退旧推断。 */
+	rpcCapabilities?: string[];
+	/** 当前会话的权威执行快照（仅当 sidecar 宣告 session_execution_snapshot_v1 时存在）。 */
+	execution?: RpcSessionExecutionSnapshot;
 }
 
 // ============================================================================
@@ -221,7 +291,7 @@ export type RpcResponse =
 	// Session
 	| { id?: string; type: "response"; command: "get_session_stats"; success: true; data: SessionStats }
 	| { id?: string; type: "response"; command: "export_html"; success: true; data: { path: string } }
-	| { id?: string; type: "response"; command: "switch_session"; success: true; data: { cancelled: boolean } }
+	| { id?: string; type: "response"; command: "switch_session"; success: true; data: { cancelled: boolean; snapshot?: RpcDesktopSessionSnapshot } }
 	| { id?: string; type: "response"; command: "fork"; success: true; data: { text: string; cancelled: boolean } }
 	| { id?: string; type: "response"; command: "clone"; success: true; data: { cancelled: boolean } }
 	| {
@@ -246,12 +316,19 @@ export type RpcResponse =
 			data: { tree: SessionTreeNode[]; leafId: string | null };
 	  }
 	| {
-			id?: string;
-			type: "response";
-			command: "list_sessions";
-			success: true;
-			data: { sessions: SessionInfo[] };
-	  }
+				id?: string;
+				type: "response";
+				command: "list_sessions";
+				success: true;
+				data: { sessions: RpcSessionListItem[] };
+		  }
+	| {
+				id?: string;
+				type: "response";
+				command: "get_session_snapshot";
+				success: true;
+				data: RpcDesktopSessionSnapshot;
+		  }
 	| {
 			id?: string;
 			type: "response";

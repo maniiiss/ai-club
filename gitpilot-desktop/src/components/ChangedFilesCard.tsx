@@ -7,6 +7,7 @@
 import { useState } from 'react';
 import { Folder } from 'lucide-react';
 import type { ChangedFile, ChangeStatus } from '@/src/store/changed-files';
+import { Button } from '@/src/components/ui/button';
 import { DiffView } from './CodeCard';
 import styles from './ChangedFilesCard.module.css';
 
@@ -22,8 +23,9 @@ export function ChangedFileItem({ file }: { file: ChangedFile }) {
 	const [expanded, setExpanded] = useState(false);
 	return (
 		<div>
-			<button
+			<Button
 				type="button"
+				variant="unstyled"
 				className={`${styles.row} ${file.editable ? styles.rowEditable : ''}`}
 				onClick={() => file.editable && setExpanded((v) => !v)}
 			>
@@ -34,7 +36,7 @@ export function ChangedFileItem({ file }: { file: ChangedFile }) {
 					{file.removed > 0 && <span className={styles.statsDel}> -{file.removed}</span>}
 				</span>
 				{file.editable && <span className={styles.toggle}>{expanded ? '▾' : '▸'}</span>}
-			</button>
+			</Button>
 			{expanded && file.diff && (
 				<div className={styles.diffWrap}>
 					<DiffView text={file.diff} />

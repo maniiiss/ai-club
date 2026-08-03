@@ -156,6 +156,8 @@ export const rpc = {
 	listSessions: (scope?: 'current' | 'all') => send({ type: 'list_sessions', scope }),
 	getMessages: () => send({ type: 'get_messages' }),
 	switchSession: (sessionPath: string) => send({ type: 'switch_session', sessionPath }),
+	/** 原子取得当前会话状态、消息与执行快照，供启动/重连/刷新使用（设计文档 §8.3）。 */
+	getSessionSnapshot: () => send({ type: 'get_session_snapshot' }),
 	setSessionName: (name: string) => send({ type: 'set_session_name', name }),
 	exportHtml: (outputPath?: string) => send({ type: 'export_html', outputPath }),
 	getCommands: () => send({ type: 'get_commands' }),
@@ -228,6 +230,37 @@ function mockResponseFor(cmd: RpcCommand & { id: string }): RpcResponse {
 					autoCompactionEnabled: true,
 					messageCount: 0,
 					pendingMessageCount: 0,
+					rpcCapabilities: [
+						'session_execution_snapshot_v1',
+						'session_event_metadata_v1',
+						'switch_session_snapshot_v1',
+					],
+					execution: { runId: null, status: 'idle', phase: 'idle', updatedAt: Date.now(), sequence: 0, activeTools: [] },
+				},
+			};
+		case 'get_session_snapshot':
+			return {
+				id,
+				type: 'response',
+				command: 'get_session_snapshot',
+				success: true,
+				data: {
+					session: {
+						model: { id: 'mock-model', name: 'Mock 模型', api: 'openai', provider: 'gitpilot' },
+						thinkingLevel: mockThinkingLevel,
+						isStreaming: false,
+						isCompacting: false,
+						steeringMode: 'one-at-a-time',
+						followUpMode: 'one-at-a-time',
+						sessionId: 'mock-session',
+						sessionName: 'Mock 会话',
+						autoCompactionEnabled: true,
+						messageCount: 0,
+						pendingMessageCount: 0,
+					},
+					execution: { runId: null, status: 'idle', phase: 'idle', updatedAt: Date.now(), sequence: 0, activeTools: [] },
+					messages: [],
+					eventCursor: 0,
 				},
 			};
 		case 'get_available_models':

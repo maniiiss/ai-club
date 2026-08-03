@@ -116,6 +116,90 @@ export interface SessionListItem {
 	firstMessage: string;
 	/** sidecar runtime 是否仍在执行，任务切换后用于保留左侧 loading 状态。 */
 	isStreaming?: boolean;
+	/** 当前会话执行摘要（仅当 sidecar 宣告 session_execution_snapshot_v1 时存在）。 */
+	execution?: AgentExecutionSummary;
+}
+
+// ============================================================================
+// 执行快照（与 gitpilot-cli agent-execution-state.ts 对齐，设计文档 §8）
+// ============================================================================
+
+export type AgentExecutionStatus = 'idle' | 'running' | 'completed' | 'failed' | 'stopped';
+
+export type AgentExecutionPhase =
+	| 'preparing'
+	| 'thinking'
+	| 'responding'
+	| 'tool'
+	| 'retrying'
+	| 'compacting'
+	| 'queued_continuation'
+	| 'waiting_confirmation'
+	| 'settling'
+	| 'idle';
+
+/** 单个活动工具的执行快照，按 toolCallId 独立维护，支持并行工具。 */
+export interface AgentExecutionToolSnapshot {
+	toolCallId: string;
+	toolName: string;
+	status: 'running' | 'waiting' | 'succeeded' | 'failed';
+	args?: unknown;
+	partialResult?: unknown;
+	result?: unknown;
+	isError?: boolean;
+	startedAt: number;
+	endedAt?: number;
+	sequence: number;
+}
+
+/** Agent 执行快照：CLI Core 对当前 run 的权威状态视图。 */
+export interface AgentExecutionSnapshot {
+	runId: string | null;
+	status: AgentExecutionStatus;
+	phase: AgentExecutionPhase;
+	startedAt?: number;
+	endedAt?: number;
+	updatedAt: number;
+	sequence: number;
+	rootUserTimestamp?: number;
+	activeTools: AgentExecutionToolSnapshot[];
+	lastError?: string;
+}
+
+/** 执行摘要（不含活动工具参数与输出），供列表场景使用。 */
+export interface AgentExecutionSummary {
+	runId: string | null;
+	status: AgentExecutionStatus;
+	phase: AgentExecutionPhase;
+	startedAt?: number;
+	endedAt?: number;
+	updatedAt: number;
+	sequence: number;
+	activeToolCount: number;
+	activeToolName?: string;
+}
+
+/** v1 能力编码。Desktop 只按能力字段启用新链路，不按版本号硬编码行为。 */
+export const RPC_CAPABILITY_SESSION_EXECUTION_SNAPSHOT_V1 = 'session_execution_snapshot_v1';
+export const RPC_CAPABILITY_SESSION_EVENT_METADATA_V1 = 'session_event_metadata_v1';
+export const RPC_CAPABILITY_SWITCH_SESSION_SNAPSHOT_V1 = 'switch_session_snapshot_v1';
+
+/** 实时事件传输层元数据（设计文档 §8.4）。 */
+export interface RpcSessionEventMetadata {
+	sessionFile?: string;
+	sessionId: string;
+	runId?: string;
+	sequence: number;
+	emittedAt: number;
+}
+
+/** 原子会话快照：会话状态、消息与执行快照来自同一会话同一时刻（设计文档 §8.3）。 */
+export interface RpcDesktopSessionSnapshot {
+	session: RpcSessionState;
+	execution: AgentExecutionSnapshot;
+	messages: unknown[];
+	/** 当前快照对应的事件游标，丢弃 sequence <= eventCursor 的旧事件。 */
+	eventCursor: number;
 }
 
 // ============================================================================
@@ -147,6 +231,8 @@ export type RpcCommand =
 	| { id?: string; type: 'get_entries'; since?: string }
 	| { id?: string; type: 'get_messages' }
 	| { id?: string; type: 'switch_session'; sessionPath: string }
+	/** 原子取得当前会话状态、消息与执行快照，供启动/重连/刷新使用（设计文档 §8.3）。 */
+	| { id?: string; type: 'get_session_snapshot' }
 	| { id?: string; type: 'set_session_name'; name: string }
 	| { id?: string; type: 'export_html'; outputPath?: string }
 	| { id?: string; type: 'get_commands' }
@@ -180,6 +266,10 @@ export interface RpcSessionState {
 	autoCompactionEnabled: boolean;
 	messageCount: number;
 	pendingMessageCount: number;
+	/** sidecar 宣告的能力列表，Desktop 据此启用新链路或回退旧推断。 */
+	rpcCapabilities?: string[];
+	/** 当前会话权威执行快照（仅当 sidecar 宣告 session_execution_snapshot_v1 时存在）。 */
+	execution?: AgentExecutionSnapshot;
 }
 
 // ============================================================================
@@ -210,7 +300,8 @@ export type RpcResponse =
 	| { id?: string; type: 'response'; command: 'list_sessions'; success: true; data: { sessions: SessionListItem[] } }
 	| { id?: string; type: 'response'; command: 'get_entries'; success: true; data: { entries: SessionEntry[]; leafId: string | null } }
 	| { id?: string; type: 'response'; command: 'get_messages'; success: true; data: { messages: unknown[] } }
-	| { id?: string; type: 'response'; command: 'switch_session'; success: true; data: { cancelled: boolean } }
+	| { id?: string; type: 'response'; command: 'switch_session'; success: true; data: { cancelled: boolean; snapshot?: RpcDesktopSessionSnapshot } }
+	| { id?: string; type: 'response'; command: 'get_session_snapshot'; success: true; data: RpcDesktopSessionSnapshot }
 	| { id?: string; type: 'response'; command: 'set_session_name'; success: true }
 	| { id?: string; type: 'response'; command: 'export_html'; success: true; data: { path: string } }
 	| { id?: string; type: 'response'; command: 'get_commands'; success: true; data: { commands: RpcSlashCommand[] } }

@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 class ModelConfigServiceUsageExtractTest {
 
     private final ObjectMapper mapper = new ObjectMapper();
-    private final ModelConfigService service = new ModelConfigService(null, null, mapper);
+    private final ModelConfigService service = new ModelConfigService(null, null, null, mapper);
 
     private Object invokeExtract(String method, String json) throws Exception {
         Method m = ModelConfigService.class.getDeclaredMethod(method, JsonNode.class);
