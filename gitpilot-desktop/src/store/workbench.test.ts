@@ -191,6 +191,32 @@ describe('Agent 工作台本地交互状态', () => {
 		expect(execution.steps[0]).toMatchObject({ id: 't1', toolCallId: 't1', kind: 'command', status: 'running', title: 'bash' });
 	});
 
+	it('hydrateExecutionSnapshot 合并消息历史步骤与活动工具，按 toolCallId 去重', () => {
+		useWorkbenchStore.getState().hydrateExecutionSnapshot(
+			{
+				runId: 'run-abc',
+				status: 'running',
+				phase: 'tool',
+				startedAt: 1_000,
+				updatedAt: 5_000,
+				sequence: 42,
+				activeTools: [
+					{ toolCallId: 't-running', toolName: 'bash', status: 'running', startedAt: 4_000, sequence: 40 },
+					{ toolCallId: 't-done', toolName: 'read', status: 'succeeded', startedAt: 2_000, endedAt: 3_000, sequence: 30 },
+				],
+			},
+			'分析日志',
+			[
+				{ id: 't-done', toolCallId: 't-done', kind: 'read', status: 'succeeded', title: 'read', startedAt: 2_000, endedAt: 3_000 },
+			],
+		);
+
+		const execution = useWorkbenchStore.getState().execution;
+		// 已完成步骤在前、运行中工具在后，且同 toolCallId 不重复。
+		expect(execution.steps.map((step) => step.toolCallId)).toEqual(['t-done', 't-running']);
+		expect(execution.steps[1]).toMatchObject({ toolCallId: 't-running', status: 'running', title: 'bash' });
+	});
+
 	it('序号守卫丢弃已被快照覆盖的旧序号事件与旧 run 事件', () => {
 		useWorkbenchStore.getState().hydrateExecutionSnapshot({
 			runId: 'run-abc',

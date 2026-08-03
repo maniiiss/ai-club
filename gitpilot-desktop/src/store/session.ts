@@ -700,19 +700,11 @@ export function agentMessagesToUi(messages: unknown[], isStreaming = false): UIM
 	let segmentStartTs: number | null = null;
 	let lastTs: number | null = null;
 	let segmentUserIndex = -1;
-	/** 将当前段耗时回填到 user 消息，并把工具步骤、改动文件和思考汇总为 execution UIMessage。 */
-	const flushExecutionBatch = () => {
-		const durationMs = segmentStartTs != null && lastTs != null ? lastTs - segmentStartTs : undefined;
-		if (segmentUserIndex >= 0 && durationMs != null && durationMs >= 0) {
-			const userMessage = result[segmentUserIndex];
-			result[segmentUserIndex] = { ...userMessage, meta: { ...(userMessage.meta ?? {}), executionDurationMs: durationMs } };
-		}
+	/** 把当前已累积的工具步骤、改动文件和思考汇总为 execution UIMessage（不触碰段级计时状态）。 */
+	const flushPendingBatch = () => {
 		if (pendingSteps.length === 0) {
 			pendingOps = [];
 			pendingThinking = '';
-			segmentStartTs = null;
-			lastTs = null;
-			segmentUserIndex = -1;
 			return;
 		}
 		const changedFiles = aggregateChangedFiles(pendingOps);
@@ -727,6 +719,15 @@ export function agentMessagesToUi(messages: unknown[], isStreaming = false): UIM
 		pendingSteps = [];
 		pendingOps = [];
 		pendingThinking = '';
+	};
+	/** 段边界：把该段耗时回填到 user 消息，并归档剩余批次、重置段状态。 */
+	const flushExecutionBatch = () => {
+		const durationMs = segmentStartTs != null && lastTs != null ? lastTs - segmentStartTs : undefined;
+		if (segmentUserIndex >= 0 && durationMs != null && durationMs >= 0) {
+			const userMessage = result[segmentUserIndex];
+			result[segmentUserIndex] = { ...userMessage, meta: { ...(userMessage.meta ?? {}), executionDurationMs: durationMs } };
+		}
+		flushPendingBatch();
 		segmentStartTs = null;
 		lastTs = null;
 		segmentUserIndex = -1;
@@ -746,11 +747,14 @@ export function agentMessagesToUi(messages: unknown[], isStreaming = false): UIM
 			}
 		} else if (msg.role === 'assistant') {
 			if (ts != null) lastTs = ts;
+			pendingThinking += (msg.content ?? []).filter((c) => c.type === 'thinking').map((c) => c.thinking ?? '').join('');
+			// 新正文出现前，先把前面已完成的工具步骤归档为执行批次，保持“正文-操作-正文”交错顺序
+			// （与实时路径 turn_end 归档行为一致，而不是把整段工具堆到段尾）。
+			if (pendingSteps.length > 0) flushPendingBatch();
 			const text = (msg.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
 			if (text.trim()) result.push({ id: `hist-${i}`, role: 'assistant' as const, text, kind: 'text' as MessageKind });
 			pendingSteps.push(...parseExecutionStepsFromMessages(messages, i));
 			pendingOps.push(...parseOpsFromMessages(messages, i));
-			pendingThinking += (msg.content ?? []).filter((c) => c.type === 'thinking').map((c) => c.thinking ?? '').join('');
 		} else if (msg.role === 'toolResult') {
 			if (ts != null) lastTs = ts;
 		}
@@ -758,6 +762,35 @@ export function agentMessagesToUi(messages: unknown[], isStreaming = false): UIM
 	// 任务进行中时，最后一段是尚未完成的执行，不归档（由实时面板承接）；已完成则归档。
 	if (!isStreaming) flushExecutionBatch();
 	return result;
+}
+
+/**
+ * 从消息历史恢复“当前段”（最后一个 user 消息之后）已完成的工具步骤。
+ *
+ * 运行中会话切回时 agentMessagesToUi(isStreaming=true) 不归档最后一段，
+ * 这些步骤既不在正文批次、也不在权威快照 activeTools（快照只含仍在运行的工具），
+ * 需要由执行面板承接，否则切回后会丢失工具执行历史。
+ */
+export function buildRestoredExecutionSteps(messages: unknown[]): ExecutionStep[] {
+	let lastUser = -1;
+	for (let i = messages.length - 1; i >= 0; i -= 1) {
+		if ((messages[i] as { role?: string }).role === 'user') {
+			lastUser = i;
+			break;
+		}
+	}
+	if (lastUser < 0) return [];
+	const steps: ExecutionStep[] = [];
+	for (let i = lastUser + 1; i < messages.length; i += 1) {
+		const msg = messages[i] as { role?: string; timestamp?: unknown };
+		if (msg.role !== 'assistant') continue;
+		const ts = messageTimestamp(msg) ?? 0;
+		// 消息历史不携带精确工具耗时，用 assistant 消息时间戳近似单步计时。
+		for (const step of parseExecutionStepsFromMessages(messages, i)) {
+			steps.push({ ...step, startedAt: ts, endedAt: ts });
+		}
+	}
+	return steps;
 }
 
 // ============================================================================
@@ -880,7 +913,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			// 仅在确有运行态或本地执行已被重置时重建，避免覆盖正在实时归并的步骤。
 			const currentExecution = useWorkbenchStore.getState().execution;
 			if (restoredStreaming || currentExecution.status === 'idle') {
-				useWorkbenchStore.getState().hydrateExecutionSnapshot(snapshot.execution, prompt ?? undefined);
+				const priorSteps = restoredStreaming ? buildRestoredExecutionSteps(snapshot.messages) : [];
+				useWorkbenchStore.getState().hydrateExecutionSnapshot(snapshot.execution, prompt ?? undefined, priorSteps);
 			}
 			set({
 				sessionState: snapshot.session,
@@ -1344,8 +1378,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 				const restoredStreaming = snapshot.execution.status === 'running';
 				const restoredMessages = agentMessagesToUi(snapshot.messages, restoredStreaming);
 				const prompt = [...restoredMessages].reverse().find((message) => message.role === 'user')?.text ?? session.firstMessage ?? '';
-				// 用权威快照重建执行态（含 runId/lastSequence 序号守卫基准），替代从消息时间戳推断 startedAt。
-				useWorkbenchStore.getState().hydrateExecutionSnapshot(snapshot.execution, prompt);
+				// 用权威快照重建执行态（含 runId/lastSequence 序号守卫基准），替代从消息时间戳推断 startedAt；
+				// 运行中会话的当前段已完成工具步骤由消息历史恢复，避免工具执行历史丢失。
+				const priorSteps = restoredStreaming ? buildRestoredExecutionSteps(snapshot.messages) : [];
+				useWorkbenchStore.getState().hydrateExecutionSnapshot(snapshot.execution, prompt, priorSteps);
 				set({
 					sessionState: snapshot.session,
 					selectedSessionPath: sessionPath,
@@ -1377,7 +1413,12 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 					const fallbackPrompt = [...restoredMessages].reverse().find((message) => message.role === 'user')?.text
 						?? session.firstMessage
 						?? '';
-					useWorkbenchStore.getState().restoreRunningExecution(seed?.prompt || fallbackPrompt, seed?.startedAt);
+					// 旧 sidecar 兼容路径：无权威快照，当前段已完成工具步骤同样由消息历史恢复。
+					useWorkbenchStore.getState().restoreRunningExecution(
+						seed?.prompt || fallbackPrompt,
+						seed?.startedAt,
+						buildRestoredExecutionSteps(res.data.messages),
+					);
 				}
 				set({ messages: restoredMessages, _streamingAssistantId: null, isStreaming: restoredStreaming, isSessionLoading: false, selectedSessionPath: sessionPath, guidanceQueue: [], isFlushingGuidance: false, isStopping: false });
 			} else {

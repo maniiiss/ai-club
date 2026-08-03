@@ -178,4 +178,48 @@ describe('桌面会话生命周期契约', () => {
 		// 执行态由权威快照重建：runId/startedAt 来自快照，而非消息时间戳推断。
 		expect(useWorkbenchStore.getState().execution).toMatchObject({ runId: 'run-xyz', status: 'running', startedAt: 8_000, lastSequence: 7 });
 	});
+
+	it('切回运行中会话时把当前段已完成工具步骤恢复到执行面板', async () => {
+		const sessionPath = 'C:\\sessions\\running.jsonl';
+		const execution = { runId: 'run-xyz', status: 'running', phase: 'responding', startedAt: 8_000, updatedAt: 9_000, sequence: 7, activeTools: [] };
+		rpcMocks.switchSession.mockResolvedValue({
+			success: true,
+			command: 'switch_session',
+			data: {
+				cancelled: false,
+				snapshot: {
+					session: {
+						thinkingLevel: 'off', isStreaming: true, isCompacting: false, steeringMode: 'all', followUpMode: 'all',
+						sessionFile: sessionPath, sessionId: 'running', autoCompactionEnabled: true, messageCount: 3, pendingMessageCount: 0,
+						rpcCapabilities: ['session_execution_snapshot_v1', 'session_event_metadata_v1', 'switch_session_snapshot_v1'],
+						execution,
+					},
+					execution,
+					messages: [
+						{ role: 'user', content: [{ type: 'text', text: '检查项目' }], timestamp: 8_000 },
+						{ role: 'assistant', content: [{ type: 'toolCall', id: 'call_1', name: 'read', arguments: { path: 'README.md' } }], timestamp: '2026-08-03T10:00:05Z' },
+						{ role: 'toolResult', toolCallId: 'call_1', content: [{ type: 'text', text: '文件内容' }], timestamp: '2026-08-03T10:00:06Z' },
+					],
+					eventCursor: 7,
+				},
+			},
+		} as never);
+		useSessionStore.setState({
+			sessions: [{ path: sessionPath, id: 'running', cwd: 'C:\\workspace', created: '', modified: '', messageCount: 3, firstMessage: '检查项目', isStreaming: true }],
+			projects: [{ path: 'C:\\workspace', name: 'workspace' }],
+			selectedSessionPath: null,
+			sessionState: null,
+			isSessionLoading: false,
+			isStreaming: false,
+			rpcCapabilities: [],
+		});
+
+		await useSessionStore.getState().switchSession(sessionPath);
+
+		// 当前段（最后一个 user 之后）的已完成工具步骤由消息历史恢复到执行面板，不丢失。
+		const executionState = useWorkbenchStore.getState().execution;
+		expect(executionState).toMatchObject({ runId: 'run-xyz', status: 'running' });
+		expect(executionState.steps).toHaveLength(1);
+		expect(executionState.steps[0]).toMatchObject({ toolCallId: 'call_1', kind: 'read', status: 'succeeded', title: 'read' });
+	});
 });

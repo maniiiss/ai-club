@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyEvent, agentMessagesToUi, filterDesktopThinkingLevels, getAssistantMessageEndText, getRunningExecutionSeed, platformConnectionStateFromResponse, shouldSkipProjectSwitch, type UIMessage } from './session';
+import { applyEvent, agentMessagesToUi, buildRestoredExecutionSteps, filterDesktopThinkingLevels, getAssistantMessageEndText, getRunningExecutionSeed, platformConnectionStateFromResponse, shouldSkipProjectSwitch, type UIMessage } from './session';
 import { useWorkbenchStore } from './workbench';
 
 function applyToStreamingState(state: { messages: UIMessage[]; _streamingAssistantId: string | null; isStreaming: boolean }, event: Parameters<typeof applyEvent>[1]) {
@@ -18,6 +18,37 @@ describe('历史消息回放', () => {
 		], 20_000);
 
 		expect(seed).toEqual({ prompt: '继续检查项目', startedAt: 5_000 });
+	});
+
+	it('运行中会话切回时从消息历史恢复当前段的已完成工具步骤', () => {
+		const steps = buildRestoredExecutionSteps([
+			{ role: 'user', content: [{ type: 'text', text: '检查项目' }], timestamp: '2026-08-03T10:00:00Z' },
+			{ role: 'assistant', content: [{ type: 'toolCall', id: 'call_1', name: 'read', arguments: { path: 'README.md' } }], timestamp: '2026-08-03T10:00:05Z' },
+			{ role: 'toolResult', toolCallId: 'call_1', content: [{ type: 'text', text: '文件内容' }], timestamp: '2026-08-03T10:00:06Z' },
+			{ role: 'assistant', content: [{ type: 'text', text: '部分回答' }], timestamp: '2026-08-03T10:00:10Z' },
+		]);
+
+		expect(steps).toHaveLength(1);
+		expect(steps[0]).toMatchObject({
+			toolCallId: 'call_1',
+			kind: 'read',
+			status: 'succeeded',
+			title: 'read',
+			startedAt: new Date('2026-08-03T10:00:05Z').getTime(),
+		});
+	});
+
+	it('只恢复最后一个 user 消息之后的工具步骤，不包含已完成段', () => {
+		const steps = buildRestoredExecutionSteps([
+			{ role: 'user', content: [{ type: 'text', text: '第一轮' }], timestamp: '2026-08-03T10:00:00Z' },
+			{ role: 'assistant', content: [{ type: 'toolCall', id: 'call_old', name: 'bash', arguments: {} }], timestamp: '2026-08-03T10:00:01Z' },
+			{ role: 'toolResult', toolCallId: 'call_old', content: [{ type: 'text', text: 'ok' }], timestamp: '2026-08-03T10:00:02Z' },
+			{ role: 'user', content: [{ type: 'text', text: '当前轮' }], timestamp: '2026-08-03T10:00:03Z' },
+			{ role: 'assistant', content: [{ type: 'toolCall', id: 'call_new', name: 'edit', arguments: {} }], timestamp: '2026-08-03T10:00:04Z' },
+			{ role: 'toolResult', toolCallId: 'call_new', content: [{ type: 'text', text: 'ok' }], timestamp: '2026-08-03T10:00:05Z' },
+		]);
+
+		expect(steps.map((step) => step.toolCallId)).toEqual(['call_new']);
 	});
 
 	it('回放用户消息、助手正文，并按执行汇总工具调用为执行批次（含思考与耗时）', () => {
@@ -72,6 +103,25 @@ describe('历史消息回放', () => {
 		expect(execBatch).toBeTruthy();
 		expect(execBatch?.changedFiles?.length).toBeGreaterThan(0);
 		expect(messages.some((m) => m.kind === 'changed_files')).toBe(false);
+	});
+
+	it('切换回放保持正文-操作-正文交错顺序，而不是把工具堆到段尾', () => {
+		const messages = agentMessagesToUi([
+			{ role: 'user', content: [{ type: 'text', text: '检查项目' }], timestamp: '2026-08-03T10:00:00Z' },
+			{ role: 'assistant', content: [{ type: 'text', text: '我先检查配置。' }], timestamp: '2026-08-03T10:00:05Z' },
+			{ role: 'assistant', content: [{ type: 'toolCall', id: 'call_1', name: 'read', arguments: { path: 'README.md' } }], timestamp: '2026-08-03T10:00:10Z' },
+			{ role: 'toolResult', toolCallId: 'call_1', content: [{ type: 'text', text: '内容' }], timestamp: '2026-08-03T10:00:11Z' },
+			{ role: 'assistant', content: [{ type: 'text', text: '检查完成。' }], timestamp: '2026-08-03T10:00:20Z' },
+		]);
+
+		// 顺序应为：user -> 正文1 -> 执行批次(read) -> 正文2，而不是 正文1/正文2 堆在一起。
+		expect(messages.map((m) => (m.kind === 'execution' ? 'exec' : m.kind === 'text' ? (m.role === 'user' ? 'user' : 'text') : m.kind))).toEqual([
+			'user', 'text', 'exec', 'text',
+		]);
+		expect(messages[1]).toMatchObject({ role: 'assistant', text: '我先检查配置。' });
+		expect(messages[2]?.kind).toBe('execution');
+		expect((messages[2] as UIMessage & { executionSteps?: unknown[] }).executionSteps).toHaveLength(1);
+		expect(messages[3]).toMatchObject({ role: 'assistant', text: '检查完成。' });
 	});
 });
 

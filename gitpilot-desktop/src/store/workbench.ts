@@ -259,12 +259,13 @@ interface WorkbenchStore {
 	updateLayout: (patch: Partial<LayoutPreferences>) => void;
 	beginExecution: (prompt: string) => void;
 	/** 切回仍在后台执行的会话时恢复计时起点，避免顶部“运行中”因本地 Workbench 已重置而消失。 */
-	restoreRunningExecution: (prompt: string, startedAt?: number) => void;
+	restoreRunningExecution: (prompt: string, startedAt?: number, priorSteps?: ExecutionStep[]) => void;
 	/**
 	 * 用 sidecar 权威执行快照重建本地 ExecutionRun（设计文档 §10.1）。
 	 * 替代新协议主路径上从消息时间戳推断 startedAt 的旧逻辑；同时绑定 runId/lastSequence 作为序号守卫基准。
+	 * priorSteps 为从消息历史恢复的当前段已完成工具步骤（快照 activeTools 只含仍在运行的工具）。
 	 */
-	hydrateExecutionSnapshot: (snapshot: AgentExecutionSnapshot, prompt?: string) => void;
+	hydrateExecutionSnapshot: (snapshot: AgentExecutionSnapshot, prompt?: string, priorSteps?: ExecutionStep[]) => void;
 	applyExecutionEvent: (event: AgentSessionEvent) => void;
 	/** 将一批已显示在聊天区的工具步骤标记为已归档，避免后续正文重复展示。 */
 	markExecutionStepsReported: (stepIds: string[]) => void;
@@ -294,16 +295,17 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 		set({ layout });
 	},
 	beginExecution: (prompt) => set({ execution: createRun(prompt), selectedStepId: null }),
-	restoreRunningExecution: (prompt, startedAt) => {
+	restoreRunningExecution: (prompt, startedAt, priorSteps) => {
 		const now = Date.now();
 		const safeStartedAt = typeof startedAt === 'number' && Number.isFinite(startedAt) && startedAt > 0 && startedAt <= now
 			? startedAt
 			: now;
-		set({ execution: createRun(prompt, safeStartedAt, true), selectedStepId: null });
+		// 旧 sidecar 兼容路径：无权威快照，当前段已完成工具步骤由消息历史恢复。
+		set({ execution: { ...createRun(prompt, safeStartedAt, true), steps: priorSteps ?? [] }, selectedStepId: null });
 	},
-	hydrateExecutionSnapshot: (snapshot, prompt) => {
-		// 用权威快照重建活动工具步骤；快照只保留仍在运行的工具，已结束工具由消息历史恢复。
-		const steps: ExecutionStep[] = snapshot.activeTools.map((tool) => ({
+	hydrateExecutionSnapshot: (snapshot, prompt, priorSteps) => {
+		// 用权威快照重建活动工具步骤；快照只保留仍在运行的工具，当前段已结束工具由消息历史恢复（priorSteps）。
+		const activeSteps: ExecutionStep[] = snapshot.activeTools.map((tool) => ({
 			id: tool.toolCallId,
 			toolCallId: tool.toolCallId,
 			kind: classifyExecutionKind(tool.toolName),
@@ -315,6 +317,12 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 			startedAt: tool.startedAt,
 			endedAt: tool.endedAt,
 		}));
+		// 合并去重：priorSteps（已完成）在前，activeSteps（运行中）在后，按 toolCallId 去重。
+		const byId = new Map<string, ExecutionStep>();
+		for (const step of [...(priorSteps ?? []), ...activeSteps]) {
+			byId.set(step.toolCallId ?? step.id, step);
+		}
+		const steps = Array.from(byId.values());
 		const run: ExecutionRun = {
 			id: snapshot.runId ?? `run-${snapshot.updatedAt}`,
 			status: snapshot.status,
