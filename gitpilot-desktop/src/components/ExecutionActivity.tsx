@@ -80,9 +80,9 @@ function describeChangedFile(file: ChangedFile): string {
 function ThinkingBlock({ thinking }: { thinking: string }) {
 	const [expanded, setExpanded] = useState(false);
 	return (
-		<div className={styles.thinkingBlock}>
+		<div className={styles.traceStep}>
 			<span className={styles.traceStepTitle} role="button" tabIndex={0} onClick={() => setExpanded((v) => !v)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded((v) => !v); } }}>思考</span>
-			{expanded && <pre>{thinking}</pre>}
+			{expanded && <pre className={styles.traceStepOutput}>{thinking}</pre>}
 		</div>
 	);
 }
