@@ -26,8 +26,9 @@
 .divider { border-top: 1px solid var(--gp-border); margin: 6px 0; }
 .timer { display: inline-flex; align-items: center; gap: 4px; }
 .trace { padding: 0 12px 8px; max-height: 320px; overflow: auto; }
-.traceStep { margin: 10px 0; }
-.traceStepTitle { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--gp-text-muted); font-family: var(--font-mono); cursor: default; }
+.traceStep { margin: 14px 0; }
+.traceStepTitle { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--gp-text-muted); font-family: var(--font-mono); cursor: default; min-width: 0; }
+.traceStepText { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .traceStepIcon { flex: 0 0 auto; color: var(--gp-text-muted); }
 .traceStepTitle[role="button"] { cursor: pointer; }
 .traceStepTitle[role="button"]:hover { color: var(--gp-action-hover); }

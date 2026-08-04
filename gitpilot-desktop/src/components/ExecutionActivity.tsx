@@ -92,7 +92,7 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
 		<div className={styles.traceStep}>
 			<span className={styles.traceStepTitle} role="button" tabIndex={0} onClick={() => setExpanded((v) => !v)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded((v) => !v); } }}>
 				<Brain size={13} aria-hidden="true" className={styles.traceStepIcon} />
-				思考过程
+					<span className={styles.traceStepText}>思考过程</span>
 			</span>
 			{expanded && <pre className={styles.traceStepOutput}>{thinking}</pre>}
 		</div>
@@ -114,7 +114,7 @@ function TraceStep({ step }: { step: ExecutionStep }) {
 				onKeyDown={hasOutput ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded((v) => !v); } } : undefined}
 			>
 				<ExecutionStepIcon kind={step.kind} />
-				{describeExecutionStep(step)}
+				<span className={styles.traceStepText}>{describeExecutionStep(step)}</span>
 			</span>
 			{expanded && output && <pre className={styles.traceStepOutput}>{output}</pre>}
 		</div>
@@ -145,8 +145,8 @@ function ExecutionTrace({ items }: { items: TraceItem[] }) {
 						return (
 							<div key={`f-${index}-${item.file.path}`} className={styles.traceStep}>
 								<span className={styles.traceStepTitle}>
-									<FileDiff size={13} aria-hidden="true" className={styles.traceStepIcon} />
-									{describeChangedFile(item.file)}
+								<FileDiff size={13} aria-hidden="true" className={styles.traceStepIcon} />
+									<span className={styles.traceStepText}>{describeChangedFile(item.file)}</span>
 								</span>
 							</div>
 						);
