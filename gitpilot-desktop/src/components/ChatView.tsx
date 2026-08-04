@@ -307,22 +307,23 @@ export function ChatView() {
 											<div className={styles.messageSlotInner}><MessageBubble message={m} /></div>
 										</div>
 										{m.role === 'user' && (
-											<ExecutionTimer
-												isRunning={index === lastUserIndex && isStreaming}
-												startedAt={index === lastUserIndex ? executionStartedAt : undefined}
-												durationMs={details?.durationMs}
-												steps={details?.steps}
-												thinking={details?.thinking}
-												changedFiles={details?.changedFiles}
-												progressTexts={details?.progressTexts}
-												isCollapsing={retainedCompletedUserId === m.id}
-											/>
+											<>
+												<ExecutionTimer
+													isRunning={index === lastUserIndex && isStreaming}
+													startedAt={index === lastUserIndex ? executionStartedAt : undefined}
+													durationMs={details?.durationMs}
+													steps={details?.steps}
+													thinking={details?.thinking}
+													changedFiles={details?.changedFiles}
+													progressTexts={details?.progressTexts}
+													isCollapsing={retainedCompletedUserId === m.id}
+												/>
+												{index === lastUserIndex && isStreaming && <ExecutionActivity isStreaming={isStreaming} />}
+											</>
 										)}
 									</Fragment>;
-								})}
-								{/* 只有当前思考/工具活动跟在最新内容之后；运行计时仍固定在本次回复起点。 */}
-								{isStreaming && <ExecutionActivity isStreaming={isStreaming} />}
-							</div>
+									})}
+								</div>
 					)}
 					</div>
 				</div>
