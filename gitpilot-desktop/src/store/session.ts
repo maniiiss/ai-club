@@ -532,6 +532,8 @@ function appendUnreportedExecutionBatch(set: SessionSetter): void {
 		};
 	});
 	if (steps.length > 0) useWorkbenchStore.getState().markExecutionStepsReported(steps.map((step) => step.id));
+	// 归档后清空思考累积，下一轮 thinking_delta 只描述新分析，避免按时间线回放时思考跨轮重复。
+	useWorkbenchStore.getState().resetThinking();
 }
 
 /**

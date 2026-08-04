@@ -121,29 +121,37 @@ function TraceStep({ step }: { step: ExecutionStep }) {
 	);
 }
 
-/** 执行过程日志流：思考 + 每个步骤标题 + 改动文件，统一普通文字样式；详情点击展开。 */
-function ExecutionTrace({ steps, thinking, changedFiles, progressTexts = [] }: {
-	steps: ExecutionStep[];
-	thinking?: string;
-	changedFiles?: ChangedFile[];
-	progressTexts?: string[];
-}) {
-	const visible = steps.filter((s) => s.kind !== 'complete');
-	const files = changedFiles ?? [];
-	if (!thinking?.trim() && visible.length === 0 && files.length === 0 && progressTexts.length === 0) return null;
+/** 执行过程日志流中的单项：思考、步骤、正文片段或改动文件，按真实输出顺序交错。 */
+export type TraceItem =
+	| { type: 'thinking'; text: string }
+	| { type: 'step'; step: ExecutionStep }
+	| { type: 'text'; text: string }
+	| { type: 'file'; file: ChangedFile };
+
+/** 执行过程日志流：按真实输出顺序交错思考/步骤/正文/改动文件；详情点击展开。 */
+function ExecutionTrace({ items }: { items: TraceItem[] }) {
+	if (items.length === 0) return null;
 	return (
 		<div className={styles.trace}>
-			{thinking?.trim() && <ThinkingBlock thinking={thinking} />}
-			{visible.map((step) => <TraceStep key={step.id} step={step} />)}
-			{progressTexts.map((text, index) => <div key={`${index}-${text}`} className={styles.progressText}>{text}</div>)}
-			{files.map((file) => (
-				<div key={file.path} className={styles.traceStep}>
-					<span className={styles.traceStepTitle}>
-						<FileDiff size={13} aria-hidden="true" className={styles.traceStepIcon} />
-						{describeChangedFile(file)}
-					</span>
-				</div>
-			))}
+			{items.map((item, index) => {
+				switch (item.type) {
+					case 'thinking':
+						return <ThinkingBlock key={`t-${index}`} thinking={item.text} />;
+					case 'step':
+						return <TraceStep key={item.step.id ?? `s-${index}`} step={item.step} />;
+					case 'text':
+						return <div key={`p-${index}`} className={styles.progressText}>{item.text}</div>;
+					case 'file':
+						return (
+							<div key={`f-${index}-${item.file.path}`} className={styles.traceStep}>
+								<span className={styles.traceStepTitle}>
+									<FileDiff size={13} aria-hidden="true" className={styles.traceStepIcon} />
+									{describeChangedFile(item.file)}
+								</span>
+							</div>
+						);
+				}
+			})}
 		</div>
 	);
 }
@@ -159,13 +167,17 @@ export function ExecutionBatch({ steps, thinking, changedFiles }: {
 }) {
 	const [expanded, setExpanded] = useState(false);
 	const summaryLabel = steps.length === 1 ? describeExecutionStep(steps[0]) : describeExecutionBatch(steps);
+	const items: TraceItem[] = [];
+	if (thinking?.trim()) items.push({ type: 'thinking', text: thinking.trim() });
+	for (const step of steps) if (step.kind !== 'complete') items.push({ type: 'step', step });
+	for (const file of changedFiles ?? []) items.push({ type: 'file', file });
 	return (
 		<section className={styles.root} aria-label="已完成的 Agent 执行批次">
 			<Button type="button" variant="unstyled" size="sm" className={styles.summary} onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
 				<ChevronRight size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
 				<span className={styles.label}>{summaryLabel}</span>
 			</Button>
-			{expanded && <ExecutionTrace steps={steps} thinking={thinking} changedFiles={changedFiles} />}
+			{expanded && <ExecutionTrace items={items} />}
 		</section>
 	);
 }
@@ -178,14 +190,11 @@ export function getExecutionTimingLabel(isRunning: boolean, startedAt: number | 
 }
 
 /** 运行状态头固定在对应用户请求之后；完成后可在总耗时下展开整轮执行详情。 */
-export function ExecutionTimer({ isRunning, startedAt, durationMs, steps = [], thinking, changedFiles = [], progressTexts = [], isCollapsing = false }: {
+export function ExecutionTimer({ isRunning, startedAt, durationMs, items = [], isCollapsing = false }: {
 	isRunning: boolean;
 	startedAt?: number;
 	durationMs?: number;
-	steps?: ExecutionStep[];
-	thinking?: string;
-	changedFiles?: ChangedFile[];
-	progressTexts?: string[];
+	items?: TraceItem[];
 	isCollapsing?: boolean;
 }) {
 	const [now, setNow] = useState(Date.now);
@@ -200,7 +209,7 @@ export function ExecutionTimer({ isRunning, startedAt, durationMs, steps = [], t
 	}, [isRunning]);
 	const label = getExecutionTimingLabel(isRunning, startedAt, durationMs, now);
 	if (!label) return null;
-	const canExpand = !isRunning && (steps.length > 0 || Boolean(thinking?.trim()) || changedFiles.length > 0 || progressTexts.length > 0);
+	const canExpand = !isRunning && items.length > 0;
 	const statusLabel = <span className={`${styles.label} ${isRunning ? styles.running : ''}`}>{label}</span>;
 
 	return (
@@ -213,7 +222,7 @@ export function ExecutionTimer({ isRunning, startedAt, durationMs, steps = [], t
 			) : (
 				<span className={styles.statusLine} role="status"><span className={styles.timer}>{statusLabel}</span></span>
 			)}
-			{canExpand && expanded && <ExecutionTrace steps={steps} thinking={thinking} changedFiles={changedFiles} progressTexts={progressTexts} />}
+			{canExpand && expanded && <ExecutionTrace items={items} />}
 			<div className={styles.divider} />
 		</section>
 	);
@@ -226,6 +235,9 @@ export function ExecutionActivity({ isStreaming }: { isStreaming: boolean }) {
 	const label = getExecutionActivityLabel(execution, isStreaming);
 	const visibleSteps = getUnreportedExecutionSteps(execution);
 	const canExpand = Boolean(execution.thinking?.trim()) || visibleSteps.length > 0;
+	const liveItems: TraceItem[] = [];
+	if (execution.thinking?.trim()) liveItems.push({ type: 'thinking', text: execution.thinking.trim() });
+	for (const step of visibleSteps) liveItems.push({ type: 'step', step });
 
 	// 新问题会生成新的执行 run，面板必须回到收起状态，不能沿用上一次用户展开的详情。
 	useEffect(() => setExpanded(false), [execution.id]);
@@ -256,7 +268,7 @@ export function ExecutionActivity({ isStreaming }: { isStreaming: boolean }) {
 			{canExpand && (
 				<div className={`${styles.expanded} ${expanded ? styles.expandedOpen : ''}`} aria-hidden={!expanded} inert={!expanded}>
 					<div className={styles.expandedInner}>
-						<ExecutionTrace steps={visibleSteps} thinking={execution.thinking} />
+						<ExecutionTrace items={liveItems} />
 					</div>
 				</div>
 			)}

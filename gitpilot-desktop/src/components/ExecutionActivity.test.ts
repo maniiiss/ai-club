@@ -63,7 +63,7 @@ describe('聊天内执行摘要', () => {
 		const html = renderToStaticMarkup(createElement(ExecutionTimer, {
 			isRunning: false,
 			durationMs: 16_000,
-			steps: [{ id: 'read-1', kind: 'read', status: 'succeeded', title: 'read', startedAt: 1, endedAt: 2 }],
+			items: [{ type: 'step', step: { id: 'read-1', kind: 'read', status: 'succeeded', title: 'read', startedAt: 1, endedAt: 2 } }],
 		}));
 		expect(html).toContain('总耗时 16秒');
 		expect(html).toContain('divider');

@@ -11,7 +11,7 @@ import { useWorkbenchStore, type ExecutionStep } from '@/src/store/workbench';
 import type { ChangedFile } from '@/src/store/changed-files';
 import { Button } from '@/src/components/ui/button';
 import { MessageBubble } from './MessageBubble';
-import { ExecutionActivity, ExecutionTimer } from './ExecutionActivity';
+import { ExecutionActivity, ExecutionTimer, type TraceItem } from './ExecutionActivity';
 import { ConversationTimeline } from './ConversationTimeline';
 import styles from './ChatView.module.css';
 
@@ -60,6 +60,8 @@ export interface CollapsedExecutionDetails {
 	thinking?: string;
 	changedFiles: ChangedFile[];
 	progressTexts: string[];
+	/** 按真实输出顺序交错的思考/步骤/正文/改动文件，用于展开总耗时后的执行过程回放。 */
+	traceItems: TraceItem[];
 }
 
 /**
@@ -92,17 +94,28 @@ export function buildConversationPresentation(messages: UIMessage[], retainedCom
 		const assistantTexts = segment.filter((message) => message.role === 'assistant' && message.kind === 'text');
 		const finalAssistantTextId = assistantTexts.at(-1)?.id;
 		const progressTexts: string[] = [];
+		const traceItems: TraceItem[] = [];
 		const processMessageIds = new Set<string>();
 		let thinking: string | undefined;
 		for (const message of segment) {
 			if (message.role === 'assistant' && message.kind === 'text' && message.id !== finalAssistantTextId) {
-				if (message.text.trim()) progressTexts.push(message.text);
+				if (message.text.trim()) {
+					progressTexts.push(message.text);
+					traceItems.push({ type: 'text', text: message.text });
+				}
 				processMessageIds.add(message.id);
 			}
 			if (message.kind !== 'execution') continue;
 			processMessageIds.add(message.id);
-			for (const step of message.executionSteps ?? []) stepsById.set(step.id, step);
-			if (typeof message.meta?.thinking === 'string' && message.meta.thinking.trim()) thinking = message.meta.thinking;
+			const msgThinking = typeof message.meta?.thinking === 'string' && message.meta.thinking.trim() ? message.meta.thinking : undefined;
+			if (msgThinking) {
+				thinking = msgThinking;
+				traceItems.push({ type: 'thinking', text: msgThinking });
+			}
+			for (const step of message.executionSteps ?? []) {
+				stepsById.set(step.id, step);
+				if (step.kind !== 'complete') traceItems.push({ type: 'step', step });
+			}
 			for (const file of message.changedFiles ?? []) {
 				const previous = filesByPath.get(file.path);
 				filesByPath.set(file.path, previous ? {
@@ -115,12 +128,15 @@ export function buildConversationPresentation(messages: UIMessage[], retainedCom
 				} : file);
 			}
 		}
+		// 改动文件汇总放在执行过程末尾，与运行中实时面板一致。
+		for (const file of filesByPath.values()) traceItems.push({ type: 'file', file });
 		executionByUserId.set(user.id, {
 			durationMs,
 			steps: [...stepsById.values()],
 			thinking,
 			changedFiles: [...filesByPath.values()],
 			progressTexts,
+			traceItems,
 		});
 		processMessageIdsByUserId.set(user.id, processMessageIds);
 		visibleMessages.push(...(user.id === retainedCompletedUserId
@@ -307,23 +323,19 @@ export function ChatView() {
 											<div className={styles.messageSlotInner}><MessageBubble message={m} /></div>
 										</div>
 										{m.role === 'user' && (
-											<>
 												<ExecutionTimer
 													isRunning={index === lastUserIndex && isStreaming}
 													startedAt={index === lastUserIndex ? executionStartedAt : undefined}
 													durationMs={details?.durationMs}
-													steps={details?.steps}
-													thinking={details?.thinking}
-													changedFiles={details?.changedFiles}
-													progressTexts={details?.progressTexts}
+													items={details?.traceItems ?? []}
 													isCollapsing={retainedCompletedUserId === m.id}
 												/>
-												{index === lastUserIndex && isStreaming && <ExecutionActivity isStreaming={isStreaming} />}
-											</>
 										)}
 									</Fragment>;
-									})}
-								</div>
+								})}
+								{/* 只有当前思考/工具活动跟在最新内容之后；运行计时仍固定在本次回复起点。 */}
+								{isStreaming && <ExecutionActivity isStreaming={isStreaming} />}
+							</div>
 					)}
 					</div>
 				</div>

@@ -272,6 +272,8 @@ interface WorkbenchStore {
 	markExecutionStopped: () => void;
 	/** 切换/新建会话时重置执行状态，避免上一会话的步骤残留导致跨会话实时归档错位。 */
 	resetExecution: () => void;
+	/** 归档后清空思考累积，下一轮 thinking_delta 只描述新分析，避免按时间线回放时思考跨轮重复。 */
+	resetThinking: () => void;
 	addApprovalStep: (request: RpcExtensionUIRequest) => void;
 	resolveApprovalStep: (requestId: string) => void;
 	selectStep: (id: string | null) => void;
@@ -365,6 +367,7 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 	}),
 	markExecutionStopped: () => set((state) => ({ execution: { ...state.execution, status: 'stopped' } })),
 	resetExecution: () => set({ execution: { id: 'idle', status: 'idle', lastPrompt: null, steps: [] }, selectedStepId: null }),
+	resetThinking: () => set((state) => ({ execution: { ...state.execution, thinking: '' } })),
 	addApprovalStep: (request) => {
 		const now = Date.now();
 		const detail = 'message' in request ? request.message : 'title' in request ? request.title : 'sidecar 正在等待用户输入';
