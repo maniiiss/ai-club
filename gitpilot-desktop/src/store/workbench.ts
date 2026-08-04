@@ -9,6 +9,19 @@ import type { AgentSessionEvent, AgentExecutionSnapshot, RpcExtensionUIRequest }
 export type ExecutionKind = 'plan' | 'read' | 'edit' | 'command' | 'verify' | 'complete' | 'other';
 export type ExecutionStatus = 'running' | 'succeeded' | 'failed' | 'waiting';
 
+/** 右侧内容抽屉支持的内容类型；后续代码、Diff 入口复用同一容器。 */
+export type ContentDrawerKind = 'plan' | 'code' | 'diff' | 'text';
+
+/** 内容抽屉展示载荷，正文始终由调用方提供，避免抽屉直接访问 sidecar。 */
+export interface ContentDrawerContent {
+	id: string;
+	kind: ContentDrawerKind;
+	title: string;
+	content: string;
+	language?: string;
+	description?: string;
+}
+
 export interface ExecutionStep {
 	id: string;
 	toolCallId?: string;
@@ -256,6 +269,7 @@ interface WorkbenchStore {
 	globalPaletteOpen: boolean;
 	modelPickerRequest: number;
 	composerPrefill: string | null;
+	contentDrawer: ContentDrawerContent | null;
 	updateLayout: (patch: Partial<LayoutPreferences>) => void;
 	beginExecution: (prompt: string) => void;
 	/** 切回仍在后台执行的会话时恢复计时起点，避免顶部“运行中”因本地 Workbench 已重置而消失。 */
@@ -282,6 +296,9 @@ interface WorkbenchStore {
 	requestModelPicker: () => void;
 	prepareRetry: () => void;
 	consumeComposerPrefill: () => void;
+	setComposerPrefill: (text: string) => void;
+	openContentDrawer: (content: ContentDrawerContent) => void;
+	closeContentDrawer: () => void;
 }
 
 export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
@@ -291,19 +308,20 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 	globalPaletteOpen: false,
 	modelPickerRequest: 0,
 	composerPrefill: null,
+	contentDrawer: null,
 	updateLayout: (patch) => {
 		const layout = normalizeLayoutPreferences({ ...get().layout, ...patch });
 		saveLayout(layout);
 		set({ layout });
 	},
-	beginExecution: (prompt) => set({ execution: createRun(prompt), selectedStepId: null }),
+	beginExecution: (prompt) => set({ execution: createRun(prompt), selectedStepId: null, contentDrawer: null }),
 	restoreRunningExecution: (prompt, startedAt, priorSteps) => {
 		const now = Date.now();
 		const safeStartedAt = typeof startedAt === 'number' && Number.isFinite(startedAt) && startedAt > 0 && startedAt <= now
 			? startedAt
 			: now;
 		// 旧 sidecar 兼容路径：无权威快照，当前段已完成工具步骤由消息历史恢复。
-		set({ execution: { ...createRun(prompt, safeStartedAt, true), steps: priorSteps ?? [] }, selectedStepId: null });
+		set({ execution: { ...createRun(prompt, safeStartedAt, true), steps: priorSteps ?? [] }, selectedStepId: null, contentDrawer: null });
 	},
 	hydrateExecutionSnapshot: (snapshot, prompt, priorSteps) => {
 		// 用权威快照重建活动工具步骤；快照只保留仍在运行的工具，当前段已结束工具由消息历史恢复（priorSteps）。
@@ -337,7 +355,7 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 			runId: snapshot.runId ?? undefined,
 			lastSequence: snapshot.sequence,
 		};
-		set({ execution: run, selectedStepId: null });
+		set({ execution: run, selectedStepId: null, contentDrawer: null });
 	},
 	applyExecutionEvent: (event) => {
 		const current = get().execution;
@@ -366,7 +384,7 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 		return { execution: { ...state.execution, reportedStepIds } };
 	}),
 	markExecutionStopped: () => set((state) => ({ execution: { ...state.execution, status: 'stopped' } })),
-	resetExecution: () => set({ execution: { id: 'idle', status: 'idle', lastPrompt: null, steps: [] }, selectedStepId: null }),
+	resetExecution: () => set({ execution: { id: 'idle', status: 'idle', lastPrompt: null, steps: [] }, selectedStepId: null, contentDrawer: null }),
 	resetThinking: () => set((state) => ({ execution: { ...state.execution, thinking: '' } })),
 	addApprovalStep: (request) => {
 		const now = Date.now();
@@ -389,6 +407,10 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 		if (lastPrompt) set({ composerPrefill: lastPrompt });
 	},
 	consumeComposerPrefill: () => set({ composerPrefill: null }),
+	/** 扩展 set_editor_text 事件预填输入框（只预填，不自动发送） */
+	setComposerPrefill: (text: string) => set({ composerPrefill: text }),
+	openContentDrawer: (content) => set({ contentDrawer: content }),
+	closeContentDrawer: () => set({ contentDrawer: null }),
 }));
 
 /** 将毫秒格式化为可读时长：< 60s 显示“N秒”，< 1h 显示“N分N秒”，否则“N小时N分”。 */

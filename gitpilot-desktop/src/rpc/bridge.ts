@@ -109,7 +109,9 @@ export async function destroyBridge(): Promise<void> {
 
 /** 发送一条 RPC 命令并通过 invoke 等待 sidecar 对应 id 的响应。 */
 export function send<C extends RpcCommand>(cmd: C, timeoutMs = DEFAULT_TIMEOUT_MS): Promise<RpcResponse> {
-	const id = String(++cmdSeq);
+	// extension_ui_response 等命令携带 sidecar 生成的原始 id（如 select 请求的 UUID），
+	// 必须保留原 id，否则 sidecar 的 pendingExtensionRequests 无法匹配，扩展命令会永久挂起
+	const id = (cmd as { id?: string }).id ?? String(++cmdSeq);
 	const cmdWithId = { ...cmd, id } as RpcCommand & { id: string };
 
 	return new Promise<RpcResponse>((resolve, reject) => {

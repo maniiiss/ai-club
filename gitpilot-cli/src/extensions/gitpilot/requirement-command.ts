@@ -26,7 +26,7 @@ export function registerRequirementCommand(pi: ExtensionAPI): void {
 			}
 
 			// 2. 拉取需求首页
-			let page: PageResponse<CliTaskSummary>;
+			let page: PageResponse<CliTaskSummary> | null = null;
 			try {
 				page = await listMyTasks(platformUrl, token, { page: 1, size: 50 }, { timeoutMs: 10_000 });
 			} catch (err) {
@@ -34,8 +34,8 @@ export function registerRequirementCommand(pi: ExtensionAPI): void {
 				return;
 			}
 
-			// 3. 空列表
-			if (!page.records.length) {
+			// 3. 空列表（records 缺失/为空都按空列表处理，避免判空逃逸成未捕获异常导致扩展静默失败）
+			if (!page || !page.records.length) {
 				ctx.ui.notify("暂无负责人是你的需求", "info");
 				return;
 			}

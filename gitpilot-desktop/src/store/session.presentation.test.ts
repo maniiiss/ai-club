@@ -88,4 +88,16 @@ describe('对话展示压力场景', () => {
 		expect(useSessionStore.getState().guidanceQueue).toHaveLength(0);
 		expect(useSessionStore.getState().messages[0].meta?.guidanceStatus).toBe('applied');
 	});
+
+	it('命令展开后的 message_start 不会重复追加乐观用户消息', () => {
+		useSessionStore.setState({
+			messages: [{ id: 'prompt-message', role: 'user', text: '/plan 开发chat-plan', kind: 'text' }],
+		});
+		const setter = (partial: unknown) => useSessionStore.setState(partial as never);
+
+		applyEvent(setter, { type: 'message_start', message: { role: 'user', content: [{ type: 'text', text: '开发chat-plan' }] } });
+
+		expect(useSessionStore.getState().messages).toHaveLength(1);
+		expect(useSessionStore.getState().messages[0].text).toBe('/plan 开发chat-plan');
+	});
 });

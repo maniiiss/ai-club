@@ -7,11 +7,12 @@
 .optionScroll {
 	max-height: min(480px, 58vh);
 	padding-right: 6px;
+	overflow-y: auto;
 }
 
 .optionList {
 	display: grid;
-	gap: 6px;
+	gap: 8px;
 	min-width: 0;
 }
 
@@ -75,4 +76,54 @@
 .optionMeta {
 	color: var(--muted-foreground);
 	font-size: 12px;
+}
+
+.confirmCard {
+	position: absolute;
+	z-index: var(--z-menu);
+	bottom: calc(100% + 10px);
+	left: 50%;
+	display: flex;
+	width: min(860px, calc(100% - 36px));
+	flex-direction: column;
+	gap: 10px;
+	transform: translateX(-50%);
+	border: 1px solid color-mix(in srgb, var(--gp-action) 45%, var(--gp-border));
+	border-radius: var(--radius-lg);
+	background: var(--gp-surface-raised);
+	padding: 12px 14px;
+	box-shadow: var(--shadow-lg);
+}
+
+.confirmHeader {
+	display: flex;
+	align-items: center;
+	gap: 7px;
+	color: var(--gp-text);
+	font-size: 13px;
+}
+
+.confirmHeader svg {
+	color: var(--gp-action);
+}
+
+.confirmMessage {
+	margin: 0;
+	color: var(--gp-text-secondary);
+	font-size: 12px;
+	line-height: 1.5;
+	white-space: pre-wrap;
+	word-break: break-word;
+}
+
+.confirmActions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 6px;
+}
+
+.confirmActions button {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
 }

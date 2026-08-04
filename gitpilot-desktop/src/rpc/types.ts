@@ -321,6 +321,10 @@ export interface RpcSlashCommand {
 	description?: string;
 	source: 'extension' | 'prompt' | 'skill';
 	sourceInfo: SourceInfo;
+	/** 宿主侧动作：prompt 透传给扩展、open_local_review 打开本地审查工作台、open_rtk_settings 打开 RTK 设置 */
+	hostAction?: 'prompt' | 'open_local_review' | 'open_rtk_settings';
+	/** UI 能力：rpc-standard 走标准 RPC 事件、tui-custom 需原生 GUI 适配、none 无 UI */
+	uiCapability?: 'rpc-standard' | 'tui-custom' | 'none';
 }
 
 // ============================================================================

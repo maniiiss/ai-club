@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyEvent, agentMessagesToUi, buildRestoredExecutionSteps, filterDesktopThinkingLevels, getAssistantMessageEndText, getRunningExecutionSeed, platformConnectionStateFromResponse, shouldSkipProjectSwitch, type UIMessage } from './session';
+import { applyEvent, agentMessagesToUi, buildRestoredExecutionSteps, filterDesktopThinkingLevels, getAssistantMessageEndText, getPlanCompletionMessageEndText, getRunningExecutionSeed, platformConnectionStateFromResponse, shouldSkipProjectSwitch, useSessionStore, type UIMessage } from './session';
 import { useWorkbenchStore } from './workbench';
 
 function applyToStreamingState(state: { messages: UIMessage[]; _streamingAssistantId: string | null; isStreaming: boolean }, event: Parameters<typeof applyEvent>[1]) {
@@ -129,6 +129,29 @@ describe('最终 assistant 正文兜底', () => {
 	it('从 message_end 读取完整正文，忽略工具调用和非 assistant 消息', () => {
 		expect(getAssistantMessageEndText({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '已完成' }, { type: 'toolCall', name: 'read' }] } })).toBe('已完成');
 		expect(getAssistantMessageEndText({ type: 'message_end', message: { role: 'toolResult', content: [{ type: 'text', text: '输出' }] } })).toBeNull();
+	});
+
+	it('把 plan_mode_complete 的工具结果作为最终计划正文展示', () => {
+		const event = { type: 'message_end', message: { role: 'toolResult', toolName: 'plan_mode_complete', content: [{ type: 'text', text: '**Proposed Plan**\n\n实现计划' }] } } as const;
+		expect(getPlanCompletionMessageEndText(event)).toBe('**Proposed Plan**\n\n实现计划');
+		expect(getPlanCompletionMessageEndText({ type: 'message_end', message: { role: 'toolResult', toolName: 'read', content: [{ type: 'text', text: '文件内容' }] } })).toBeNull();
+	});
+
+	it('实时计划结果标记为 plan 消息类型', () => {
+		useSessionStore.setState({ messages: [], _streamingAssistantId: null });
+		const setter = (partial: unknown) => useSessionStore.setState(partial as never);
+		applyEvent(setter, { type: 'message_end', message: { role: 'toolResult', toolName: 'plan_mode_complete', content: [{ type: 'text', text: '**Proposed Plan**\n\n实时计划' }] } });
+
+		expect(useSessionStore.getState().messages[0]).toMatchObject({ kind: 'plan', text: '**Proposed Plan**\n\n实时计划' });
+	});
+
+	it('历史消息把 plan_mode_complete 结果恢复为最终计划正文', () => {
+		const messages = agentMessagesToUi([
+			{ role: 'user', content: [{ type: 'text', text: '/plan 设计登录' }], timestamp: 1 },
+			{ role: 'toolResult', toolName: 'plan_mode_complete', content: [{ type: 'text', text: '**Proposed Plan**\n\n实现计划' }], timestamp: 2 },
+		]);
+		expect(messages).toHaveLength(2);
+		expect(messages[1]).toMatchObject({ role: 'assistant', text: '**Proposed Plan**\n\n实现计划', kind: 'plan' });
 	});
 });
 

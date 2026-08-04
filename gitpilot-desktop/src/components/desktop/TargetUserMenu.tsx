@@ -1,11 +1,12 @@
 /** 目标标题栏账户入口：沿用平台账户 action，独立收口头像与菜单视觉。 */
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { ChevronDown, Coins, ExternalLink, LogOut, RefreshCw, UserRound } from 'lucide-react';
+import { ChevronDown, Coins, ExternalLink, LogOut, RefreshCw, UserRound, Wrench } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
 import { Button } from '@/src/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/src/components/ui/dropdown-menu';
 import { THEME_OPTIONS, isThemeMode, useThemeStore } from '@/src/store/theme';
+import { useRtkStore } from '@/src/store/rtk';
 import styles from './TargetUserMenu.module.css';
 
 function displayName(account: ReturnType<typeof useSessionStore.getState>['platformAccount']): string { return account?.user.nickname?.trim() || account?.user.username || 'GitPilot 用户'; }
@@ -36,6 +37,8 @@ export function TargetUserMenu() {
 		<DropdownMenuRadioGroup className={styles.themeChoices} value={theme} onValueChange={(value) => { if (isThemeMode(value)) setTheme(value); }}>
 			{THEME_OPTIONS.map((option) => <DropdownMenuRadioItem key={option.value} value={option.value} className={styles.themeRadioItem} aria-label={`${option.label}：${option.description}`} title={`${option.label}：${option.description}`}><span className={`${styles.themeSwatch} ${option.value === 'current' ? styles.themeCurrent : option.value === 'mono-dark' ? styles.themeMonoDark : styles.themeLight}`} aria-hidden="true" /></DropdownMenuRadioItem>)}
 		</DropdownMenuRadioGroup>
-		<DropdownMenuSeparator /><DropdownMenuItem onSelect={() => void retryPlatformConnection()} disabled={platformConnection === 'checking'}><RefreshCw className={platformConnection === 'checking' ? 'animate-spin' : undefined} />重新检查连接</DropdownMenuItem><DropdownMenuItem onSelect={() => void openWeb()} disabled={!account?.platformUrl}><ExternalLink />前往 GitPilot Web</DropdownMenuItem><DropdownMenuItem onSelect={() => void logout()}><LogOut />退出登录</DropdownMenuItem>
+		<DropdownMenuSeparator />
+		<DropdownMenuItem onSelect={() => useRtkStore.getState().openSettings()}><Wrench />RTK 优化设置</DropdownMenuItem>
+		<DropdownMenuItem onSelect={() => void retryPlatformConnection()} disabled={platformConnection === 'checking'}><RefreshCw className={platformConnection === 'checking' ? 'animate-spin' : undefined} />重新检查连接</DropdownMenuItem><DropdownMenuItem onSelect={() => void openWeb()} disabled={!account?.platformUrl}><ExternalLink />前往 GitPilot Web</DropdownMenuItem><DropdownMenuItem onSelect={() => void logout()}><LogOut />退出登录</DropdownMenuItem>
 	</DropdownMenuContent></DropdownMenu>;
 }

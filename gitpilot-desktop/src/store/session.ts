@@ -43,7 +43,7 @@ import { aggregateChangedFiles, parseExecutionStepsFromMessages, parseOpsFromMes
 // ============================================================================
 
 export type MessageRole = 'user' | 'assistant' | 'tool' | 'system';
-export type MessageKind = 'text' | 'diff' | 'bash' | 'file' | 'image' | 'thinking' | 'execution' | 'error' | 'changed_files';
+export type MessageKind = 'text' | 'plan' | 'diff' | 'bash' | 'file' | 'image' | 'thinking' | 'execution' | 'error' | 'changed_files';
 export type GuidanceMode = 'steer' | 'followUp';
 export type GuidanceStatus = 'submitting' | 'queued' | 'applying' | 'applied' | 'failed' | 'cancelled';
 
@@ -148,6 +148,25 @@ export function getAssistantMessageEndText(event: AgentSessionEvent): string | n
 	if (event.type !== 'message_end') return null;
 	const message = event.message as { role?: unknown; content?: Array<{ type?: unknown; text?: unknown }> } | undefined;
 	if (message?.role !== 'assistant' || !Array.isArray(message.content)) return null;
+	const text = message.content
+		.filter((part) => part.type === 'text' && typeof part.text === 'string')
+		.map((part) => part.text as string)
+		.join('');
+	return text.trim() ? text : null;
+}
+
+/**
+ * 计划完成工具返回的是 toolResult，而不是 assistant 正文。
+ * 业务意图：只把 plan_mode_complete 的最终计划提升为聊天正文，其他工具输出仍由执行面板承载。
+ */
+export function getPlanCompletionMessageEndText(event: AgentSessionEvent): string | null {
+	if (event.type !== 'message_end') return null;
+	const message = event.message as {
+		role?: unknown;
+		toolName?: unknown;
+		content?: Array<{ type?: unknown; text?: unknown }>;
+	} | undefined;
+	if (message?.role !== 'toolResult' || message.toolName !== 'plan_mode_complete' || !Array.isArray(message.content)) return null;
 	const text = message.content
 		.filter((part) => part.type === 'text' && typeof part.text === 'string')
 		.map((part) => part.text as string)
@@ -287,23 +306,6 @@ function hasSelectedModel(model: ModelInfo | undefined): model is ModelInfo {
 	return Boolean(model?.id && model.id !== 'unknown' && model.provider);
 }
 
-/** 用当前 RPC 状态补齐已发送首条消息、尚未被 session 扫描收录的任务。 */
-function currentSessionListItem(state: RpcSessionState | null, cwd: string | undefined): SessionListItem | null {
-	if (!state?.sessionFile || !cwd) return null;
-	const now = new Date().toISOString();
-	return {
-		path: state.sessionFile,
-		id: state.sessionId,
-		name: state.sessionName,
-		cwd,
-		created: now,
-		modified: now,
-		messageCount: state.messageCount,
-		firstMessage: '',
-		isStreaming: state.isStreaming,
-	};
-}
-
 // ============================================================================
 // store 类型
 // ============================================================================
@@ -353,6 +355,11 @@ interface SessionStore {
 
 	// 扩展 UI 请求队列（待用户交互）
 	pendingExtensionUI: RpcExtensionUIRequest[];
+	// 扩展标准 UI 事件消费（notify/status/widget/title，v1 §6.2 补齐）
+	extensionNotifications: Array<{ id: string; message: string; type: 'info' | 'warning' | 'error'; at: number }>;
+	extensionStatuses: Map<string, string>;
+	extensionWidgets: Map<string, { lines: string[]; placement: 'aboveEditor' | 'belowEditor' }>;
+	sessionAuxTitle: string | null;
 	/** 当前会话尚未交给 GitPilot 的引导记录。 */
 	guidanceQueue: GuidanceQueueItem[];
 	/** 防止任务结束事件与用户操作同时触发两次自动派发。 */
@@ -438,6 +445,16 @@ function displayUserMessageText(text: string): string {
 	return text;
 }
 
+/** 命令扩展可能在 message_start 中去掉 slash 命令名；识别它与本地乐观消息是同一次用户输入。 */
+export function isEquivalentUserMessage(existingText: string, incomingText: string): boolean {
+	const existing = existingText.trim();
+	const incoming = incomingText.trim();
+	if (existing === incoming) return true;
+	if (!existing.startsWith('/')) return false;
+	const expanded = existing.replace(/^\/[^\s]+(?:\s+|$)/, '').trim();
+	return expanded.length > 0 && expanded === incoming;
+}
+
 function updateGuidanceMessageStatus(
 	messages: UIMessage[],
 	item: GuidanceQueueItem,
@@ -483,7 +500,7 @@ function applyGuidanceMessageStart(set: SessionSetter, event: AgentSessionEvent)
 			// 扩展通过 sendUserMessage 触发的真实需求指令也要进入当前对话；
 			// 普通 prompt 已由输入框乐观插入，因此用末条正文去重，避免出现两个相同气泡。
 			const displayText = displayUserMessageText(text);
-			if (!text.trim() || (state.messages.at(-1)?.role === 'user' && state.messages.at(-1)?.text === displayText)) return {};
+			if (!text.trim() || (state.messages.at(-1)?.role === 'user' && isEquivalentUserMessage(state.messages.at(-1)?.text ?? '', displayText))) return {};
 			return { messages: [...state.messages, { id: newId(), role: 'user', text: displayText, kind: 'text' }] };
 		}
 		return {
@@ -591,19 +608,21 @@ export function applyEvent(set: SessionSetter, e: AgentSessionEvent): void {
 
 	// 部分模型或代理只在 message_end 提供完整正文；有 text_delta 时这里负责用最终内容收口且不会重复气泡。
 	if (type === 'message_end') {
-		const text = getAssistantMessageEndText(e);
+		const planText = getPlanCompletionMessageEndText(e);
+		const text = getAssistantMessageEndText(e) ?? planText;
 		if (!text) return;
 		flushExecutionBoundaryBeforeText(set);
 		set((s) => {
+			const kind: MessageKind = planText ? 'plan' : 'text';
 			const messages = [...s.messages];
 			const streamingIndex = s._streamingAssistantId ? messages.findIndex((message) => message.id === s._streamingAssistantId) : -1;
 			if (streamingIndex >= 0) {
-				messages[streamingIndex] = { ...messages[streamingIndex], text };
+				messages[streamingIndex] = { ...messages[streamingIndex], text, kind };
 				return { messages };
 			}
 			const previous = messages.at(-1);
-			if (previous?.role === 'assistant' && previous.text === text) return {};
-			return { messages: [...messages, { id: newId(), role: 'assistant', text, kind: 'text', streaming: true }], _streamingAssistantId: undefined };
+			if (previous?.role === 'assistant' && previous.text === text && previous.kind === kind) return {};
+			return { messages: [...messages, { id: newId(), role: 'assistant', text, kind, streaming: true }], _streamingAssistantId: undefined };
 		});
 		appendUnreportedExecutionBatch(set);
 		return;
@@ -759,6 +778,19 @@ export function agentMessagesToUi(messages: unknown[], isStreaming = false): UIM
 			pendingOps.push(...parseOpsFromMessages(messages, i));
 		} else if (msg.role === 'toolResult') {
 			if (ts != null) lastTs = ts;
+			const toolResult = msg as {
+				toolName?: string;
+				content?: Array<{ type?: string; text?: string }>;
+			};
+			if (toolResult.toolName === 'plan_mode_complete') {
+				if (pendingSteps.length > 0) flushPendingBatch();
+				const text = (toolResult.content ?? [])
+					.filter((content) => content.type === 'text')
+					.map((content) => content.text ?? '')
+					.join('')
+					.trim();
+				if (text) result.push({ id: `hist-${i}`, role: 'assistant' as const, text, kind: 'plan' as MessageKind });
+			}
 		}
 	});
 	// 任务进行中时，最后一段是尚未完成的执行，不归档（由实时面板承接）；已完成则归档。
@@ -815,8 +847,12 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	models: [],
 	commands: [],
 	thinkingLevels: ['off', 'low', 'medium', 'high'],
-	pendingExtensionUI: [],
-	guidanceQueue: [],
+		pendingExtensionUI: [],
+		extensionNotifications: [],
+		extensionStatuses: new Map(),
+		extensionWidgets: new Map(),
+		sessionAuxTitle: null,
+		guidanceQueue: [],
 	isFlushingGuidance: false,
 	isStopping: false,
 	projects: loadProjects(),
@@ -857,23 +893,83 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			// 先归并工具事件，再由 assistant 正文把此刻未归档的步骤封装成一个聊天批次。
 			applyEvent(set, e);
 			if (e.type === 'agent_settled') void get().flushGuidanceQueue();
-			// 首轮回答结束后 session 文件才会带上标题和首条消息，需要立即刷新左侧任务列表。
+			// 首轮回答结束后 session 文件带上首条消息，刷新侧栏更新任务标题/消息数。
 			if (e.type === 'turn_end' || e.type === 'agent_settled') void get().refreshSessionList();
+			// sidecar 生成任务标题后推送 session_info_changed，此时会话首次落盘；
+			// 更新当前会话状态并刷新侧栏，使任务条目带标题显示。
+			if (e.type === 'session_info_changed') {
+				const name = typeof e.name === 'string' ? e.name : undefined;
+				const eventSessionFile = typeof e.sessionFile === 'string' ? e.sessionFile : undefined;
+				set((s) =>
+					s.sessionState && eventSessionFile && s.sessionState.sessionFile === eventSessionFile
+						? { sessionState: { ...s.sessionState, sessionName: name } }
+						: {},
+				);
+				void get().refreshSessionList();
+			}
 		}));
 			unsubs.push(
 				onExtensionUI((req) => {
-					// 仅交互类（select/confirm/input/editor）进队列等待用户响应；
-					// notify 不需要回包，但错误通知必须进入桌面统一错误区，避免扩展失败后静默。
+					// notify：error 进入统一错误区；info/warning 进入扩展通知列表，不静默丢弃
 					if (req.method === 'notify') {
-						if (req.notifyType === 'error') set({ error: req.message });
+						if (req.notifyType === 'error') {
+							set({ error: req.message });
+						} else {
+							set((s) => ({
+								extensionNotifications: [
+									...s.extensionNotifications,
+									{ id: req.id, message: req.message, type: req.notifyType ?? 'info', at: Date.now() },
+								].slice(-50),
+							}));
+						}
 						return;
 					}
-				if (req.method === 'select' || req.method === 'confirm' || req.method === 'input' || req.method === 'editor') {
-					set((s) => ({ pendingExtensionUI: [...s.pendingExtensionUI, req] }));
-					useWorkbenchStore.getState().addApprovalStep(req);
-				}
-			}),
-		);
+					// setStatus：按 key 更新或清除会话状态条
+					if (req.method === 'setStatus') {
+						set((s) => {
+							const statuses = new Map(s.extensionStatuses);
+							if (req.statusText === undefined) {
+								statuses.delete(req.statusKey);
+							} else {
+								statuses.set(req.statusKey, req.statusText);
+							}
+							return { extensionStatuses: statuses };
+						});
+						return;
+					}
+					// setWidget：按 key 更新或清除输入框上方/下方只读扩展状态区
+					if (req.method === 'setWidget') {
+						set((s) => {
+							const widgets = new Map(s.extensionWidgets);
+							if (req.widgetLines === undefined) {
+								widgets.delete(req.widgetKey);
+							} else {
+								widgets.set(req.widgetKey, {
+									lines: req.widgetLines,
+									placement: req.widgetPlacement ?? 'aboveEditor',
+								});
+							}
+							return { extensionWidgets: widgets };
+						});
+						return;
+					}
+					// set_editor_text：预填输入框，不自动发送（复用 composerPrefill）
+					if (req.method === 'set_editor_text') {
+						useWorkbenchStore.getState().setComposerPrefill(req.text);
+						return;
+					}
+					// setTitle：只更新会话辅助标题，不改变持久化任务名
+					if (req.method === 'setTitle') {
+						set({ sessionAuxTitle: req.title });
+						return;
+					}
+					// 交互类进队列等待用户响应
+					if (req.method === 'select' || req.method === 'confirm' || req.method === 'input' || req.method === 'editor') {
+						set((s) => ({ pendingExtensionUI: [...s.pendingExtensionUI, req] }));
+						useWorkbenchStore.getState().addApprovalStep(req);
+					}
+				}),
+			);
 
 		set({ _unsubs: unsubs });
 		// 后端可能在桌面应用运行期间停止；周期探测只影响底栏状态，不阻塞本地 Agent 会话。
@@ -1081,25 +1177,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			isStreaming: true,
 			_streamingAssistantId: null,
 		}));
-		// 空白会话不占用任务列表；用户发送第一句后才立即显示为任务，回合结束再由 sidecar 扫描结果校正。
-		const created = currentSessionListItem(get().sessionState, get().currentProjectPath ?? undefined);
-		if (created) {
-				const provisional: SessionListItem = { ...created, firstMessage: message, messageCount: Math.max(1, created.messageCount), isStreaming: true };
-			set((state) => {
-				if (state.hiddenSessionPaths.includes(provisional.path)) return {};
-				const index = state.sessions.findIndex((item) => item.path === provisional.path);
-				if (index < 0) return { sessions: [provisional, ...state.sessions] };
-				const existing = state.sessions[index];
-				const updated: SessionListItem = {
-					...existing,
-					modified: provisional.modified,
-					messageCount: Math.max(existing.messageCount, provisional.messageCount),
-					firstMessage: existing.firstMessage || message,
-					isStreaming: true,
-				};
-				return { sessions: state.sessions.map((item, itemIndex) => (itemIndex === index ? updated : item)) };
-			});
-		}
+		// 新会话不立即插入侧栏：等 sidecar 在首条消息后生成标题、setSessionName 落盘并推送
+		// session_info_changed 事件，前端收到后 refreshSessionList 才显示带标题的任务条目。
 		try {
 			await rpc.prompt(promptMessage, images.length ? images : undefined);
 		} catch (err) {

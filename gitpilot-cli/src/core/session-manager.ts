@@ -990,6 +990,18 @@ export class SessionManager {
 		}
 	}
 
+	/**
+	 * 强制把当前全部 entries 写入磁盘并标记已 flush。
+	 *
+	 * 常规写入策略等第一条 assistant 消息才落盘（避免产生半会话文件）；
+	 * 但会话标题生成（setSessionName -> appendSessionInfo）发生在首条消息后、
+	 * assistant 回复前，此时需要主动落盘，listAll 才能发现新会话并带标题显示。
+	 */
+	flushToDisk(): void {
+		this._rewriteFile();
+		this.flushed = true;
+	}
+
 	isPersisted(): boolean {
 		return this.persist;
 	}

@@ -4,7 +4,7 @@
 
 GitPilot CLI 是 `@earendil-works/pi-coding-agent@0.81.1` 的源码 fork，GitPilot Desktop 则通过 Bun 编译的 `gitpilot-rpc` sidecar 复用同一套 AgentSession、extension 和工具循环。当前产品已经具备 Pi 包管理、扩展命令发现、动态工具注册和部分 extension UI RPC，但尚未把代码审查、目标持续执行、只读计划模式和主 Agent 自主委派作为开箱即用能力。
 
-本设计引入四个 MIT 扩展，并以 2026-08-02 查询到的版本作为首个兼容基线：
+本设计引入五个 MIT 扩展，并以 2026-08-02（`pi-rtk-optimizer` 为 2026-08-04）查询到的版本作为首个兼容基线：
 
 | 扩展 | 基线版本 | 对外能力 |
 | --- | --- | --- |
@@ -12,6 +12,7 @@ GitPilot CLI 是 `@earendil-works/pi-coding-agent@0.81.1` 的源码 fork，GitPi
 | `@narumitw/pi-goal` | `0.43.0` | `/goal`、`goal_complete`、`goal_blocked`，会话级目标和自动续跑 |
 | `@narumitw/pi-plan-mode` | `0.44.0` | `/plan`、`plan_mode_question`、`plan_mode_complete`，只读探索和计划交接 |
 | `@narumitw/pi-subagents` | `0.43.1` | `/subagents` 和 blocking/stateful/consultation 工具，主 Agent 自主委派 |
+| `pi-rtk-optimizer` | `0.9.0` | `/rtk` 系列命令，bash 命令重写（rewrite/suggest）与工具输出多阶段压缩，减少上下文占用 |
 
 版本号必须精确锁定，不使用 `^` 或 `latest`。后续升级跟随 GitPilot 发版和兼容回归，不允许已安装的 Desktop 在启动时静默拉取新版本。
 
@@ -87,7 +88,7 @@ GitPilot CLI 是 `@earendil-works/pi-coding-agent@0.81.1` 的源码 fork，GitPi
 
 ```ts
 type CuratedExtensionDefinition = {
-  id: "slopchop" | "goal" | "plan-mode" | "subagents";
+  id: "slopchop" | "goal" | "plan-mode" | "subagents" | "rtk-optimizer";
   packageName: string;
   version: string;
   factory: ExtensionFactory;
@@ -113,7 +114,8 @@ Bun sidecar 在构建期把 factory 与依赖打进可执行文件，MSI/NSIS �
     "slopchop": true,
     "goal": true,
     "plan-mode": true,
-    "subagents": true
+    "subagents": true,
+    "rtk-optimizer": true
   }
 }
 ```
@@ -129,6 +131,12 @@ Bun sidecar 在构建期把 factory 与依赖打进可执行文件，MSI/NSIS �
 - goal、plan-mode、subagents 状态与配置均位于 `~/.gitpilot/agent`。
 - 不读取或迁移用户原有 `~/.pi/agent` 数据，避免两个产品互相污染。
 
+### 5.4 pi-rtk-optimizer 配置目录桥接
+
+`pi-rtk-optimizer` 通过 `@earendil-works/pi-coding-agent` 的 `getAgentDir()` 构造配置路径（`<agentDir>/extensions/pi-rtk-optimizer/config.json`）。由于宿主 alias/virtualModules 已把该 import 重定向到 GitPilot 的 `getAgentDir()`（返回 `~/.gitpilot/agent`），扩展配置自动落到 `~/.gitpilot/agent/extensions/pi-rtk-optimizer/config.json`，无需额外注入 `PI_CODING_AGENT_DIR` 环境变量。
+
+该结论已通过 P0 兼容性验证：`pi-rtk-optimizer@0.9.0` 用到的 `isToolCallEventType`、`ExtensionAPI`、`ExtensionContext`、`ExtensionCommandContext`、`getAgentDir`、`getSettingsListTheme`、`Theme` 等 API 在 GitPilot `0.81.1` 宿主 SDK 入口（`src/index.ts`）均已导出；peerDependencies 声明 `^0.80.0` 与宿主 `0.81.1` 不匹配，但 `getNpmInstallArgs` 使用 `--legacy-peer-deps`/`--omit=peer` 跳过 peer 求解，运行时 import 经 alias 重定向到宿主，不构成阻断。
+
 ## 6. 命令与 Desktop 能力契约
 
 ### 6.1 扩展命令元数据
@@ -141,7 +149,7 @@ interface RpcSlashCommand {
   description?: string;
   source: "extension" | "prompt" | "skill";
   sourceInfo: SourceInfo;
-  hostAction?: "prompt" | "open_local_review";
+  hostAction?: "prompt" | "open_local_review" | "open_rtk_settings";
   uiCapability?: "rpc-standard" | "tui-custom" | "none";
 }
 ```
@@ -154,6 +162,8 @@ sidecar 依据 curated manifest 和命令名生成稳定元数据：
 | `/goal ...` | 原扩展命令 | 作为 prompt 交给 extension；标准 confirm/notify/status 走 RPC |
 | `/plan ...` | 原扩展命令 | 作为 prompt 交给 extension；标准问题、选择、编辑器走 RPC |
 | `/subagents ...` | 原扩展命令 | 作为 prompt 交给 extension；裸命令以状态通知或 Desktop 管理入口呈现 |
+| `/rtk` | 扩展原生 TUI 设置模态框 | `open_rtk_settings`，进入原生 RTK 设置 Dialog |
+| `/rtk show\|path\|verify\|stats\|clear-stats\|reset\|help` | 原扩展命令 | 作为 prompt 交给 extension；文本输出走标准 notify/setWidget/set_editor_text |
 
 不能只在命令面板点击路径做拦截；用户手工输入 `/diff` 后发送也必须经过同一 `hostAction` 路由。
 
@@ -266,7 +276,70 @@ subagents subprocess transport 会优先再次启动当前非通用 runtime 可�
 - root abort、超时、session replacement、sidecar shutdown 均能回收 Windows 进程树。
 - 打包安装目录包含所有运行所需模块，不从 npm 临时加载 SDK。
 
-若 subprocess 验证未通过，v1 只开放 `subagent_consult` 和 blocking/in-process 已验证路径，不能以“命令已注册”代替端到端完成。
+若 subprocess 验证未通过，v1 只开放 `subagent_consult` 和 blocking/in-process 已验证路径，不能以”命令已注册”代替端到端完成。
+
+## 10.5 pi-rtk-optimizer 设计（命令重写与输出压缩）
+
+`pi-rtk-optimizer` 是本设计首个落地的 curated 扩展，属于后台事件钩子型能力，与 slopchop/goal/plan/subagents 的命令驱动模式不同。它挂载到 Pi 事件系统的 `tool_call`（重写命令）、`tool_result`（压缩输出）、`tool_execution_*`（流式清理）、`before_agent_start`、`session_start`/`agent_end`，对 Agent 工具循环做透明优化，不新增 Agent 工具。
+
+### 10.5.1 能力边界
+
+- **命令重写**：把 `bash` 工具命令自动重写为 `rtk` 等效命令（`mode=rewrite`），或仅以通知形式建议（`mode=suggest`）。重写依赖外部 `rtk` 二进制。
+- **输出压缩**：对 `bash`、`read`、`grep` 工具输出做多阶段压缩（ANSI 剥离 -> 测试聚合 -> 构建过滤 -> Git 压缩 -> Linter 聚合 -> 搜索分组 -> 源码过滤 -> 智能截断 -> 硬截断），减少上下文窗口占用。压缩为纯文本管道，不依赖 `rtk` 二进制。
+- 不新增 Agent 工具，不改变工具契约，不自动提交/Push/MR。
+- 不 fork 上游包；GitPilot 只维护 curated manifest 条目、能力清单与 Desktop adapter。
+
+### 10.5.2 rtk 二进制策略
+
+`rtk` 二进制不随 GitPilot 分发。默认 `guardWhenRtkMissing=true`：
+
+- `rtk` 可用时，`mode=rewrite` 生效，命令被重写为 rtk 等效命令。
+- `rtk` 不可用时，降级运行原始命令，不阻塞 Agent。
+- 输出压缩始终生效（纯文本管道），**完全离线可用**，满足 MSI/NSIS 不依赖用户机 Node/npm/公网的要求。
+- `mode=suggest` 时只发出重写建议通知，不实际改写命令，适合保守场景。
+
+未来是否打包 `rtk` 二进制需单独供应链审查，本变更不做。
+
+### 10.5.3 两层开关
+
+1. **扩展级开关**：`settings.json` 的 `bundledExtensions.rtk-optimizer`（boolean），禁用整个扩展，受 `--no-extensions` 控制。
+2. **功能级开关**：扩展自身配置文件 `~/.gitpilot/agent/extensions/pi-rtk-optimizer/config.json`，包含顶层 `enabled`、`mode`、`guardWhenRtkMissing`、`showRewriteNotifications`，以及 `outputCompaction.enabled` 与一系列子开关。通过 `/rtk` 命令或 Desktop GUI 修改。
+3. **Desktop GUI 开关**：`TargetUserMenu` 提供 rtk 总开关（映射 `bundledExtensions.rtk-optimizer`）；`/rtk` 命令打开原生设置 Dialog，提供 `mode` 与压缩细粒度开关。
+
+`bundledExtensions.rtk-optimizer=false` 时扩展不加载，无重写、无压缩；扩展级开关关闭后功能级配置保留但不生效。
+
+### 10.5.4 /rtk 命令契约
+
+| 命令 | CLI | Desktop |
+| --- | --- | --- |
+| `/rtk` | 扩展原生 TUI 设置模态框（zellij-modal） | `open_rtk_settings`，进入原生 `RtkSettingsDialog`，不调 `ctx.ui.custom()` |
+| `/rtk show` | 输出当前配置与运行时状态 | 走标准 `setWidget`/`notify` |
+| `/rtk path` | 输出配置文件路径 | 走标准 `set_editor_text` 或 `notify` |
+| `/rtk verify` | 检查 `rtk` 二进制可用性 | 走标准 `notify` |
+| `/rtk stats` | 输出当前会话压缩指标 | 走标准 `setWidget` |
+| `/rtk clear-stats` | 重置压缩指标 | 走标准 `notify` |
+| `/rtk reset` | 重置所有设置为默认值 | 走标准 `notify` 并刷新 Dialog |
+| `/rtk help` | 输出使用帮助 | 走标准 `set_editor_text` 或 `notify` |
+
+`/rtk` 主命令的 TUI 设置模态框（`config-modal.ts`/`zellij-modal.ts`）使用 `@earendil-works/pi-tui` 的 `SettingItem`、`getSettingsListTheme`，在 RPC 模式不可直接执行。Desktop 必须用原生 `RtkSettingsDialog` 适配，`uiCapability=tui-custom`，`hostAction=open_rtk_settings`。子命令输出为纯文本，`uiCapability=rpc-standard`。
+
+### 10.5.5 Desktop 可观测性
+
+- 命令重写通知（`showRewriteNotifications=true` 时）经 `notify` 事件呈现为应用内 toast，同时进入可追踪通知列表。
+- 压缩指标经 `/rtk stats` 或 `setWidget` 在输入框上方/下方只读状态区呈现。
+- `before_agent_start` 注入的故障排除指导不输出到用户可见区，仅进入系统提示。
+- Desktop 状态须区分”rtk 二进制可用/不可用”与”压缩已启用/已禁用”。
+
+### 10.5.6 与其他扩展的模式组合
+
+| 组合 | 规则 |
+| --- | --- |
+| rtk + Plan | Plan 期间命令重写仍可作用于只读 `bash`；输出压缩不影响 Plan 的只读工具结果；rtk 不开放写入能力 |
+| rtk + Goal | 输出压缩不影响 Goal 自动续跑的上下文判断；重写通知不干扰 Goal 状态机 |
+| rtk + Subagents | 子 Agent 的工具输出同样经压缩管道；consultation 只读结果可被压缩；不改变 subagent 工具语义 |
+| rtk + Slopchop | slopchop 生成的反馈提示词预填输入框后，发送才进入工具循环并触发重写/压缩 |
+
+rtk-optimizer 是透明优化层，不与其他扩展争夺自动续跑所有权或工具集合控制权。
 
 ## 11. 模式组合规则
 
@@ -282,7 +355,8 @@ subagents subprocess transport 会优先再次启动当前非通用 runtime 可�
 
 ## 12. 安全、供应链与可观测性
 
-- 四个包及其传递依赖进入 lockfile、软件清单和第三方许可清单；构建记录包名、版本和 integrity。
+- 五个包及其传递依赖进入 lockfile、软件清单和第三方许可清单；构建记录包名、版本和 integrity。
+- `pi-rtk-optimizer@0.9.0` 的 postinstall 检查 `/.pi/agent/extensions/` 路径并运行 `patch-vulnerable-deps.mjs`；内置精选构建期打入 sidecar 不在该路径，postinstall 不触发，需在构建流程评估是否手动应用补丁。`overrides` 的 `protobufjs:7.6.3`、`ws:8.21.0` 已与上游一致。
 - 发版前审查包变更，禁止运行时自动更新内置扩展。
 - extension 加载失败必须报告 package/id/version/宿主模式，不记录源码、token 或用户提示词。
 - subagent 日志记录 agent profile、cwd 哈希、工具集合、模型、耗时、token 用量和结果状态；不记录凭据和完整私有上下文。
@@ -293,19 +367,21 @@ subagents subprocess transport 会优先再次启动当前非通用 runtime 可�
 
 ### P0：兼容性 spike
 
-1. 在 Node CLI 上临时加载四个精确版本，验证命令和工具注册。
+1. 在 Node CLI 上临时加载五个精确版本，验证命令和工具注册。
 2. 验证所有运行时 import 通过 alias/virtualModules 指向 GitPilot `0.81.1` 宿主。
 3. 构建 Windows sidecar，验证 goal、plan 和一条 blocking subagent 端到端链路。
 4. 记录包体积、启动耗时、工具 schema token 增量和失败行为。
+5. 验证 `pi-rtk-optimizer@0.9.0` 的 `getAgentDir()` 经 alias 重定向到 `~/.gitpilot/agent`，配置写入 `~/.gitpilot/agent/extensions/pi-rtk-optimizer/config.json`；记录压缩 token 增量与 `rtk` 二进制缺失时的降级行为。
 
-P0 未通过时，优先选择兼容的扩展版本；Pi Core 升级必须另立变更。
+`pi-rtk-optimizer` 的 P0 已验证通过（宿主 API 全匹配、配置目录经 alias 自动桥接、peer 不阻断），无需回退 `0.8.3`。其余四个扩展的 P0 未通过时，优先选择兼容的扩展版本；Pi Core 升级必须另立变更。
 
 ### P1：CLI 内置能力
 
 1. 增加 curated manifest、精确依赖和分级加载。
 2. 增加内置扩展禁用与重复安装保护。
-3. 验证原生 `/slopchop`、`/diff`、`/goal`、`/plan`、`/subagents`。
+3. 验证原生 `/slopchop`、`/diff`、`/goal`、`/plan`、`/subagents`、`/rtk`。
 4. 补第三方许可和 CLI 文档。
+5. 验证 `pi-rtk-optimizer` 配置目录桥接、`/rtk` 全部子命令与 `bundledExtensions.rtk-optimizer` 开关。
 
 ### P2：RPC 与 Desktop 标准能力
 
@@ -313,6 +389,7 @@ P0 未通过时，优先选择兼容的扩展版本；Pi Core 升级必须另立
 2. 补齐 notify/status/widget/title/editor-prefill 事件消费。
 3. 完成 goal/plan/subagent 状态显示、问题交互和取消传播。
 4. 对不支持的 custom UI 返回明确诊断。
+5. `/rtk` 子命令 RPC 透传，压缩指标与重写通知经 setWidget/notify 可见。
 
 ### P3：Desktop 本地 Diff 反馈
 
@@ -321,30 +398,46 @@ P0 未通过时，优先选择兼容的扩展版本；Pi Core 升级必须另立
 3. 生成提示词并只预填输入框。
 4. 验证 Diff 变化、中文路径、重命名、二进制、大文件和 submodule 降级。
 
+### P3.5：Desktop rtk 开关 GUI
+
+1. 新建 `RtkSettingsDialog`，提供 `enabled`/`mode`/压缩细粒度开关。
+2. `TargetUserMenu` 加 rtk 总开关项，映射 `bundledExtensions.rtk-optimizer`。
+3. `hostAction=open_rtk_settings` 路由：点击与手工输入 `/rtk` 均打开 Dialog。
+4. 验证开关持久化、Dialog 与扩展配置文件双向同步。
+
 ### P4：治理与发布验收
 
 1. 固化 subagent 默认策略和 profile。
-2. 完成离线 MSI/NSIS 真机测试。
+2. 完成离线 MSI/NSIS 真机测试；无 `rtk` 二进制、无 npm、无公网时 `pi-rtk-optimizer` 输出压缩仍可用。
 3. 完成模型用量、并发、停止、恢复、升级和回滚测试。
 4. 通过能力开关分批开放；任一扩展可独立禁用，不影响平台登录与普通 Agent 对话。
+5. `pi-rtk-optimizer` 进 lockfile/许可清单；`bundledExtensions.rtk-optimizer=false` 时无重写、无压缩。
 
 ## 14. 最小验证矩阵
 
 ### CLI
 
-- `get_commands` 或交互命令列表包含 `/slopchop`、`/diff`、`/goal`、`/plan`、`/subagents`，无冲突或重复。
+- `get_commands` 或交互命令列表包含 `/slopchop`、`/diff`、`/goal`、`/plan`、`/subagents`、`/rtk`，无冲突或重复。
 - `/slopchop` 生成反馈后只写编辑器，不自动发送。
 - `/goal` 能开始、暂停、恢复、完成和阻塞，错误 goal id 被拒绝。
 - `/plan` 期间写工具和危险 bash 被阻止，实施前恢复工具。
 - main Agent 可以自主调用 read-only consult 和一个受控 worker，结果回到父回合。
+- `/rtk show` 输出当前配置与运行时状态；`/rtk stats` 输出压缩指标；`/rtk reset` 重置配置。
+- 命令重写：`rtk` 可用时 rewrite 生效，不可用时 `guardWhenRtkMissing=true` 运行原始命令。
+- 输出压缩：bash/read/grep 输出经压缩管道，token 占用下降可观测。
+- `pi install npm:pi-rtk-optimizer` 提示"已由当前 GitPilot 版本内置"，不重复安装。
+- `bundledExtensions.rtk-optimizer=false` 时扩展不加载，无重写、无压缩。
 
 ### RPC/Desktop
 
 - `/diff` 点击和手工输入均打开原生本地反馈界面，不调用 `ctx.ui.custom()`。
 - notify、status、widget 和 editor prefill 不再静默丢失。
 - plan question、goal replacement confirm、subagent project-agent confirm 均能交互和取消。
-- 工具执行期间界面显示真实工具状态，不把全部阶段标成“思考中”。
+- 工具执行期间界面显示真实工具状态，不把全部阶段标成”思考中”。
 - root stop 能取消 goal 自动续跑和所有子 Agent，且没有残留进程。
+- `/rtk` 点击和手工输入均打开原生 RtkSettingsDialog，不调 `ctx.ui.custom()`。
+- rtk 总开关在 TargetUserMenu 可切换并持久化。
+- 重写通知（notify）与压缩指标（setWidget）不再静默丢失。
 
 ### 构建与安装
 
@@ -361,11 +454,16 @@ P0 未通过时，优先选择兼容的扩展版本；Pi Core 升级必须另立
 - `gitpilot-cli/src/core/resource-loader.ts`
 - `gitpilot-cli/src/core/settings-manager.ts`
 - `gitpilot-cli/src/core/package-manager.ts`
+- `gitpilot-cli/src/package-manager-cli.ts`
 - `gitpilot-cli/src/modes/rpc/rpc-types.ts`
 - `gitpilot-cli/src/modes/rpc/rpc-mode.ts`
 - `gitpilot-desktop/src/rpc/types.ts`
 - `gitpilot-desktop/src/store/session.ts`
+- `gitpilot-desktop/src/store/workbench.ts`
 - `gitpilot-desktop/src/components/InputBox.tsx`
+- `gitpilot-desktop/src/components/GlobalCommandPalette.tsx`
+- `gitpilot-desktop/src/components/desktop/TargetUserMenu.tsx`
+- `gitpilot-desktop/src/components/RtkSettingsDialog.tsx`（新建）
 - Git Review Workbench 现有组件与 store
 - CLI/RPC/Desktop 对应测试与 Windows sidecar smoke harness
 
@@ -373,4 +471,4 @@ P0 未通过时，优先选择兼容的扩展版本；Pi Core 升级必须另立
 
 ## 16. 验收结论
 
-本能力不能以“npm 包安装成功”作为完成标准。必须同时满足：CLI 原生可用、Desktop 标准 RPC 可见、slopchop 原生 GUI 适配、subagent Windows 子进程闭环、离线安装可用、工具/自动续跑可停止、第三方版本可追溯。以上任一 P0 条件未闭环时，只能标记为实验能力，不能默认向所有 Desktop 用户开放。
+本能力不能以”npm 包安装成功”作为完成标准。必须同时满足：CLI 原生可用、Desktop 标准 RPC 可见、slopchop 原生 GUI 适配、subagent Windows 子进程闭环、`pi-rtk-optimizer` 输出压缩离线可用且 `rtk` 缺失可降级、离线安装可用、工具/自动续跑可停止、第三方版本可追溯。以上任一 P0 条件未闭环时，只能标记为实验能力，不能默认向所有 Desktop 用户开放。

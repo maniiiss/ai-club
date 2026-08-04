@@ -10,15 +10,38 @@
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { ArrowUp, CornerUpRight, FileText, Image as ImageIcon, Loader2, Paperclip, Pencil, Send, Square, Trash2, X } from 'lucide-react';
+import { useEditor, EditorContent } from '@tiptap/react';
+import Document from '@tiptap/extension-document';
+import HardBreak from '@tiptap/extension-hard-break';
+import History from '@tiptap/extension-history';
+import Paragraph from '@tiptap/extension-paragraph';
+import Placeholder from '@tiptap/extension-placeholder';
+import Text from '@tiptap/extension-text';
+import { CommandTokenNode, createCommandDocument, findCommandToken, serializeCommandContent } from './CommandTokenNode';
 import { useSessionStore, type GuidanceMode, type GuidanceQueueItem } from '@/src/store/session';
 import { CommandPalette } from './CommandPalette';
+import { ExtensionUIConfirmCard } from './ExtensionUIModal';
+import { isHostActionCommand } from './host-actions';
+import { RtkSettingsDialog } from './RtkSettingsDialog';
 import { ModelPicker } from './ModelPicker';
 import { useWorkbenchStore } from '@/src/store/workbench';
+import { useRtkStore } from '@/src/store/rtk';
 import { isTauriEnv, rpc } from '@/src/rpc/bridge';
 import type { AttachmentInput, PreparedAttachment, RpcSlashCommand } from '@/src/rpc/types';
 import { Button } from '@/src/components/ui/button';
-import { Textarea } from '@/src/components/ui/textarea';
 import styles from './InputBox.module.css';
+
+export { formatCommandLabel, getCommandIconKey } from './CommandTokenNode';
+
+const COMPOSER_EXTENSIONS = [
+	Document,
+	Paragraph,
+	Text,
+	HardBreak,
+	History,
+	Placeholder.configure({ placeholder: '描述任务，/ 查看命令，可附加文件' }),
+	CommandTokenNode,
+];
 
 /** 文件大小可读化（UI 展示用）。 */
 function formatSize(bytes: number): string {
@@ -30,6 +53,14 @@ function formatSize(bytes: number): string {
 /** 输入命中区的提交条件与视觉层解耦，避免附件/解析状态变化时按钮语义漂移。 */
 export function canSubmitPrompt(text: string, attachmentCount: number, preparing: boolean): boolean {
 	return (text.trim().length > 0 || attachmentCount > 0) && !preparing;
+}
+
+/** 将已选命令与参数还原成 sidecar 需要的 slash prompt，保证视觉 token 不改变协议格式。 */
+export function buildCommandPrompt(selectedCommand: string | null, text: string): string {
+	const content = text.trim();
+	if (!selectedCommand) return content;
+	if (content === `/${selectedCommand}` || content.startsWith(`/${selectedCommand} `)) return content;
+	return `/${selectedCommand}${content ? ` ${content}` : ''}`;
 }
 
 /** 透明命中层只负责布局，避免挡住中心区滚动条；真正控件再恢复指针事件。 */
@@ -49,13 +80,6 @@ function guidanceStatusLabel(status: GuidanceQueueItem['status']): string {
 	if (status === 'applied') return '已交给 GitPilot';
 	if (status === 'cancelled') return '已取消';
 	return '发送失败';
-}
-
-/** 已选择的 slash 命令以主题色 token 呈现，参数仍保留在可编辑文本框中。 */
-function getCommandToken(text: string, commands: RpcSlashCommand[]): { name: string; prefix: string } | null {
-	const match = text.match(/^\/([^\s]+)(?:\s|$)/);
-	if (!match || !commands.some((command) => command.name === match[1])) return null;
-	return { name: match[1], prefix: match[0] };
 }
 
 /** 用稳定来源标识去重，避免 Tauri 重复投递同一个路径时出现两个附件 chip。 */
@@ -92,8 +116,18 @@ export function InputBox() {
 	const isStreaming = useSessionStore((s) => s.isStreaming);
 	const isSessionLoading = useSessionStore((s) => s.isSessionLoading);
 	const commands = useSessionStore((s) => s.commands);
+	const hasPendingConfirm = useSessionStore((s) => s.pendingExtensionUI[0]?.method === 'confirm');
 	const prompt = useSessionStore((s) => s.prompt);
 	const executeCommand = useSessionStore((s) => s.executeCommand);
+
+	/** 输入框按钮入口：执行需要二次操作的扩展命令（requirement/rtk 等），不发送到对话 */
+	const runHostAction = (cmd: RpcSlashCommand) => {
+		if (cmd.name === 'requirement') {
+			void executeCommand('requirement');
+		} else if (cmd.hostAction === 'open_rtk_settings') {
+			useRtkStore.getState().openSettings();
+		}
+	};
 	const sendGuidance = useSessionStore((s) => s.sendGuidance);
 	const replayQueuedGuidance = useSessionStore((s) => s.replayGuidance);
 	const removeGuidance = useSessionStore((s) => s.removeGuidance);
@@ -105,6 +139,8 @@ export function InputBox() {
 	const consumeComposerPrefill = useWorkbenchStore((s) => s.consumeComposerPrefill);
 
 	const [text, setText] = useState('');
+	/** 从命令面板选中的命令名（输入框不显示 / 前缀，发送时自动补上） */
+	const [selectedCommand, setSelectedCommand] = useState<string | null>(null);
 	const [showPalette, setShowPalette] = useState(false);
 	const [attachments, setAttachments] = useState<PreparedAttachment[]>([]);
 	const [preparing, setPreparing] = useState(false);
@@ -113,7 +149,45 @@ export function InputBox() {
 	const [guidanceMode, setGuidanceMode] = useState<GuidanceMode>('steer');
 	const [submitting, setSubmitting] = useState(false);
 	const rootRef = useRef<HTMLDivElement>(null);
-	const taRef = useRef<HTMLTextAreaElement>(null);
+	const showPaletteRef = useRef(false);
+	const isStreamingRef = useRef(isStreaming);
+	const sendRef = useRef<(modeOverride?: GuidanceMode) => Promise<void>>(async () => undefined);
+	showPaletteRef.current = showPalette;
+	isStreamingRef.current = isStreaming;
+
+	const editor = useEditor({
+		extensions: COMPOSER_EXTENSIONS,
+		immediatelyRender: true,
+		shouldRerenderOnTransaction: false,
+		editorProps: {
+			attributes: {
+				id: 'gitpilot-composer',
+				class: styles.editorSurface,
+				'aria-label': '任务输入',
+			},
+			handleKeyDown: (_view, event) => {
+				// 命令面板注册了全局键盘监听，编辑器只让事件继续冒泡。
+				if (showPaletteRef.current) {
+					if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Enter' || event.key === 'Escape') {
+						event.preventDefault();
+						return true;
+					}
+					return false;
+				}
+				if (event.key === 'Enter' && !event.shiftKey) {
+					event.preventDefault();
+					void sendRef.current(event.altKey && isStreamingRef.current ? 'followUp' : undefined);
+					return true;
+				}
+				return false;
+			},
+		},
+		onUpdate: ({ editor: currentEditor }) => {
+			setText(serializeCommandContent(currentEditor.getJSON().content));
+			const token = findCommandToken(currentEditor.getJSON().content);
+			setSelectedCommand(token?.name ?? null);
+		},
+	});
 
 	/**
 	 * 输入框是悬浮层，实际高度会随引导队列、附件和多行文本变化。
@@ -141,8 +215,8 @@ export function InputBox() {
 	// / 开头且无空格时显示命令面板；/ 后的文本就是命令筛选条件。
 	useEffect(() => {
 		const m = text.match(/^\/(\S*)$/);
-		setShowPalette(m !== null);
-	}, [text]);
+		setShowPalette(selectedCommand === null && m !== null);
+	}, [selectedCommand, text]);
 
 	useEffect(() => {
 		if (!isStreaming) setGuidanceMode('steer');
@@ -151,18 +225,22 @@ export function InputBox() {
 	// 重试只复用用户文本，不自动重新执行有副作用的工具调用。
 	useEffect(() => {
 		if (composerPrefill === null) return;
-		setText(composerPrefill);
+		if (!editor) return;
+		const match = composerPrefill.trim().match(/^\/(\S+)(?:\s+([\s\S]*))?$/);
+		const command = match ? commands.find((item) => item.name === match[1]) : undefined;
+		if (command) {
+			editor.commands.setContent(createCommandDocument(command.name, command.source, match?.[2] ?? ''));
+		} else {
+			editor.commands.setContent({ type: 'doc', content: composerPrefill.split('\n').map((line) => ({ type: 'paragraph', content: line ? [{ type: 'text', text: line }] : undefined })) });
+		}
+		setSelectedCommand(command?.name ?? null);
 		consumeComposerPrefill();
-		requestAnimationFrame(() => taRef.current?.focus());
-	}, [composerPrefill, consumeComposerPrefill]);
+		requestAnimationFrame(() => editor.commands.focus('end'));
+	}, [commands, composerPrefill, consumeComposerPrefill, editor]);
 
-	// 自适应高度
 	useEffect(() => {
-		const ta = taRef.current;
-		if (!ta) return;
-		ta.style.height = 'auto';
-		ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
-	}, [text]);
+		editor?.setEditable(!isSessionLoading);
+	}, [editor, isSessionLoading]);
 
 	// Tauri 拖拽：webview 下 HTML5 drop 不给文件路径，用 onDragDropEvent 拿 paths。
 	useEffect(() => {
@@ -227,7 +305,7 @@ export function InputBox() {
 	};
 
 	/** 粘贴：剪贴板图片 blob -> base64 -> 内联附件。 */
-	const onPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+	const onPaste = (e: React.ClipboardEvent<HTMLElement>) => {
 		const items = e.clipboardData?.items;
 		if (!items) return;
 		const imageItems: { file: File }[] = [];
@@ -262,9 +340,19 @@ export function InputBox() {
 	};
 
 	const send = async (modeOverride?: GuidanceMode) => {
-		const msg = text.trim();
+		const msg = buildCommandPrompt(selectedCommand, text);
 		// 附件存在时允许空文本发送（用户只发附件）；否则需要文本。
 		if (!msg && attachments.length === 0) return;
+		// 拦截二次操作命令（/requirement、/rtk 等）：不发送到对话，改由按钮入口执行二次操作
+		const cmdMatch = msg.match(/^\/(\S+)/);
+		if (cmdMatch) {
+			const cmd = commands.find((c) => c.name === cmdMatch[1]);
+			if (cmd && isHostActionCommand(cmd)) {
+				setShowPalette(false);
+				runHostAction(cmd);
+				return;
+			}
+		}
 		if (preparing || submitting || isStopping || isFlushingGuidance) return;
 		if (isStreaming) {
 			if (isExtensionQueueCommand(msg, commands)) {
@@ -280,15 +368,26 @@ export function InputBox() {
 		}
 		setText('');
 		setShowPalette(false);
+		setSelectedCommand(null);
+		editor?.commands.clearContent();
 		setAttachments([]);
 		setPrepareError(null);
 	};
+	sendRef.current = send;
 
 	const editGuidance = (item: GuidanceQueueItem) => {
-		setText(item.displayText);
+		if (!editor) return;
+		const match = item.displayText.trim().match(/^\/(\S+)(?:\s+([\s\S]*))?$/);
+		const command = match ? commands.find((entry) => entry.name === match[1]) : undefined;
+		if (command) {
+			editor.commands.setContent(createCommandDocument(command.name, command.source, match?.[2] ?? ''));
+		} else {
+			editor.commands.setContent({ type: 'doc', content: item.displayText.split('\n').map((line) => ({ type: 'paragraph', content: line ? [{ type: 'text', text: line }] : undefined })) });
+		}
+		setSelectedCommand(command?.name ?? null);
 		setAttachments([]);
 		setPrepareError(null);
-		requestAnimationFrame(() => taRef.current?.focus());
+		requestAnimationFrame(() => editor.commands.focus('end'));
 	};
 
 	const replayGuidance = async (item: GuidanceQueueItem, mode: GuidanceMode) => {
@@ -298,46 +397,37 @@ export function InputBox() {
 		setSubmitting(false);
 	};
 
-	const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-		if (showPalette) return; // 命令面板接管键盘
-		// 命令已确认后，退格从参数起点删除整个命令前缀，避免逐字删除造成残留 slash。
-		if (commandToken && e.key === 'Backspace' && e.currentTarget.selectionStart === commandToken.prefix.length && e.currentTarget.selectionEnd === commandToken.prefix.length) {
-			e.preventDefault();
-			setText(text.slice(commandToken.prefix.length));
-			return;
-		}
-		if (commandToken && e.key === 'Delete' && e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0) {
-			e.preventDefault();
-			setText(text.slice(commandToken.prefix.length));
-			return;
-		}
-		if (e.key === 'Enter' && !e.shiftKey) {
-			e.preventDefault();
-			void send(e.altKey && isStreaming ? 'followUp' : undefined);
-		}
-	};
-
 	const pickCommand = (name: string) => {
 		setShowPalette(false);
+		const cmd = commands.find((c) => c.name === name);
+		// hostAction 路由：/rtk 打开原生设置 Dialog，不调 ctx.ui.custom()
+		if (cmd?.hostAction === 'open_rtk_settings') {
+			useRtkStore.getState().openSettings();
+			return;
+		}
 		// 需求命令本身就是选择器：选中命令后立即打开需求列表，不再要求用户额外发送一次。
 		if (name === 'requirement' && !isStreaming && !isSessionLoading) {
-			setText('');
+			editor?.commands.clearContent();
+			setSelectedCommand(null);
 			void executeCommand(name);
 			return;
 		}
-		// 预留两个空格，让高亮边框与后续参数之间保持清晰间距；发送时空白不影响命令解析。
-		setText(`/${name}  `);
-		taRef.current?.focus();
+		if (!editor || !cmd) return;
+		// 命令插入为真正的 inline node，后续参数由同一个编辑器承接光标和换行。
+		editor.commands.setContent(createCommandDocument(cmd.name, cmd.source));
+		setSelectedCommand(name);
+		requestAnimationFrame(() => editor.commands.focus('end'));
 	};
 
-	const canSend = canSubmitPrompt(text, attachments.length, preparing || isSessionLoading) && !submitting && !isStopping && !isFlushingGuidance;
+	const canSend = canSubmitPrompt(selectedCommand ?? text, attachments.length, preparing || isSessionLoading) && !submitting && !isStopping && !isFlushingGuidance;
 	const visibleGuidance = guidanceQueue.slice(-5);
-	const hasComposerContent = text.trim().length > 0 || attachments.length > 0;
-	const commandToken = getCommandToken(text, commands);
+	const hasComposerContent = selectedCommand !== null || text.trim().length > 0 || attachments.length > 0;
 
 	return (
 		<div ref={rootRef} className={`${styles.root} ${isDragOver ? styles.dragOver : ''}`}>
-			{showPalette && <CommandPalette commands={commands} query={text.slice(1)} onPick={pickCommand} onDismiss={() => setShowPalette(false)} />}
+			<RtkSettingsDialog />
+			<ExtensionUIConfirmCard />
+			{showPalette && !hasPendingConfirm && <CommandPalette commands={commands} query={text.slice(1)} onPick={pickCommand} onDismiss={() => setShowPalette(false)} />}
 			{isDragOver && (
 				<div className={styles.dropHint}>松开以附加文件</div>
 			)}
@@ -402,19 +492,8 @@ export function InputBox() {
 					</div>
 				)}
 				<div className={styles.composerRow}>
-					<Textarea
-						ref={taRef}
-						value={text}
-						onChange={(e) => setText(e.target.value)}
-						onKeyDown={onKey}
-						onPaste={onPaste}
-						disabled={isSessionLoading}
-						rows={1}
-						id="gitpilot-composer"
-						placeholder={isSessionLoading ? '正在加载任务…' : isStreaming ? '继续输入以排队后续修改…' : '描述任务，/ 查看命令，可附加文件'}
-						className={styles.textarea}
-					/>
-					{commandToken && <span className={styles.commandHighlight} aria-hidden="true">/{commandToken.name}</span>}
+					{/* 外层也挂编辑区样式，确保 Tiptap 重建内部 ProseMirror 根节点时不会短暂回到浏览器默认样式。 */}
+					<EditorContent editor={editor} className={`${styles.editorShell} ${styles.editorSurface}`} onPaste={onPaste} />
 				</div>
 				<div className={styles.toolbar}>
 					<div className={styles.actions}>

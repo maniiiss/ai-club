@@ -25,6 +25,9 @@ import { CONFIG_DIR_NAME, getAgentDir, isBunBinary } from "../../config.ts";
 // NOTE: This import works because loader.ts exports are NOT re-exported from index.ts,
 // avoiding a circular dependency. Extensions can import from @earendil-works/pi-coding-agent.
 import * as _bundledPiCodingAgent from "../../index.ts";
+import * as _bundledRtkOptimizer from "pi-rtk-optimizer";
+import * as _bundledGoal from "@narumitw/pi-goal/src/index.ts";
+import * as _bundledPlanMode from "@narumitw/pi-plan-mode/src/index.ts";
 import { resolvePath } from "../../utils/paths.ts";
 import { createEventBus, type EventBus } from "../event-bus.ts";
 import type { ExecOptions } from "../exec.ts";
@@ -69,6 +72,9 @@ const VIRTUAL_MODULES: Record<string, unknown> = {
 	"@mariozechner/pi-ai/oauth": _bundledPiAiOauth,
 	"@mariozechner/pi-ai/providers/all": _bundledPiAiProviders,
 	"@mariozechner/pi-coding-agent": _bundledPiCodingAgent,
+	"pi-rtk-optimizer": _bundledRtkOptimizer,
+	"@narumitw/pi-goal/src/index.ts": _bundledGoal,
+	"@narumitw/pi-plan-mode/src/index.ts": _bundledPlanMode,
 };
 
 const require = createRequire(import.meta.url);
@@ -88,6 +94,9 @@ function getAliases(): Record<string, string> {
 	const typeboxEntry = require.resolve("typebox");
 	const typeboxCompileEntry = require.resolve("typebox/compile");
 	const typeboxValueEntry = require.resolve("typebox/value");
+	const rtkOptimizerEntry = require.resolve("pi-rtk-optimizer");
+	const goalEntry = require.resolve("@narumitw/pi-goal/src/index.ts");
+	const planModeEntry = require.resolve("@narumitw/pi-plan-mode/src/index.ts");
 
 	const packagesRoot = path.resolve(__dirname, "../../../../");
 	const resolveWorkspaceOrImport = (workspaceRelativePath: string, specifier: string): string => {
@@ -132,6 +141,9 @@ function getAliases(): Record<string, string> {
 		"@sinclair/typebox": typeboxEntry,
 		"@sinclair/typebox/compile": typeboxCompileEntry,
 		"@sinclair/typebox/value": typeboxValueEntry,
+		"pi-rtk-optimizer": rtkOptimizerEntry,
+		"@narumitw/pi-goal/src/index.ts": goalEntry,
+		"@narumitw/pi-plan-mode/src/index.ts": planModeEntry,
 	};
 
 	return _aliases;
@@ -425,6 +437,35 @@ async function loadExtensionModule(extensionPath: string, cacheToken?: Extension
 		extensionCache.set(extensionPath, factory);
 	}
 	return factory;
+}
+
+/**
+ * 加载内置精选扩展的 factory。
+ *
+ * pi-rtk-optimizer 等精选扩展发布 TypeScript 源码，其 peerDependency
+ * @earendil-works/pi-coding-agent 由宿主 alias/virtualModules 重定向。
+ * 此处复用与 loadExtensionModule 相同的 jiti 配置，按 packageName 动态加载。
+ * Bun 二进制模式：virtualModules 已含精选扩展打包模块（_bundledRtkOptimizer）。
+ * Node 模式：alias 解析到 node_modules/pi-rtk-optimizer。
+ */
+export async function loadCuratedExtensionFactory(entrySpecifier: string): Promise<ExtensionFactory | undefined> {
+	// Bun 二进制模式：精选扩展已静态打包到 VIRTUAL_MODULES，但 jiti.import 只能用
+	// virtualModules 重定向扩展「内部」的 import（如 pi-rtk-optimizer 内部对
+	// @earendil-works/pi-coding-agent 的 import），不能直接按 specifier 导入打包模块
+	// （二进制内无 node_modules 文件系统）。因此直接取打包模块的 default export。
+	if (isBunBinary) {
+		const bundled = VIRTUAL_MODULES[entrySpecifier] as { default?: unknown } | undefined;
+		const factory = bundled?.default;
+		return typeof factory === "function" ? (factory as ExtensionFactory) : undefined;
+	}
+	// Node 模式：用 jiti alias 从 node_modules 动态加载，alias 重定向 peer 到宿主
+	const jiti = createJiti(import.meta.url, {
+		moduleCache: false,
+		alias: getAliases(),
+	});
+	const module = await jiti.import(entrySpecifier, { default: true });
+	const factory = module as ExtensionFactory;
+	return typeof factory === "function" ? factory : undefined;
 }
 
 /**

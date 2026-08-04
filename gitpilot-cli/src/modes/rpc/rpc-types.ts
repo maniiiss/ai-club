@@ -183,6 +183,10 @@ export interface RpcSlashCommand {
 	source: "extension" | "prompt" | "skill";
 	/** Source metadata for the owning resource */
 	sourceInfo: SourceInfo;
+	/** 宿主侧动作：prompt 透传给扩展、open_local_review 打开本地审查工作台、open_rtk_settings 打开 RTK 设置 */
+	hostAction?: "prompt" | "open_local_review" | "open_rtk_settings";
+	/** UI 能力：rpc-standard 走标准 RPC 事件、tui-custom 需原生 GUI 适配、none 无 UI */
+	uiCapability?: "rpc-standard" | "tui-custom" | "none";
 }
 
 // ============================================================================
@@ -264,13 +268,16 @@ export type RpcResponse =
 			success: true;
 			data: { level: ThinkingLevel } | null;
 	  }
-	| {
-			id?: string;
-			type: "response";
-			command: "get_available_thinking_levels";
-			success: true;
-			data: { levels: ThinkingLevel[] };
-	  }
+		| {
+				id?: string;
+				type: "response";
+				command: "get_available_thinking_levels";
+				success: true;
+				data: { levels: ThinkingLevel[] };
+		  }
+
+	// Extension UI（sidecar 对 extension_ui_response 的回包，避免桌面同步等待阻塞主线程）
+	| { id?: string; type: "response"; command: "extension_ui_response"; success: true }
 
 	// Queue modes
 	| { id?: string; type: "response"; command: "set_steering_mode"; success: true }

@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { CornerDownLeft } from 'lucide-react';
 import type { RpcSlashCommand } from '@/src/rpc/types';
+import { isHostActionCommand } from './host-actions';
 import { Command as CommandRoot, CommandEmpty, CommandItem, CommandList } from '@/src/components/ui/command';
 import styles from './CommandPalette.module.css';
 
@@ -27,7 +28,8 @@ export function CommandPalette({ commands, query, onPick, onDismiss }: CommandPa
 
 	const filtered = useMemo(() => {
 		const q = query.toLowerCase();
-		return commands.filter((c) => !q || c.name.toLowerCase().includes(q));
+		// 二次操作命令（requirement/rtk 等）不走 / 面板，改由输入框按钮入口触发
+		return commands.filter((c) => !isHostActionCommand(c) && (!q || c.name.toLowerCase().includes(q)));
 	}, [commands, query]);
 
 	useEffect(() => {

@@ -457,6 +457,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "prompt": {
+				// 首条用户消息时异步生成任务标题（与 agent 回复并行，不阻塞 prompt）。
+				// 标题就绪后 setSessionName 落盘并推送 session_info_changed，前端据此显示任务。
+				if (session.messages.length === 0 && session.model) {
+					void session.generateAndApplySessionTitle(command.message);
+				}
 				// Start prompt handling immediately, but emit the authoritative response only after
 				// prompt preflight succeeds. Queued and immediately handled prompts also count as success.
 				let preflightSucceeded = false;
@@ -824,14 +829,27 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "get_commands": {
+				// 扩展命令的中文描述覆盖（上游扩展描述多为英文，宿主侧统一本地化）
+				const EXTENSION_COMMAND_DESCRIPTIONS: Record<string, string> = {
+					requirement: "列出负责人是我的需求，选中后进行技术设计与开发",
+					llama: "管理 llama.cpp 本地推理模型",
+					rtk: "配置 RTK 命令重写与工具输出压缩优化",
+					goal: "设定会话目标，持续执行直至目标完成",
+					plan: "进入只读计划模式，探索代码并制定实施计划",
+				};
 				const commands: RpcSlashCommand[] = [];
 
 				for (const command of session.extensionRunner.getRegisteredCommands()) {
 					commands.push({
 						name: command.invocationName,
-						description: command.description,
+						description: EXTENSION_COMMAND_DESCRIPTIONS[command.invocationName] ?? command.description,
 						source: "extension",
 						sourceInfo: command.sourceInfo,
+						// /rtk 主命令是 TUI 设置模态框，Desktop 需原生 Dialog 适配；
+						// 其余扩展命令默认走标准 RPC 透传。
+						// TODO(P1+): slopchop /diff、/slopchop -> open_local_review
+						hostAction: command.invocationName === "rtk" ? "open_rtk_settings" : "prompt",
+						uiCapability: command.invocationName === "rtk" ? "tui-custom" : "rpc-standard",
 					});
 				}
 
@@ -938,6 +956,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				pendingExtensionRequests.delete(response.id);
 				pending.resolve(response);
 			}
+			// 回一条带原 id 的响应：Desktop 通过同步 RPC 发送本命令（Rust rpc_send 会
+			// recv_timeout 等待），不回包会让桌面主线程阻塞 30 秒，表现为"整个软件死机"。
+			output({ type: "response", command: "extension_ui_response", success: true, id: response.id });
+			await waitForRawStdoutBackpressure();
 			return;
 		}
 

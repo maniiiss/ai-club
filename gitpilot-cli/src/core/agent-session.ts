@@ -106,6 +106,7 @@ import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.ts
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
 import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.ts";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.ts";
+import { generateSessionTitle, fallbackTitle } from "./session-title.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
@@ -2999,6 +3000,37 @@ export class AgentSession {
 		const event = { type: "session_info_changed", name: this.sessionManager.getSessionName() } as const;
 		this._emit(event);
 		void this._extensionRunner.emit(event);
+	}
+
+	/**
+	 * 用户首条消息后异步生成任务标题并落盘。
+	 *
+	 * 与 agent 回复并行执行（调用方用 void，不阻塞 prompt）。复用 completeSummarization
+	 * 路径（同 branch-summarization），不触发工具循环。失败/超时在生成器内部兜底为截断消息，
+	 * 保证总会 setSessionName 使任务落盘显示。已有标题时不覆盖（保留用户手动重命名）。
+	 */
+	async generateAndApplySessionTitle(userMessage: string): Promise<void> {
+		// 已有标题（用户重命名或重复调用）则不覆盖
+		if (this.sessionManager.getSessionName()) return;
+		const model = this.model;
+		if (!model) return;
+		try {
+			const { apiKey, headers, env } = await this._getSummarizationRequestAuth(model);
+			const result = await generateSessionTitle(model, userMessage, {
+				apiKey,
+				headers,
+				env,
+				streamFn: this.agent.streamFunction,
+				retry: this.settingsManager.getRetrySettings(),
+			});
+			this.setSessionName(result.title);
+			// assistant 回复前 appendSessionInfo 不会自动落盘，强制落盘使 listAll 能发现新会话。
+			this.sessionManager.flushToDisk();
+		} catch {
+			// 鉴权等异常时用截断消息兜底，保证任务可见
+			this.setSessionName(fallbackTitle(userMessage));
+			this.sessionManager.flushToDisk();
+		}
 	}
 
 	// =========================================================================

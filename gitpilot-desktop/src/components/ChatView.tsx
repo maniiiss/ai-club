@@ -91,7 +91,7 @@ export function buildConversationPresentation(messages: UIMessage[], retainedCom
 
 		const stepsById = new Map<string, ExecutionStep>();
 		const filesByPath = new Map<string, ChangedFile>();
-		const assistantTexts = segment.filter((message) => message.role === 'assistant' && message.kind === 'text');
+		const assistantTexts = segment.filter((message) => message.role === 'assistant' && (message.kind === 'text' || message.kind === 'plan'));
 		const finalAssistantTextId = assistantTexts.at(-1)?.id;
 		const progressTexts: string[] = [];
 		const traceItems: TraceItem[] = [];

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { classifyExecutionKind, DEFAULT_LAYOUT, formatDuration, getUnreportedExecutionSteps, normalizeLayoutPreferences, reduceExecutionEvent, useWorkbenchStore, WORKBENCH_WIDTH_LIMITS, type ExecutionRun } from './workbench';
+import { classifyExecutionKind, DEFAULT_LAYOUT, formatDuration, getUnreportedExecutionSteps, normalizeLayoutPreferences, reduceExecutionEvent, useWorkbenchStore, WORKBENCH_WIDTH_LIMITS, type ContentDrawerContent, type ExecutionRun } from './workbench';
 import { resolveWorkbenchShortcut } from '@/src/workbench/shortcuts';
 
 function runningRun(): ExecutionRun {
@@ -7,6 +7,14 @@ function runningRun(): ExecutionRun {
 }
 
 describe('Agent 工作台执行事件', () => {
+	it('内容抽屉使用统一载荷打开和关闭', () => {
+		const content: ContentDrawerContent = { id: 'plan-1', kind: 'plan', title: '登录改造', content: '# 计划' };
+		useWorkbenchStore.getState().openContentDrawer(content);
+		expect(useWorkbenchStore.getState().contentDrawer).toEqual(content);
+		useWorkbenchStore.getState().closeContentDrawer();
+		expect(useWorkbenchStore.getState().contentDrawer).toBeNull();
+	});
+
 	it('按 toolCallId 合并工具开始、进度和最终结果', () => {
 		const start = reduceExecutionEvent(runningRun(), { type: 'tool_execution_start', toolCallId: 'tool-1', toolName: 'bash', args: { command: 'npm test' } }, 100);
 		const update = reduceExecutionEvent(start, { type: 'tool_execution_update', toolCallId: 'tool-1', toolName: 'bash', partialResult: 'running…' }, 120);

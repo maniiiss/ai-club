@@ -11,6 +11,8 @@ import { FileText, Image as ImageIcon } from 'lucide-react';
 import { CodeCard } from './CodeCard';
 import { ExecutionBatch } from './ExecutionActivity';
 import { ChangedFilesCard } from './ChangedFilesCard';
+import { PlanCard } from './PlanCard';
+import { CommandIcon, formatCommandLabel } from './CommandTokenNode';
 import type { UIMessage } from '@/src/store/session';
 import { cn } from '@/src/lib/utils';
 import styles from './MessageBubble.module.css';
@@ -53,7 +55,10 @@ function renderHighlightedUserText(text: string) {
 		const slash = line.match(/^(\/[^\s]+)(.*)$/);
 		let content: ReactNode = line;
 		if (requirement) content = <>{requirement[1]}<mark className={styles.highlightToken}>{requirement[2]}</mark></>;
-		else if (slash) content = <><mark className={styles.highlightToken}>{slash[1].slice(1)}</mark>{slash[2]}</>;
+		else if (slash) {
+			const commandName = slash[1].slice(1);
+			content = <><mark className={styles.highlightToken}><CommandIcon name={commandName} /><span>{formatCommandLabel(commandName)}</span></mark>{slash[2]}</>;
+		}
 		return <Fragment key={`${index}-${line}`}>{content}{index < lines.length - 1 ? '\n' : ''}</Fragment>;
 	});
 }
@@ -72,6 +77,8 @@ export const MessageBubble = memo(function MessageBubble({ message }: { message:
 			/>
 		) : null;
 	}
+
+	if (message.kind === 'plan') return <PlanCard message={message} />;
 
 	if (message.role === 'tool') {
 		return (

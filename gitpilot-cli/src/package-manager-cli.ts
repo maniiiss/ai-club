@@ -763,10 +763,16 @@ export async function handlePackageCommand(
 
 	try {
 		switch (options.command) {
-			case "install":
+			case "install": {
+				const curated = packageManager.findCuratedBuiltin(source!);
+				if (curated) {
+					console.log(chalk.yellow(`已由当前 GitPilot 版本内置（${curated.displayName}），无需重复安装`));
+					return true;
+				}
 				await packageManager.installAndPersist(source!, { local: options.local });
 				console.log(chalk.green(`已安装 ${source}`));
 				return true;
+			}
 
 			case "remove": {
 				const removed = await packageManager.removeAndPersist(source!, { local: options.local });

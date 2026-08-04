@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attachmentInputKey, canSubmitPrompt, dedupeAttachmentInputs, INPUT_COMPOSER_POINTER_POLICY, isExtensionQueueCommand } from './InputBox';
+import { attachmentInputKey, buildCommandPrompt, canSubmitPrompt, dedupeAttachmentInputs, formatCommandLabel, getCommandIconKey, INPUT_COMPOSER_POINTER_POLICY, isExtensionQueueCommand } from './InputBox';
 import type { AttachmentInput } from '@/src/rpc/types';
 
 describe('输入器命中区与提交状态', () => {
@@ -28,5 +28,24 @@ describe('输入器命中区与提交状态', () => {
 		expect(isExtensionQueueCommand('/login now', commands)).toBe(true);
 		expect(isExtensionQueueCommand('/review now', commands)).toBe(false);
 		expect(isExtensionQueueCommand('说明当前变更', commands)).toBe(false);
+	});
+
+	it('选中命令后只把参数存入输入框，发送时还原 slash prompt', () => {
+		expect(buildCommandPrompt('goal', '修复输入框')).toBe('/goal 修复输入框');
+		expect(buildCommandPrompt('goal', '   ')).toBe('/goal');
+		expect(buildCommandPrompt(null, '普通任务')).toBe('普通任务');
+	});
+
+	it('命令 token 使用可读的首字母大写名称', () => {
+		expect(formatCommandLabel('goal')).toBe('Goal');
+		expect(formatCommandLabel('code-review')).toBe('Code Review');
+	});
+
+	it('不同命令使用不同的 token 图标语义', () => {
+		expect(getCommandIconKey('goal', 'extension')).toBe('goal');
+		expect(getCommandIconKey('plan', 'extension')).toBe('plan');
+		expect(getCommandIconKey('skill:frontend', 'skill')).toBe('skill');
+		expect(getCommandIconKey('custom', 'prompt')).toBe('prompt');
+		expect(getCommandIconKey('custom', 'extension')).toBe('extension');
 	});
 });

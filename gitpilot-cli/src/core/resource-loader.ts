@@ -2,6 +2,11 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve, sep } from "node:path";
 import chalk from "chalk";
 import { CONFIG_DIR_NAME } from "../config.ts";
+import {
+	type CuratedExtensionId,
+	findCuratedById,
+	resolveEnabledCuratedIds,
+} from "../extensions/curated-extension-manifest.ts";
 import { loadThemeFromPath, type Theme } from "../modes/interactive/theme/theme.ts";
 import type { ResourceDiagnostic } from "./diagnostics.ts";
 
@@ -12,6 +17,7 @@ import { createEventBus, type EventBus } from "./event-bus.ts";
 import {
 	clearExtensionCache,
 	createExtensionRuntime,
+	loadCuratedExtensionFactory,
 	loadExtensionFromFactory,
 	loadExtensionsCached,
 } from "./extensions/loader.ts";
@@ -167,6 +173,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private additionalPromptTemplatePaths: string[];
 	private additionalThemePaths: string[];
 	private extensionFactories: InlineExtension[];
+	private enabledCuratedIds: Set<CuratedExtensionId>;
 	private noExtensions: boolean;
 	private noSkills: boolean;
 	private noPromptTemplates: boolean;
@@ -227,6 +234,11 @@ export class DefaultResourceLoader implements ResourceLoader {
 		this.additionalThemePaths = options.additionalThemePaths ?? [];
 		this.extensionFactories = options.extensionFactories ?? [];
 		this.noExtensions = options.noExtensions ?? false;
+		// 内置精选扩展启用集合：受 bundledExtensions 配置与 --no-extensions 共同控制
+		this.enabledCuratedIds = resolveEnabledCuratedIds(
+			this.settingsManager.getBundledExtensions(),
+			this.noExtensions,
+		);
 		this.noSkills = options.noSkills ?? false;
 		this.noPromptTemplates = options.noPromptTemplates ?? false;
 		this.noThemes = options.noThemes ?? false;
@@ -529,7 +541,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 		const preloadedByPath = new Map(
 			preTrustExtensions.extensions
-				.filter((extension) => !extension.path.startsWith("<inline:"))
+				.filter((extension) => !extension.path.startsWith("<inline:") && !extension.path.startsWith("<curated:"))
 				.map((extension) => [extension.resolvedPath, extension]),
 		);
 		const failedPreloadPaths = new Set(
@@ -551,7 +563,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 		}
 
 		const inlineExtensions = preTrustExtensions.extensions.filter((extension) =>
-			extension.path.startsWith("<inline:"),
+			extension.path.startsWith("<inline:") || extension.path.startsWith("<curated:"),
 		);
 		const orderedExtensions = extensionPaths
 			.map((path) => loadedByPath.get(this.resolveExtensionLoadPath(path)))
@@ -903,6 +915,31 @@ export class DefaultResourceLoader implements ResourceLoader {
 				extensions.push(extension);
 			} catch (error) {
 				const message = error instanceof Error ? error.message : "加载扩展失败";
+				errors.push({ path: extensionPath, error: message });
+			}
+		}
+
+		// 加载内置精选扩展（curated extensions），factory 由 jiti 按 packageName 动态加载
+		for (const id of this.enabledCuratedIds) {
+			const def = findCuratedById(id);
+			if (!def) continue;
+			const extensionPath = `<curated:${id}>`;
+			try {
+				const factory = await loadCuratedExtensionFactory(def.entry);
+				if (!factory) {
+					errors.push({ path: extensionPath, error: `${def.packageName} 未导出有效 factory` });
+					continue;
+				}
+				const extension = await loadExtensionFromFactory(
+					factory,
+					this.cwd,
+					this.eventBus,
+					runtime,
+					extensionPath,
+				);
+				extensions.push(extension);
+			} catch (error) {
+				const message = error instanceof Error ? error.message : "加载精选扩展失败";
 				errors.push({ path: extensionPath, error: message });
 			}
 		}

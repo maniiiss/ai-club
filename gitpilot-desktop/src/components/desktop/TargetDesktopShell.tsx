@@ -10,6 +10,7 @@ import { TargetWorkbenchLayout } from '@/src/components/workbench/TargetWorkbenc
 import { TargetSessionSidebar } from '@/src/components/workbench/TargetSessionSidebar';
 import { TargetConversationArea } from '@/src/components/workbench/TargetConversationArea';
 import { TargetExecutionInspector } from '@/src/components/features/TargetExecutionInspector';
+import { ContentDrawer } from '@/src/components/ContentDrawer';
 import styles from './TargetDesktopShell.module.css';
 
 export interface TargetDesktopShellProps {
@@ -32,6 +33,7 @@ export function TargetDesktopShell({ newSession, abort, error, clearError }: Tar
 				terminal={<TargetTerminalPanel />}
 			/>
 			<TargetExtensionUIModal />
+			<ContentDrawer />
 			<TargetGlobalCommandPalette onNewSession={() => void newSession()} onAbort={() => void abort()} />
 			{error && <div className={styles.error}><span>{error}</span><Button type="button" variant="ghost" size="icon-sm" onClick={clearError} aria-label="关闭错误提示"><X /></Button></div>}
 	</div>;

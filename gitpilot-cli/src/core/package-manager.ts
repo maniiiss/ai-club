@@ -29,6 +29,10 @@ import ignore from "ignore";
 import { minimatch } from "minimatch";
 import { maxSatisfying, rcompare, satisfies, valid, validRange } from "semver";
 import { CONFIG_DIR_NAME } from "../config.ts";
+import {
+	type CuratedExtensionDefinition,
+	findCuratedByPackageName,
+} from "../extensions/curated-extension-manifest.ts";
 import { spawnProcess, spawnProcessSync } from "../utils/child-process.ts";
 import { type GitSource, parseGitUrl } from "../utils/git.ts";
 import { canonicalizePath, isLocalPath, markPathIgnoredByCloudSync, resolvePath } from "../utils/paths.ts";
@@ -1016,8 +1020,23 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	async installAndPersist(source: string, options?: { local?: boolean }): Promise<void> {
+		// 内置精选扩展已由当前 GitPilot 版本内置，不重复安装也不写入 settings
+		if (this.isCuratedBuiltin(source)) {
+			return;
+		}
 		await this.install(source, options);
 		this.addSourceToSettings(source, options);
+	}
+
+	/** 判断 source 是否为内置精选扩展（用于重复安装保护，命中时提示已内置） */
+	isCuratedBuiltin(source: string): boolean {
+		return this.findCuratedBuiltin(source) !== undefined;
+	}
+
+	/** 返回 source 命中的内置精选扩展定义（npm 包名匹配），未命中返回 undefined */
+	findCuratedBuiltin(source: string): CuratedExtensionDefinition | undefined {
+		const parsed = this.parseSource(source);
+		return parsed.type === "npm" ? findCuratedByPackageName(parsed.name) : undefined;
 	}
 
 	async remove(source: string, options?: { local?: boolean }): Promise<void> {

@@ -104,6 +104,7 @@ export interface Settings {
 	trackingId?: string; // analytics tracking identifier, generated when analytics is enabled
 	packages?: PackageSource[]; // Array of npm/git package sources (string or object with filtering)
 	extensions?: string[]; // Array of local extension file paths or directories
+	bundledExtensions?: Record<string, boolean>; // 内置精选扩展启用状态（key 为 curated id，如 rtk-optimizer）
 	skills?: string[]; // Array of local skill file paths or directories
 	prompts?: string[]; // Array of local prompt template paths or directories
 	themes?: string[]; // Array of local theme file paths or directories
@@ -958,6 +959,21 @@ export class SettingsManager {
 		this.updateProjectSettings("packages", (settings) => {
 			settings.packages = packages;
 		});
+	}
+
+	/** 获取内置精选扩展启用状态（用户配置；未配置的 id 由 curated manifest defaultEnabled 决定） */
+	getBundledExtensions(): Record<string, boolean> {
+		return { ...(this.settings.bundledExtensions ?? {}) };
+	}
+
+	/** 设置单个内置精选扩展的启用状态并持久化到全局设置 */
+	setBundledExtension(id: string, enabled: boolean): void {
+		if (!this.globalSettings.bundledExtensions) {
+			this.globalSettings.bundledExtensions = {};
+		}
+		this.globalSettings.bundledExtensions[id] = enabled;
+		this.markModified("bundledExtensions", id);
+		this.save();
 	}
 
 	getExtensionPaths(): string[] {

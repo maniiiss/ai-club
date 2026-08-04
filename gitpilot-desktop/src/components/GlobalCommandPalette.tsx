@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 import { CornerDownLeft, Cpu, Plus, Square, Type } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
 import { useWorkbenchStore, type WorkbenchCommand } from '@/src/store/workbench';
+import { isHostActionCommand } from './host-actions';
 import { Command as CommandRoot, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/src/components/ui/command';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/src/components/ui/dialog';
 import styles from './GlobalCommandPalette.module.css';
@@ -28,7 +29,7 @@ export function GlobalCommandPalette({ onNewSession, onAbort }: GlobalCommandPal
 	], [onAbort, onNewSession, requestModelPicker]);
 	const all = useMemo<Array<WorkbenchCommand & { execute: () => void }>>(() => [
 		...builtIns,
-		...commands.map<WorkbenchCommand & { execute: () => void }>((command) => ({ id: `slash-${command.source}-${command.name}`, label: `/${command.name}`, description: command.description ?? '执行 sidecar 注册命令', execute: () => { void (command.source === 'extension' && command.name === 'requirement' ? executeCommand(command.name) : prompt(`/${command.name}`)); } })),
+		...commands.filter((command) => !isHostActionCommand(command)).map<WorkbenchCommand & { execute: () => void }>((command) => ({ id: `slash-${command.source}-${command.name}`, label: `/${command.name}`, description: command.description ?? '执行 sidecar 注册命令', execute: () => { void (command.source === 'extension' && command.name === 'requirement' ? executeCommand(command.name) : prompt(`/${command.name}`)); } })),
 	], [builtIns, commands, executeCommand, prompt]);
 	if (!open) return null;
 

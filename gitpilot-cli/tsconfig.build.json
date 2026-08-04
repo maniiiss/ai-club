@@ -21,6 +21,13 @@
 		"emitDecoratorMetadata": true,
 		"useDefineForClassFields": false,
 		"types": ["node"],
+		"baseUrl": ".",
+		"paths": {
+			"@earendil-works/pi-coding-agent": ["./src/index.ts"],
+			"pi-rtk-optimizer": ["./src/types/pi-rtk-optimizer.d.ts"],
+			"@narumitw/pi-goal/src/index.ts": ["./src/types/pi-goal.d.ts"],
+			"@narumitw/pi-plan-mode/src/index.ts": ["./src/types/pi-plan-mode.d.ts"]
+		},
 		"outDir": "./dist",
 		"rootDir": "./src"
 	},

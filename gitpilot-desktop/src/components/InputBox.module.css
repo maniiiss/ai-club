@@ -15,11 +15,16 @@
 .guidanceAction { height: 26px; gap: 4px; border-radius: 7px; padding: 0 9px; font-size: 11px; }
 .guidanceIconAction { width: 28px; height: 28px; color: var(--gp-text-muted); }
 .guidanceIconAction:hover { color: var(--gp-text); }
-.composerRow { position: relative; isolation: isolate; min-width: 0; }
-.commandHighlight { position: absolute; z-index: 0; top: 8px; left: 12px; border: 1px solid color-mix(in srgb, var(--gp-action) 55%, var(--gp-border)); border-radius: 4px; background: color-mix(in srgb, var(--gp-action) 12%, transparent); padding: 0 2px; color: transparent; font: 13px/1.55 var(--font-sans); pointer-events: none; white-space: nowrap; }
-.textarea { position: relative; z-index: 1; min-height: 44px; max-height: 200px; width: 100%; resize: none; border: 0 !important; border-color: transparent !important; background: transparent; box-shadow: none !important; color: var(--gp-text); font: 13px/1.55 var(--font-sans); outline: 0 !important; user-select: text; -webkit-user-select: text; }
-.textarea:focus, .textarea:focus-visible { border: 0 !important; border-color: transparent !important; box-shadow: none !important; outline: 0 !important; }
-.textarea::placeholder { color: var(--gp-text-muted); }
+.composerRow { min-width: 0; }
+/* 业务意图：Tiptap 编辑区承载真正的 inline command node，参数与命令共享同一个光标和换行模型。 */
+.editorShell { width: 100%; min-width: 0; }
+.editorSurface { box-sizing: border-box; display: block; min-height: 44px; max-height: 200px; width: 100%; overflow-y: auto; border: 0; background: transparent; padding: 0; color: var(--gp-text); font: 13px/1.55 var(--font-sans); outline: 0; user-select: text; -webkit-user-select: text; }
+.editorSurface :global(p) { min-height: 44px; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.editorSurface :global(.is-editor-empty:first-child::before) { float: left; height: 0; color: var(--gp-text-muted); content: attr(data-placeholder); pointer-events: none; }
+.editorSurface :global(.ProseMirror-focused) { outline: 0; }
+/* 命令是编辑器内的原子 inline 节点，不再使用固定高度或独立 flex 列。 */
+.commandToken { display: inline-flex; align-items: center; gap: 3px; margin-right: 7px; color: var(--gp-accent); font-size: 13px; font-weight: 600; line-height: 1.55; vertical-align: -0.1em; white-space: nowrap; }
+.commandToken svg { width: 13px; height: 13px; flex: 0 0 13px; color: var(--gp-text-muted); }
 .toolbar { display: flex; min-height: 32px; align-items: center; gap: 10px; margin-top: 7px; }
 .actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .send { display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: var(--gp-action); color: var(--primary-foreground); cursor: pointer; transition: background 140ms ease, transform 140ms ease, opacity 140ms ease; }
