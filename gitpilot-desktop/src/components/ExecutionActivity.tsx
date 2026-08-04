@@ -133,9 +133,9 @@ function ExecutionTrace({ steps, thinking, changedFiles, progressTexts = [] }: {
 	if (!thinking?.trim() && visible.length === 0 && files.length === 0 && progressTexts.length === 0) return null;
 	return (
 		<div className={styles.trace}>
-			{progressTexts.map((text, index) => <div key={`${index}-${text}`} className={styles.progressText}>{text}</div>)}
 			{thinking?.trim() && <ThinkingBlock thinking={thinking} />}
 			{visible.map((step) => <TraceStep key={step.id} step={step} />)}
+			{progressTexts.map((text, index) => <div key={`${index}-${text}`} className={styles.progressText}>{text}</div>)}
 			{files.map((file) => (
 				<div key={file.path} className={styles.traceStep}>
 					<span className={styles.traceStepTitle}>
