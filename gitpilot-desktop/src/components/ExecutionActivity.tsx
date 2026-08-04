@@ -1,6 +1,6 @@
 /** 聊天流内的 Agent 执行摘要，所有信息均来自已归并的 sidecar 真实事件。 */
 import { useEffect, useState } from 'react';
-import { ChevronRight } from 'lucide-react';
+import { Brain, CheckCircle2, ChevronRight, FileDiff, FilePen, FileText, ListChecks, Terminal, Wrench } from 'lucide-react';
 import { formatDuration, getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionRun, type ExecutionStep } from '@/src/store/workbench';
 import { Button } from '@/src/components/ui/button';
 import type { ChangedFile } from '@/src/store/changed-files';
@@ -76,12 +76,24 @@ function describeChangedFile(file: ChangedFile): string {
 	return parts.join(' ');
 }
 
+/** 按步骤类型匹配功能图标（lucide-react，shadcn-ui 推荐图标库）。 */
+function ExecutionStepIcon({ kind }: { kind: ExecutionStep['kind'] }) {
+	const map: Partial<Record<ExecutionStep['kind'], typeof FileText>> = {
+		read: FileText, edit: FilePen, command: Terminal, verify: CheckCircle2, plan: ListChecks, other: Wrench,
+	};
+	const Icon = map[kind] ?? Wrench;
+	return <Icon size={13} aria-hidden="true" className={styles.traceStepIcon} />;
+}
+
 /** 思考块：默认只显示标题，点击展开思考内容（执行过程详情默认收起）。 */
 function ThinkingBlock({ thinking }: { thinking: string }) {
 	const [expanded, setExpanded] = useState(false);
 	return (
 		<div className={styles.traceStep}>
-			<span className={styles.traceStepTitle} role="button" tabIndex={0} onClick={() => setExpanded((v) => !v)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded((v) => !v); } }}>思考</span>
+			<span className={styles.traceStepTitle} role="button" tabIndex={0} onClick={() => setExpanded((v) => !v)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded((v) => !v); } }}>
+				<Brain size={13} aria-hidden="true" className={styles.traceStepIcon} />
+				思考过程
+			</span>
 			{expanded && <pre className={styles.traceStepOutput}>{thinking}</pre>}
 		</div>
 	);
@@ -101,6 +113,7 @@ function TraceStep({ step }: { step: ExecutionStep }) {
 				onClick={hasOutput ? () => setExpanded((v) => !v) : undefined}
 				onKeyDown={hasOutput ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded((v) => !v); } } : undefined}
 			>
+				<ExecutionStepIcon kind={step.kind} />
 				{describeExecutionStep(step)}
 			</span>
 			{expanded && output && <pre className={styles.traceStepOutput}>{output}</pre>}
@@ -125,7 +138,10 @@ function ExecutionTrace({ steps, thinking, changedFiles, progressTexts = [] }: {
 			{visible.map((step) => <TraceStep key={step.id} step={step} />)}
 			{files.map((file) => (
 				<div key={file.path} className={styles.traceStep}>
-					<span className={styles.traceStepTitle}>{describeChangedFile(file)}</span>
+					<span className={styles.traceStepTitle}>
+						<FileDiff size={13} aria-hidden="true" className={styles.traceStepIcon} />
+						{describeChangedFile(file)}
+					</span>
 				</div>
 			))}
 		</div>
