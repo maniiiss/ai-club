@@ -240,6 +240,16 @@ RPC 的 `extension_ui_request` 有四种 `method`，每种映射一个 React 组
 
 bun `--compile` 按目标三元组生成单文件，随 Tauri `resources` 打入安装包。用户无需预装 Node。
 
+#### 12.2.1 typebox 命名空间再导出断裂修复（`Type2 is not defined`）
+
+**现象**：桌面 sidecar 启动后前端一直停留在"正在连接 GitPilot…"。`main.ts` 把扩展加载失败当作致命错误（`process.exit(1)`），sidecar 在发出 `{"type":"ready"}` 前即退出，前端永远收不到 `rpc:ready`。
+
+**根因**：用户安装的扩展（如 `pi-docparser`）经 jiti 加载，从 `@earendil-works/pi-ai/compat` 虚拟模块取 `Type`。typebox 入口为 `export * as Type from './typebox.mjs'`，经 pi-ai/compat 的链式 `export *` 再导出后，bun 在**完整 bundle** 中为 compat 导出表生成了惰性 getter `Type: () => Type2`，却从未创建 `Type2` 绑定（命名空间再导出与 bundle 内其他 `Type` 冲突时被重命名后丢失定义）。主 sidecar 自身用 `import { Type } from "typebox"` 具名导入，走 bundle 期直连绑定不触发；只有 jiti 扩展通过虚拟模块命名空间属性访问才会命中断裂 getter，抛 `ReferenceError: Type2 is not defined`。
+
+**修复**（`gitpilot-cli/src/core/extensions/loader.ts`）：构造一个 Proxy 包裹 `_bundledPiAiCompat`，在 `get` 拦截器里把 `Type` 重定向到直接从 `typebox` 取到、在完整 bundle 中仍可用的 `_bundledTypebox.Type`，其余属性原样透传。VIRTUAL_MODULES 中 `@earendil-works/pi-ai`、`@earendil-works/pi-ai/compat`（及 `@mariozechner/pi-ai*` 兼容别名）改用该修复后的对象。compat 导出表中除 `Type` 外其余 getter 目标均有定义，故只需覆盖 `Type`。
+
+**验证**：重建 sidecar 后默认模式（加载扩展）正常输出 `{"type":"ready"}`、plan-mode/goal/rtk-optimizer 与 pi-docparser 均加载成功，stderr 无 `Type2` 错误。
+
 ### 12.3 自动更新
 
 采用 `tauri-plugin-updater`，更新源走**平台自有分发**（复用 AI Club 平台后端提供安装包托管与版本清单端点），不依赖 GitHub Releases。后端分发端点作为本次设计的依赖项，需后端配套实现（见第 15 节）。

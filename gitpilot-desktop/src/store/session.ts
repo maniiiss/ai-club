@@ -314,6 +314,13 @@ export type ConnectionState = 'idle' | 'connecting' | 'ready' | 'disconnected';
 /** 平台后端连通状态，与本地 sidecar 的进程连接态分开维护。 */
 export type PlatformConnectionState = 'checking' | 'connected' | 'disconnected';
 
+/**
+ * 待响应的扩展 UI 请求，附带触发它的会话路径。
+ * 按会话隔离：确认/选择弹框只在触发会话内展示，切换会话时隐藏、切回时恢复
+ * （见 useActiveExtensionUI）。sidecar 侧 pending 请求不随切换取消，切回仍可响应。
+ */
+export type PendingExtensionUIEntry = RpcExtensionUIRequest & { sessionPath: string | null };
+
 export function platformConnectionStateFromResponse(response: PlatformConnection): PlatformConnectionState {
 	return response.connected ? 'connected' : 'disconnected';
 }
@@ -353,8 +360,8 @@ interface SessionStore {
 	hiddenSessionPaths: string[];
 	thinkingLevels: ThinkingLevel[];
 
-	// 扩展 UI 请求队列（待用户交互）
-	pendingExtensionUI: RpcExtensionUIRequest[];
+	// 扩展 UI 请求队列（待用户交互，按会话隔离）
+	pendingExtensionUI: PendingExtensionUIEntry[];
 	// 扩展标准 UI 事件消费（notify/status/widget/title，v1 §6.2 补齐）
 	extensionNotifications: Array<{ id: string; message: string; type: 'info' | 'warning' | 'error'; at: number }>;
 	extensionStatuses: Map<string, string>;
@@ -963,9 +970,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 						set({ sessionAuxTitle: req.title });
 						return;
 					}
-					// 交互类进队列等待用户响应
+					// 交互类进队列等待用户响应；按当前会话打标，使弹框只在触发会话内展示（切走隐藏、切回恢复）。
 					if (req.method === 'select' || req.method === 'confirm' || req.method === 'input' || req.method === 'editor') {
-						set((s) => ({ pendingExtensionUI: [...s.pendingExtensionUI, req] }));
+						set((s) => ({ pendingExtensionUI: [...s.pendingExtensionUI, { ...req, sessionPath: s.selectedSessionPath ?? s.sessionState?.sessionFile ?? null }] }));
 						useWorkbenchStore.getState().addApprovalStep(req);
 					}
 				}),
@@ -1584,3 +1591,24 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		}
 	},
 }));
+
+/**
+ * 从待响应扩展 UI 队列中取出当前会话的队首请求（按会话隔离）。
+ *
+ * 切换会话时旧会话的请求不命中（弹框隐藏，不带到新会话）；切回原会话时重新命中（恢复展示），
+ * 用户仍可响应--sidecar 侧 pending 请求不随切换取消。抽成纯函数便于单测。
+ */
+export function pickActiveExtensionUI(
+	entries: PendingExtensionUIEntry[],
+	currentSession: string | null,
+): RpcExtensionUIRequest | null {
+	return entries.find((entry) => entry.sessionPath === currentSession) ?? null;
+}
+
+/**
+ * 当前会话的待响应扩展 UI 请求（按会话隔离，见 pickActiveExtensionUI）。
+ * 选择器返回稳定对象引用（find 命中元素或 null），避免无谓重渲染。
+ */
+export function useActiveExtensionUI(): RpcExtensionUIRequest | null {
+	return useSessionStore((s) => pickActiveExtensionUI(s.pendingExtensionUI, s.selectedSessionPath ?? s.sessionState?.sessionFile ?? null));
+}

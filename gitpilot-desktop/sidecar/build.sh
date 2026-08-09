@@ -26,6 +26,19 @@ bun build "$CLI/src/rpc-entry.ts" \
   --target=bun-windows-x64 \
   --outfile="$BIN/gitpilot-rpc-$TARGET.exe"
 
+# dev 模式下 resolve_sidecar（main.rs）优先查 src-tauri/target/debug/ 同级目录，
+# 需同步新二进制到此，否则 tauri dev 会跑旧 sidecar（曾导致 fork 改动不生效）。
+DEBUG_BIN="$DESKTOP/src-tauri/target/debug"
+if [ -d "$DEBUG_BIN" ]; then
+  if cp "$BIN/gitpilot-rpc-$TARGET.exe" "$DEBUG_BIN/gitpilot-rpc-$TARGET.exe" 2>/dev/null \
+    && cp "$BIN/gitpilot-rpc-$TARGET.exe" "$DEBUG_BIN/gitpilot-rpc.exe" 2>/dev/null; then
+    echo "    已同步到 target/debug/（dev 模式 resolve_sidecar 命中）"
+  else
+    echo "    警告：target/debug/ 的 sidecar 被占用（tauri dev 运行中？），未同步。"
+    echo "    请停止 tauri dev 后重新运行 build.sh，或手动复制 binaries/gitpilot-rpc-$TARGET.exe 到 target/debug/。"
+  fi
+fi
+
 echo "==> 复制资源文件到 resources/（dev 期 sidecar cwd 指向此处；tauri bundle 由此打包）"
 mkdir -p "$RES/theme" "$RES/export-html/vendor"
 cp "$CLI/src/modes/interactive/theme/"*.json "$RES/theme/"

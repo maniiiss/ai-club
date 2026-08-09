@@ -306,7 +306,7 @@ export function ChatView() {
 							</div>
 							<div>
 								<h2>GitPilot 桌面版</h2>
-								<p>在当前仓库启动本地 Coding Agent，输入指令开始</p>
+								<p>在当前仓库启动 GitPilot，输入指令开始</p>
 							</div>
 						</div>
 					) : (

@@ -18,9 +18,9 @@ import Paragraph from '@tiptap/extension-paragraph';
 import Placeholder from '@tiptap/extension-placeholder';
 import Text from '@tiptap/extension-text';
 import { CommandTokenNode, createCommandDocument, findCommandToken, serializeCommandContent } from './CommandTokenNode';
-import { useSessionStore, type GuidanceMode, type GuidanceQueueItem } from '@/src/store/session';
+import { useSessionStore, useActiveExtensionUI, type GuidanceMode, type GuidanceQueueItem } from '@/src/store/session';
 import { CommandPalette } from './CommandPalette';
-import { ExtensionUIConfirmCard } from './ExtensionUIModal';
+import { ExtensionUIConfirmCard, ExtensionUISelectCard, isActionSelect } from './ExtensionUIModal';
 import { isHostActionCommand } from './host-actions';
 import { RtkSettingsDialog } from './RtkSettingsDialog';
 import { ModelPicker } from './ModelPicker';
@@ -116,7 +116,11 @@ export function InputBox() {
 	const isStreaming = useSessionStore((s) => s.isStreaming);
 	const isSessionLoading = useSessionStore((s) => s.isSessionLoading);
 	const commands = useSessionStore((s) => s.commands);
-	const hasPendingConfirm = useSessionStore((s) => s.pendingExtensionUI[0]?.method === 'confirm');
+	// 按会话隔离的待响应扩展 UI：切走会话时弹框隐藏，不带到新会话。
+	const activeExtensionUI = useActiveExtensionUI();
+	const hasPendingConfirm = activeExtensionUI?.method === 'confirm';
+	/** 动作型 select（如 plan 模式下一步）以输入框上方浮层呈现，与 / 命令面板互斥。 */
+	const hasPendingActionSelect = isActionSelect(activeExtensionUI ?? null);
 	const prompt = useSessionStore((s) => s.prompt);
 	const executeCommand = useSessionStore((s) => s.executeCommand);
 
@@ -150,9 +154,11 @@ export function InputBox() {
 	const [submitting, setSubmitting] = useState(false);
 	const rootRef = useRef<HTMLDivElement>(null);
 	const showPaletteRef = useRef(false);
+	const hasActionSelectRef = useRef(false);
 	const isStreamingRef = useRef(isStreaming);
 	const sendRef = useRef<(modeOverride?: GuidanceMode) => Promise<void>>(async () => undefined);
 	showPaletteRef.current = showPalette;
+	hasActionSelectRef.current = hasPendingActionSelect;
 	isStreamingRef.current = isStreaming;
 
 	const editor = useEditor({
@@ -166,8 +172,8 @@ export function InputBox() {
 				'aria-label': '任务输入',
 			},
 			handleKeyDown: (_view, event) => {
-				// 命令面板注册了全局键盘监听，编辑器只让事件继续冒泡。
-				if (showPaletteRef.current) {
+				// 命令面板与动作型 select 浮层都注册了全局键盘监听，编辑器只让事件继续冒泡。
+				if (showPaletteRef.current || hasActionSelectRef.current) {
 					if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Enter' || event.key === 'Escape') {
 						event.preventDefault();
 						return true;
@@ -427,7 +433,8 @@ export function InputBox() {
 		<div ref={rootRef} className={`${styles.root} ${isDragOver ? styles.dragOver : ''}`}>
 			<RtkSettingsDialog />
 			<ExtensionUIConfirmCard />
-			{showPalette && !hasPendingConfirm && <CommandPalette commands={commands} query={text.slice(1)} onPick={pickCommand} onDismiss={() => setShowPalette(false)} />}
+			<ExtensionUISelectCard />
+			{showPalette && !hasPendingConfirm && !hasPendingActionSelect && <CommandPalette commands={commands} query={text.slice(1)} onPick={pickCommand} onDismiss={() => setShowPalette(false)} />}
 			{isDragOver && (
 				<div className={styles.dropHint}>松开以附加文件</div>
 			)}

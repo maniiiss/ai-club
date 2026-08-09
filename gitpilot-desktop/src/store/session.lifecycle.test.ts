@@ -45,7 +45,7 @@ vi.mock('@/src/rpc/bridge', () => ({
 	rpc: new Proxy(rpcMocks, { get: (target, property) => Reflect.get(target, property) ?? vi.fn(async () => ({ success: false })) }),
 }));
 
-import { useSessionStore } from './session';
+import { useSessionStore, pickActiveExtensionUI, type PendingExtensionUIEntry } from './session';
 import { useWorkbenchStore } from './workbench';
 
 describe('桌面会话生命周期契约', () => {
@@ -221,5 +221,42 @@ describe('桌面会话生命周期契约', () => {
 		expect(executionState).toMatchObject({ runId: 'run-xyz', status: 'running' });
 		expect(executionState.steps).toHaveLength(1);
 		expect(executionState.steps[0]).toMatchObject({ toolCallId: 'call_1', kind: 'read', status: 'succeeded', title: 'read' });
+	});
+
+	it('扩展确认弹框按会话隔离：切走隐藏、切回恢复，不带到其它会话', async () => {
+		await useSessionStore.getState().connect();
+		useWorkbenchStore.getState().resetExecution();
+		// 会话 A 收到计划确认请求
+		useSessionStore.setState({ selectedSessionPath: 'C:\\sessions\\A.jsonl', sessionState: null });
+		bridgeLifecycle.extension.forEach((cb) => cb({ type: 'extension_ui_request', id: 'confirm-1', method: 'confirm', title: '计划已就绪，下一步？', message: '确认执行该计划？' }));
+
+		const inA = useSessionStore.getState();
+		// 入队并打上会话 A 标签
+		expect(inA.pendingExtensionUI).toHaveLength(1);
+		expect(inA.pendingExtensionUI[0]).toMatchObject({ id: 'confirm-1', sessionPath: 'C:\\sessions\\A.jsonl' });
+		// 当前会话 A 命中
+		expect(pickActiveExtensionUI(inA.pendingExtensionUI, inA.selectedSessionPath ?? null)?.id).toBe('confirm-1');
+
+		// 切换到会话 B：弹框隐藏（不命中），队列保留以便切回恢复
+		useSessionStore.setState({ selectedSessionPath: 'C:\\sessions\\B.jsonl' });
+		const inB = useSessionStore.getState();
+		expect(inB.pendingExtensionUI).toHaveLength(1);
+		expect(pickActiveExtensionUI(inB.pendingExtensionUI, inB.selectedSessionPath ?? null)).toBeNull();
+
+		// 切回会话 A：弹框恢复
+		useSessionStore.setState({ selectedSessionPath: 'C:\\sessions\\A.jsonl' });
+		const backA = useSessionStore.getState();
+		expect(pickActiveExtensionUI(backA.pendingExtensionUI, backA.selectedSessionPath ?? null)?.id).toBe('confirm-1');
+	});
+
+	it('pickActiveExtensionUI 只命中当前会话的请求，跨会话请求互不干扰', () => {
+		const entries: PendingExtensionUIEntry[] = [
+			{ type: 'extension_ui_request', id: 'a1', method: 'confirm', title: 't', message: 'm', sessionPath: 'C:\\A.jsonl' },
+			{ type: 'extension_ui_request', id: 'b1', method: 'confirm', title: 't', message: 'm', sessionPath: 'C:\\B.jsonl' },
+		];
+		expect(pickActiveExtensionUI(entries, 'C:\\A.jsonl')?.id).toBe('a1');
+		expect(pickActiveExtensionUI(entries, 'C:\\B.jsonl')?.id).toBe('b1');
+		expect(pickActiveExtensionUI(entries, 'C:\\C.jsonl')).toBeNull();
+		expect(pickActiveExtensionUI(entries, null)).toBeNull();
 	});
 });

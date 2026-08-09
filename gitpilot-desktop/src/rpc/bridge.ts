@@ -50,9 +50,9 @@ let mockThinkingLevel: ThinkingLevel = 'off';
 /** 将 sidecar 错误收敛为可读提示，避免模型上下文或原始 JSON 撑满桌面界面。 */
 export function normalizeSidecarError(raw: string): string {
 	const message = raw.trim();
-	if (!message) return '本地 Coding Agent 发生错误，请重试。';
+	if (!message) return 'GitPilot 发生错误，请重试。';
 	if (message.startsWith('{') && message.includes('"type"')) {
-		return '本地 Coding Agent 返回了无法识别的输出。请重试；若持续出现，请重新启动应用。';
+		return 'GitPilot 返回了无法识别的输出。请重试；若持续出现，请重新启动应用。';
 	}
 	if (message.length > 240) return `${message.slice(0, 220)}…`;
 	return message;

@@ -5,7 +5,7 @@
  */
 import { useEffect, type ReactNode } from 'react';
 import { Loader2, RefreshCw, WifiOff } from 'lucide-react';
-import { useSessionStore } from '@/src/store/session';
+import { useSessionStore, useActiveExtensionUI } from '@/src/store/session';
 import { useWorkbenchStore } from '@/src/store/workbench';
 import { LoginPage } from '@/src/components/LoginPage';
 import { TargetContextMenu } from '@/src/components/desktop/TargetContextMenu';
@@ -26,7 +26,8 @@ export default function App() {
 	const newSession = useSessionStore((s) => s.newSession);
 	const abort = useSessionStore((s) => s.abort);
 	const isStreaming = useSessionStore((s) => s.isStreaming);
-	const pendingExtensionUI = useSessionStore((s) => s.pendingExtensionUI);
+	// 按会话隔离的待响应扩展 UI：仅在当前会话占位，切走会话后不拦截 Esc（让弹框隐藏）。
+	const activeExtensionUI = useActiveExtensionUI();
 	const globalPaletteOpen = useWorkbenchStore((s) => s.globalPaletteOpen);
 	const openGlobalPalette = useWorkbenchStore((s) => s.openGlobalPalette);
 	const closeGlobalPalette = useWorkbenchStore((s) => s.closeGlobalPalette);
@@ -40,7 +41,7 @@ export default function App() {
 
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {
-			const shortcut = resolveWorkbenchShortcut(event, { globalPaletteOpen, pendingExtensionCount: pendingExtensionUI.length, isStreaming });
+			const shortcut = resolveWorkbenchShortcut(event, { globalPaletteOpen, pendingExtensionCount: activeExtensionUI ? 1 : 0, isStreaming });
 			if (shortcut === 'open-palette') { event.preventDefault(); openGlobalPalette(); }
 			if (shortcut === 'new-session') { event.preventDefault(); void newSession(); }
 			if (shortcut === 'open-model') { event.preventDefault(); requestModelPicker(); }
@@ -49,15 +50,15 @@ export default function App() {
 		};
 		window.addEventListener('keydown', onKeyDown, true);
 		return () => window.removeEventListener('keydown', onKeyDown, true);
-	}, [abort, closeGlobalPalette, globalPaletteOpen, isStreaming, newSession, openGlobalPalette, pendingExtensionUI.length, requestModelPicker]);
+	}, [abort, closeGlobalPalette, globalPaletteOpen, isStreaming, newSession, openGlobalPalette, activeExtensionUI, requestModelPicker]);
 
 	let content: ReactNode;
 	if (galleryRequested) {
 		content = <TargetUIGallery />;
 	} else if (connection === 'connecting' || connection === 'idle') {
-		content = <div className={styles.loading}><Loader2 size={22} className="animate-spin" /><span>正在连接本地 Coding Agent…</span></div>;
+		content = <div className={styles.loading}><Loader2 size={22} className="animate-spin" /><span>正在连接 GitPilot…</span></div>;
 	} else if (connection === 'disconnected') {
-		content = <div className={styles.disconnected}><WifiOff size={28} /><div><p>与 Coding Agent 的连接已断开</p><small>sidecar 进程可能已退出</small></div><Button type="button" variant="outline" size="sm" onClick={() => void connect()}><RefreshCw />重新连接</Button></div>;
+		content = <div className={styles.disconnected}><WifiOff size={28} /><div><p>与 GitPilot 的连接已断开</p><small>sidecar 进程可能已退出</small></div><Button type="button" variant="outline" size="sm" onClick={() => void connect()}><RefreshCw />重新连接</Button></div>;
 	} else if (!loggedIn) {
 		content = <LoginPage />;
 	} else {

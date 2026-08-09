@@ -22,9 +22,9 @@
 .editorSurface :global(p) { min-height: 44px; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .editorSurface :global(.is-editor-empty:first-child::before) { float: left; height: 0; color: var(--gp-text-muted); content: attr(data-placeholder); pointer-events: none; }
 .editorSurface :global(.ProseMirror-focused) { outline: 0; }
-/* 命令是编辑器内的原子 inline 节点，不再使用固定高度或独立 flex 列。 */
-.commandToken { display: inline-flex; align-items: center; gap: 3px; margin-right: 7px; color: var(--gp-accent); font-size: 13px; font-weight: 600; line-height: 1.55; vertical-align: -0.1em; white-space: nowrap; }
-.commandToken svg { width: 13px; height: 13px; flex: 0 0 13px; color: var(--gp-text-muted); }
+/* 命令是编辑器内的原子 inline 节点：文字必须与同段正文共用字体度量和基线，不能让 flex 容器重新计算行盒。 */
+.commandToken { display: inline; margin-right: 7px; color: var(--gp-accent); font: inherit; font-size: inherit; font-weight: inherit; line-height: inherit; vertical-align: baseline; white-space: nowrap; }
+.commandToken svg { display: inline-block; width: 13px; height: 13px; margin-right: 3px; color: var(--gp-text-muted); vertical-align: -0.1em; }
 .toolbar { display: flex; min-height: 32px; align-items: center; gap: 10px; margin-top: 7px; }
 .actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .send { display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: var(--gp-action); color: var(--primary-foreground); cursor: pointer; transition: background 140ms ease, transform 140ms ease, opacity 140ms ease; }

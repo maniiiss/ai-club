@@ -127,3 +127,92 @@
 	align-items: center;
 	gap: 5px;
 }
+
+/* 动作型 select 浮层：定位与 / 命令面板、confirm 卡片共用输入框悬浮层机制。 */
+.selectCard {
+	position: absolute;
+	z-index: var(--z-menu);
+	bottom: calc(100% + 10px);
+	left: 50%;
+	display: flex;
+	width: min(860px, calc(100% - 36px));
+	flex-direction: column;
+	overflow: hidden;
+	transform: translateX(-50%);
+	border: 1px solid var(--gp-border);
+	border-radius: var(--radius-lg);
+	background: var(--gp-surface-raised);
+	box-shadow: var(--shadow-lg);
+}
+
+.selectHeader {
+	border-bottom: 1px solid var(--gp-border);
+	padding: 8px 12px;
+	color: var(--gp-text-muted);
+	font-size: 11px;
+}
+
+.selectList {
+	display: flex;
+	flex-direction: column;
+	max-height: min(280px, 40vh);
+	padding: 4px 0;
+	overflow-y: auto;
+}
+
+.selectItem {
+	display: flex;
+	width: calc(100% - 8px);
+	align-items: center;
+	margin: 0 4px;
+	border: none;
+	border-radius: var(--radius-sm);
+	padding: 8px 12px;
+	background: transparent;
+	color: var(--gp-text-secondary);
+	font-size: 13px;
+	text-align: left;
+	cursor: pointer;
+	transition: background-color 120ms ease, color 120ms ease;
+}
+
+.selectItem:hover,
+.selectItemActive {
+	background: var(--gp-selection);
+	color: var(--gp-text);
+}
+
+.selectOther {
+	border-top: 1px solid var(--gp-border);
+	padding: 8px 10px;
+}
+
+.selectOtherInput {
+	width: 100%;
+	border: 1px solid var(--gp-border);
+	border-radius: var(--radius-sm);
+	background: var(--background);
+	padding: 6px 10px;
+	color: var(--gp-text);
+	font-size: 13px;
+	outline: none;
+	transition: border-color 120ms ease;
+}
+
+.selectOtherInput::placeholder {
+	color: var(--gp-text-muted);
+}
+
+.selectOtherInput:focus {
+	border-color: color-mix(in srgb, var(--gp-action) 60%, var(--gp-border));
+}
+
+.selectFooter {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	border-top: 1px solid var(--gp-border);
+	padding: 6px 12px;
+	color: var(--gp-text-muted);
+	font-size: 10px;
+}

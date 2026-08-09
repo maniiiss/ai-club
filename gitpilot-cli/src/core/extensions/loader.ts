@@ -27,7 +27,10 @@ import { CONFIG_DIR_NAME, getAgentDir, isBunBinary } from "../../config.ts";
 import * as _bundledPiCodingAgent from "../../index.ts";
 import * as _bundledRtkOptimizer from "pi-rtk-optimizer";
 import * as _bundledGoal from "@narumitw/pi-goal/src/index.ts";
-import * as _bundledPlanMode from "@narumitw/pi-plan-mode/src/index.ts";
+// plan-mode 已本地 fork 到 src/extensions/plan-mode/：plan 确认浮层需支持"其他"自定义反馈，
+// 而 runDialogMenu 的 label 精确匹配会丢弃自定义 choice，故在 fork 内绕过 runMenu 直接调 ctx.ui.select。
+// 上游 @narumitw/pi-plan-mode 升级时需手动合并到本地 fork。
+import * as _bundledPlanMode from "../../extensions/plan-mode/index.ts";
 import { resolvePath } from "../../utils/paths.ts";
 import { createEventBus, type EventBus } from "../event-bus.ts";
 import type { ExecOptions } from "../exec.ts";
@@ -47,6 +50,21 @@ import type {
 	ToolDefinition,
 } from "./types.ts";
 
+/**
+ * 修复 bun 打包 typebox 命名空间再导出导致的 ReferenceError: Type2 is not defined。
+ *
+ * typebox 入口为 `export * as Type from './typebox.mjs'`，经 pi-ai/compat 的链式 `export *`
+ * 再导出后，bun 在完整 bundle 中会生成引用未定义绑定 `Type2` 的惰性 getter；jiti 加载的
+ * 扩展通过虚拟模块访问 compat.Type 时即抛错。直接从 typebox 取到的 `_bundledTypebox.Type`
+ * 在完整 bundle 中仍可用（主 sidecar 自身的具名 import 也走该绑定），故用它覆盖断裂导出。
+ */
+const _piAiCompatFixed = new Proxy(_bundledPiAiCompat as object, {
+	get(target, prop, receiver) {
+		if (prop === "Type") return _bundledTypebox.Type;
+		return Reflect.get(target, prop, receiver);
+	},
+});
+
 /** Modules available to extensions via virtualModules (for compiled Bun binary) */
 const VIRTUAL_MODULES: Record<string, unknown> = {
 	typebox: _bundledTypebox,
@@ -60,15 +78,15 @@ const VIRTUAL_MODULES: Record<string, unknown> = {
 	// Extensions resolve the pi-ai root to the compat entrypoint (a strict
 	// superset of the core entrypoint): existing extensions using the old
 	// global API keep working at runtime until compat is removed.
-	"@earendil-works/pi-ai": _bundledPiAiCompat,
-	"@earendil-works/pi-ai/compat": _bundledPiAiCompat,
+	"@earendil-works/pi-ai": _piAiCompatFixed,
+	"@earendil-works/pi-ai/compat": _piAiCompatFixed,
 	"@earendil-works/pi-ai/oauth": _bundledPiAiOauth,
 	"@earendil-works/pi-ai/providers/all": _bundledPiAiProviders,
 	"@earendil-works/pi-coding-agent": _bundledPiCodingAgent,
 	"@mariozechner/pi-agent-core": _bundledPiAgentCore,
 	"@mariozechner/pi-tui": _bundledPiTui,
-	"@mariozechner/pi-ai": _bundledPiAiCompat,
-	"@mariozechner/pi-ai/compat": _bundledPiAiCompat,
+	"@mariozechner/pi-ai": _piAiCompatFixed,
+	"@mariozechner/pi-ai/compat": _piAiCompatFixed,
 	"@mariozechner/pi-ai/oauth": _bundledPiAiOauth,
 	"@mariozechner/pi-ai/providers/all": _bundledPiAiProviders,
 	"@mariozechner/pi-coding-agent": _bundledPiCodingAgent,
@@ -96,7 +114,8 @@ function getAliases(): Record<string, string> {
 	const typeboxValueEntry = require.resolve("typebox/value");
 	const rtkOptimizerEntry = require.resolve("pi-rtk-optimizer");
 	const goalEntry = require.resolve("@narumitw/pi-goal/src/index.ts");
-	const planModeEntry = require.resolve("@narumitw/pi-plan-mode/src/index.ts");
+	// plan-mode 走本地 fork（见顶部 _bundledPlanMode 注释），不走 node_modules 的 require.resolve。
+	const planModeEntry = path.resolve(__dirname, "../../extensions/plan-mode/index.ts");
 
 	const packagesRoot = path.resolve(__dirname, "../../../../");
 	const resolveWorkspaceOrImport = (workspaceRelativePath: string, specifier: string): string => {
