@@ -34,8 +34,9 @@ export interface RightPanelPlanTab {
 
 export interface RightPanelTabsState {
 	plans: RightPanelPlanTab[];
-	/** 固定执行页签或某个计划页签。 */
-	activeTabId: 'execution' | string;
+	/** 执行过程是可关闭的工具页签，可由右侧 + 菜单再次打开。 */
+	executionOpen: boolean;
+	activeTabId: string | null;
 }
 
 export interface ExecutionStep {
@@ -194,19 +195,20 @@ export function normalizeRightPanelTabs(value: Partial<RightPanelTabsState> | nu
 			}
 		}
 	}
+	const executionOpen = value?.executionOpen !== false;
 	const requestedActive = typeof value?.activeTabId === 'string' ? value.activeTabId : null;
-	const activeTabId = requestedActive === 'execution' || requestedActive && plans.some((tab) => tab.id === requestedActive)
+	const activeTabId = requestedActive === 'execution' && executionOpen || requestedActive && plans.some((tab) => tab.id === requestedActive)
 		? requestedActive
-		: 'execution';
-	return { plans, activeTabId };
+		: executionOpen ? 'execution' : plans[0]?.id ?? null;
+	return { plans, executionOpen, activeTabId };
 }
 
 function loadRightPanelTabs(): RightPanelTabsState {
 	try {
 		const stored = localStorage.getItem(RIGHT_PANEL_TABS_KEY);
-		return stored ? normalizeRightPanelTabs(JSON.parse(stored) as Partial<RightPanelTabsState>) : { plans: [], activeTabId: 'execution' };
+		return stored ? normalizeRightPanelTabs(JSON.parse(stored) as Partial<RightPanelTabsState>) : { plans: [], executionOpen: true, activeTabId: 'execution' };
 	} catch {
-		return { plans: [], activeTabId: 'execution' };
+		return { plans: [], executionOpen: true, activeTabId: 'execution' };
 	}
 }
 
@@ -352,7 +354,8 @@ interface WorkbenchStore {
 	updateLayout: (patch: Partial<LayoutPreferences>) => void;
 	/** 每个会话只保留最新计划的完整快照，显示于右侧执行栏的独立 Tab。 */
 	openPlanPanelTab: (plan: Omit<RightPanelPlanTab, 'id' | 'kind'>) => void;
-	activateRightPanelTab: (tabId: 'execution' | string) => void;
+	openExecutionPanelTab: () => void;
+	activateRightPanelTab: (tabId: string) => void;
 	closeRightPanelTab: (tabId: string) => void;
 	/** 会话列表刷新后移除来源已不存在的右侧计划页签。 */
 	reconcileRightPanelTabs: (sessionPaths: string[]) => void;
@@ -412,26 +415,43 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 		const state = get().rightPanelTabs;
 		const existingIndex = state.plans.findIndex((tab) => tab.sourceSessionPath === plan.sourceSessionPath);
 		const plans = existingIndex < 0 ? [...state.plans, nextPlan] : state.plans.map((tab, index) => index === existingIndex ? nextPlan : tab);
-		const rightPanelTabs = { plans, activeTabId: nextPlan.id };
+		const layout = normalizeLayoutPreferences({ ...get().layout, rightCollapsed: false });
+		saveLayout(layout);
+		const rightPanelTabs = { ...state, plans, activeTabId: nextPlan.id };
 		saveRightPanelTabs(rightPanelTabs);
-		set({ rightPanelTabs });
+		set({ rightPanelTabs, layout });
+	},
+	openExecutionPanelTab: () => {
+		const state = get().rightPanelTabs;
+		const layout = normalizeLayoutPreferences({ ...get().layout, rightCollapsed: false });
+		saveLayout(layout);
+		const rightPanelTabs = { ...state, executionOpen: true, activeTabId: 'execution' };
+		saveRightPanelTabs(rightPanelTabs);
+		set({ rightPanelTabs, layout });
 	},
 	activateRightPanelTab: (tabId) => {
 		const state = get().rightPanelTabs;
-		if (state.activeTabId === tabId || tabId !== 'execution' && !state.plans.some((tab) => tab.id === tabId)) return;
+		if (state.activeTabId === tabId || tabId === 'execution' && !state.executionOpen || tabId !== 'execution' && !state.plans.some((tab) => tab.id === tabId)) return;
 		const rightPanelTabs = { ...state, activeTabId: tabId };
 		saveRightPanelTabs(rightPanelTabs);
 		set({ rightPanelTabs });
 	},
 	closeRightPanelTab: (tabId) => {
 		const state = get().rightPanelTabs;
+		if (tabId === 'execution') {
+			const activeTabId = state.activeTabId === 'execution' ? state.plans[0]?.id ?? null : state.activeTabId;
+			const rightPanelTabs = { ...state, executionOpen: false, activeTabId };
+			saveRightPanelTabs(rightPanelTabs);
+			set({ rightPanelTabs });
+			return;
+		}
 		const index = state.plans.findIndex((tab) => tab.id === tabId);
 		if (index < 0) return;
 		const plans = state.plans.filter((tab) => tab.id !== tabId);
 		const activeTabId = state.activeTabId === tabId
-			? plans[index]?.id ?? plans[index - 1]?.id ?? 'execution'
+			? plans[index]?.id ?? plans[index - 1]?.id ?? (state.executionOpen ? 'execution' : null)
 			: state.activeTabId;
-		const rightPanelTabs = { plans, activeTabId };
+		const rightPanelTabs = { ...state, plans, activeTabId };
 		saveRightPanelTabs(rightPanelTabs);
 		set({ rightPanelTabs });
 	},
@@ -439,11 +459,11 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 		const available = new Set(sessionPaths);
 		const state = get().rightPanelTabs;
 		const plans = state.plans.filter((tab) => available.has(tab.sourceSessionPath));
-		const activeTabId = state.activeTabId === 'execution' || plans.some((tab) => tab.id === state.activeTabId)
+		const activeTabId = state.activeTabId === 'execution' && state.executionOpen || plans.some((tab) => tab.id === state.activeTabId)
 			? state.activeTabId
-			: 'execution';
+			: state.executionOpen ? 'execution' : plans[0]?.id ?? null;
 		if (plans.length === state.plans.length && activeTabId === state.activeTabId) return;
-		const rightPanelTabs = { plans, activeTabId };
+		const rightPanelTabs = { ...state, plans, activeTabId };
 		saveRightPanelTabs(rightPanelTabs);
 		set({ rightPanelTabs });
 	},

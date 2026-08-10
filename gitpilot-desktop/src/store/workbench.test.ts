@@ -106,7 +106,7 @@ describe('Agent 工作台本地交互状态', () => {
 	beforeEach(() => {
 		useWorkbenchStore.setState({
 			layout: { leftWidth: 272, rightWidth: 344, bottomOpen: false, bottomHeight: 220, leftCollapsed: false, rightCollapsed: false },
-			rightPanelTabs: { plans: [], activeTabId: 'execution' },
+			rightPanelTabs: { plans: [], executionOpen: true, activeTabId: 'execution' },
 			execution: { id: 'idle', status: 'idle', lastPrompt: null, steps: [] },
 			composerPrefill: null,
 		});
@@ -138,6 +138,13 @@ describe('Agent 工作台本地交互状态', () => {
 		expect(tabs.plans).toHaveLength(1);
 		expect(tabs.plans[0]).toMatchObject({ sourceSessionPath: '/sessions/b.jsonl' });
 		expect(tabs.activeTabId).toBe('plan:/sessions/b.jsonl');
+	});
+
+	it('执行过程 Tab 可以关闭，并通过右侧 + 菜单对应的 action 重新打开', () => {
+		useWorkbenchStore.getState().closeRightPanelTab('execution');
+		expect(useWorkbenchStore.getState().rightPanelTabs).toMatchObject({ executionOpen: false, activeTabId: null });
+		useWorkbenchStore.getState().openExecutionPanelTab();
+		expect(useWorkbenchStore.getState().rightPanelTabs).toMatchObject({ executionOpen: true, activeTabId: 'execution' });
 	});
 
 	it('恢复时去重并清理来源不存在的会话和计划页签', () => {

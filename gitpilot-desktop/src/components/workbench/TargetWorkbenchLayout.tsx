@@ -101,8 +101,8 @@ export function TargetWorkbenchLayout({
 	statusLabel,
 	leftPanelTitle = '项目与任务',
 	leftPanelDescription = '切换当前工作目录或会话。',
-	rightPanelTitle = '执行过程',
-	rightPanelDescription = '查看 Agent 工具调用和原始输出。',
+	rightPanelTitle = '右侧窗口',
+	rightPanelDescription = '打开执行过程、计划和后续工具窗口。',
 }: TargetWorkbenchLayoutProps) {
 	const layout = useWorkbenchStore((s) => s.layout);
 	const updateLayout = useWorkbenchStore((s) => s.updateLayout);

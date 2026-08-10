@@ -72,7 +72,7 @@ describe('桌面会话生命周期契约', () => {
 			isStopping: false,
 			_unsubs: [],
 		});
-		useWorkbenchStore.setState({ rightPanelTabs: { plans: [], activeTabId: 'execution' }, contentDrawer: null });
+		useWorkbenchStore.setState({ rightPanelTabs: { plans: [], executionOpen: true, activeTabId: 'execution' }, contentDrawer: null });
 	});
 
 	it('只建立一次连接，并在 ready/disconnect 事件间保持明确状态', async () => {
