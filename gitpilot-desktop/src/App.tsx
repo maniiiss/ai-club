@@ -12,7 +12,9 @@ import { TargetContextMenu } from '@/src/components/desktop/TargetContextMenu';
 import { TargetUIGallery } from '@/src/components/desktop/TargetUIGallery';
 import { Button } from '@/src/components/ui/button';
 import { TargetDesktopShell } from '@/src/components/desktop/TargetDesktopShell';
+import { TargetWorkShell } from '@/src/components/work/TargetWorkShell';
 import { resolveWorkbenchShortcut } from '@/src/workbench/shortcuts';
+import { useAppModeStore } from '@/src/store/app-mode';
 import styles from './App.module.css';
 
 export default function App() {
@@ -32,6 +34,7 @@ export default function App() {
 	const openGlobalPalette = useWorkbenchStore((s) => s.openGlobalPalette);
 	const closeGlobalPalette = useWorkbenchStore((s) => s.closeGlobalPalette);
 	const requestModelPicker = useWorkbenchStore((s) => s.requestModelPicker);
+	const appMode = useAppModeStore((s) => s.mode);
 
 	useEffect(() => {
 		if (galleryRequested) return;
@@ -62,7 +65,11 @@ export default function App() {
 	} else if (!loggedIn) {
 		content = <LoginPage />;
 	} else {
-		content = <TargetDesktopShell newSession={newSession} abort={abort} error={error} clearError={clearError} />;
+		// 两个工作台始终挂载：切换 Work 时 Code 的会话、滚动位置和 sidecar 连接均不被卸载。
+		content = <div className={styles.modeRoot} data-active-mode={appMode}>
+			<div className={styles.codeMode} aria-hidden={appMode !== 'code'}><TargetDesktopShell newSession={newSession} abort={abort} error={error} clearError={clearError} /></div>
+			<div className={styles.workMode} aria-hidden={appMode !== 'work'}><TargetWorkShell /></div>
+		</div>;
 	}
 
 	return <TargetContextMenu>{content}</TargetContextMenu>;

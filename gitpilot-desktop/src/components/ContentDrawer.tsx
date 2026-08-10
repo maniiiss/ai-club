@@ -4,25 +4,14 @@
  * 不让消息卡片各自实现焦点、遮罩、复制和关闭行为。
  */
 import { useEffect, useState } from 'react';
-import { Check, Clipboard, Code2, FileText, GitCompare, ListChecks } from 'lucide-react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
+import { Check, Clipboard, Code2, FileText, GitCompare } from 'lucide-react';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/src/components/ui/sheet';
 import { useWorkbenchStore, type ContentDrawerContent, type ContentDrawerKind } from '@/src/store/workbench';
+import { copyText } from '@/src/lib/clipboard';
 import styles from './ContentDrawer.module.css';
 
-const KIND_LABELS: Record<ContentDrawerKind, string> = { plan: '计划', code: '代码', diff: 'Diff', text: '文本' };
-const KIND_ICONS: Record<ContentDrawerKind, typeof ListChecks> = { plan: ListChecks, code: Code2, diff: GitCompare, text: FileText };
-
-export async function copyText(text: string): Promise<boolean> {
-	try {
-		if (!navigator.clipboard?.writeText) return false;
-		await navigator.clipboard.writeText(text);
-		return true;
-	} catch {
-		return false;
-	}
-}
+const KIND_LABELS: Record<ContentDrawerKind, string> = { code: '代码', diff: 'Diff', text: '文本' };
+const KIND_ICONS: Record<ContentDrawerKind, typeof FileText> = { code: Code2, diff: GitCompare, text: FileText };
 
 function DiffContent({ text }: { text: string }) {
 	return <pre className={styles.diff}>{text.split('\n').map((line, index) => {
@@ -36,9 +25,6 @@ function DiffContent({ text }: { text: string }) {
 }
 
 function DrawerBody({ content }: { content: ContentDrawerContent }) {
-	if (content.kind === 'plan') {
-		return <div className={styles.markdown}><ReactMarkdown remarkPlugins={[remarkGfm]}>{content.content}</ReactMarkdown></div>;
-	}
 	if (content.kind === 'diff') return <DiffContent text={content.content} />;
 	if (content.kind === 'code') return <pre className={styles.code}><code>{content.content}</code></pre>;
 	return <pre className={styles.text}>{content.content}</pre>;

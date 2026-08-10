@@ -1,5 +1,7 @@
 # AI Club 项目架构说明
 
+> GitPilot Desktop 现包含隔离的 `gitpilot-code` 与 `gitpilot-work` 模式：Code 保持项目编码 Agent 链路；Work 的任务、对话与成果只在 Desktop IndexedDB 保存。Work 的联网研究经 sidecar 调用受认证的 `/api/cli/work/research`，由后端托管搜索密钥、限流与结果裁剪，Desktop 不获得任意网络、Shell、Git 或项目文件权限。详见 `docs/design-docs/gitpilot-work-technical-design-v1.md`。
+
 ## 1. 项目定位
 
 AI Club 是一个面向 AI 代理协作与工程管理的多服务平台，目标是把“项目、工作项、执行任务、测试计划、代码仓库、模型配置、智能体协作”统一放到同一套业务平台中管理。

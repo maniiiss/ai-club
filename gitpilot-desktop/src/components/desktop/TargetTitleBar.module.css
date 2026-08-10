@@ -52,14 +52,11 @@
 	letter-spacing: 0.14em;
 }
 
-.mode {
-	border-left: 1px solid var(--gp-border);
-	padding-left: 9px;
-	color: var(--gp-text-muted);
-	font-family: var(--font-mono);
-	font-size: 9px;
-	letter-spacing: 0.12em;
-}
+.modeSwitcher { display: flex; height: 100%; align-items: center; gap: 2px; border-left: 1px solid var(--gp-border); padding-left: 7px; }
+.mode,
+.modeActive { height: 24px; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; padding: 0 7px; color: var(--gp-text-muted); font-family: var(--font-mono); font-size: 9px; letter-spacing: .12em; cursor: pointer; }
+.mode:hover { color: var(--gp-text); background: var(--gp-accent-soft); }
+.modeActive { border-color: var(--gp-border-strong); background: var(--gp-accent-soft); color: var(--gp-accent); }
 
 .spacer { min-width: 0; flex: 1; }
 
@@ -75,6 +72,7 @@
 .close:hover { background: var(--gp-danger); color: var(--primary-foreground); }
 
 @media (max-width: 760px) {
-	.mode { display: none; }
 	.identity { padding-left: 10px; }
+	.mode,
+	.modeActive { padding: 0 5px; font-size: 8px; }
 }

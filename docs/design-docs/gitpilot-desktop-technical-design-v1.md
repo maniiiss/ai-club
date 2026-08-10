@@ -146,7 +146,7 @@ SidecarBridge
 |---|---|---|
 | `AgentSessionEvent` 流 | 对话气泡 + 增量 token | 工具调用渲染成代码卡片；v1 起事件附带 `sessionFile/sessionId/runId/sequence/emittedAt` 元数据，用于切换竞态去重 |
 | `response`（带 id） | Promise resolve | 命令结果回传渲染层；`switch_session` 成功响应 v1 起附带原子 `snapshot` |
-| `extension_ui_request` | 弹出对应模态（见第 7 节） | 扩展请求 UI 交互 |
+| `extension_ui_request` | 弹出对应模态（见第 7 节） | 扩展请求 UI 交互；交互请求附带来源 `sessionFile`，用于切换竞态下的会话隔离 |
 | slash 命令清单 | 命令面板 | 启动时缓存到 Zustand |
 
 ### 6.3 执行快照与恢复（v1 已落地）
@@ -171,6 +171,8 @@ RPC 的 `extension_ui_request` 有四种 `method`，每种映射一个 React 组
 | `editor`（title + prefill） | `$EDITOR` | 轻量多行编辑模态（textarea，非 Monaco） | `extension_ui_response` 带编辑后文本 |
 
 关键约束：`editor` 不引入完整编辑器，符合 MVP"对话为主轻量形态"。只做带可选语法高亮的多行编辑模态满足协议契约。
+
+交互请求必须由 sidecar 在创建时写入来源 `sessionFile`；Desktop 只能按该字段归入对应会话，不能按 stdout 到达时的当前选中会话推断。用户切走一个仍在等待 `select` / `confirm` / `input` / `editor` 响应的会话时，CLI 会挂起而非销毁该会话运行时，切回并响应后由原 extension 上下文继续计划或命令流程。
 
 ### 7.2 Slash 命令映射
 
@@ -324,3 +326,9 @@ MVP 之后的迭代方向（不在本次实施范围）：
 - **标题栏账户入口**：右侧面板折叠按钮由登录用户头像替代。账户菜单展示用户标识、积分余额、前往 GitPilot Web 与退出登录；头像采用用户名首字母渲染，不额外将头像资源或 token 暴露给 WebView。
 - **账户数据安全**：桌面渲染层通过新增的 `get_platform_account` RPC 获取 `{ platformUrl, user, creditBalance }` 安全摘要。sidecar 从系统凭据库读取 `gpt_` token 后请求平台，令牌不进入 React 状态、IPC 响应、日志或本地存储。`logout` RPC 负责撤销平台会话、清除系统凭据并刷新模型目录。
 - **菜单与浮层**：React 拦截 WebView 默认 `contextmenu`，只提供复制、剪切、粘贴与全选等桌面编辑操作。模型、思维级别、slash 命令、账户菜单和扩展模态均支持点击浮层外的空白区域关闭，`Esc` 仍是键盘兜底。
+
+## 19. 右侧计划 Tab
+
+对话中的“查看完整计划”不再使用 `ContentDrawer`，而是在右侧执行栏新增一个计划 Tab。右侧栏始终保留“执行过程”固定 Tab；每个来源会话只保留最新一份可关闭的计划 Tab，保存标题和打开时的完整 Markdown 快照，并在栏内独立滚动和复制。Tab 状态仅保存在渲染层 `localStorage`，会话列表刷新后会清理来源不存在的计划。
+
+激活计划 Tab 只改变右侧栏本地视图，不调用 `switch_session`。因此计划查看不会改变当前 sidecar 会话，也不会将来源会话的 extension 确认请求、运行状态或后续计划流程带到其他会话；现有按 `sessionFile` 隔离确认弹窗的约束保持不变。

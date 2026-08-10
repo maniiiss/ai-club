@@ -51,6 +51,11 @@ public final class CliDtos {
             String proxyBaseUrl
     ) {}
 
+    /** Work 检索结果为可追溯的裁剪摘要，不泄漏第三方供应商原始响应。 */
+    public record WorkResearchRequest(String query) {}
+    public record WorkResearchSource(String id, String title, String url, String snippet, String publishedAt) {}
+    public record WorkResearchResponse(List<WorkResearchSource> sources) {}
+
     /**
      * CLI 需求列表项（精简版 TaskSummary）。
      * 业务意图：去掉 prd*、collaborator*、external* 等大/无关字段，

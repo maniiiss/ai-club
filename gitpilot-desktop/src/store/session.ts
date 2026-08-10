@@ -970,9 +970,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 						set({ sessionAuxTitle: req.title });
 						return;
 					}
-					// 交互类进队列等待用户响应；按当前会话打标，使弹框只在触发会话内展示（切走隐藏、切回恢复）。
+					// 交互类进队列等待用户响应。优先消费 sidecar 附带的来源会话，
+					// 避免会话切换已乐观更新后，延迟到达的计划确认被错误带入新会话。
 					if (req.method === 'select' || req.method === 'confirm' || req.method === 'input' || req.method === 'editor') {
-						set((s) => ({ pendingExtensionUI: [...s.pendingExtensionUI, { ...req, sessionPath: s.selectedSessionPath ?? s.sessionState?.sessionFile ?? null }] }));
+						set((s) => ({ pendingExtensionUI: [...s.pendingExtensionUI, { ...req, sessionPath: req.sessionFile ?? s.selectedSessionPath ?? s.sessionState?.sessionFile ?? null }] }));
 						useWorkbenchStore.getState().addApprovalStep(req);
 					}
 				}),
@@ -1123,6 +1124,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			// 拉取失败保留上次已知档位，不阻塞会话刷新。
 		}
 		set(next);
+		if (next.sessions) useWorkbenchStore.getState().reconcileRightPanelTabs(next.sessions.map((session) => session.path));
 		if (next.platformConnection === 'connected') {
 			// 账户成功后废弃仍在路上的旧探测，不能让其失败结果把状态写回红色。
 			platformConnectionRequestVersion += 1;
@@ -1156,7 +1158,11 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	refreshSessionList: async () => {
 		try {
 			const sessionsRes = await rpc.listSessions('all');
-			if (sessionsRes.success && sessionsRes.command === 'list_sessions') set({ sessions: sessionsRes.data.sessions.filter((session) => !get().hiddenSessionPaths.includes(session.path)) });
+			if (sessionsRes.success && sessionsRes.command === 'list_sessions') {
+				const sessions = sessionsRes.data.sessions.filter((session) => !get().hiddenSessionPaths.includes(session.path));
+				set({ sessions });
+				useWorkbenchStore.getState().reconcileRightPanelTabs(sessions.map((session) => session.path));
+			}
 		} catch {
 			// 列表刷新失败不能影响正在进行的 Agent 回合。
 		}
@@ -1430,6 +1436,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		saveHiddenSessionPaths(hiddenSessionPaths);
 		saveStandaloneTaskPaths(standaloneTaskPaths);
 		set({ hiddenSessionPaths, standaloneTaskPaths, sessions });
+		useWorkbenchStore.getState().reconcileRightPanelTabs(sessions.map((session) => session.path));
 		if (state.selectedSessionPath !== sessionPath && state.sessionState?.sessionFile !== sessionPath) return;
 		// 当前任务被移除时优先切换到仍可见的任务，否则创建一个空任务保持工作区可用。
 		const nextSession = sessions[0];

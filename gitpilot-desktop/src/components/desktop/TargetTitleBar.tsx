@@ -3,14 +3,18 @@ import { Minus, Square, X } from 'lucide-react';
 import type { MouseEvent } from 'react';
 import { closeWindow, minimizeWindow, startDraggingWindow, toggleMaximizeWindow } from '@/src/desktop/window';
 import { useSessionStore } from '@/src/store/session';
+import { useAppModeStore, type AppMode } from '@/src/store/app-mode';
 import { TargetUserMenu } from './TargetUserMenu';
 import { Button } from '@/src/components/ui/button';
 import styles from './TargetTitleBar.module.css';
 
-const appIcon = new URL('../../../app-icon.png', import.meta.url).href;
+// 复用 Tauri 统一应用图标，确保开发态和打包态都能解析到同一份资源。
+const appIcon = new URL('../../../src-tauri/icons/icon.png', import.meta.url).href;
 
 export function TargetTitleBar() {
 	const reportError = useSessionStore((s) => s.reportError);
+	const mode = useAppModeStore((s) => s.mode);
+	const setMode = useAppModeStore((s) => s.setMode);
 
 	const startDragging = (event: MouseEvent<HTMLElement>) => {
 		if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
@@ -28,7 +32,9 @@ export function TargetTitleBar() {
 			<div className={styles.identity}>
 				<img className={styles.icon} src={appIcon} alt="GitPilot" />
 				<span className={styles.brand}>GITPILOT</span>
-				<span className={styles.mode}>WORKBENCH</span>
+				<nav className={styles.modeSwitcher} aria-label="GitPilot 模式" onMouseDown={(event) => event.stopPropagation()}>
+					{(['code', 'work'] as AppMode[]).map((item) => <button key={item} type="button" className={mode === item ? styles.modeActive : styles.mode} aria-current={mode === item ? 'page' : undefined} onClick={() => setMode(item)}>{item === 'code' ? 'CODE' : 'WORK'}</button>)}
+				</nav>
 			</div>
 			<div className={styles.spacer} />
 			<div className={styles.actions} onMouseDown={(event) => event.stopPropagation()}>

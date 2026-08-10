@@ -46,6 +46,8 @@ import {
 import { getPlatformUrl, setPlatformUrl } from "../../extensions/gitpilot/config.ts";
 import { deleteCliToken, loadCliToken, saveCliToken } from "../../extensions/gitpilot/credentials.ts";
 import { getCurrentCreditAccount, getCurrentUser, revokeCliToken } from "../../extensions/gitpilot/api.ts";
+import type { Context } from "@earendil-works/pi-ai/compat";
+import type { WorkResearchSource } from "./rpc-types.ts";
 
 // Re-export types for consumers
 export type {
@@ -144,13 +146,77 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	// Pending extension UI requests waiting for response
 	const pendingExtensionRequests = new Map<
 		string,
-		{ resolve: (value: any) => void; reject: (error: Error) => void }
+		{ resolve: (value: any) => void; reject: (error: Error) => void; sessionFile?: string }
 	>();
 
 	// Shutdown request flag
 	let shutdownRequested = false;
 	let shuttingDown = false;
+	/** Work 运行只保留进程内 AbortController，绝不写入 Code session 或磁盘。 */
+	let activeWorkRequest: { id: string; controller: AbortController } | undefined;
 	const signalCleanupHandlers: Array<() => void> = [];
+
+	const loadWorkResearch = async (query: string, signal: AbortSignal): Promise<WorkResearchSource[]> => {
+		const platformUrl = getPlatformUrl();
+		const token = platformUrl ? await loadCliToken(platformUrl) : undefined;
+		if (!platformUrl || !token) return [];
+		const response = await fetch(`${platformUrl.replace(/\/$/, "")}/api/cli/work/research`, {
+			method: "POST",
+			headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+			body: JSON.stringify({ query }), signal,
+		});
+		if (!response.ok) throw new Error(`联网研究服务不可用 (${response.status})`);
+		const payload = await response.json() as { data?: { sources?: WorkResearchSource[] } };
+		return Array.isArray(payload.data?.sources) ? payload.data.sources : [];
+	};
+
+	/**
+	 * Work 使用当前已选平台模型的无工具流式器；传入的上下文来自 Desktop 本机存储，
+	 * runtime 不创建 AgentSession，因此无法获得 read/bash/edit/write/Git 等 Code 工具。
+	 */
+	const runWorkPrompt = async (command: Extract<RpcCommand, { type: "work_prompt" }>) => {
+		const message = command.message.trim();
+		if (!message || message.length > 12_000) throw new Error("Work 输入不能为空且不得超过 12000 个字符");
+		if (activeWorkRequest) throw new Error("已有 Work 请求正在执行，请先停止或等待完成");
+		if (!session.model) throw new Error("尚未选择可用模型");
+		const requestId = command.id ?? crypto.randomUUID();
+		const controller = new AbortController();
+		activeWorkRequest = { id: requestId, controller };
+		let sources: WorkResearchSource[] = [];
+		try {
+			if (command.research !== false) {
+				try {
+					sources = await loadWorkResearch(message, controller.signal);
+					output({ type: "work_sources", requestId, taskId: command.taskId, sources });
+				} catch (researchError) {
+					output({ type: "work_research_warning", requestId, taskId: command.taskId, message: researchError instanceof Error ? researchError.message : String(researchError) });
+				}
+			}
+			const researchContext = sources.length === 0 ? "" : `\n\n可引用研究资料（仅将其作为来源，不要编造 URL）：\n${sources.map((source, index) => `[${index + 1}] ${source.title}\n${source.url}\n${source.snippet}`).join("\n\n")}`;
+			const history = command.history.slice(-20).filter((item) => item && (item.role === "user" || item.role === "assistant") && typeof item.content === "string").map((item) => item.role === "user"
+				? { role: "user", content: item.content.slice(0, 12_000), timestamp: Date.now() }
+				: { role: "assistant", content: [{ type: "text", text: item.content.slice(0, 12_000) }], timestamp: Date.now() });
+			const context: Context = {
+				systemPrompt: "你是 GitPilot Work 助手，服务于工作、学习与探索。回答应清晰可执行；若提供研究资料，请标注对应的 [编号]。你没有本地文件、Shell、Git 或任意网络访问权限。",
+				messages: history as Context["messages"],
+				tools: [],
+			};
+			if (researchContext) context.messages.push({ role: "user", content: `请结合以下资料回答当前问题：${researchContext}`, timestamp: Date.now() } as Context["messages"][number]);
+			const stream = session.modelRuntime.streamSimple(session.model, context, { signal: controller.signal } as never);
+			let text = "";
+			for await (const event of stream) {
+				if (event.type === "text_delta") {
+					text += event.delta;
+					output({ type: "work_delta", requestId, taskId: command.taskId, delta: event.delta });
+				}
+				if (event.type === "error") throw new Error(event.error.errorMessage || "Work 模型请求失败");
+			}
+			output({ type: "work_complete", requestId, taskId: command.taskId, sources });
+			return { requestId, text, sources };
+		} finally {
+			if (activeWorkRequest?.id === requestId) activeWorkRequest = undefined;
+		}
+	};
 
 	/** Helper for dialog methods with signal/timeout support */
 	function createDialogPromise<T>(
@@ -158,6 +224,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		defaultValue: T,
 		request: Record<string, unknown>,
 		parseResponse: (response: RpcExtensionUIResponse) => T,
+		sessionFile: string | undefined,
 	): Promise<T> {
 		if (opts?.signal?.aborted) return Promise.resolve(defaultValue);
 
@@ -190,29 +257,36 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					resolve(parseResponse(response));
 				},
 				reject,
+				sessionFile,
 			});
-			output({ type: "extension_ui_request", id, ...request } as RpcExtensionUIRequest);
+			output({ type: "extension_ui_request", id, ...request, sessionFile } as RpcExtensionUIRequest);
 		});
 	}
 
 	/**
 	 * Create an extension UI context that uses the RPC protocol.
 	 */
-	const createExtensionUIContext = (): ExtensionUIContext => ({
-		select: (title, options, opts) =>
-			createDialogPromise(opts, undefined, { method: "select", title, options, timeout: opts?.timeout }, (r) =>
-				"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,
-			),
+	const createExtensionUIContext = (): ExtensionUIContext => {
+		// 绑定时捕获会话路径，避免 session 变量在切换后把旧请求标记给新会话。
+		const extensionSessionFile = session.sessionFile;
+		return {
+			select: (title, options, opts) =>
+				createDialogPromise(opts, undefined, { method: "select", title, options, timeout: opts?.timeout }, (r) =>
+					"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,
+					extensionSessionFile,
+				),
 
-		confirm: (title, message, opts) =>
-			createDialogPromise(opts, false, { method: "confirm", title, message, timeout: opts?.timeout }, (r) =>
-				"cancelled" in r && r.cancelled ? false : "confirmed" in r ? r.confirmed : false,
-			),
+			confirm: (title, message, opts) =>
+				createDialogPromise(opts, false, { method: "confirm", title, message, timeout: opts?.timeout }, (r) =>
+					"cancelled" in r && r.cancelled ? false : "confirmed" in r ? r.confirmed : false,
+					extensionSessionFile,
+				),
 
-		input: (title, placeholder, opts) =>
-			createDialogPromise(opts, undefined, { method: "input", title, placeholder, timeout: opts?.timeout }, (r) =>
-				"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,
-			),
+			input: (title, placeholder, opts) =>
+				createDialogPromise(opts, undefined, { method: "input", title, placeholder, timeout: opts?.timeout }, (r) =>
+					"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,
+					extensionSessionFile,
+				),
 
 		notify(message: string, type?: "info" | "warning" | "error"): void {
 			// Fire and forget - no response needed
@@ -328,10 +402,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 						} else {
 							resolve(undefined);
 						}
-					},
-					reject,
-				});
-				output({ type: "extension_ui_request", id, method: "editor", title, prefill } as RpcExtensionUIRequest);
+				},
+				reject,
+				sessionFile: extensionSessionFile,
+			});
+				output({ type: "extension_ui_request", id, method: "editor", title, prefill, sessionFile: extensionSessionFile } as RpcExtensionUIRequest);
 			});
 		},
 
@@ -373,7 +448,8 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		setToolsExpanded(_expanded: boolean) {
 			// Tool expansion not supported in RPC mode - no TUI
 		},
-	});
+		};
+	};
 
 	runtimeHost.setRebindSession(async () => {
 		await rebindSession();
@@ -541,6 +617,31 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			// =================================================================
+			// GitPilot Work（独立无状态工作对话）
+			// =================================================================
+
+			case "work_prompt": {
+				const result = await runWorkPrompt(command);
+				return success(id, "work_prompt", result);
+			}
+
+			case "work_abort": {
+				if (activeWorkRequest && (!command.requestId || activeWorkRequest.id === command.requestId)) activeWorkRequest.controller.abort();
+				return success(id, "work_abort");
+			}
+
+			case "work_prepare_attachments": {
+				if (!Array.isArray(command.items) || command.items.length === 0) return error(id, "work_prepare_attachments", "items 不能为空");
+				try {
+					// 复用解析器仅处理用户主动提供的项目；解析结果由 Desktop 写入 IndexedDB，sidecar 不持久化。
+					const attachments = await Promise.all(command.items.map((item) => prepareAttachment(item, { cwd: runtimeHost.cwd })));
+					return success(id, "work_prepare_attachments", { attachments });
+				} catch (attachmentError) {
+					return error(id, "work_prepare_attachments", `附件解析失败: ${attachmentError instanceof Error ? attachmentError.message : String(attachmentError)}`);
+				}
+			}
+
+			// =================================================================
 			// State
 			// =================================================================
 
@@ -670,7 +771,13 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "switch_session": {
-				const result = await runtimeHost.switchSession(command.sessionPath);
+				const currentSessionFile = session.sessionFile;
+				// 计划确认等交互会在 Agent 回合结束后继续等待；此时 isStreaming 已为 false。
+				// 若直接销毁会话，Desktop 收到确认回包也找不到原 Promise，计划无法继续。
+				const preserveCurrentForInteraction = Boolean(
+					currentSessionFile && [...pendingExtensionRequests.values()].some((request) => request.sessionFile === currentSessionFile),
+				);
+				const result = await runtimeHost.switchSession(command.sessionPath, { preserveCurrentForInteraction });
 				if (!result.cancelled) {
 					await rebindSession();
 				}

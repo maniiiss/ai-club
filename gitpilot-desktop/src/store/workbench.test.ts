@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { classifyExecutionKind, DEFAULT_LAYOUT, formatDuration, getUnreportedExecutionSteps, normalizeLayoutPreferences, reduceExecutionEvent, useWorkbenchStore, WORKBENCH_WIDTH_LIMITS, type ContentDrawerContent, type ExecutionRun } from './workbench';
+import { classifyExecutionKind, DEFAULT_LAYOUT, formatDuration, getUnreportedExecutionSteps, normalizeLayoutPreferences, normalizeRightPanelTabs, reduceExecutionEvent, useWorkbenchStore, WORKBENCH_WIDTH_LIMITS, type ContentDrawerContent, type ExecutionRun } from './workbench';
 import { resolveWorkbenchShortcut } from '@/src/workbench/shortcuts';
 
 function runningRun(): ExecutionRun {
@@ -8,7 +8,7 @@ function runningRun(): ExecutionRun {
 
 describe('Agent 工作台执行事件', () => {
 	it('内容抽屉使用统一载荷打开和关闭', () => {
-		const content: ContentDrawerContent = { id: 'plan-1', kind: 'plan', title: '登录改造', content: '# 计划' };
+		const content: ContentDrawerContent = { id: 'code-1', kind: 'code', title: '登录改造', content: 'const plan = true;' };
 		useWorkbenchStore.getState().openContentDrawer(content);
 		expect(useWorkbenchStore.getState().contentDrawer).toEqual(content);
 		useWorkbenchStore.getState().closeContentDrawer();
@@ -106,6 +106,7 @@ describe('Agent 工作台本地交互状态', () => {
 	beforeEach(() => {
 		useWorkbenchStore.setState({
 			layout: { leftWidth: 272, rightWidth: 344, bottomOpen: false, bottomHeight: 220, leftCollapsed: false, rightCollapsed: false },
+			rightPanelTabs: { plans: [], activeTabId: 'execution' },
 			execution: { id: 'idle', status: 'idle', lastPrompt: null, steps: [] },
 			composerPrefill: null,
 		});
@@ -114,6 +115,44 @@ describe('Agent 工作台本地交互状态', () => {
 	it('保存布局变化并且不影响 Agent 会话状态', () => {
 		useWorkbenchStore.getState().updateLayout({ leftWidth: 310, bottomOpen: true });
 		expect(useWorkbenchStore.getState().layout).toMatchObject({ leftWidth: 310, bottomOpen: true });
+	});
+
+	it('右侧计划 Tab 在打开计划时保持抽屉关闭', () => {
+		useWorkbenchStore.getState().openPlanPanelTab({ sourceSessionPath: '/sessions/a.jsonl', title: '登录改造', markdown: '# 计划' });
+
+		expect(useWorkbenchStore.getState().rightPanelTabs).toMatchObject({
+			activeTabId: 'plan:/sessions/a.jsonl',
+			plans: [{ id: 'plan:/sessions/a.jsonl', kind: 'plan', title: '登录改造' }],
+		});
+		expect(useWorkbenchStore.getState().contentDrawer).toBeNull();
+	});
+
+	it('同一会话的新计划替换旧快照，关闭活动项后激活相邻 Tab', () => {
+		const store = useWorkbenchStore.getState();
+		store.openPlanPanelTab({ sourceSessionPath: '/sessions/a.jsonl', title: '旧计划', markdown: '# 旧' });
+		store.openPlanPanelTab({ sourceSessionPath: '/sessions/b.jsonl', title: '另一个计划', markdown: '# B' });
+		store.openPlanPanelTab({ sourceSessionPath: '/sessions/a.jsonl', title: '新计划', markdown: '# 新' });
+		store.closeRightPanelTab('plan:/sessions/a.jsonl');
+
+		const tabs = useWorkbenchStore.getState().rightPanelTabs;
+		expect(tabs.plans).toHaveLength(1);
+		expect(tabs.plans[0]).toMatchObject({ sourceSessionPath: '/sessions/b.jsonl' });
+		expect(tabs.activeTabId).toBe('plan:/sessions/b.jsonl');
+	});
+
+	it('恢复时去重并清理来源不存在的会话和计划页签', () => {
+		const restored = normalizeRightPanelTabs({
+			activeTabId: 'plan:/sessions/a.jsonl',
+			plans: [
+				{ id: 'old-plan', kind: 'plan', sourceSessionPath: '/sessions/a.jsonl', title: '旧计划', markdown: '# 旧' },
+				{ id: 'new-plan', kind: 'plan', sourceSessionPath: '/sessions/a.jsonl', title: '新计划', markdown: '# 新' },
+			],
+		});
+		expect(restored.plans).toHaveLength(1);
+		expect(restored.plans[0]).toMatchObject({ title: '新计划' });
+		useWorkbenchStore.setState({ rightPanelTabs: restored });
+		useWorkbenchStore.getState().reconcileRightPanelTabs(['/sessions/b.jsonl']);
+		expect(useWorkbenchStore.getState().rightPanelTabs).toMatchObject({ plans: [], activeTabId: 'execution' });
 	});
 
 	it('把旧版或异常布局值限制在侧栏与执行面板的可用范围内', () => {

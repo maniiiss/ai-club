@@ -44,6 +44,7 @@ public class GitPilotCliService {
     public static final String SCOPE_CLOUD_CODING_CANCEL = "cli:cloud-coding:cancel";
     /** /requirement 命令读取负责人是自己的需求列表所需权限范围。 */
     public static final String SCOPE_TASK_READ = "cli:task:read";
+    public static final String SCOPE_WORK_RESEARCH = "cli:work:research";
     private static final List<String> DEFAULT_TOKEN_SCOPES = List.of(
             SCOPE_MODEL_READ,
             SCOPE_MODEL_INVOKE,
@@ -52,7 +53,8 @@ public class GitPilotCliService {
             SCOPE_CLOUD_CODING_CREATE,
             SCOPE_CLOUD_CODING_READ,
             SCOPE_CLOUD_CODING_CANCEL,
-            SCOPE_TASK_READ
+            SCOPE_TASK_READ,
+            SCOPE_WORK_RESEARCH
     );
     private static final String CLI_TOKEN_PREFIX = "gpt_";
     private static final String MODEL_SESSION_PREFIX = "gms_";

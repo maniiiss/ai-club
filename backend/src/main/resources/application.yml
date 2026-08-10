@@ -83,6 +83,13 @@ platform:
       model-proxy-max-request-bytes: ${PLATFORM_GITPILOT_CLI_MODEL_PROXY_MAX_REQUEST_BYTES:4194304}
       public-base-url: ${PLATFORM_GITPILOT_CLI_PUBLIC_BASE_URL:${PLATFORM_FRONTEND_PUBLIC_BASE_URL:http://localhost:3000}}
       download-base-url: ${PLATFORM_GITPILOT_CLI_DOWNLOAD_BASE_URL:}
+    work:
+      research:
+        enabled: ${PLATFORM_GITPILOT_WORK_RESEARCH_ENABLED:false}
+        endpoint: ${PLATFORM_GITPILOT_WORK_RESEARCH_ENDPOINT:https://api.tavily.com/search}
+        api-key: ${PLATFORM_GITPILOT_WORK_RESEARCH_API_KEY:}
+        timeout-seconds: ${PLATFORM_GITPILOT_WORK_RESEARCH_TIMEOUT_SECONDS:15}
+        max-results: ${PLATFORM_GITPILOT_WORK_RESEARCH_MAX_RESULTS:5}
   cloud-coding:
     # P0 只冻结协议和安全边界，Cloud Coding Session/REST 在 P1 实现前保持关闭。
     enabled: ${PLATFORM_CLOUD_CODING_ENABLED:false}

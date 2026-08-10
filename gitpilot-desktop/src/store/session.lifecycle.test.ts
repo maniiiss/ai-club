@@ -66,11 +66,13 @@ describe('桌面会话生命周期契约', () => {
 			connection: 'idle',
 			platformConnection: 'checking',
 			error: null,
+			pendingExtensionUI: [],
 			guidanceQueue: [],
 			isFlushingGuidance: false,
 			isStopping: false,
 			_unsubs: [],
 		});
+		useWorkbenchStore.setState({ rightPanelTabs: { plans: [], activeTabId: 'execution' }, contentDrawer: null });
 	});
 
 	it('只建立一次连接，并在 ready/disconnect 事件间保持明确状态', async () => {
@@ -247,6 +249,25 @@ describe('桌面会话生命周期契约', () => {
 		useSessionStore.setState({ selectedSessionPath: 'C:\\sessions\\A.jsonl' });
 		const backA = useSessionStore.getState();
 		expect(pickActiveExtensionUI(backA.pendingExtensionUI, backA.selectedSessionPath ?? null)?.id).toBe('confirm-1');
+	});
+
+	it('延迟到达的计划确认使用 sidecar 来源会话，不会被乐观切换误归属', async () => {
+		await useSessionStore.getState().connect();
+		// 用户已经在侧栏乐观切到 B，但 stdout 中的确认实际由 A 发出。
+		useSessionStore.setState({ selectedSessionPath: 'C:\\sessions\\B.jsonl', sessionState: null });
+		bridgeLifecycle.extension.forEach((cb) => cb({
+			type: 'extension_ui_request',
+			id: 'delayed-plan-confirm',
+			method: 'confirm',
+			title: '计划已就绪，下一步？',
+			message: '确认执行该计划？',
+			sessionFile: 'C:\\sessions\\A.jsonl',
+		}));
+
+		const state = useSessionStore.getState();
+		expect(state.pendingExtensionUI[0]).toMatchObject({ id: 'delayed-plan-confirm', sessionPath: 'C:\\sessions\\A.jsonl' });
+		expect(pickActiveExtensionUI(state.pendingExtensionUI, 'C:\\sessions\\B.jsonl')).toBeNull();
+		expect(pickActiveExtensionUI(state.pendingExtensionUI, 'C:\\sessions\\A.jsonl')?.id).toBe('delayed-plan-confirm');
 	});
 
 	it('pickActiveExtensionUI 只命中当前会话的请求，跨会话请求互不干扰', () => {

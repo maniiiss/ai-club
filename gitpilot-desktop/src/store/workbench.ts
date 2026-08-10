@@ -9,8 +9,8 @@ import type { AgentSessionEvent, AgentExecutionSnapshot, RpcExtensionUIRequest }
 export type ExecutionKind = 'plan' | 'read' | 'edit' | 'command' | 'verify' | 'complete' | 'other';
 export type ExecutionStatus = 'running' | 'succeeded' | 'failed' | 'waiting';
 
-/** 右侧内容抽屉支持的内容类型；后续代码、Diff 入口复用同一容器。 */
-export type ContentDrawerKind = 'plan' | 'code' | 'diff' | 'text';
+/** 右侧内容抽屉支持的内容类型；计划改由独立工作区 Tab 展示。 */
+export type ContentDrawerKind = 'code' | 'diff' | 'text';
 
 /** 内容抽屉展示载荷，正文始终由调用方提供，避免抽屉直接访问 sidecar。 */
 export interface ContentDrawerContent {
@@ -20,6 +20,22 @@ export interface ContentDrawerContent {
 	content: string;
 	language?: string;
 	description?: string;
+}
+
+/** 右侧执行栏内的计划页签，仅保存打开时的只读快照。 */
+export interface RightPanelPlanTab {
+	id: string;
+	kind: 'plan';
+	/** 来源仅用于关联和清理，激活计划页不会触发会话切换。 */
+	sourceSessionPath: string;
+	title: string;
+	markdown: string;
+}
+
+export interface RightPanelTabsState {
+	plans: RightPanelPlanTab[];
+	/** 固定执行页签或某个计划页签。 */
+	activeTabId: 'execution' | string;
 }
 
 export interface ExecutionStep {
@@ -80,6 +96,7 @@ export interface WorkbenchCommand {
 }
 
 const LAYOUT_KEY = 'gitpilot-desktop.workbench-layout';
+const RIGHT_PANEL_TABS_KEY = 'gitpilot-desktop.right-panel-tabs';
 /** 面板宽度边界与拖动手柄保持一致，避免旧版 localStorage 或异常输入撑破工作台。 */
 export const WORKBENCH_WIDTH_LIMITS = {
 	left: { min: 220, max: 420 },
@@ -137,6 +154,67 @@ function saveLayout(layout: LayoutPreferences): void {
 		localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout));
 	} catch {
 		// 存储空间不可用不影响 Agent 会话。
+	}
+}
+
+function planTabId(sourceSessionPath: string): string {
+	return `plan:${sourceSessionPath}`;
+}
+
+/**
+ * 清理 localStorage 中异常或过期的右侧计划页签。
+ *
+ * 计划每个来源会话只保留一份，最后一份作为最新计划；这样升级旧版本或多窗口写入时
+ * 也不会让同一任务出现多个相互矛盾的计划页。
+ */
+export function normalizeRightPanelTabs(value: Partial<RightPanelTabsState> | null | undefined): RightPanelTabsState {
+	const rawTabs = Array.isArray(value?.plans) ? value.plans : [];
+	const plans: RightPanelPlanTab[] = [];
+	const planIndexBySession = new Map<string, number>();
+	for (const raw of rawTabs) {
+		if (!raw || typeof raw !== 'object') continue;
+		const tab = raw as Partial<RightPanelPlanTab>;
+		if (tab.kind === 'plan'
+			&& typeof tab.sourceSessionPath === 'string' && tab.sourceSessionPath
+			&& typeof tab.title === 'string'
+			&& typeof tab.markdown === 'string') {
+			const plan: RightPanelPlanTab = {
+				id: planTabId(tab.sourceSessionPath),
+				kind: 'plan',
+				sourceSessionPath: tab.sourceSessionPath,
+				title: tab.title,
+				markdown: tab.markdown,
+			};
+			const existing = planIndexBySession.get(plan.sourceSessionPath);
+			if (existing === undefined) {
+				planIndexBySession.set(plan.sourceSessionPath, plans.length);
+				plans.push(plan);
+			} else {
+				plans[existing] = plan;
+			}
+		}
+	}
+	const requestedActive = typeof value?.activeTabId === 'string' ? value.activeTabId : null;
+	const activeTabId = requestedActive === 'execution' || requestedActive && plans.some((tab) => tab.id === requestedActive)
+		? requestedActive
+		: 'execution';
+	return { plans, activeTabId };
+}
+
+function loadRightPanelTabs(): RightPanelTabsState {
+	try {
+		const stored = localStorage.getItem(RIGHT_PANEL_TABS_KEY);
+		return stored ? normalizeRightPanelTabs(JSON.parse(stored) as Partial<RightPanelTabsState>) : { plans: [], activeTabId: 'execution' };
+	} catch {
+		return { plans: [], activeTabId: 'execution' };
+	}
+}
+
+function saveRightPanelTabs(rightPanelTabs: RightPanelTabsState): void {
+	try {
+		localStorage.setItem(RIGHT_PANEL_TABS_KEY, JSON.stringify(rightPanelTabs));
+	} catch {
+		// 存储空间不可用时页签仍可在本次应用生命周期内正常使用。
 	}
 }
 
@@ -264,6 +342,7 @@ export function getUnreportedExecutionSteps(execution: ExecutionRun): ExecutionS
 
 interface WorkbenchStore {
 	layout: LayoutPreferences;
+	rightPanelTabs: RightPanelTabsState;
 	execution: ExecutionRun;
 	selectedStepId: string | null;
 	globalPaletteOpen: boolean;
@@ -271,6 +350,12 @@ interface WorkbenchStore {
 	composerPrefill: string | null;
 	contentDrawer: ContentDrawerContent | null;
 	updateLayout: (patch: Partial<LayoutPreferences>) => void;
+	/** 每个会话只保留最新计划的完整快照，显示于右侧执行栏的独立 Tab。 */
+	openPlanPanelTab: (plan: Omit<RightPanelPlanTab, 'id' | 'kind'>) => void;
+	activateRightPanelTab: (tabId: 'execution' | string) => void;
+	closeRightPanelTab: (tabId: string) => void;
+	/** 会话列表刷新后移除来源已不存在的右侧计划页签。 */
+	reconcileRightPanelTabs: (sessionPaths: string[]) => void;
 	beginExecution: (prompt: string) => void;
 	/** 切回仍在后台执行的会话时恢复计时起点，避免顶部“运行中”因本地 Workbench 已重置而消失。 */
 	restoreRunningExecution: (prompt: string, startedAt?: number, priorSteps?: ExecutionStep[]) => void;
@@ -303,6 +388,7 @@ interface WorkbenchStore {
 
 export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 	layout: loadLayout(),
+	rightPanelTabs: loadRightPanelTabs(),
 	execution: { id: 'idle', status: 'idle', lastPrompt: null, steps: [] },
 	selectedStepId: null,
 	globalPaletteOpen: false,
@@ -313,6 +399,53 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 		const layout = normalizeLayoutPreferences({ ...get().layout, ...patch });
 		saveLayout(layout);
 		set({ layout });
+	},
+	openPlanPanelTab: (plan) => {
+		if (!plan.sourceSessionPath || !plan.title.trim()) return;
+		const nextPlan: RightPanelPlanTab = {
+			id: planTabId(plan.sourceSessionPath),
+			kind: 'plan',
+			sourceSessionPath: plan.sourceSessionPath,
+			title: plan.title,
+			markdown: plan.markdown,
+		};
+		const state = get().rightPanelTabs;
+		const existingIndex = state.plans.findIndex((tab) => tab.sourceSessionPath === plan.sourceSessionPath);
+		const plans = existingIndex < 0 ? [...state.plans, nextPlan] : state.plans.map((tab, index) => index === existingIndex ? nextPlan : tab);
+		const rightPanelTabs = { plans, activeTabId: nextPlan.id };
+		saveRightPanelTabs(rightPanelTabs);
+		set({ rightPanelTabs });
+	},
+	activateRightPanelTab: (tabId) => {
+		const state = get().rightPanelTabs;
+		if (state.activeTabId === tabId || tabId !== 'execution' && !state.plans.some((tab) => tab.id === tabId)) return;
+		const rightPanelTabs = { ...state, activeTabId: tabId };
+		saveRightPanelTabs(rightPanelTabs);
+		set({ rightPanelTabs });
+	},
+	closeRightPanelTab: (tabId) => {
+		const state = get().rightPanelTabs;
+		const index = state.plans.findIndex((tab) => tab.id === tabId);
+		if (index < 0) return;
+		const plans = state.plans.filter((tab) => tab.id !== tabId);
+		const activeTabId = state.activeTabId === tabId
+			? plans[index]?.id ?? plans[index - 1]?.id ?? 'execution'
+			: state.activeTabId;
+		const rightPanelTabs = { plans, activeTabId };
+		saveRightPanelTabs(rightPanelTabs);
+		set({ rightPanelTabs });
+	},
+	reconcileRightPanelTabs: (sessionPaths) => {
+		const available = new Set(sessionPaths);
+		const state = get().rightPanelTabs;
+		const plans = state.plans.filter((tab) => available.has(tab.sourceSessionPath));
+		const activeTabId = state.activeTabId === 'execution' || plans.some((tab) => tab.id === state.activeTabId)
+			? state.activeTabId
+			: 'execution';
+		if (plans.length === state.plans.length && activeTabId === state.activeTabId) return;
+		const rightPanelTabs = { plans, activeTabId };
+		saveRightPanelTabs(rightPanelTabs);
+		set({ rightPanelTabs });
 	},
 	beginExecution: (prompt) => set({ execution: createRun(prompt), selectedStepId: null, contentDrawer: null }),
 	restoreRunningExecution: (prompt, startedAt, priorSteps) => {

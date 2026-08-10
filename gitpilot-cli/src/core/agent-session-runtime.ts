@@ -207,10 +207,10 @@ export class AgentSessionRuntime {
 		this._modelFallbackMessage = snapshot.modelFallbackMessage;
 	}
 
-	/** 当前会话正在运行时只摘下 UI 订阅，保留 Agent 让它在后台继续执行。 */
-	private suspendCurrentIfRunning(): boolean {
+	/** 当前会话正在运行或等待宿主交互时只摘下 UI 订阅，保留 Agent 上下文。 */
+	private suspendCurrentIfRunning(preserveForInteraction = false): boolean {
 		const sessionFile = this.session.sessionFile;
-		if (!sessionFile || !this.session.isStreaming) return false;
+		if (!sessionFile || (!this.session.isStreaming && !preserveForInteraction)) return false;
 		this.suspendedSessions.set(resolvePath(sessionFile), {
 			session: this.session,
 			services: this.services,
@@ -303,6 +303,8 @@ export class AgentSessionRuntime {
 		options?: {
 			cwdOverride?: string;
 			withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
+			/** 等待宿主确认的交互也必须保留原 extension 上下文，避免确认后无法继续。 */
+			preserveCurrentForInteraction?: boolean;
 			projectTrustContextFactory?: (cwd: string) => ProjectTrustContext;
 		},
 	): Promise<{ cancelled: boolean }> {
@@ -324,7 +326,7 @@ export class AgentSessionRuntime {
 			return { cancelled: false };
 		}
 		const suspended = this.suspendedSessions.get(targetSessionFile);
-		if (!this.suspendCurrentIfRunning()) {
+		if (!this.suspendCurrentIfRunning(options?.preserveCurrentForInteraction)) {
 			await this.teardownCurrent("resume", sessionManager.getSessionFile());
 		}
 		if (suspended) {

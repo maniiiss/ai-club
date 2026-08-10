@@ -13,8 +13,16 @@ interface TargetWorkbenchLayoutProps {
 	left: ReactNode;
 	center: ReactNode;
 	right?: ReactNode;
-	bottom: ReactNode;
+	bottom?: ReactNode;
 	terminal?: ReactNode;
+	/** Work 等无项目目录模式不显示 Code 的终端面板和入口。 */
+	showBottom?: boolean;
+	/** 状态栏中的空间名称；未传入时仍显示当前 Code 项目目录。 */
+	statusLabel?: string;
+	leftPanelTitle?: string;
+	leftPanelDescription?: string;
+	rightPanelTitle?: string;
+	rightPanelDescription?: string;
 }
 
 type ResizeSide = 'left' | 'right';
@@ -26,7 +34,6 @@ function BottomResizeHandle({ onResizeStart, onResizeEnd }: { onResizeStart: () 
 	const pointerId = useRef<number | null>(null);
 	const { min, max } = WORKBENCH_BOTTOM_HEIGHT_LIMITS;
 	const resize = (delta: number) => updateLayout({ bottomHeight: Math.max(min, Math.min(max, bottomHeight + delta)) });
-
 	const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
 		pointerId.current = event.pointerId;
 		event.currentTarget.setPointerCapture(event.pointerId);
@@ -50,7 +57,6 @@ function BottomResizeHandle({ onResizeStart, onResizeEnd }: { onResizeStart: () 
 		if (event.key === 'Home') { event.preventDefault(); updateLayout({ bottomHeight: min }); }
 		if (event.key === 'End') { event.preventDefault(); updateLayout({ bottomHeight: max }); }
 	};
-
 	return <div className={styles.bottomResizeHandle} role="separator" tabIndex={0} aria-orientation="horizontal" aria-valuemin={min} aria-valuemax={max} aria-valuenow={bottomHeight} aria-label="调整底部面板高度" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onKeyDown={onKeyDown}><span /></div>;
 }
 
@@ -61,7 +67,6 @@ function ResizeHandle({ side, value }: { side: ResizeSide; value: number }) {
 	const min = limits.min;
 	const max = limits.max;
 	const resize = (delta: number) => updateLayout(side === 'left' ? { leftWidth: Math.max(min, Math.min(max, value + delta)) } : { rightWidth: Math.max(min, Math.min(max, value + delta)) });
-
 	const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
 		pointerId.current = event.pointerId;
 		event.currentTarget.setPointerCapture(event.pointerId);
@@ -83,11 +88,22 @@ function ResizeHandle({ side, value }: { side: ResizeSide; value: number }) {
 		if (event.key === 'Home') { event.preventDefault(); updateLayout(side === 'left' ? { leftWidth: min } : { rightWidth: min }); }
 		if (event.key === 'End') { event.preventDefault(); updateLayout(side === 'left' ? { leftWidth: max } : { rightWidth: max }); }
 	};
-
 	return <div className={styles.resizeHandle} role="separator" tabIndex={0} aria-orientation="vertical" aria-valuemin={min} aria-valuemax={max} aria-valuenow={value} aria-label={side === 'left' ? '调整项目导航宽度' : '调整执行面板宽度'} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onKeyDown={onKeyDown}><span /></div>;
 }
 
-export function TargetWorkbenchLayout({ left, center, right, bottom, terminal }: TargetWorkbenchLayoutProps) {
+export function TargetWorkbenchLayout({
+	left,
+	center,
+	right,
+	bottom,
+	terminal,
+	showBottom = true,
+	statusLabel,
+	leftPanelTitle = '项目与任务',
+	leftPanelDescription = '切换当前工作目录或会话。',
+	rightPanelTitle = '执行过程',
+	rightPanelDescription = '查看 Agent 工具调用和原始输出。',
+}: TargetWorkbenchLayoutProps) {
 	const layout = useWorkbenchStore((s) => s.layout);
 	const updateLayout = useWorkbenchStore((s) => s.updateLayout);
 	const currentProjectPath = useSessionStore((s) => s.currentProjectPath);
@@ -105,9 +121,10 @@ export function TargetWorkbenchLayout({ left, center, right, bottom, terminal }:
 		return () => query.removeEventListener('change', update);
 	}, []);
 	const columns = isCompact ? 'minmax(0, 1fr)' : [layout.leftCollapsed ? '0px' : `${layout.leftWidth}px`, layout.leftCollapsed ? '0px' : '1px', 'minmax(360px, 1fr)', rightVisible ? '1px' : '0px', rightVisible ? `${layout.rightWidth}px` : '0px'].join(' ');
-	const terminalOpen = layout.bottomOpen && bottomView === 'terminal';
-	const leftPanelLabel = layout.leftCollapsed ? '打开项目与任务栏' : '关闭项目与任务栏';
-	const rightPanelLabel = layout.rightCollapsed ? '打开执行过程栏' : '关闭执行过程栏';
+	const terminalOpen = showBottom && layout.bottomOpen && bottomView === 'terminal';
+	const leftPanelLabel = layout.leftCollapsed ? `打开${leftPanelTitle}` : `关闭${leftPanelTitle}`;
+	const rightPanelLabel = layout.rightCollapsed ? `打开${rightPanelTitle}` : `关闭${rightPanelTitle}`;
+	const displayedStatus = statusLabel ?? currentProjectPath ?? '未选择工作目录';
 
 	return <div className={styles.root}>
 		<div className={`${styles.panels} ${layout.leftCollapsed ? styles.leftCollapsed : ''}`} style={{ gridTemplateColumns: columns }}>
@@ -119,19 +136,19 @@ export function TargetWorkbenchLayout({ left, center, right, bottom, terminal }:
 				<div className={`${styles.pane} ${styles.rightPane}`} aria-hidden={!rightVisible}>{right}</div>
 			</>}
 		</div>
-		{isCompact && <Sheet open={mobileLeftOpen} onOpenChange={setMobileLeftOpen}><SheetContent side="left" className={styles.mobileSheet}><SheetHeader><SheetTitle>项目与任务</SheetTitle><SheetDescription>切换当前工作目录或会话</SheetDescription></SheetHeader><div className={styles.mobileBody}>{left}</div></SheetContent></Sheet>}
-		{isCompact && right && <Sheet open={mobileRightOpen} onOpenChange={setMobileRightOpen}><SheetContent side="right" className={styles.mobileSheet}><SheetHeader><SheetTitle>执行过程</SheetTitle><SheetDescription>查看 Agent 工具调用和原始输出</SheetDescription></SheetHeader><div className={styles.mobileBody}>{right}</div></SheetContent></Sheet>}
-		<section className={`${styles.bottom} ${layout.bottomOpen ? styles.bottomOpen : ''} ${bottomResizing ? styles.bottomResizing : ''}`} style={layout.bottomOpen ? { height: layout.bottomHeight } : undefined} aria-hidden={!layout.bottomOpen} inert={!layout.bottomOpen}>
+		{isCompact && <Sheet open={mobileLeftOpen} onOpenChange={setMobileLeftOpen}><SheetContent side="left" className={styles.mobileSheet}><SheetHeader><SheetTitle>{leftPanelTitle}</SheetTitle><SheetDescription>{leftPanelDescription}</SheetDescription></SheetHeader><div className={styles.mobileBody}>{left}</div></SheetContent></Sheet>}
+		{isCompact && right && <Sheet open={mobileRightOpen} onOpenChange={setMobileRightOpen}><SheetContent side="right" className={styles.mobileSheet}><SheetHeader><SheetTitle>{rightPanelTitle}</SheetTitle><SheetDescription>{rightPanelDescription}</SheetDescription></SheetHeader><div className={styles.mobileBody}>{right}</div></SheetContent></Sheet>}
+		{showBottom && <section className={`${styles.bottom} ${layout.bottomOpen ? styles.bottomOpen : ''} ${bottomResizing ? styles.bottomResizing : ''}`} style={layout.bottomOpen ? { height: layout.bottomHeight } : undefined} aria-hidden={!layout.bottomOpen} inert={!layout.bottomOpen}>
 			{layout.bottomOpen && <BottomResizeHandle onResizeStart={() => setBottomResizing(true)} onResizeEnd={() => setBottomResizing(false)} />}
 			<div className={styles.bottomHeader}><Tabs value={bottomView} onValueChange={(value) => setBottomView(value as 'terminal' | 'output')}><TabsList aria-label="底部面板"><TabsTrigger value="terminal">终端</TabsTrigger></TabsList></Tabs><Separator orientation="vertical" className="mx-2 h-4" /><Button type="button" variant="ghost" size="icon-sm" onClick={() => updateLayout({ bottomOpen: false })} aria-label="关闭底部面板" title="关闭底部面板"><X /></Button></div>
 			<div className={styles.bottomContent}>{layout.bottomOpen && (bottomView === 'terminal' && terminal ? terminal : bottom)}</div>
-		</section>
+		</section>}
 		<footer className={styles.statusbar}>
 			<Button type="button" variant="ghost" size="icon-sm" className={styles.leftPanelToggle} onClick={() => updateLayout({ leftCollapsed: !layout.leftCollapsed })} aria-label={leftPanelLabel} title={leftPanelLabel}>{layout.leftCollapsed ? <PanelLeftOpen /> : <PanelLeftClose />}</Button>
-			<Button type="button" variant="ghost" size="sm" className={styles.mobileToggle} onClick={() => setMobileLeftOpen(true)} aria-label="打开项目与任务">项目</Button>
-			{right && <Button type="button" variant="ghost" size="sm" className={styles.mobileToggle} onClick={() => setMobileRightOpen(true)} aria-label="打开执行过程">执行</Button>}
-			<Button type="button" variant="ghost" size="icon-sm" className={terminalOpen ? styles.active : ''} disabled={!currentProjectPath} onClick={() => { if (!currentProjectPath) return; if (terminalOpen) updateLayout({ bottomOpen: false }); else { setBottomView('terminal'); updateLayout({ bottomOpen: true }); } }} title={currentProjectPath ? '在应用内打开当前项目终端' : '请先选择项目目录'} aria-label="在应用内打开当前项目终端"><SquareTerminal /></Button>
-			<span className={styles.path} title={currentProjectPath ?? undefined}>{currentProjectPath ?? '未选择工作目录'}</span><span className={styles.grow} />
+			<Button type="button" variant="ghost" size="sm" className={styles.mobileToggle} onClick={() => setMobileLeftOpen(true)} aria-label={`打开${leftPanelTitle}`}>{leftPanelTitle}</Button>
+			{right && <Button type="button" variant="ghost" size="sm" className={styles.mobileToggle} onClick={() => setMobileRightOpen(true)} aria-label={`打开${rightPanelTitle}`}>{rightPanelTitle}</Button>}
+			{showBottom && <Button type="button" variant="ghost" size="icon-sm" className={terminalOpen ? styles.active : ''} disabled={!currentProjectPath} onClick={() => { if (!currentProjectPath) return; if (terminalOpen) updateLayout({ bottomOpen: false }); else { setBottomView('terminal'); updateLayout({ bottomOpen: true }); } }} title={currentProjectPath ? '在应用内打开当前项目终端' : '请先选择项目目录'} aria-label="在应用内打开当前项目终端"><SquareTerminal /></Button>}
+			<span className={styles.path} title={displayedStatus}>{displayedStatus}</span><span className={styles.grow} />
 			<Button type="button" variant="ghost" size="icon-sm" className={styles.rightPanelToggle} onClick={() => updateLayout({ rightCollapsed: !layout.rightCollapsed })} aria-label={rightPanelLabel} title={rightPanelLabel}>{layout.rightCollapsed ? <PanelRightOpen /> : <PanelRightClose />}</Button>
 		</footer>
 	</div>;

@@ -74,6 +74,10 @@ export interface PreparedAttachment {
 	warnings?: string[];
 }
 
+/** Work 对话只传递本机任务上下文；不包含 Code session、cwd 或任何凭据。 */
+export interface WorkConversationMessage { role: 'user' | 'assistant'; content: string; }
+export interface WorkResearchSource { id: string; title: string; url: string; snippet: string; publishedAt?: string; }
+
 /** Slash 命令来源信息（最小化） */
 export interface SourceInfo {
 	kind: string;
@@ -216,6 +220,9 @@ export type RpcCommand =
 	| { id?: string; type: 'new_session'; parentSession?: string; cwd?: string }
 	// 附件预解析（路径或内联 base64 -> 文本/图片，结果随下一条 prompt 注入）
 	| { id?: string; type: 'prepare_attachments'; items: AttachmentInput[] }
+	| { id?: string; type: 'work_prompt'; taskId: string; message: string; history: WorkConversationMessage[]; research?: boolean }
+	| { id?: string; type: 'work_abort'; requestId?: string }
+	| { id?: string; type: 'work_prepare_attachments'; items: AttachmentInput[] }
 	| { id?: string; type: 'get_state' }
 	// 模型
 	| { id?: string; type: 'set_model'; provider: string; modelId: string }
@@ -289,6 +296,9 @@ export type RpcResponse =
 	  }
 	| { id?: string; type: 'response'; command: 'new_session'; success: true; data: { cancelled: boolean } }
 	| { id?: string; type: 'response'; command: 'prepare_attachments'; success: true; data: { attachments: PreparedAttachment[] } }
+	| { id?: string; type: 'response'; command: 'work_prompt'; success: true; data: { requestId: string; text: string; sources: WorkResearchSource[] } }
+	| { id?: string; type: 'response'; command: 'work_abort'; success: true }
+	| { id?: string; type: 'response'; command: 'work_prepare_attachments'; success: true; data: { attachments: PreparedAttachment[] } }
 	| { id?: string; type: 'response'; command: 'get_state'; success: true; data: RpcSessionState }
 	| { id?: string; type: 'response'; command: 'set_model'; success: true; data: ModelInfo }
 	| { id?: string; type: 'response'; command: 'cycle_model'; success: true; data: { model: ModelInfo; thinkingLevel: ThinkingLevel; isScoped: boolean } | null }
@@ -331,7 +341,16 @@ export interface RpcSlashCommand {
 // Extension UI 事件（sidecar -> 桌面版，stdout）
 // ============================================================================
 
-export type RpcExtensionUIRequest =
+/**
+ * 扩展交互请求的来源会话。
+ *
+ * Desktop 在切换任务时会先乐观更新选中态，不能再用事件到达时的选中任务推断归属。
+ */
+export interface RpcExtensionUISessionMetadata {
+	sessionFile?: string;
+}
+
+export type RpcExtensionUIRequest = (
 	| { type: 'extension_ui_request'; id: string; method: 'select'; title: string; options: string[]; timeout?: number }
 	| { type: 'extension_ui_request'; id: string; method: 'confirm'; title: string; message: string; timeout?: number }
 	| { type: 'extension_ui_request'; id: string; method: 'input'; title: string; placeholder?: string; timeout?: number }
@@ -340,7 +359,8 @@ export type RpcExtensionUIRequest =
 	| { type: 'extension_ui_request'; id: string; method: 'setStatus'; statusKey: string; statusText: string | undefined }
 	| { type: 'extension_ui_request'; id: string; method: 'setWidget'; widgetKey: string; widgetLines: string[] | undefined; widgetPlacement?: 'aboveEditor' | 'belowEditor' }
 	| { type: 'extension_ui_request'; id: string; method: 'setTitle'; title: string }
-	| { type: 'extension_ui_request'; id: string; method: 'set_editor_text'; text: string };
+	| { type: 'extension_ui_request'; id: string; method: 'set_editor_text'; text: string }
+) & RpcExtensionUISessionMetadata;
 
 // ============================================================================
 // 事件流（sidecar -> 桌面版，stdout）

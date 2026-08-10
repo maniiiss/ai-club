@@ -7,6 +7,7 @@ import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.cli.CliDtos;
 import com.aiclub.platform.security.AuthContextHolder;
 import com.aiclub.platform.service.GitPilotCliService;
+import com.aiclub.platform.service.GitPilotWorkResearchService;
 import com.aiclub.platform.service.PlatformStoreService;
 import com.aiclub.platform.service.CreditService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -31,13 +32,16 @@ public class GitPilotCliController {
     private final GitPilotCliService cliService;
     private final PlatformStoreService platformStoreService;
     private final CreditService creditService;
+    private final GitPilotWorkResearchService workResearchService;
 
     public GitPilotCliController(GitPilotCliService cliService,
                                  PlatformStoreService platformStoreService,
-                                 CreditService creditService) {
+                                 CreditService creditService,
+                                 GitPilotWorkResearchService workResearchService) {
         this.cliService = cliService;
         this.platformStoreService = platformStoreService;
         this.creditService = creditService;
+        this.workResearchService = workResearchService;
     }
 
     @PostMapping("/device/authorizations")
@@ -111,6 +115,14 @@ public class GitPilotCliController {
         cliService.requireScope(ctx.token(), GitPilotCliService.SCOPE_TASK_READ);
         Long me = ctx.userId();
         return ApiResponse.success(platformStoreService.pageMyRequirementTasks(me, page, size, status, priority, projectId, keyword));
+    }
+
+    /** Work 研究由服务端托管供应商密钥、限流和审计，CLI 只取得可引用摘要。 */
+    @PostMapping("/work/research")
+    public ApiResponse<CliDtos.WorkResearchResponse> workResearch(@RequestBody CliDtos.WorkResearchRequest request) {
+        var ctx = AuthContextHolder.get().orElseThrow();
+        cliService.requireScope(ctx.token(), GitPilotCliService.SCOPE_WORK_RESEARCH);
+        return ApiResponse.success(new CliDtos.WorkResearchResponse(workResearchService.search(ctx.userId(), request == null ? "" : request.query())));
     }
 
     @PostMapping("/model-sessions")

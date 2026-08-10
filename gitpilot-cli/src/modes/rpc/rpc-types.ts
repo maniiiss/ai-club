@@ -34,6 +34,10 @@ export interface RpcPlatformConnection {
 	connected: boolean;
 }
 
+/** Work 对话只传递本机任务文本；它与 Code 会话、cwd 和 token 严格隔离。 */
+export interface WorkConversationMessage { role: "user" | "assistant"; content: string }
+export interface WorkResearchSource { id: string; title: string; url: string; snippet: string; publishedAt?: string }
+
 // ============================================================================
 // 执行快照（设计文档 §8）
 // ============================================================================
@@ -108,6 +112,9 @@ export type RpcCommand =
 	| { id?: string; type: "new_session"; parentSession?: string; cwd?: string }
 	// Attachments（桌面端上传附件预解析：路径或内联 base64 -> 文本/图片，结果随下一条 prompt 注入）
 	| { id?: string; type: "prepare_attachments"; items: AttachmentInput[] }
+	| { id?: string; type: "work_prompt"; taskId: string; message: string; history: WorkConversationMessage[]; research?: boolean }
+	| { id?: string; type: "work_abort"; requestId?: string }
+	| { id?: string; type: "work_prepare_attachments"; items: AttachmentInput[] }
 
 	// State
 	| { id?: string; type: "get_state" }
@@ -232,6 +239,9 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "new_session"; success: true; data: { cancelled: boolean } }
 	// Attachments（预解析附件，结果不触发事件流，直接随 response 返回）
 	| { id?: string; type: "response"; command: "prepare_attachments"; success: true; data: { attachments: PreparedAttachment[] } }
+	| { id?: string; type: "response"; command: "work_prompt"; success: true; data: { requestId: string; text: string; sources: WorkResearchSource[] } }
+	| { id?: string; type: "response"; command: "work_abort"; success: true }
+	| { id?: string; type: "response"; command: "work_prepare_attachments"; success: true; data: { attachments: PreparedAttachment[] } }
 
 	// State
 	| { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }
@@ -370,7 +380,17 @@ export type RpcResponse =
 // ============================================================================
 
 /** Emitted when an extension needs user input */
-export type RpcExtensionUIRequest =
+/**
+ * 扩展交互请求的来源会话。
+ *
+ * RPC 可能在 Desktop 已乐观切换任务后才收到旧会话发出的 stdout；因此必须由
+ * sidecar 在请求生成时写入来源，而不能由界面按接收时的当前会话猜测。
+ */
+export interface RpcExtensionUISessionMetadata {
+	sessionFile?: string;
+}
+
+export type RpcExtensionUIRequest = (
 	| { type: "extension_ui_request"; id: string; method: "select"; title: string; options: string[]; timeout?: number }
 	| { type: "extension_ui_request"; id: string; method: "confirm"; title: string; message: string; timeout?: number }
 	| {
@@ -405,7 +425,8 @@ export type RpcExtensionUIRequest =
 			widgetPlacement?: "aboveEditor" | "belowEditor";
 	  }
 	| { type: "extension_ui_request"; id: string; method: "setTitle"; title: string }
-	| { type: "extension_ui_request"; id: string; method: "set_editor_text"; text: string };
+	| { type: "extension_ui_request"; id: string; method: "set_editor_text"; text: string }
+) & RpcExtensionUISessionMetadata;
 
 // ============================================================================
 // Extension UI Commands (stdin)

@@ -15,7 +15,8 @@ import { ExecutionActivity, ExecutionTimer, type TraceItem } from './ExecutionAc
 import { ConversationTimeline } from './ConversationTimeline';
 import styles from './ChatView.module.css';
 
-const appIcon = new URL('../../app-icon.png', import.meta.url).href;
+// 加载态与标题栏共用 Tauri 应用图标，避免引用不存在的根目录图片。
+const appIcon = new URL('../../src-tauri/icons/icon.png', import.meta.url).href;
 
 /** 触底时应以最后一段对话为当前节点，避免短尾消息落在视口基准线下而高亮上一轮。 */
 export function isChatScrollAtBottom(scrollHeight: number, scrollTop: number, clientHeight: number) {
