@@ -9,6 +9,7 @@ import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Entity
@@ -54,6 +55,30 @@ public class AiModelConfigEntity {
      */
     @Column(name = "max_output_tokens")
     private Integer maxOutputTokens;
+
+    /**
+     * 每千输入 token 积分单价，启用 token 计费时把输入 token 换算为积分。
+     */
+    @Column(name = "input_credit_per_1k", precision = 10, scale = 4)
+    private BigDecimal inputCreditPer1k;
+
+    /**
+     * 每千输出 token 积分单价。
+     */
+    @Column(name = "output_credit_per_1k", precision = 10, scale = 4)
+    private BigDecimal outputCreditPer1k;
+
+    /**
+     * 每千缓存命中输入 token 单价；为空时按 inputCreditPer1k × 0.5 兜底（折扣计费）。
+     */
+    @Column(name = "cached_input_credit_per_1k", precision = 10, scale = 4)
+    private BigDecimal cachedInputCreditPer1k;
+
+    /**
+     * 是否对该模型启用 token 计费（灰度开关），关闭时智能体执行不按 token 扣费。
+     */
+    @Column(name = "token_billing_enabled", nullable = false)
+    private Boolean tokenBillingEnabled = Boolean.FALSE;
 
     @Column(name = "api_key_ciphertext", nullable = false, columnDefinition = "TEXT")
     private String apiKeyCiphertext;
@@ -152,6 +177,38 @@ public class AiModelConfigEntity {
 
     public void setMaxOutputTokens(Integer maxOutputTokens) {
         this.maxOutputTokens = maxOutputTokens;
+    }
+
+    public BigDecimal getInputCreditPer1k() {
+        return inputCreditPer1k;
+    }
+
+    public void setInputCreditPer1k(BigDecimal inputCreditPer1k) {
+        this.inputCreditPer1k = inputCreditPer1k;
+    }
+
+    public BigDecimal getOutputCreditPer1k() {
+        return outputCreditPer1k;
+    }
+
+    public void setOutputCreditPer1k(BigDecimal outputCreditPer1k) {
+        this.outputCreditPer1k = outputCreditPer1k;
+    }
+
+    public BigDecimal getCachedInputCreditPer1k() {
+        return cachedInputCreditPer1k;
+    }
+
+    public void setCachedInputCreditPer1k(BigDecimal cachedInputCreditPer1k) {
+        this.cachedInputCreditPer1k = cachedInputCreditPer1k;
+    }
+
+    public Boolean getTokenBillingEnabled() {
+        return tokenBillingEnabled;
+    }
+
+    public void setTokenBillingEnabled(Boolean tokenBillingEnabled) {
+        this.tokenBillingEnabled = tokenBillingEnabled;
     }
 
     public String getApiKeyCiphertext() {

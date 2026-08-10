@@ -1,11 +1,13 @@
 package com.aiclub.platform.service;
 
 import com.aiclub.platform.domain.model.ExecutionArtifactEntity;
+import com.aiclub.platform.domain.model.ExecutionCreditSettlementEntity;
 import com.aiclub.platform.domain.model.ExecutionRunEntity;
 import com.aiclub.platform.domain.model.ExecutionStepEntity;
 import com.aiclub.platform.domain.model.ExecutionTaskEntity;
 import com.aiclub.platform.domain.model.TaskEntity;
 import com.aiclub.platform.repository.ExecutionArtifactRepository;
+import com.aiclub.platform.repository.ExecutionCreditSettlementRepository;
 import com.aiclub.platform.repository.ExecutionRunRepository;
 import com.aiclub.platform.repository.ExecutionStepRepository;
 import com.aiclub.platform.repository.ExecutionTaskRepository;
@@ -76,6 +78,8 @@ public class ExecutionDispatchService {
     private final ChatRoomAgentService chatRoomAgentService;
     private final ExecutionTaskQueuePublisher executionTaskQueuePublisher;
     private final TechnicalDesignCreditSettlementService technicalDesignCreditSettlementService;
+    private final AgentCreditService agentCreditService;
+    private final ExecutionCreditSettlementRepository executionCreditSettlementRepository;
     private final Executor executionTaskExecutor;
 
     public ExecutionDispatchService(ExecutionTaskRepository executionTaskRepository,
@@ -99,6 +103,8 @@ public class ExecutionDispatchService {
                                     ChatRoomAgentService chatRoomAgentService,
                                     ExecutionTaskQueuePublisher executionTaskQueuePublisher,
                                     TechnicalDesignCreditSettlementService technicalDesignCreditSettlementService,
+                                    AgentCreditService agentCreditService,
+                                    ExecutionCreditSettlementRepository executionCreditSettlementRepository,
                                     @Qualifier("executionTaskExecutor") Executor executionTaskExecutor) {
         this.executionTaskRepository = executionTaskRepository;
         this.executionRunRepository = executionRunRepository;
@@ -121,6 +127,8 @@ public class ExecutionDispatchService {
         this.chatRoomAgentService = chatRoomAgentService;
         this.executionTaskQueuePublisher = executionTaskQueuePublisher;
         this.technicalDesignCreditSettlementService = technicalDesignCreditSettlementService;
+        this.agentCreditService = agentCreditService;
+        this.executionCreditSettlementRepository = executionCreditSettlementRepository;
         this.executionTaskExecutor = executionTaskExecutor;
     }
 
@@ -196,7 +204,7 @@ public class ExecutionDispatchService {
                 "执行调度失败"
         ), 400));
         executionTaskRepository.save(executionTask);
-        settleTechnicalDesignIfNeeded(executionTask);
+        settleCreditIfNeeded(executionTask);
     }
 
     /**
@@ -246,7 +254,7 @@ public class ExecutionDispatchService {
             executionTask.setStatus("CANCELED");
             executionTask.setLatestSummary("执行已取消");
             executionTaskRepository.save(executionTask);
-            settleTechnicalDesignIfNeeded(executionTask);
+            settleCreditIfNeeded(executionTask);
             // 业务意图：任务还没真正开跑就被取消时，仍要把测试计划的最近状态收敛到 CANCELED，
             // 否则会一直停留在 PENDING，让用户以为还在排队。
             writeBackTestPlanCanceledIfNeeded(executionTask, executionTask.getCurrentRun(), "执行已取消");
@@ -428,10 +436,18 @@ public class ExecutionDispatchService {
     }
 
     /**
-     * 技术设计任务可能在创建运行前就进入失败或取消终态，此时也必须完成公众积分结算。
+     * 执行任务在创建运行前进入失败或取消终态时，按结算记录的计费模式完成积分结算：
+     * FIXED 走技术设计结算，TOKEN_BASED 走智能体 token 结算。无结算记录则跳过。
      */
-    private void settleTechnicalDesignIfNeeded(ExecutionTaskEntity executionTask) {
-        if (ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equalsIgnoreCase(executionTask.getScenarioCode())) {
+    public void settleCreditIfNeeded(ExecutionTaskEntity executionTask) {
+        ExecutionCreditSettlementEntity settlement = executionCreditSettlementRepository
+                .findByExecutionTaskIdForUpdate(executionTask.getId()).orElse(null);
+        if (settlement == null) {
+            return;
+        }
+        if (AgentCreditService.CHARGE_MODE_TOKEN_BASED.equals(settlement.getChargeMode())) {
+            agentCreditService.settleAgentExecution(executionTask.getId());
+        } else {
             technicalDesignCreditSettlementService.settleTerminalTask(executionTask.getId());
         }
     }
@@ -1036,9 +1052,7 @@ public class ExecutionDispatchService {
                                                       ExecutionRunEntity executionRun,
                                                       String resultStatus,
                                                       boolean hasCleanupWorkspace) {
-        if (ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equalsIgnoreCase(executionTask.getScenarioCode())) {
-            technicalDesignCreditSettlementService.settleTerminalTask(executionTask.getId());
-        }
+        settleCreditIfNeeded(executionTask);
         if (executionTask.getCreatedByUser() == null) {
             return;
         }

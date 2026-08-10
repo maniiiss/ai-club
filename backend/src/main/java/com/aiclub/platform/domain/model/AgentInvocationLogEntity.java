@@ -187,6 +187,12 @@ public class AgentInvocationLogEntity {
     private Integer costCredits;
 
     /**
+     * 结算状态：SETTLED 表示已回填 cost_credits 并参与终态结算，用于幂等防重复结算。
+     */
+    @Column(name = "settle_status", length = 20)
+    private String settleStatus;
+
+    /**
      * 关联 ID（如 Assistant responseId / MR fingerprint 等）。
      */
     @Column(name = "correlation_id", length = 120)
@@ -291,6 +297,9 @@ public class AgentInvocationLogEntity {
 
     public Integer getCostCredits() { return costCredits; }
     public void setCostCredits(Integer costCredits) { this.costCredits = costCredits; }
+
+    public String getSettleStatus() { return settleStatus; }
+    public void setSettleStatus(String settleStatus) { this.settleStatus = settleStatus; }
 
     public String getCorrelationId() { return correlationId; }
     public void setCorrelationId(String correlationId) { this.correlationId = correlationId; }

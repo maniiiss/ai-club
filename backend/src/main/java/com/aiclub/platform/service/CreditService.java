@@ -189,35 +189,50 @@ public class CreditService {
 
     @Transactional
     public CreditConsumptionReservation consume(Long userId, CreditFeatureConfigEntity featureConfig, String businessKey, String reason) {
+        return consume(userId, featureConfig, featureConfig.getCostAmount(), businessKey, reason);
+    }
+
+    /**
+     * 按指定金额消费积分（TOKEN_BASED 按量计费用），复用 CONSUME 幂等索引与行锁。
+     * amount 必须大于 0；幂等命中已有 CONSUME 时返回 chargedNow=false 不重复扣减。
+     */
+    @Transactional
+    public CreditConsumptionReservation consume(Long userId, CreditFeatureConfigEntity featureConfig, int amount, String businessKey, String reason) {
+        if (amount <= 0) {
+            throw new IllegalArgumentException("消费积分必须大于 0");
+        }
         UserCreditTransactionEntity existing = findExistingConsumption(userId, featureConfig.getFeatureCode(), businessKey);
         if (existing != null) {
             return new CreditConsumptionReservation(existing, false);
         }
         UserCreditAccountEntity account = ensureAccountForUpdate(userId);
-        int costAmount = featureConfig.getCostAmount();
-        if (account.getBalance() < costAmount) {
+        if (account.getBalance() < amount) {
             throw new IllegalArgumentException("积分余额不足，请联系管理员充值");
         }
-        UserCreditTransactionEntity transaction = applyDelta(account, TYPE_CONSUME, -costAmount, featureConfig.getFeatureCode(), businessKey, reason, userId, null);
+        UserCreditTransactionEntity transaction = applyDelta(account, TYPE_CONSUME, -amount, featureConfig.getFeatureCode(), businessKey, reason, userId, null);
         return new CreditConsumptionReservation(transaction, true);
     }
 
     @Transactional
     public void refundConsumption(UserCreditTransactionEntity consumeTransaction, String reason) {
+        refundConsumption(consumeTransaction, Math.abs(consumeTransaction.getAmount()), reason);
+    }
+
+    /**
+     * 按指定金额退款（TOKEN_BASED 终态结算退差用），写 REFUND 流水并关联原消费。
+     * amount 必须大于 0；非 CONSUME 流水或 amount 非正时跳过，保证结算健壮。
+     */
+    @Transactional
+    public void refundConsumption(UserCreditTransactionEntity consumeTransaction, int amount, String reason) {
         if (consumeTransaction == null || !TYPE_CONSUME.equals(consumeTransaction.getTransactionType())) {
             return;
         }
+        if (amount <= 0) {
+            return;
+        }
         UserCreditAccountEntity account = ensureAccountForUpdate(consumeTransaction.getUser().getId());
-        applyDelta(
-                account,
-                TYPE_REFUND,
-                Math.abs(consumeTransaction.getAmount()),
-                consumeTransaction.getFeatureCode(),
-                consumeTransaction.getBusinessKey(),
-                reason,
-                consumeTransaction.getUser().getId(),
-                consumeTransaction
-        );
+        applyDelta(account, TYPE_REFUND, amount, consumeTransaction.getFeatureCode(),
+                consumeTransaction.getBusinessKey(), reason, consumeTransaction.getUser().getId(), consumeTransaction);
     }
 
     public CreditFeatureConfigEntity requireEnabledFeatureConfig(String featureCode) {
@@ -228,6 +243,15 @@ public class CreditService {
             throw new IllegalArgumentException("积分功能配置已停用: " + normalized);
         }
         return entity;
+    }
+
+    /**
+     * 查询功能配置（不校验启用状态），供终态结算补扣等不受熔断影响的场景使用。
+     */
+    public CreditFeatureConfigEntity getFeatureConfig(String featureCode) {
+        String normalized = normalizeFeatureCode(featureCode);
+        return creditFeatureConfigRepository.findByFeatureCodeIgnoreCase(normalized)
+                .orElseThrow(() -> new NoSuchElementException("积分功能配置不存在: " + normalized));
     }
 
     private UserCreditTransactionEntity findExistingConsumption(Long userId, String featureCode, String businessKey) {

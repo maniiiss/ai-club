@@ -67,6 +67,7 @@
 - [平台模型调用量统计设计](platform-model-usage-stats-technical-design-v1.md) - 模型为中心的平台级看板，补齐流式对话与 code-processing 覆盖盲区
 - [模型调用量缓存命中统计设计](model-usage-cache-hit-stats-technical-design-v1.md) - 缓存命中率与命中 token 数的采集、聚合与看板展示
 - [智能体调用量统计](agent-invocation-tracking-technical-design-v1.md) - 智能体调用统计
+- [积分与 Token 关联及智能体计费设计](credit-token-agent-billing-technical-design-v1.md) - 模型 token 定价、智能体按 token 计费（预扣+终态结算）、激活 cost_credits 建立 token 与积分关联
 
 ### 工程规范
 

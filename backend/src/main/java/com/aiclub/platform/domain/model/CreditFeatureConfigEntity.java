@@ -29,6 +29,12 @@ public class CreditFeatureConfigEntity {
     @Column(name = "cost_amount", nullable = false)
     private int costAmount = 1;
 
+    /**
+     * 计费模式：FIXED 固定积分 / TOKEN_BASED 按 token 计费。TOKEN_BASED 模式下 cost_amount 不适用。
+     */
+    @Column(name = "charge_mode", nullable = false, length = 20)
+    private String chargeMode = "FIXED";
+
     @Column(nullable = false)
     private boolean enabled = true;
 
@@ -68,6 +74,14 @@ public class CreditFeatureConfigEntity {
 
     public void setCostAmount(int costAmount) {
         this.costAmount = costAmount;
+    }
+
+    public String getChargeMode() {
+        return chargeMode;
+    }
+
+    public void setChargeMode(String chargeMode) {
+        this.chargeMode = chargeMode;
     }
 
     public boolean isEnabled() {

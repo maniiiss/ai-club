@@ -39,6 +39,36 @@ public class ExecutionCreditSettlementEntity {
     @Column(nullable = false, length = 20)
     private String status = "CHARGED";
 
+    /**
+     * 计费模式：FIXED 固定积分（技术设计）/ TOKEN_BASED 按 token 计费（智能体）。
+     */
+    @Column(name = "charge_mode", nullable = false, length = 20)
+    private String chargeMode = "FIXED";
+
+    /**
+     * TOKEN_BASED 模式计费模型配置 ID。
+     */
+    @Column(name = "model_config_id")
+    private Long modelConfigId;
+
+    /**
+     * 预扣积分数（TOKEN_BASED 专用）。
+     */
+    @Column(name = "prepaid_credits")
+    private Integer prepaidCredits;
+
+    /**
+     * 实际应扣积分数，终态填（TOKEN_BASED 专用）。
+     */
+    @Column(name = "actual_credits")
+    private Integer actualCredits;
+
+    /**
+     * 结算调整流水 ID（退差 REFUND / 补扣 CONSUME）。
+     */
+    @Column(name = "adjust_transaction_id")
+    private Long adjustTransactionId;
+
     @Column(name = "created_at", nullable = false)
     private LocalDateTime createdAt;
 
@@ -67,6 +97,16 @@ public class ExecutionCreditSettlementEntity {
     public void setFeatureCode(String featureCode) { this.featureCode = featureCode; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
+    public String getChargeMode() { return chargeMode; }
+    public void setChargeMode(String chargeMode) { this.chargeMode = chargeMode; }
+    public Long getModelConfigId() { return modelConfigId; }
+    public void setModelConfigId(Long modelConfigId) { this.modelConfigId = modelConfigId; }
+    public Integer getPrepaidCredits() { return prepaidCredits; }
+    public void setPrepaidCredits(Integer prepaidCredits) { this.prepaidCredits = prepaidCredits; }
+    public Integer getActualCredits() { return actualCredits; }
+    public void setActualCredits(Integer actualCredits) { this.actualCredits = actualCredits; }
+    public Long getAdjustTransactionId() { return adjustTransactionId; }
+    public void setAdjustTransactionId(Long adjustTransactionId) { this.adjustTransactionId = adjustTransactionId; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public LocalDateTime getUpdatedAt() { return updatedAt; }
 }
