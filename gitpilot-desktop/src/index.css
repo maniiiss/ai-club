@@ -1,0 +1,70 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import './styles/tokens.css';
+@import './styles/base.css';
+@import './styles/motion.css';
+
+/* 入口文件只保留文档级基础值；工作台和业务功能样式必须归属局部 CSS Module。 */
+
+html,
+body,
+#root {
+	height: 100%;
+}
+
+body {
+	margin: 0;
+	background: var(--gp-background);
+	color: var(--gp-text);
+	font-family: var(--font-sans);
+	font-size: var(--text-base);
+	line-height: var(--leading-normal);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+/* 全局滚动条只提供中性基础值；具体面板的宽度和颜色由各自模块声明。 */
+*::-webkit-scrollbar {
+	width: 8px;
+	height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+	background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+	border-radius: var(--radius-sm);
+	background: var(--gp-border-strong);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+	background: var(--gp-text-muted);
+}
+
+::selection {
+	background: var(--gp-selection);
+	color: var(--gp-text);
+}
+
+code,
+pre,
+.mono {
+	font-family: var(--font-mono);
+}
+
+button,
+input,
+textarea,
+select {
+	font: inherit;
+}
+
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+[role='button']:focus-visible,
+[role='menuitem']:focus-visible {
+	outline: 2px solid var(--ring);
+	outline-offset: 2px;
+}

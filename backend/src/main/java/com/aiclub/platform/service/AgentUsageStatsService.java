@@ -87,7 +87,9 @@ public class AgentUsageStatsService {
                 "  COALESCE(AVG(duration_ms), 0) AS avg_duration, " +
                 "  COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms), 0) AS p95_duration, " +
                 "  COUNT(DISTINCT user_id) FILTER (WHERE user_id IS NOT NULL) AS distinct_users, " +
-                "  SUM(CASE WHEN agent_type = 'UNKNOWN_MODEL_CALL' THEN 1 ELSE 0 END) AS unknown_count " +
+                "  SUM(CASE WHEN agent_type = 'UNKNOWN_MODEL_CALL' THEN 1 ELSE 0 END) AS unknown_count, " +
+                "  COALESCE(SUM(cached_tokens), 0) AS cached_tokens, " +
+                "  CASE WHEN COALESCE(SUM(prompt_tokens), 0) = 0 THEN NULL ELSE SUM(cached_tokens) * 1.0 / SUM(prompt_tokens) END AS cache_hit_rate " +
                 "FROM agent_invocation_log " + where.sql();
         Query q = entityManager.createNativeQuery(sql);
         where.applyParams(q);
@@ -104,6 +106,8 @@ public class AgentUsageStatsService {
         long p95Duration = toLong(row[8]);
         long distinctUsers = toLong(row[9]);
         long unknownCount = toLong(row[10]);
+        long cachedTokens = toLong(row[11]);
+        Double cacheHitRate = row[12] == null ? null : ((Number) row[12]).doubleValue();
         double successRate = total == 0 ? 0.0 : (double) success / total;
         double tokenCoverage = total == 0 ? 0.0 : (double) tokenCount / total;
 
@@ -114,7 +118,8 @@ public class AgentUsageStatsService {
                 total, success, failure, round(successRate),
                 totalPrompt, totalCompletion, totalTotal, round(tokenCoverage),
                 round(avgDuration), p95Duration, distinctUsers,
-                unknownCount, unknownSources);
+                unknownCount, unknownSources,
+                cachedTokens, cacheHitRate);
     }
 
     @SuppressWarnings("unchecked")
@@ -149,7 +154,9 @@ public class AgentUsageStatsService {
                 "  SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) AS success, " +
                 "  SUM(CASE WHEN status <> 'SUCCESS' THEN 1 ELSE 0 END) AS failure, " +
                 "  COALESCE(SUM(total_tokens), 0) AS total_tokens, " +
-                "  COALESCE(AVG(duration_ms), 0) AS avg_duration " +
+                "  COALESCE(AVG(duration_ms), 0) AS avg_duration, " +
+                "  COALESCE(SUM(cached_tokens), 0) AS cached_tokens, " +
+                "  CASE WHEN COALESCE(SUM(prompt_tokens), 0) = 0 THEN NULL ELSE SUM(cached_tokens) * 1.0 / SUM(prompt_tokens) END AS cache_hit_rate " +
                 "FROM agent_invocation_log " + where.sql() +
                 " GROUP BY bucket ORDER BY bucket ASC";
         Query q = entityManager.createNativeQuery(sql);
@@ -158,7 +165,7 @@ public class AgentUsageStatsService {
         List<AgentUsageTrendPoint> result = new ArrayList<>();
         for (Object[] r : rows) {
             String bucket = toTime(r[0]);
-            result.add(new AgentUsageTrendPoint(bucket, toLong(r[1]), toLong(r[2]), toLong(r[3]), toLong(r[4]), round(toDouble(r[5]))));
+            result.add(new AgentUsageTrendPoint(bucket, toLong(r[1]), toLong(r[2]), toLong(r[3]), toLong(r[4]), round(toDouble(r[5])), toLong(r[6]), r[7] == null ? null : ((Number) r[7]).doubleValue()));
         }
         return result;
     }
@@ -175,7 +182,9 @@ public class AgentUsageStatsService {
                 "  SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) AS success, " +
                 "  SUM(CASE WHEN status <> 'SUCCESS' THEN 1 ELSE 0 END) AS failure, " +
                 "  COALESCE(AVG(duration_ms), 0) AS avg_duration, " +
-                "  COALESCE(SUM(total_tokens), 0) AS total_tokens " +
+                "  COALESCE(SUM(total_tokens), 0) AS total_tokens, " +
+                "  COALESCE(SUM(cached_tokens), 0) AS cached_tokens, " +
+                "  CASE WHEN COALESCE(SUM(prompt_tokens), 0) = 0 THEN NULL ELSE SUM(cached_tokens) * 1.0 / SUM(prompt_tokens) END AS cache_hit_rate " +
                 "FROM agent_invocation_log " + where.sql() +
                 " GROUP BY agent_type ORDER BY total DESC";
         Query q = entityManager.createNativeQuery(sql);
@@ -191,7 +200,7 @@ public class AgentUsageStatsService {
             double avgDuration = toDouble(r[4]);
             long totalTokens = toLong(r[5]);
             double successRate = total == 0 ? 0.0 : (double) success / total;
-            result.add(new AgentUsageAgentBreakdown(typeCode, label, total, success, failure, round(successRate), round(avgDuration), totalTokens));
+            result.add(new AgentUsageAgentBreakdown(typeCode, label, total, success, failure, round(successRate), round(avgDuration), totalTokens, toLong(r[6]), r[7] == null ? null : ((Number) r[7]).doubleValue()));
         }
         return result;
     }
@@ -210,7 +219,9 @@ public class AgentUsageStatsService {
                 "  COUNT(*) AS total, " +
                 "  SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) AS success, " +
                 "  COALESCE(SUM(total_tokens), 0) AS total_tokens, " +
-                "  MAX(created_at) AS last_at " +
+                "  MAX(created_at) AS last_at, " +
+                "  COALESCE(SUM(cached_tokens), 0) AS cached_tokens, " +
+                "  CASE WHEN COALESCE(SUM(prompt_tokens), 0) = 0 THEN NULL ELSE SUM(cached_tokens) * 1.0 / SUM(prompt_tokens) END AS cache_hit_rate " +
                 "FROM agent_invocation_log " + where.sql() +
                 " GROUP BY user_id ORDER BY total DESC LIMIT " + limit;
         Query q = entityManager.createNativeQuery(sql);
@@ -222,7 +233,7 @@ public class AgentUsageStatsService {
             String username = (String) r[1];
             String nickname = (String) r[2];
             result.add(new AgentUsageUserBreakdown(userId, username, nickname,
-                    toLong(r[3]), toLong(r[4]), toLong(r[5]), toTime(r[6])));
+                    toLong(r[3]), toLong(r[4]), toLong(r[5]), toTime(r[6]), toLong(r[7]), r[8] == null ? null : ((Number) r[8]).doubleValue()));
         }
         return result;
     }
@@ -240,7 +251,9 @@ public class AgentUsageStatsService {
                 "  COUNT(*) AS total, " +
                 "  COALESCE(SUM(total_tokens), 0) AS total_tokens, " +
                 "  COALESCE(AVG(duration_ms), 0) AS avg_duration, " +
-                "  COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms), 0) AS p95 " +
+                "  COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms), 0) AS p95, " +
+                "  COALESCE(SUM(cached_tokens), 0) AS cached_tokens, " +
+                "  CASE WHEN COALESCE(SUM(prompt_tokens), 0) = 0 THEN NULL ELSE SUM(cached_tokens) * 1.0 / SUM(prompt_tokens) END AS cache_hit_rate " +
                 "FROM agent_invocation_log " + where.sql() +
                 " GROUP BY model_config_id ORDER BY total DESC";
         Query q = entityManager.createNativeQuery(sql);
@@ -250,7 +263,7 @@ public class AgentUsageStatsService {
         for (Object[] r : rows) {
             Long modelConfigId = r[0] == null ? null : ((Number) r[0]).longValue();
             result.add(new AgentUsageModelBreakdown(modelConfigId, (String) r[1], (String) r[2],
-                    toLong(r[3]), toLong(r[4]), round(toDouble(r[5])), toLong(r[6])));
+                    toLong(r[3]), toLong(r[4]), round(toDouble(r[5])), toLong(r[6]), toLong(r[7]), r[8] == null ? null : ((Number) r[8]).doubleValue()));
         }
         return result;
     }
@@ -272,7 +285,7 @@ public class AgentUsageStatsService {
 
         String dataSql = "SELECT id, created_at, user_id, username_snapshot, nickname_snapshot, " +
                 "agent_type, action, model_name, provider, status, trigger_source, duration_ms, " +
-                "prompt_tokens, completion_tokens, total_tokens, input_chars, output_chars, " +
+                "prompt_tokens, completion_tokens, total_tokens, cached_tokens, input_chars, output_chars, " +
                 "error_code, error_message " +
                 "FROM agent_invocation_log " + where.sql() +
                 " ORDER BY created_at DESC LIMIT " + size + " OFFSET " + offset;
@@ -301,8 +314,9 @@ public class AgentUsageStatsService {
                     r[14] == null ? null : ((Number) r[14]).intValue(),
                     r[15] == null ? null : ((Number) r[15]).intValue(),
                     r[16] == null ? null : ((Number) r[16]).intValue(),
-                    (String) r[17],
-                    (String) r[18]
+                    r[17] == null ? null : ((Number) r[17]).intValue(),
+                    (String) r[18],
+                    (String) r[19]
             ));
         }
         int totalPages = size == 0 ? 0 : (int) ((total + size - 1) / size);

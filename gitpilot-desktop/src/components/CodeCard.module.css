@@ -1,0 +1,30 @@
+.card { min-width: 0; margin: 8px 0; overflow: hidden; border: 1px solid var(--gp-border); border-radius: 10px; background: var(--gp-surface); box-shadow: var(--shadow-md); }
+.cardHeader { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid var(--gp-border); background: var(--muted); padding: 8px 12px; color: var(--gp-text-muted); font-size: 11px; }
+.mono { font-family: var(--font-mono); }
+.diff, .code { max-width: 100%; margin: 0; overflow: auto; background: var(--gp-code-surface); padding: 12px; color: var(--gp-text); font: 11px/1.55 var(--font-mono); white-space: pre; user-select: text; -webkit-user-select: text; }
+.diffRow { padding: 0 4px; }
+.diffLine { color: var(--secondary-foreground); }
+.diffAdd { background: var(--gp-code-diff-add); color: var(--gp-status-success); }
+.diffDel { background: var(--gp-code-diff-del); color: var(--gp-status-error); }
+.secondaryCode { color: var(--secondary-foreground); }
+.error { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0; border: 1px solid color-mix(in srgb, var(--gp-danger) 40%, transparent); border-radius: 10px; background: var(--gp-code-diff-del); padding: 12px; color: var(--gp-status-error); font-size: 13px; box-shadow: var(--shadow-md); }
+.error svg { flex: 0 0 auto; margin-top: 2px; }
+.markdown { min-width: 0; max-width: 100%; overflow-wrap: anywhere; color: var(--gp-text); font-size: 14px; line-height: 1.7; user-select: text; -webkit-user-select: text; }
+.markdown > :first-child { margin-top: 0; }
+.markdown > :last-child { margin-bottom: 0; }
+.markdown :global(p), .markdown :global(ul), .markdown :global(ol), .markdown :global(blockquote), .markdown :global(pre), .markdown :global(table) { margin-top: .8em; margin-bottom: .8em; }
+.markdown :global(h1), .markdown :global(h2), .markdown :global(h3), .markdown :global(h4) { margin-top: 1.5em; margin-bottom: .55em; color: var(--gp-text); font-weight: 600; line-height: 1.35; }
+.markdown :global(ul), .markdown :global(ol) { padding-left: 1.35em; }
+.markdown :global(blockquote) { border-left: 2px solid var(--gp-border-strong); padding-left: .9em; color: var(--gp-text-secondary); }
+.markdown :global(strong) { color: var(--gp-text); }
+.markdown :global(pre), .markdown :global(table) { display: block; max-width: 100%; overflow-x: auto; }
+.markdown :global(pre) { border: 1px solid var(--gp-border); border-left: 2px solid var(--gp-border-strong); border-radius: var(--radius-md); background: var(--gp-code-surface); padding: 12px 14px; color: var(--gp-code-text); font-size: .9em; }
+.markdown :global(pre code) { display: block; white-space: pre; }
+.markdown :global(:not(pre) > code) { border: 1px solid var(--gp-border); border-radius: 3px; background: var(--gp-surface-raised); padding: .08em .34em; color: var(--gp-action-hover); font-size: .9em; }
+.markdown :global(table) { width: fit-content; min-width: 0; border: 1px solid var(--gp-border); border-spacing: 0; border-radius: var(--radius-md); background: var(--gp-code-surface); color: var(--gp-text-secondary); }
+.markdown :global(thead) { background: var(--gp-surface-raised); color: var(--gp-text); }
+.markdown :global(th) { padding: 9px 12px; text-align: left; white-space: nowrap; }
+.markdown :global(td) { border-top: 1px solid var(--gp-border); padding: 9px 12px; vertical-align: top; }
+.markdown :global(th + th), .markdown :global(td + td) { border-left: 1px solid var(--gp-border); }
+.markdown :global(tbody tr:hover) { background: var(--gp-selection); }
+.markdown :global(code), .markdown :global(td), .markdown :global(th) { overflow-wrap: anywhere; word-break: break-word; }

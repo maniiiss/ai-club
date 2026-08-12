@@ -5,7 +5,7 @@
  */
 import { useState, useRef, useEffect } from 'react'
 import { NavLink, useLocation, useNavigate } from 'react-router-dom'
-import { Menu, X, LogOut, User, ChevronDown, Coins, PlayCircle, Bell, MessageSquareText } from 'lucide-react'
+import { Menu, X, LogOut, User, ChevronDown, Coins, PlayCircle, Bell, MessageSquareText, Terminal } from 'lucide-react'
 import { useAuthStore } from '@/src/stores/auth'
 import { useNotificationStore } from '@/src/stores/notifications'
 import { NotificationDrawer } from '@/src/components/notifications/NotificationDrawer'
@@ -24,7 +24,7 @@ interface NavItem {
 const navItems: NavItem[] = [
   { to: '/dashboard', label: '工作台' },
   { to: '/projects', label: '项目' },
-  { to: '/chat', label: 'Hearths · 围炉' },
+  { to: '/chat', label: '聊天室' },
   { to: '/settings/profile', label: '设置' },
 ]
 
@@ -212,6 +212,16 @@ export const TopNav = () => {
               <button
                 onClick={() => {
                   setMenuOpen(false)
+                  navigate('/gitpilot-cli')
+                }}
+                className="flex w-full items-center gap-2.5 px-3 py-2 text-[13px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] hover:text-[var(--color-text-primary)] transition-colors"
+              >
+                <Terminal className="h-4 w-4" strokeWidth={1.75} />
+                GitPilot CLI
+              </button>
+              <button
+                onClick={() => {
+                  setMenuOpen(false)
                   resetAllGuides().then(() => {
                     window.location.href = '/dashboard'
                   })
@@ -315,6 +325,16 @@ export const TopNav = () => {
             >
               <MessageSquareText className="h-4 w-4" />
               我的反馈
+            </button>
+            <button
+              onClick={() => {
+                setMobileOpen(false)
+                navigate('/gitpilot-cli')
+              }}
+              className="flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-[14px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)] transition-colors"
+            >
+              <Terminal className="h-4 w-4" />
+              GitPilot CLI
             </button>
             <button
               onClick={() => {

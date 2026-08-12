@@ -156,6 +156,13 @@ public class AgentInvocationLogEntity {
     private Integer totalTokens;
 
     /**
+     * 缓存命中读取的输入 token 数（OpenAI cached_tokens / Anthropic cache_read_input_tokens 归一化）。
+     * null 表示上游未返回或 provider 不支持缓存。
+     */
+    @Column(name = "cached_tokens")
+    private Integer cachedTokens;
+
+    /**
      * 输入字符数（不依赖 usage 的降级指标）。
      */
     @Column(name = "input_chars")
@@ -178,6 +185,12 @@ public class AgentInvocationLogEntity {
      */
     @Column(name = "cost_credits")
     private Integer costCredits;
+
+    /**
+     * 结算状态：SETTLED 表示已回填 cost_credits 并参与终态结算，用于幂等防重复结算。
+     */
+    @Column(name = "settle_status", length = 20)
+    private String settleStatus;
 
     /**
      * 关联 ID（如 Assistant responseId / MR fingerprint 等）。
@@ -270,6 +283,9 @@ public class AgentInvocationLogEntity {
     public Integer getTotalTokens() { return totalTokens; }
     public void setTotalTokens(Integer totalTokens) { this.totalTokens = totalTokens; }
 
+    public Integer getCachedTokens() { return cachedTokens; }
+    public void setCachedTokens(Integer cachedTokens) { this.cachedTokens = cachedTokens; }
+
     public Integer getInputChars() { return inputChars; }
     public void setInputChars(Integer inputChars) { this.inputChars = inputChars; }
 
@@ -281,6 +297,9 @@ public class AgentInvocationLogEntity {
 
     public Integer getCostCredits() { return costCredits; }
     public void setCostCredits(Integer costCredits) { this.costCredits = costCredits; }
+
+    public String getSettleStatus() { return settleStatus; }
+    public void setSettleStatus(String settleStatus) { this.settleStatus = settleStatus; }
 
     public String getCorrelationId() { return correlationId; }
     public void setCorrelationId(String correlationId) { this.correlationId = correlationId; }

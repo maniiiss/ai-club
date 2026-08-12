@@ -271,6 +271,36 @@ public class AuthService {
         return loginSession.toAuthContext(rawToken);
     }
 
+    /**
+     * 为 CLI Token 和 model session 复用同一套最新用户权限快照。
+     * 业务意图：短期设备凭据不复用浏览器登录 Token 格式，但权限变更仍应立即生效。
+     */
+    public AuthContext authenticateUserToken(Long userId, String token) {
+        UserEntity user = userRepository.findWithDetailsById(userId)
+                .orElseThrow(() -> new UnauthorizedException("User not found"));
+        if (!user.isEnabled()) {
+            throw new UnauthorizedException("Current account is disabled");
+        }
+        return new AuthContext(
+                user.getId(),
+                user.getUsername(),
+                user.getNickname(),
+                collectRoleCodes(user),
+                collectPermissionCodes(user),
+                token
+        );
+    }
+
+    /** 读取短期设备凭据对应的最新用户资料，避免 CLI 保存浏览器会话快照。 */
+    public CurrentUserInfo currentUserById(Long userId) {
+        UserEntity user = userRepository.findWithDetailsById(userId)
+                .orElseThrow(() -> new UnauthorizedException("User not found"));
+        if (!user.isEnabled()) {
+            throw new UnauthorizedException("Current account is disabled");
+        }
+        return toCurrentUserInfo(user);
+    }
+
     private LoginSession rebuildSession(String rawToken, TokenService.TokenClaims claims) {
         UserEntity user = userRepository.findWithDetailsById(claims.userId())
                 .orElseThrow(() -> new UnauthorizedException("User not found"));

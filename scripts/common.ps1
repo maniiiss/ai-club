@@ -757,6 +757,8 @@ function Start-LocalApplicationServices(
     Set-Item -Path 'Env:PI_RUNTIME_THINKING_LEVEL' -Value (Get-EnvOrDefault -Name 'PLATFORM_PI_RUNTIME_THINKING_LEVEL' -DefaultValue 'medium')
     Set-Item -Path 'Env:VITE_API_PORT' -Value "$($PortConfiguration.Backend)"
     Set-Item -Path 'Env:VITE_PUBLIC_FRONTEND_PORT' -Value "$($PortConfiguration.FrontendPublic)"
+    # 本地源码模式的 CLI 设备授权页面由公众端提供，必须与实际公众端端口一致。
+    Set-Item -Path 'Env:PLATFORM_GITPILOT_CLI_PUBLIC_BASE_URL' -Value (Get-EnvOrDefault -Name 'PLATFORM_GITPILOT_CLI_PUBLIC_BASE_URL' -DefaultValue "http://localhost:$($PortConfiguration.FrontendPublic)")
 
     $mvnCmd = (Get-Command mvn).Source
     $npmCmd = Get-NpmCommandPath

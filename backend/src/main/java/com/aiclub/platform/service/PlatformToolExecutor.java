@@ -157,7 +157,7 @@ public class PlatformToolExecutor {
                         || containsAny(project.getStatus(), keyword))
                 .map(this::projectCandidate)
                 .toList();
-        return collectionResult(request.toolCode(), "搜索项目", "个相关项目", matches, 5,
+        return collectionResult(request.toolCode(), "搜索项目", "个相关项目", matches, 25,
                 metadata("keyword", defaultString(keyword)));
     }
 
@@ -251,7 +251,7 @@ public class PlatformToolExecutor {
                 .filter(user -> isBlank(keyword) || containsAny(user.getUsername(), keyword) || containsAny(user.getNickname(), keyword))
                 .map(user -> userCandidate(project.getId(), user))
                 .toList();
-        return collectionResult(request.toolCode(), "解析项目成员", "个成员候选", matches, 5,
+        return collectionResult(request.toolCode(), "解析项目成员", "个成员候选", matches, 25,
                 metadata("projectId", project.getId(), "keyword", defaultString(keyword)));
     }
 
@@ -295,7 +295,7 @@ public class PlatformToolExecutor {
                 .map(task -> workItemCandidate(task, true))
                 .toList();
         String scopeLabel = iterationId != null ? "迭代范围" : projectId != null ? "项目范围" : "全局可见范围";
-        return collectionResult(request.toolCode(), "搜索工作项", "个相关工作项（" + scopeLabel + "）", candidates, 5, resultMetadata);
+        return collectionResult(request.toolCode(), "搜索工作项", "个相关工作项（" + scopeLabel + "）", candidates, 25, resultMetadata);
     }
 
     private PlatformToolResult getWorkItemDetail(PlatformToolRequest request) {
@@ -433,7 +433,7 @@ public class PlatformToolExecutor {
                         || (executionTask.getWorkItem() != null && containsAny(executionTask.getWorkItem().getName(), keyword)))
                 .map(this::executionTaskCandidate)
                 .toList();
-        return collectionResult(request.toolCode(), "搜索执行任务", "个执行任务", matches, 5,
+        return collectionResult(request.toolCode(), "搜索执行任务", "个执行任务", matches, 25,
                 metadata("keyword", defaultString(keyword), "status", defaultString(status), "scenarioCode", defaultString(scenarioCode), "projectId", projectId));
     }
 
@@ -459,7 +459,7 @@ public class PlatformToolExecutor {
                 .filter(testPlan -> isBlank(keyword) || containsAny(testPlan.getName(), keyword) || containsAny(testPlan.getDescription(), keyword))
                 .map(this::testPlanCandidate)
                 .toList();
-        return collectionResult(request.toolCode(), "搜索测试计划", "个测试计划", matches, 5,
+        return collectionResult(request.toolCode(), "搜索测试计划", "个测试计划", matches, 25,
                 metadata("keyword", defaultString(keyword), "projectId", projectId, "iterationId", iterationId, "status", defaultString(status)));
     }
 

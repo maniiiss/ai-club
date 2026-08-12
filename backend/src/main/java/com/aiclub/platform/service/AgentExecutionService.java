@@ -214,7 +214,7 @@ public class AgentExecutionService {
         return agentInvocationRecorder.trackWithUsage(context, sink -> {
             ModelConfigService.ModelInvocation invocation = modelConfigService.invokeVisionPromptWithUsage(
                     resolved, systemPrompt, textPrompt, images, 1500);
-            sink.setUsage(invocation.promptTokens(), invocation.completionTokens(), invocation.totalTokens());
+            sink.setUsage(invocation.promptTokens(), invocation.completionTokens(), invocation.totalTokens(), invocation.cachedTokens());
             sink.setOutputChars(invocation.text() == null ? 0 : invocation.text().length());
             return invocation.text();
         });
@@ -578,7 +578,21 @@ public class AgentExecutionService {
         String userPrompt = hasText(agent.getUserPromptTemplate())
                 ? renderTemplate(agent.getUserPromptTemplate(), buildTemplateVariables(input, systemPrompt, variables))
                 : defaultString(input);
-        return modelConfigService.invokePrompt(modelConfigId, systemPrompt, userPrompt);
+        Long executionTaskId = resolveExecutionTaskId(variables);
+        AgentInvocationContext context = AgentInvocationContext.builder(AgentType.USER_DEFINED_AGENT)
+                .action("RUN")
+                .agentId(agent.getId())
+                .agentCode(trimToNull(agent.getBuiltinCode()))
+                .modelConfig(agent.getAiModelConfig())
+                .taskId(executionTaskId)
+                .inputChars((systemPrompt == null ? 0 : systemPrompt.length()) + (userPrompt == null ? 0 : userPrompt.length()))
+                .build();
+        return agentInvocationRecorder.trackWithUsage(context, sink -> {
+            ModelConfigService.ModelInvocation inv = modelConfigService.invokePromptWithUsage(modelConfigId, systemPrompt, userPrompt);
+            sink.setUsage(inv.promptTokens(), inv.completionTokens(), inv.totalTokens(), inv.cachedTokens());
+            sink.setOutputChars(inv.text() == null ? 0 : inv.text().length());
+            return inv.text();
+        });
     }
 
     private String executeHttpApiAgent(AgentEntity agent, String input, Map<String, String> variables) {
@@ -1169,10 +1183,28 @@ public class AgentExecutionService {
         return agentInvocationRecorder.trackWithUsage(ctx, sink -> {
             ModelConfigService.ModelInvocation inv =
                     modelConfigService.invokePromptWithUsage(modelConfigId, systemPrompt, userPrompt);
-            sink.setUsage(inv.promptTokens(), inv.completionTokens(), inv.totalTokens());
+            sink.setUsage(inv.promptTokens(), inv.completionTokens(), inv.totalTokens(), inv.cachedTokens());
             sink.setOutputChars(inv.text() == null ? 0 : inv.text().length());
             return inv.text();
         });
+    }
+
+    /**
+     * 从执行编排变量解析 execution_task_id，用于把智能体调用的 token 用量关联到执行任务，供终态结算聚合。
+     */
+    private Long resolveExecutionTaskId(Map<String, String> variables) {
+        if (variables == null) {
+            return null;
+        }
+        String value = variables.get("execution_task_id");
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.valueOf(value.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private Long requireAiModelConfigId(AgentEntity agent) {

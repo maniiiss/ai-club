@@ -1,6 +1,7 @@
 package com.aiclub.platform.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 public record AiModelConfigRequest(
@@ -29,6 +30,16 @@ public record AiModelConfigRequest(
         String apiKey,
         @Size(max = 500, message = "描述长度不能超过500")
         String description,
-        Boolean enabled
+        Boolean enabled,
+        /**
+         * 模型上下文窗口长度（token），用于 GitPilot CLI 展示与自动压缩阈值判断；为空时 CLI 回退默认。
+         */
+        @Positive(message = "上下文长度必须为正数")
+        Integer contextLength,
+        /**
+         * 模型最大输出 token 数；为空时 CLI 回退默认。
+         */
+        @Positive(message = "最大输出必须为正数")
+        Integer maxOutputTokens
 ) {
 }

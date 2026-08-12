@@ -11,6 +11,8 @@ export interface AiModelConfigPayload {
   apiKey: string
   description: string
   enabled: boolean
+  contextLength?: number
+  maxOutputTokens?: number
 }
 
 export interface AiModelConfigQuery {

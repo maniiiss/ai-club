@@ -1,0 +1,16 @@
+.card { min-width: 0; margin: 8px 0; overflow: hidden; border: 1px solid var(--gp-border); border-radius: var(--radius-lg); background: var(--gp-surface); box-shadow: var(--shadow-md); }
+.header { display: flex; align-items: center; gap: 6px; padding: 8px 12px; font-size: var(--text-xs); color: var(--gp-text-muted); border-bottom: 1px solid var(--gp-border); background: var(--muted); }
+.list { display: flex; flex-direction: column; }
+.row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 12px; background: none; border: none; border-bottom: 1px solid var(--gp-border); color: var(--gp-text); font-size: var(--text-xs); font-family: var(--font-mono); text-align: left; cursor: default; }
+.row:hover { background: var(--gp-surface-hover); }
+.rowEditable { cursor: pointer; }
+.status { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: var(--radius-sm); font-size: 11px; font-weight: 600; flex-shrink: 0; }
+.statusModified { background: color-mix(in srgb, var(--gp-status-warning) 18%, transparent); color: var(--gp-status-warning); }
+.statusAdded { background: var(--gp-code-diff-add); color: var(--gp-status-success); }
+.statusDeleted { background: var(--gp-code-diff-del); color: var(--gp-status-error); }
+.path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stats { font-size: 11px; color: var(--gp-text-muted); flex-shrink: 0; white-space: nowrap; }
+.statsAdd { color: var(--gp-status-success); }
+.statsDel { color: var(--gp-status-error); }
+.toggle { color: var(--gp-text-muted); flex-shrink: 0; }
+.diffWrap { border-top: 1px solid var(--gp-border); max-height: 320px; overflow: auto; }

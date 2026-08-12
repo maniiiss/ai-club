@@ -1,0 +1,44 @@
+{
+	"$schema": "https://schema.tauri.app/config/2",
+	"productName": "GitPilot",
+	"version": "0.1.0",
+	"identifier": "com.aiclub.gitpilot.desktop",
+	"build": {
+		"frontendDist": "../dist",
+		"devUrl": "http://localhost:1420",
+		"beforeDevCommand": "npm run dev",
+		"beforeBuildCommand": "npm run build"
+	},
+	"app": {
+		"windows": [
+			{
+				"title": "GitPilot",
+				"width": 1100,
+				"height": 720,
+				"minWidth": 800,
+				"minHeight": 500,
+				"resizable": true,
+				"decorations": false,
+				"fullscreen": false,
+				"visible": false,
+				"backgroundColor": "#0b0d12"
+			}
+		],
+		"security": {
+			"csp": null
+		}
+	},
+	"plugins": {
+		"updater": {
+			"pubkey": "",
+			"endpoints": []
+		}
+	},
+	"bundle": {
+		"active": true,
+		"targets": ["msi", "nsis"],
+		"icon": ["icons/icon.png", "icons/icon.ico"],
+		"externalBin": ["binaries/gitpilot-rpc"],
+		"resources": ["resources/theme/*", "resources/export-html/**/*"]
+	}
+}

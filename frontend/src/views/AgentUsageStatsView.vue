@@ -311,6 +311,12 @@ const statusColor = (status: string) => {
         <strong class="kpi-value">{{ Math.round(overview?.avgDurationMs ?? 0) }}</strong>
         <span class="kpi-extra">P95 {{ overview?.p95DurationMs ?? 0 }}</span>
       </article>
+      <article class="kpi-card">
+        <span class="kpi-label">缓存命中</span>
+        <strong class="kpi-value">{{ overview?.cachedTokens ?? 0 }}</strong>
+        <span class="kpi-extra" v-if="overview?.cacheHitRate != null">命中率 {{ (overview.cacheHitRate * 100).toFixed(1) }}%</span>
+        <span class="kpi-extra" v-else>命中率 -</span>
+      </article>
     </section>
 
     <section class="trend-section">
@@ -340,6 +346,13 @@ const statusColor = (status: string) => {
               </template>
             </el-table-column>
             <el-table-column prop="totalTokens" label="总 token" width="120" sortable />
+            <el-table-column prop="cachedTokens" label="缓存命中Token" width="130" sortable />
+            <el-table-column label="缓存命中率" width="120">
+              <template #default="{ row }">
+                <span v-if="row.cacheHitRate != null">{{ (row.cacheHitRate * 100).toFixed(1) }}%</span>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
             <el-table-column label="平均耗时(ms)" width="140">
               <template #default="{ row }">{{ Math.round(row.avgDurationMs) }}</template>
             </el-table-column>
@@ -359,6 +372,13 @@ const statusColor = (status: string) => {
             <el-table-column prop="total" label="总调用" width="100" sortable />
             <el-table-column prop="success" label="成功" width="100" />
             <el-table-column prop="totalTokens" label="总 token" width="120" sortable />
+            <el-table-column prop="cachedTokens" label="缓存命中Token" width="130" sortable />
+            <el-table-column label="缓存命中率" width="120">
+              <template #default="{ row }">
+                <span v-if="row.cacheHitRate != null">{{ (row.cacheHitRate * 100).toFixed(1) }}%</span>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
             <el-table-column prop="lastInvokedAt" label="最近调用" min-width="180" />
           </el-table>
         </el-tab-pane>
@@ -374,6 +394,13 @@ const statusColor = (status: string) => {
             </el-table-column>
             <el-table-column prop="total" label="调用数" width="120" sortable />
             <el-table-column prop="totalTokens" label="总 token" width="120" sortable />
+            <el-table-column prop="cachedTokens" label="缓存命中Token" width="130" sortable />
+            <el-table-column label="缓存命中率" width="120">
+              <template #default="{ row }">
+                <span v-if="row.cacheHitRate != null">{{ (row.cacheHitRate * 100).toFixed(1) }}%</span>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
             <el-table-column label="平均耗时(ms)" width="140">
               <template #default="{ row }">{{ Math.round(row.avgDurationMs) }}</template>
             </el-table-column>
@@ -396,6 +423,7 @@ const statusColor = (status: string) => {
             </el-table-column>
             <el-table-column prop="durationMs" label="耗时(ms)" width="100" />
             <el-table-column prop="totalTokens" label="token" width="100" />
+            <el-table-column prop="cachedTokens" label="缓存命中" width="100" />
             <el-table-column prop="errorMessage" label="错误" show-overflow-tooltip min-width="200" />
           </el-table>
           <div class="logs-pagination">

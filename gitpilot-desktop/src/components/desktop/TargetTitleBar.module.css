@@ -1,0 +1,78 @@
+.titlebar {
+	position: relative;
+	display: flex;
+	height: 38px;
+	min-height: 38px;
+	align-items: center;
+	border-bottom: 1px solid var(--gp-border);
+	background: linear-gradient(90deg, var(--gp-panel-deep) 0%, var(--gp-surface-raised) 48%, var(--gp-panel-surface) 100%);
+	color: var(--gp-text);
+	user-select: none;
+}
+
+.titlebar::after {
+	position: absolute;
+	right: 0;
+	bottom: -1px;
+	left: 0;
+	height: 1px;
+	background: linear-gradient(90deg, var(--gp-accent) 0 18%, transparent 52%, var(--gp-warm) 100%);
+	content: '';
+	opacity: .7;
+}
+
+.identity,
+.actions {
+	display: flex;
+	height: 100%;
+	align-items: center;
+}
+
+.identity {
+	min-width: 0;
+	gap: 8px;
+	padding: 0 14px 0 12px;
+}
+
+.icon {
+	display: block;
+	width: 17px;
+	height: 17px;
+	flex: 0 0 auto;
+	border-radius: 50%;
+	box-shadow: 0 0 0 3px var(--gp-accent-soft), 0 0 16px color-mix(in srgb, var(--gp-accent) 16%, transparent);
+	object-fit: cover;
+}
+
+.brand {
+	color: var(--gp-text);
+	font-family: var(--font-mono);
+	font-size: 11px;
+	font-weight: 700;
+	letter-spacing: 0.14em;
+}
+
+.modeSwitcher { display: flex; height: 100%; align-items: center; gap: 2px; border-left: 1px solid var(--gp-border); padding-left: 7px; }
+.mode,
+.modeActive { height: 24px; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; padding: 0 7px; color: var(--gp-text-muted); font-family: var(--font-mono); font-size: 9px; letter-spacing: .12em; cursor: pointer; }
+.mode:hover { color: var(--gp-text); background: var(--gp-accent-soft); }
+.modeActive { border-color: var(--gp-border-strong); background: var(--gp-accent-soft); color: var(--gp-accent); }
+
+.spacer { min-width: 0; flex: 1; }
+
+.actions {
+	gap: 2px;
+	margin-left: auto;
+	padding-right: 7px;
+}
+
+.actions > button { width: 32px; height: 30px; border: 1px solid transparent; color: var(--gp-text-muted); }
+.actions > button:hover { border-color: var(--gp-border-strong); background: var(--gp-accent-soft); color: var(--gp-accent); }
+.divider { width: 1px; height: 16px; margin: 0 4px; background: var(--gp-border); }
+.close:hover { background: var(--gp-danger); color: var(--primary-foreground); }
+
+@media (max-width: 760px) {
+	.identity { padding-left: 10px; }
+	.mode,
+	.modeActive { padding: 0 5px; font-size: 8px; }
+}

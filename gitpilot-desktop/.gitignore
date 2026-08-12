@@ -1,0 +1,25 @@
+# 依赖
+node_modules/
+
+# 前端构建产物
+dist/
+
+# Tauri 构建产物
+src-tauri/target/
+src-tauri/gen/
+
+# sidecar 编译产物与复制资源（由 sidecar/build.sh 生成）
+src-tauri/binaries/
+src-tauri/resources/
+
+# 编辑器
+.vscode/
+.idea/
+
+# 日志
+*.log
+
+# 图标生成临时源图（由 gen-icon.mjs 生成，提交 src-tauri/icons 产物即可）
+app-icon.png
+app-icon.png.cp
+*.bun-build

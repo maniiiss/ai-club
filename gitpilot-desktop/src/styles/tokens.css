@@ -1,0 +1,206 @@
+/**
+ * 深色主题设计令牌（CSS 变量）。
+ * MVP 单一深色主题，后续可扩展为复用 pi-tui 的 theme JSON（见设计文档第 14 节）。
+ * 命名与 frontend-public 的 tokens 保持同一套语义，便于团队复用心智模型。
+ */
+
+:root {
+	/* shadcn 语义令牌：所有目标 UI 组件以这组值作为基础。 */
+	--background: #0b1118;
+	--foreground: #e8f1f2;
+	--card: #111a23;
+	--card-foreground: #e8f1f2;
+	--popover: #16232d;
+	--popover-foreground: #e8f1f2;
+	--primary: #8de0cc;
+	--primary-foreground: #071119;
+	--primary-hover: #b2f2df;
+	--secondary: #1b2a35;
+	--secondary-foreground: #d7e7e8;
+	--secondary-hover: #243844;
+	--muted: #172630;
+	--muted-foreground: #8fa6ab;
+	--accent: #203b43;
+	--accent-foreground: #dffbf2;
+	--border: #253a46;
+	--border-strong: #3c5965;
+	--input: #20343e;
+	--ring: #8de0cc;
+	--destructive: #c94f50;
+	--destructive-hover: #e05e60;
+	--primary-muted: rgba(141, 224, 204, 0.14);
+	--radius: 6px;
+	--radius-sm: 4px;
+	--radius-lg: 10px;
+	--z-overlay: 70;
+	--z-dialog: 80;
+	--z-menu: 90;
+	--z-tooltip: 100;
+
+	/* Desktop 专属令牌：表达执行状态和工作台层级。 */
+	--gp-panel-deep: #0b1118;
+	--gp-panel-surface: #111a23;
+	--gp-panel-raised: #16232d;
+	--gp-status-success: #72e0ad;
+	--gp-status-warning: #f0be6c;
+	--gp-status-error: #ff7e7b;
+	--gp-status-info: #79c6ff;
+	--gp-code-surface: #0d171f;
+	--gp-execution-line: rgba(120, 192, 186, 0.42);
+	--gp-accent: #8de0cc;
+	--gp-accent-soft: rgba(141, 224, 204, 0.1);
+	--gp-warm: #f0be6c;
+	--gp-grid-line: rgba(120, 192, 186, 0.055);
+	--gp-shadow-color: rgba(0, 0, 0, 0.3);
+	--gp-overlay: rgba(0, 0, 0, 0.12);
+	--gp-code-text: #dedede;
+	--gp-terminal-background: #090b0d;
+	--gp-terminal-foreground: #d5dee7;
+	--gp-terminal-cursor: #74c0fc;
+	--gp-terminal-selection: #27496d;
+
+	/* GitPilot canonical token：目标工作台只使用 shadcn 语义 token 或这组 gp token。
+	 * 业务组件不直接感知具体色值，便于整体替换视觉主题而不修改交互代码。 */
+	--gp-background: var(--background);
+	--gp-surface: var(--card);
+	--gp-surface-raised: var(--popover);
+	--gp-surface-hover: var(--accent);
+	--gp-text: var(--foreground);
+	--gp-text-secondary: var(--secondary-foreground);
+	--gp-text-muted: var(--muted-foreground);
+	--gp-border: var(--border);
+	--gp-border-strong: var(--border-strong);
+	--gp-action: var(--primary);
+	--gp-action-hover: var(--primary-hover);
+	--gp-selection: var(--primary-muted);
+	--gp-input: var(--input);
+	--gp-danger: var(--destructive);
+	--gp-danger-hover: var(--destructive-hover);
+	--gp-code-diff-add: rgba(114, 224, 173, 0.14);
+	--gp-code-diff-del: rgba(255, 126, 123, 0.14);
+
+	/* 字体 */
+	--font-sans: 'Bahnschrift', 'Segoe UI Variable', 'Microsoft YaHei UI', sans-serif;
+	--font-mono: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
+
+	/* 字号与行高 */
+	--text-xs: 12px;
+	--text-sm: 13px;
+	--text-base: 14px;
+	--text-lg: 16px;
+	--text-xl: 18px;
+	--leading-normal: 1.6;
+	--leading-tight: 1.3;
+
+	/* 圆角 */
+	--radius-md: var(--radius);
+
+	/* 间距基准 */
+	--space-1: 4px;
+	--space-2: 8px;
+	--space-3: 12px;
+	--space-4: 16px;
+	--space-6: 24px;
+
+	/* 阴影 */
+	--shadow-md: 0 8px 22px rgba(0, 0, 0, 0.3);
+	--shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.48);
+}
+
+/* 纯黑白主题：保留层级和状态色，仅将界面底色、文字与边框收敛为灰阶。 */
+:root[data-theme='mono-dark'] {
+	--background: #000;
+	--foreground: #fff;
+	--card: #0b0b0b;
+	--card-foreground: #fff;
+	--popover: #111;
+	--popover-foreground: #fff;
+	--primary: #fff;
+	--primary-foreground: #000;
+	--primary-hover: #e3e3e3;
+	--secondary: #171717;
+	--secondary-foreground: #ddd;
+	--secondary-hover: #242424;
+	--muted: #121212;
+	--muted-foreground: #999;
+	--accent: #252525;
+	--accent-foreground: #fff;
+	--border: #292929;
+	--border-strong: #555;
+	--input: #1b1b1b;
+	--ring: #fff;
+	--destructive: #f07171;
+	--destructive-hover: #ff8b8b;
+	--primary-muted: rgba(255, 255, 255, 0.12);
+	--gp-panel-deep: #000;
+	--gp-panel-surface: #0b0b0b;
+	--gp-panel-raised: #111;
+	--gp-status-success: #d6d6d6;
+	--gp-status-warning: #bcbcbc;
+	--gp-status-error: #ff8585;
+	--gp-status-info: #d0d0d0;
+	--gp-code-surface: #080808;
+	--gp-execution-line: rgba(255, 255, 255, 0.32);
+	--gp-accent: #fff;
+	--gp-accent-soft: rgba(255, 255, 255, 0.09);
+	--gp-warm: #aaa;
+	--gp-grid-line: rgba(255, 255, 255, 0.045);
+	--gp-shadow-color: rgba(0, 0, 0, 0.65);
+	--gp-overlay: rgba(255, 255, 255, 0.08);
+	--gp-code-text: #e8e8e8;
+	--gp-terminal-background: #000;
+	--gp-terminal-foreground: #fff;
+	--gp-terminal-cursor: #fff;
+	--gp-terminal-selection: #333;
+	--shadow-md: 0 8px 22px rgba(0, 0, 0, 0.56);
+	--shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.72);
+}
+
+/* 高对比浅色主题：正文黑色，辅助信息使用中性灰，强调色改为可读的深青色。 */
+:root[data-theme='light'] {
+	--background: #fff;
+	--foreground: #111315;
+	--card: #f7f8f8;
+	--card-foreground: #111315;
+	--popover: #fff;
+	--popover-foreground: #111315;
+	--primary: #0f766e;
+	--primary-foreground: #fff;
+	--primary-hover: #115e59;
+	--secondary: #eef1f1;
+	--secondary-foreground: #303638;
+	--secondary-hover: #e2e7e7;
+	--muted: #f2f4f4;
+	--muted-foreground: #667174;
+	--accent: #dff3ef;
+	--accent-foreground: #124943;
+	--border: #d9e0e0;
+	--border-strong: #aebcbc;
+	--input: #f9fbfb;
+	--ring: #0f766e;
+	--destructive: #b42318;
+	--destructive-hover: #912018;
+	--primary-muted: rgba(15, 118, 110, 0.12);
+	--gp-panel-deep: #fff;
+	--gp-panel-surface: #f7f8f8;
+	--gp-panel-raised: #fff;
+	--gp-status-success: #147d54;
+	--gp-status-warning: #9a6700;
+	--gp-status-error: #b42318;
+	--gp-status-info: #1769aa;
+	--gp-code-surface: #f3f5f5;
+	--gp-execution-line: rgba(15, 118, 110, 0.32);
+	--gp-accent: #0f766e;
+	--gp-accent-soft: rgba(15, 118, 110, 0.1);
+	--gp-warm: #9a6700;
+	--gp-grid-line: rgba(15, 118, 110, 0.07);
+	--gp-shadow-color: rgba(15, 35, 35, 0.12);
+	--gp-overlay: rgba(15, 35, 35, 0.06);
+	--gp-code-text: #263238;
+	--gp-terminal-background: #f7f8f8;
+	--gp-terminal-foreground: #1e272b;
+	--gp-terminal-cursor: #0f766e;
+	--gp-terminal-selection: #c7e4df;
+	--shadow-md: 0 8px 22px rgba(15, 35, 35, 0.12);
+	--shadow-lg: 0 18px 48px rgba(15, 35, 35, 0.18);
+}

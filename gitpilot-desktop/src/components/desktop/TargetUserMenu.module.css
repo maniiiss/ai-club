@@ -1,0 +1,24 @@
+.trigger { height: 30px; min-width: 42px; gap: 4px; padding: 0 7px; }
+.avatarWithStatus { position: relative; display: inline-flex; width: 23px; height: 23px; align-items: center; justify-content: center; }
+.avatar { display: grid; width: 21px; height: 21px; flex: 0 0 auto; place-items: center; overflow: hidden; border: 1px solid var(--gp-border-strong); border-radius: 50%; background: var(--gp-surface-hover); color: var(--gp-text); font-family: var(--font-mono); font-size: 9px; font-weight: 700; }
+.large { width: 34px; height: 34px; font-size: 12px; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; }
+.statusDot { position: absolute; right: -1px; bottom: -1px; width: 7px; height: 7px; border: 2px solid var(--popover); border-radius: 50%; box-shadow: 0 0 0 1px color-mix(in srgb, #000 35%, transparent); }
+.statusReady { background: #22c55e; }
+.statusOffline { background: #ef4444; }
+.content { width: 238px; padding: 5px; }
+.identity { display: flex; min-width: 0; align-items: center; gap: 9px; border-radius: var(--radius-sm); padding: 10px; }
+.identity > span:last-child { min-width: 0; }
+.identity b, .identity small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.identity b { color: var(--gp-text); font-size: 12px; font-weight: 600; }
+.identity small { margin-top: 2px; color: var(--gp-text-muted); font-family: var(--font-mono); font-size: 10px; }
+.credits { display: flex; align-items: center; gap: 7px; margin: 0 4px 6px; border: 1px solid var(--gp-border); border-radius: var(--radius-sm); background: var(--gp-surface-hover); padding: 8px 9px; color: var(--gp-text-secondary); font-size: 11px; }
+.credits b { margin-left: auto; color: var(--gp-text); font-family: var(--font-mono); font-size: 13px; }
+.themeChoices { display: flex; gap: 9px; padding: 4px 8px 8px; }
+.themeRadioItem { width: 28px; height: 28px; justify-content: center; border: 1px solid transparent; border-radius: 50%; padding: 0; }
+.themeRadioItem > span:first-child { display: none; }
+.themeRadioItem[data-state='checked'] { border-color: var(--gp-text); background: transparent; }
+.themeSwatch { display: block; width: 16px; height: 16px; border: 1px solid var(--gp-border-strong); border-radius: 50%; box-shadow: inset 0 0 0 2px var(--popover); }
+.themeCurrent { background: #8de0cc; }
+.themeMonoDark { background: #000; border-color: #666; }
+.themeLight { background: #fff; }

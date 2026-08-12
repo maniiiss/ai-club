@@ -11,6 +11,7 @@ import com.aiclub.platform.dto.ModelTestResult;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.request.AiModelConfigRequest;
 import com.aiclub.platform.repository.AiModelConfigRepository;
+import com.aiclub.platform.repository.SelfUpgradePatrolPlanRepository;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -55,6 +56,7 @@ public class ModelConfigService {
     private static final Duration MODEL_REQUEST_TIMEOUT = Duration.ofSeconds(120);
 
     private final AiModelConfigRepository aiModelConfigRepository;
+    private final SelfUpgradePatrolPlanRepository selfUpgradePatrolPlanRepository;
     private final TokenCipherService tokenCipherService;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
@@ -67,9 +69,11 @@ public class ModelConfigService {
     private AgentInvocationRecorder agentInvocationRecorder;
 
     public ModelConfigService(AiModelConfigRepository aiModelConfigRepository,
+                              SelfUpgradePatrolPlanRepository selfUpgradePatrolPlanRepository,
                               TokenCipherService tokenCipherService,
                               ObjectMapper objectMapper) {
         this.aiModelConfigRepository = aiModelConfigRepository;
+        this.selfUpgradePatrolPlanRepository = selfUpgradePatrolPlanRepository;
         this.tokenCipherService = tokenCipherService;
         this.objectMapper = objectMapper;
         this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
@@ -113,7 +117,13 @@ public class ModelConfigService {
 
     @Transactional
     public void deleteConfig(Long id) {
-        aiModelConfigRepository.delete(requireConfig(id));
+        requireConfig(id);
+        // 删除前检查是否有巡检计划引用该模型，避免数据库外键约束报错
+        long patrolCount = selfUpgradePatrolPlanRepository.countByAiModelConfig_Id(id);
+        if (patrolCount > 0) {
+            throw new IllegalStateException("该模型被 " + patrolCount + " 个自升级巡检计划引用，请先修改或删除相关巡检计划后再删除模型");
+        }
+        aiModelConfigRepository.deleteById(id);
     }
 
     public ModelTestResult testConfig(Long id) {
@@ -262,7 +272,7 @@ public class ModelConfigService {
                     .build();
             return agentInvocationRecorder.trackWithUsage(fallbackCtx, sink -> {
                 ModelInvocation inv = doInvokePromptWithUsage(config, systemPrompt, userPrompt, maxTokens, jsonMode);
-                sink.setUsage(inv.promptTokens(), inv.completionTokens(), inv.totalTokens());
+                sink.setUsage(inv.promptTokens(), inv.completionTokens(), inv.totalTokens(), inv.cachedTokens());
                 sink.setOutputChars(charLength(inv.text()));
                 return inv;
             });
@@ -343,6 +353,8 @@ public class ModelConfigService {
         entity.setApiBaseUrl(resolveApiBaseUrl(provider, modelType, request.apiBaseUrl()));
         entity.setModelName(request.modelName().trim());
         entity.setOpenaiApiMode(normalizeOpenAiApiMode(provider, request.openaiApiMode()));
+        entity.setContextLength(request.contextLength());
+        entity.setMaxOutputTokens(request.maxOutputTokens());
         entity.setDescription(request.description() == null ? "" : request.description().trim());
         entity.setEnabled(request.enabled() == null || request.enabled());
 
@@ -390,7 +402,9 @@ public class ModelConfigService {
                 normalizeOpenAiApiMode(entity.getProvider(), entity.getOpenaiApiMode()),
                 hasText(entity.getApiKeyCiphertext()),
                 entity.getDescription(),
-                entity.getEnabled()
+                entity.getEnabled(),
+                entity.getContextLength(),
+                entity.getMaxOutputTokens()
         );
     }
 
@@ -647,7 +661,7 @@ public class ModelConfigService {
             return new ModelInvocation(text,
                     usage == null ? null : usage.input(),
                     usage == null ? null : usage.output(),
-                    usage == null ? null : usage.total());
+                    usage == null ? null : usage.total(), usage == null ? null : usage.cached());
         }
         if (response.statusCode() == 404) {
             return invokeOpenAiChatCompletionsPromptWithUsage(baseUrl, config, systemPrompt, userPrompt, maxTokens, jsonMode);
@@ -694,7 +708,7 @@ public class ModelConfigService {
                     extractOpenAiText(tree),
                     usage == null ? null : usage.input(),
                     usage == null ? null : usage.output(),
-                    usage == null ? null : usage.total()
+                    usage == null ? null : usage.total(), usage == null ? null : usage.cached()
             );
         }
         if (response.statusCode() == 404) {
@@ -731,7 +745,7 @@ public class ModelConfigService {
                 extractOpenAiChatText(tree),
                 usage == null ? null : usage.input(),
                 usage == null ? null : usage.output(),
-                usage == null ? null : usage.total()
+                usage == null ? null : usage.total(), usage == null ? null : usage.cached()
         );
     }
 
@@ -774,7 +788,7 @@ public class ModelConfigService {
                 extractAnthropicText(tree),
                 usage == null ? null : usage.input(),
                 usage == null ? null : usage.output(),
-                usage == null ? null : usage.total()
+                usage == null ? null : usage.total(), usage == null ? null : usage.cached()
         );
     }
 
@@ -810,7 +824,7 @@ public class ModelConfigService {
         return new ModelInvocation(text,
                 usage == null ? null : usage.input(),
                 usage == null ? null : usage.output(),
-                usage == null ? null : usage.total());
+                usage == null ? null : usage.total(), usage == null ? null : usage.cached());
     }
 
     private ModelInvocation invokeAnthropicPromptWithUsage(ResolvedModelConfig config,
@@ -847,7 +861,7 @@ public class ModelConfigService {
         return new ModelInvocation(text,
                 usage == null ? null : usage.input(),
                 usage == null ? null : usage.output(),
-                usage == null ? null : usage.total());
+                usage == null ? null : usage.total(), usage == null ? null : usage.cached());
     }
 
     private String extractOpenAiText(JsonNode body) {
@@ -879,7 +893,8 @@ public class ModelConfigService {
         if (inputTokens == null && outputTokens == null && totalTokens == null) {
             return null;
         }
-        return new ModelInvocationUsage(inputTokens, outputTokens, totalTokens);
+        Integer cachedTokens = jsonIntOrNull(usage.path("input_tokens_details").path("cached_tokens"));
+        return new ModelInvocationUsage(inputTokens, outputTokens, totalTokens, cachedTokens);
     }
 
     /**
@@ -896,7 +911,8 @@ public class ModelConfigService {
         if (prompt == null && completion == null && total == null) {
             return null;
         }
-        return new ModelInvocationUsage(prompt, completion, total);
+        Integer cachedTokens = jsonIntOrNull(usage.path("prompt_tokens_details").path("cached_tokens"));
+        return new ModelInvocationUsage(prompt, completion, total, cachedTokens);
     }
 
     /**
@@ -913,7 +929,8 @@ public class ModelConfigService {
             return null;
         }
         Integer total = (inputTokens == null ? 0 : inputTokens) + (outputTokens == null ? 0 : outputTokens);
-        return new ModelInvocationUsage(inputTokens, outputTokens, total);
+        Integer cachedTokens = jsonIntOrNull(usage.path("cache_read_input_tokens"));
+        return new ModelInvocationUsage(inputTokens, outputTokens, total, cachedTokens);
     }
 
     private String extractOpenAiChatText(JsonNode body) {
@@ -1117,7 +1134,7 @@ public class ModelConfigService {
     /**
      * 模型调用返回结果，含文本和 usage 信息。
      */
-    public record ModelInvocation(String text, Integer promptTokens, Integer completionTokens, Integer totalTokens) {
+    public record ModelInvocation(String text, Integer promptTokens, Integer completionTokens, Integer totalTokens, Integer cachedTokens) {
     }
 
     /**
@@ -1134,7 +1151,7 @@ public class ModelConfigService {
     /**
      * OpenAI / Anthropic usage 的私有解析中间类型。
      */
-    private record ModelInvocationUsage(Integer input, Integer output, Integer total) {
+    private record ModelInvocationUsage(Integer input, Integer output, Integer total, Integer cached) {
     }
 
     /**

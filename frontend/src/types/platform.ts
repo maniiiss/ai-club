@@ -2133,6 +2133,10 @@ export interface AiModelConfigItem {
   apiKeyConfigured: boolean
   description: string
   enabled: boolean
+  /** 模型上下文窗口长度（token），用于 GitPilot CLI 展示与自动压缩阈值判断。 */
+  contextLength?: number
+  /** 模型最大输出 token 数。 */
+  maxOutputTokens?: number
 }
 
 export interface ModelTestResult {

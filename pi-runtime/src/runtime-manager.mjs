@@ -1,18 +1,14 @@
-import { Agent } from '@mariozechner/pi-agent-core'
-import { getModel, getModels, streamSimple } from '@mariozechner/pi-ai'
+import {
+  createPiAgent,
+  normalizeThinkingLevel,
+  lastAssistantText,
+  normalizePiEvent,
+  resolvePiModel,
+  toPiHistoryMessages,
+} from '@aiclub/gitpilot-agent-core'
 import { createPlatformTools } from './agent-tools.mjs'
 
-const THINKING_LEVELS = new Set(['off', 'minimal', 'low', 'medium', 'high', 'xhigh'])
-
-/** Pi 原生 assistant 历史所需的空用量，历史文本不应被当作本轮模型的真实计费结果。 */
-const EMPTY_USAGE = {
-  input: 0,
-  output: 0,
-  cacheRead: 0,
-  cacheWrite: 0,
-  totalTokens: 0,
-  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-}
+export { normalizeThinkingLevel, resolvePiModel, toPiHistoryMessages }
 
 /**
  * Pi 会话管理器。
@@ -61,7 +57,7 @@ export class RuntimeManager {
         payload: { runtimeCode: 'PI_RUNTIME', execution: request.context || request.execution || {} },
       })
       await agent.prompt(request.input || '')
-      const content = this.#lastAssistantText(agent.state.messages)
+      const content = lastAssistantText(agent.state.messages)
       await this.#emit({ runId, sessionId, eventType: 'RUN_COMPLETED', payload: { status: 'SUCCESS' } })
       return { runId, sessionId, content, status: 'COMPLETED' }
     } catch (error) {
@@ -128,23 +124,15 @@ export class RuntimeManager {
     const toolContract = this.#toolContract(request)
     const allowedTools = toolContract.policy.allowedToolCodes
     const sessionToken = toolContract.policy.sessionToken || request.sessionToken || request.profileSnapshot?.sessionToken || ''
-    const agent = new Agent({
+    const agent = createPiAgent({
       sessionId,
-      toolExecution: 'sequential',
-      // pi-agent-core 不把 maxTokens 放在 AgentState 中，必须在底层 stream 调用处注入平台快照预算。
-      streamFn: (streamModel, streamContext, streamOptions) => streamSimple(
-        streamModel,
-        streamContext,
-        { ...streamOptions, maxTokens: maxOutputTokens },
-      ),
+      model,
+      systemPrompt,
+      initialMessages: messages,
+      maxOutputTokens,
       getApiKey: async (name) => process.env[`PI_RUNTIME_${String(name).toUpperCase()}_API_KEY`] || process.env.PI_RUNTIME_API_KEY,
-      initialState: {
-        model,
-        thinkingLevel: normalizeThinkingLevel(request.thinkingLevel || request.profileSnapshot?.thinkingLevel || this.thinkingLevel),
-        systemPrompt,
-        messages,
-        tools: createPlatformTools({ executeTool: this.executeTool, sessionToken, tools: toolContract.tools, allowedTools }),
-        },
+      thinkingLevel: request.thinkingLevel || request.profileSnapshot?.thinkingLevel || this.thinkingLevel,
+      tools: createPlatformTools({ executeTool: this.executeTool, sessionToken, tools: toolContract.tools, allowedTools }),
       transformContext: async (nextMessages) => this.#transformContext(nextMessages, request),
       beforeToolCall: async (context) => {
         // Pi 的预检只用于提前拒绝明显不允许的调用，backend 仍会再次鉴权。
@@ -155,11 +143,9 @@ export class RuntimeManager {
         return undefined
       },
       afterToolCall: async () => undefined,
-    })
-
-    // 通过 Agent 事件统一转发文本、工具和生命周期，不把 Pi 原始事件直接暴露给前端。
-    agent.subscribe(async (event) => {
-      await this.#mapEvent(event, { runId, sessionId }, eventSink)
+      onEvent: async (event) => {
+        await this.#mapEvent(event, { runId, sessionId }, eventSink)
+      },
     })
     return agent
   }
@@ -194,26 +180,8 @@ export class RuntimeManager {
   }
 
   async #mapEvent(event, identity, eventSink = null) {
-    if (event.type === 'message_update') {
-      const delta = event.assistantMessageEvent
-      if (delta?.type === 'text_delta' && delta.delta) {
-        await this.#emit({ ...identity, eventType: 'TEXT_DELTA', payload: { delta: delta.delta } }, eventSink)
-      } else if (delta?.type === 'thinking_start') {
-        await this.#emit({ ...identity, eventType: 'THINKING_START', payload: { contentIndex: delta.contentIndex } }, eventSink)
-      } else if (delta?.type === 'thinking_delta' && delta.delta) {
-        await this.#emit({ ...identity, eventType: 'THINKING_DELTA', payload: { delta: delta.delta, contentIndex: delta.contentIndex } }, eventSink)
-      } else if (delta?.type === 'thinking_end') {
-        await this.#emit({ ...identity, eventType: 'THINKING_END', payload: { contentIndex: delta.contentIndex } }, eventSink)
-      }
-      return
-    }
-    if (event.type === 'tool_execution_start') {
-      await this.#emit({ ...identity, eventType: 'TOOL_CALL_REQUESTED', payload: { toolCallId: event.toolCallId, toolName: event.toolName, args: event.args } }, eventSink)
-    } else if (event.type === 'tool_execution_update') {
-      await this.#emit({ ...identity, eventType: 'TOOL_PROGRESS', payload: { toolCallId: event.toolCallId, toolName: event.toolName, partialResult: event.partialResult } }, eventSink)
-    } else if (event.type === 'tool_execution_end') {
-      await this.#emit({ ...identity, eventType: 'TOOL_FINISHED', payload: { toolCallId: event.toolCallId, toolName: event.toolName, result: event.result } }, eventSink)
-    }
+    const normalized = normalizePiEvent(event)
+    if (normalized) await this.#emit({ ...identity, ...normalized }, eventSink)
   }
 
   async #emit(event, eventSink = null) {
@@ -294,72 +262,4 @@ export class RuntimeManager {
     }, ...recent]
   }
 
-  /** 从 Pi Agent 最后一条 assistant 消息中提取可持久化的纯文本。 */
-  #lastAssistantText(messages) {
-    const message = [...(messages || [])].reverse().find((item) => item.role === 'assistant')
-    if (!message) return ''
-    if (typeof message.content === 'string') return message.content
-    if (!Array.isArray(message.content)) return ''
-    return message.content
-      .filter((block) => block?.type === 'text' && typeof block.text === 'string')
-      .map((block) => block.text)
-      .join('')
-  }
-}
-
-/**
- * 解析 Pi 模型并覆盖部署级 Base URL。
- * 业务意图：Pi 的内置模型表负责协议和能力模板，管理员可以把同一协议转发到自建或兼容网关；
- * 自定义 model id 没有内置条目时，复用同 provider 的第一个模型模板，仅替换模型标识。
- */
-export const resolvePiModel = (provider, modelId, modelBaseUrl) => {
-  const normalizedProvider = String(provider || '').trim()
-  const normalizedModelId = String(modelId || '').trim()
-  const registeredModel = getModel(normalizedProvider, normalizedModelId)
-  const template = registeredModel || getModels(normalizedProvider)[0]
-  if (!template) {
-    throw new Error(`Pi Runtime provider or model is unsupported: ${normalizedProvider}/${normalizedModelId}`)
-  }
-
-  const normalizedBaseUrl = String(modelBaseUrl || '').trim()
-  if (registeredModel && !normalizedBaseUrl) return registeredModel
-
-  return {
-    ...template,
-    id: normalizedModelId,
-    name: normalizedModelId,
-    ...(normalizedBaseUrl ? { baseUrl: normalizedBaseUrl } : {}),
-  }
-}
-
-/** 将部署或会话传入的推理档位限制在 Pi Agent Core 支持的枚举内。 */
-export const normalizeThinkingLevel = (value) => {
-  const normalized = String(value || '').trim().toLowerCase()
-  return THINKING_LEVELS.has(normalized) ? normalized : 'off'
-}
-
-/**
- * 将 AgentRuntime 的通用 role/content 历史转换为 Pi Agent Core 的原生消息。
- * 业务意图：Pi 专属元数据只在适配器边界补齐，backend 不依赖 Pi SDK 的消息协议。
- */
-export const toPiHistoryMessages = (history, model) => {
-  if (!Array.isArray(history)) return []
-  return history
-    .filter((item) => item && (item.role === 'user' || item.role === 'assistant'))
-    .map((item) => {
-      const content = typeof item.content === 'string' ? item.content : ''
-      if (item.role === 'assistant') {
-        return {
-          role: 'assistant',
-          content: [{ type: 'text', text: content }],
-          api: model.api,
-          provider: model.provider,
-          model: model.id,
-          usage: EMPTY_USAGE,
-          stopReason: 'stop',
-          timestamp: Date.now(),
-        }
-      }
-      return { role: 'user', content, timestamp: Date.now() }
-    })
 }

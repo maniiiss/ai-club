@@ -10,6 +10,7 @@ import { ProjectLayout } from '@/src/layouts/ProjectLayout'
 
 import { LoginPage } from '@/src/pages/auth/LoginPage'
 import { RegisterPage } from '@/src/pages/auth/RegisterPage'
+import { CliDeviceAuthorizationPage } from '@/src/pages/auth/CliDeviceAuthorizationPage'
 import { DashboardPage } from '@/src/pages/dashboard/DashboardPage'
 import { ProjectsPage } from '@/src/pages/projects/ProjectsPage'
 import { ProjectDetailPage } from '@/src/pages/projects/ProjectDetailPage'
@@ -25,6 +26,7 @@ import { TestPlanDetailPage } from '@/src/pages/execution/TestPlanDetailPage'
 import { ExecutionTaskDetailPage } from '@/src/pages/execution/ExecutionTaskDetailPage'
 import { ReleasePage } from '@/src/pages/release/ReleasePage'
 import { ChatPage } from '@/src/pages/chat/ChatPage'
+import { GitPilotCliPage } from '@/src/pages/cli/GitPilotCliPage'
 
 
 /* ── 路由定义 ── */
@@ -36,6 +38,7 @@ export const router = createBrowserRouter([
     children: [
       { path: '/login', element: <LoginPage /> },
       { path: '/register', element: <RegisterPage /> },
+      { path: '/cli/device', element: <CliDeviceAuthorizationPage /> },
     ],
   },
 
@@ -49,6 +52,7 @@ export const router = createBrowserRouter([
       { path: '/chat', element: <ChatPage /> },
       { path: '/settings/profile', element: <ProfilePage /> },
       { path: '/settings/feedback', element: <AssistantFeedbackPage /> },
+      { path: '/gitpilot-cli', element: <GitPilotCliPage /> },
       { path: '/notifications', element: <NotificationsPage /> },
       // 兼容后端历史通知中的执行任务链接，详情页会在缺少 projectId 时使用任务自身的项目归属返回。
       { path: '/tasks/:taskId', element: <ExecutionTaskDetailPage /> },

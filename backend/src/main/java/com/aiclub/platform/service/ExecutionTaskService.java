@@ -381,9 +381,7 @@ public class ExecutionTaskService {
             executionTask.setCancelRequested(false);
             executionTask.setLatestSummary("执行已取消");
             ExecutionTaskEntity saved = executionTaskRepository.save(executionTask);
-            if (ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING.equalsIgnoreCase(saved.getScenarioCode())) {
-                technicalDesignCreditSettlementService.settleTerminalTask(saved.getId());
-            }
+            executionDispatchService.settleCreditIfNeeded(saved);
             selfUpgradeExecutionWritebackService.handleExecutionFinished(saved, saved.getCurrentRun(), "CANCELED");
             return toTaskSummary(saved);
         }

@@ -1,0 +1,63 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gitpilot.local/protocol/handoff-session-envelope-v1.schema.json",
+  "title": "GitPilot HandoffSessionEnvelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocolVersion",
+    "sourceClient",
+    "conversationHistory",
+    "summary",
+    "decisions",
+    "pendingItems",
+    "workspace"
+  ],
+  "properties": {
+    "protocolVersion": { "const": "v1" },
+    "sourceClient": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["runtimeCode", "runtimeVersion", "cliVersion"],
+      "properties": {
+        "runtimeCode": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "runtimeVersion": { "type": "string", "minLength": 1, "maxLength": 64 },
+        "cliVersion": { "type": "string", "minLength": 1, "maxLength": 64 }
+      }
+    },
+    "conversationHistory": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["role", "content"],
+        "properties": {
+          "role": { "enum": ["user", "assistant"] },
+          "content": { "type": "string", "minLength": 1, "maxLength": 16384 }
+        }
+      }
+    },
+    "summary": { "type": "string", "maxLength": 32768 },
+    "decisions": {
+      "type": "array",
+      "maxItems": 50,
+      "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+    },
+    "pendingItems": {
+      "type": "array",
+      "maxItems": 50,
+      "items": { "type": "string", "minLength": 1, "maxLength": 1024 }
+    },
+    "workspace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseCommit", "handoffCommit", "currentBranch"],
+      "properties": {
+        "baseCommit": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "handoffCommit": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "currentBranch": { "type": "string", "minLength": 1, "maxLength": 512 }
+      }
+    }
+  }
+}

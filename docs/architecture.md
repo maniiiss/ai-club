@@ -1,5 +1,7 @@
 # AI Club 项目架构说明
 
+> GitPilot Desktop 现包含隔离的 `gitpilot-code` 与 `gitpilot-work` 模式：Code 保持项目编码 Agent 链路；Work 的任务、对话与成果只在 Desktop IndexedDB 保存。Work 的联网研究经 sidecar 调用受认证的 `/api/cli/work/research`，由后端托管搜索密钥、限流与结果裁剪，Desktop 不获得任意网络、Shell、Git 或项目文件权限。详见 `docs/design-docs/gitpilot-work-technical-design-v1.md`。
+
 ## 1. 项目定位
 
 AI Club 是一个面向 AI 代理协作与工程管理的多服务平台，目标是把“项目、工作项、执行任务、测试计划、代码仓库、模型配置、智能体协作”统一放到同一套业务平台中管理。
@@ -416,6 +418,27 @@ PR 评审检查清单：
 
 详细设计见 `docs/design-docs/agent-invocation-tracking-technical-design-v1.md`。
 
+##### 模型调用量统计扩展（v2）
+
+在 §3.2.8 体系之上补齐两大覆盖盲区，并新增以「模型」为中心的平台级看板（不复用 `model-token-usage-technical-design-v1.md` 提议的独立事件表，统一落 `agent_invocation_log`）：
+
+埋点覆盖扩展：
+
+- `AgentType.HERMES_CHAT`：GitPilot 流式对话（默认 runtime，最大消耗源）。`AssistantGatewayService` 请求体开启 `stream_options.include_usage`，`ChatAssistantService.executeChat` 通过 `recorder.startManual` 显式抓取用户快照落账；provider 标记为 `HERMES`，`model_config_id` 留空（env 配置不入库）。
+- `AgentType.GITPILOT_CLI`：GitPilot CLI 本地推理。所有 CLI 模型调用经 `GitPilotModelProxyService` 单咽喉点代理转发，把裸 `transferTo` 改为「边转发边嗅探 SSE usage」后 `recorder.startManual` 落账；用户与模型配置取自 gms_ 会话状态，无需新增鉴权。
+- code-processing 跨服务回传：代码审核等 Python 侧调用经 `POST /internal/model-usage/events`（共享 Bearer Token 鉴权）回传 usage，由 `ModelUsageIngestService` 落账（`AgentType.CODE_REVIEW` 等，`correlation_id=usageKey` 幂等去重）。`review_service._call_provider` 解析 usage，`model_usage_reporter` 复用 `_post_backend_json` 异步重试上报。
+
+模型看板：
+
+- `ModelUsageStatsController`（`/api/model-usage-stats`，权限 `system:model-usage:view`）：`getOverview / getByModel / getTrend / getByProvider`，聚合键为 `(model_name, provider)`（`COALESCE` 空值归 `<unknown>`），覆盖表内模型、env 模型与回传模型。
+- 前端 `/model-usage-stats`（`ModelUsageStatsView`）：引入 ECharts（按需注册）做模型调用量排行、Token 分布、调用趋势可视化，与 `/agent-usage-stats`（按智能体/用户维度）互补。
+- 迁移 `V145__model_usage_stats_menu.sql` 注入菜单与 `SUPER_ADMIN` 授权。
+
+缓存命中指标：`agent_invocation_log` 增 `cached_tokens` 列（迁移 `V146`），各 LLM 响应 extractor 抽取并归一化 OpenAI `cached_tokens` / Anthropic `cache_read_input_tokens`，命中率 = `cached_tokens / prompt_tokens`（分母为 0 返回 null，前端显示 `-`）。模型与智能体两个看板均展示缓存命中 KPI、表格列与趋势线。详见 `docs/design-docs/model-usage-cache-hit-stats-technical-design-v1.md`。
+
+详细设计见 `docs/design-docs/platform-model-usage-stats-technical-design-v1.md`。
+未落地的旧设计 `docs/design-docs/model-token-usage-technical-design-v1.md` 已标记 superseded。
+
 #### 3.2.7 可观测性中心
 
 后端当前新增了独立的项目级可观测性子系统，职责边界如下：
@@ -504,6 +527,7 @@ GitPilot 的产品入口与具体 Runtime 解耦，Runtime 注册项统一维护
 - Pi Runtime 的模型部署配置由 `PLATFORM_PI_RUNTIME_MODEL_PROVIDER`、`PLATFORM_PI_RUNTIME_MODEL_ID`、`PLATFORM_PI_RUNTIME_MODEL_BASE_URL` 和 `PLATFORM_PI_RUNTIME_API_KEY` 提供；其中 Base URL 可覆盖 Pi 内置模型地址，用于 OpenAI-compatible 或自建模型网关，不属于 Runtime Registry 的 endpointRef。
 - 所有非 Legacy AgentRuntime 通过统一 `tools` / `toolPolicy` 契约接收平台工具目录、JSON Schema、授权工具编码、自动执行工具编码和短期会话令牌；backend 的 `RuntimeToolContractService` 负责按用户权限和聊天室策略生成契约，具体 Runtime 只做原生 tool calling 转换。
 - Runtime 工具函数名使用稳定的 `project__search` 形式，执行时仍回传平台内部编码 `project.search`；工具最终由 backend `/internal/runtime/tools/execute` 二次鉴权、按项目范围执行并记录审计，不能由 Runtime 本地策略绕过。
+- 工具契约按需下发：平台 MCP 工具（最多 24 个）一次性下发会超过部分模型（如 Ark `deepseek-v4-flash`）的有效阈值，导致思考流在第一个词就异常结束、不产出正文。`PlatformToolSelector` 根据本轮用户输入（问题文本、slash 命令、路由）按“规则匹配 + 向量检索兜底”选出相关工具子集，通过现成的 `restrictedToolCodes` 通道下发，控制在 `maxTools`（默认 12）内；规则与向量均未命中时下发核心工具集（≤8 高频只读工具）。向量检索复用 `QdrantClientService` 与 Wiki 的 embedding 配置，embedding 未配置或 Qdrant 不可用时自动降级为纯规则。聊天室在房间启用工具集内按需筛选，保证“按需 ⊂ 房间策略”。下发的 `tools` 与 `toolPolicy.allowedToolCodes` 由 `RuntimeToolContractService.build()` 自动同源，pi-runtime 无需改动。具体设计见 `docs/design-docs/gitpilot-on-demand-tool-selection-technical-design-v1.md`。
 - GitPilot 公众端支持用户在助手“更多”菜单配置个人外部 MCP 服务，配置保存在 `assistant_mcp_server` 并按用户隔离。backend 负责 Streamable HTTP/SSE 握手、工具发现和实际调用，Bearer/API Key 通过 `TokenCipherService` 加密保存，不把长期凭证下发给 Runtime。
 - 外部 MCP 服务必须通过管理员网络白名单校验。管理员在“系统管理 → 环境变量管理”配置 `PLATFORM_ASSISTANT_EXTERNAL_MCP_ALLOWED_HOSTS`，填写 `10.0.0.0/8,192.168.1.0/24,corp.example.com` 等英文逗号分隔的域名/IP/CIDR；公网服务使用 HTTPS，内网、HTTP、回环和云元数据地址需要命中该配置。新建 GitPilot 会话固化启用服务的加密快照和配置版本，历史会话不会因用户编辑服务而漂移。
 - 非 Legacy Runtime 的统一工具契约会加入 `external_mcp__{serverId}__v{version}__{toolName}` 命名空间。外部工具默认需要确认，用户在个人 MCP 配置中明确取消确认后才进入自动执行列表，并由界面提示未声明只读工具的风险；`HERMES_LEGACY` 保持平台固定 MCP 兼容边界。具体设计见 `docs/design-docs/gitpilot-external-mcp-technical-design-v1.md`。
@@ -1045,6 +1069,21 @@ Woodpecker 在两种运行模式中都使用 Compose `woodpecker` profile，由�
 - `dashboard:widget:*` 是管理端前端组件可见性权限，后端不校验，公众端前端自行控制卡片可见性，未下放给 `PUBLIC_DEFAULT`。
 - 公众端五张卡片全部复用管理端已有的后端接口（`/api/dashboard/*`、`/api/gitlab/bindings/*`、`/api/cicd/*`），后端 Controller/Service 零改动。
 
+GitPilot CLI 已改为基于 pi-coding-agent 二开的本地执行平面：
+
+- `gitpilot-cli` 是 `@earendil-works/pi-coding-agent@0.81.1` 的源码 fork，运行在用户设备上，直接复用 Pi 的 Agent 循环、交互式 TUI、`read`/`write`/`edit`/`bash`/`grep`/`find`/`ls` 内置工具和树形会话管理，不再自造 CLI 框架。品牌通过 `package.json` 的 `piConfig: { name: "gitpilot", configDir: ".gitpilot" }` 派生，配置目录为 `~/.gitpilot/agent`。
+- 平台对接以 Pi 内置 extension 形式实现（`src/extensions/gitpilot/`），随源码编译并默认加载，不侵入核心 TUI 与工具：
+  - `platform-auth`：`/gitpilot login|logout|status` 斜杠命令，设备授权换取独立 CLI Token（`gpt_`），Token 只保存在系统凭据库，服务端只保存 hash。
+  - `platform-model`：注册 `gitpilot` provider，读取 `/api/cli/models` 启用 CHAT 模型（清单含 `contextLength`/`maxOutputTokens`，由 `ai_model_config` 表 V144 迁移新增、管理端可配置）；`toModelConfig` 透传两字段为 pi 的 `contextWindow`/`maxTokens`，未配置时回退默认 128K/16K。推理时用 `gpt_` 签发短期模型会话令牌（`gms_`，默认 900s），缓存并临近过期自动重建，通过 `streamSimple` 把请求改写到平台模型代理（OpenAI 走 `/chat/completions`、Anthropic 走 `/messages`）。平台模型 API Key、真实上游地址和完整请求审计留在 backend。CLI 据真实 `contextWindow` 在 `/model` 选择器详情与 `--list-models` 列动态展示窗口，并按 pi 原生 `shouldCompact`（已用 token > 窗口 − reserveTokens）触发自动压缩，无需自写压缩逻辑。
+  - `platform-requirement`：`/requirement` 斜杠命令，读取 `GET /api/cli/tasks` 拉取负责人是当前 CLI 用户的需求（强制 `workItemType=需求`），选择器展示后选中即用 `pi.sendUserMessage` 触发 AI 进行技术设计与开发；查询走独立谓词、绕过项目参与人可见性，确保“分配给我但未参与的项目”需求可见。
+- backend `/api/cli/model-sessions/{id}` 只开放 Chat Completions 与 Anthropic Messages 两个固定协议路径，禁止把短期 session 变成任意 URL 代理；新增 `GET /api/cli/tasks` 供 `/requirement` 命令读取负责人是当前用户的需求（新增 `cli:task:read` scope，新签发 token 默认携带），CLI Token scope 与设备授权流程其余保持不变。
+- `packages/gitpilot-agent-core` 收窄为 pi-runtime 专用的 Pi Agent 封装 + Handoff 协议层，已随 pi-runtime 升级到 `@earendil-works/*@0.81.1`（`getModel`/`getModels`/`streamSimple` 经 `pi-ai/compat` 兼容入口消费）；CLI 不再依赖该包。
+- 云端接力（项目关联、Git 快照、handoff 分支、Cloud Coding 工作区）尚未接入，相关代码（`gitstate/snapshot.ts`、handoff envelope、`HandoffSessionEnvelopeValidator`、`cloud_coding_sandbox_policy.py`）已停车到 `packages/gitpilot-agent-core/cloud/`，后续作为 Pi extension 接入；接力仍需遵循 `gitpilot-cli-cloud-coding-handoff-technical-design-v1.md` 的本地零污染和 Sandbox Worker 边界。
+- P0 已冻结 `HandoffSessionEnvelope v1` Schema/限制/敏感字段拒绝规则、CLI scope 和 `cloud-coding-sandbox-v1`。Cloud Coding 默认关闭，公众发布门槛为 `CONTAINER` Worker；Session 表、云端 REST 和公众端仍属于 P1。
+- `gitpilot-desktop` 是同一套本地执行平面的 Windows GUI：Tauri 主进程管理窗口、sidecar 和受限的应用内 PowerShell 终端，React 渲染层只消费 RPC 事件。终端入口只传递已选项目目录，Rust 规范化并校验后创建独立 PowerShell 进程；用户在可见终端面板的键盘输入经有大小限制的原生桥接写入该进程，终端输出以事件回传，不与 Agent sidecar 混用。桌面端 P0/P1 以自定义标题栏、可持久化三栏工作台、输出面板和按真实工具生命周期聚合的执行时间线提供 IDE 式操作感；它不把文件树/编辑器伪装成已实现能力。React 渲染层现以 shadcn/ui Graphite Workbench 作为唯一生产 UI：`TargetDesktopShell` 组合 `desktop`、`workbench`、`features` 三个边界，业务样式使用局部 CSS Module，`index.css` 仅保留入口与文档级基础，不改变 Zustand、RPC、Tauri 原生窗口、终端和 sidecar 安全边界。安装包中的 sidecar 由 Rust 按 target 后缀或 Tauri 规范化基名查找，并通过 `PI_PACKAGE_DIR` 指向 `resources`，保证主题与导出模板在 MSI/NSIS 安装态可解析。规划中的 Git 与代码审查工作台继续遵守该边界：确定性 Git 操作由 sidecar 的受限 `RepositoryService` 调用系统 Git，React 和 Rust 不获得任意 Git 命令；本地 Git 离线可用，AI 审查通过 backend 的通用审查编排复用 code-processing，结果绑定不可变 Git 快照，发布 MR 评论必须显式确认且不触发自动提交、Push、批准或合并。基础架构见 `docs/design-docs/gitpilot-desktop-technical-design-v1.md`，UI 替换方案见 `docs/design-docs/gitpilot-desktop-shadcn-ui-replacement-technical-design-v1.md`，Git 与代码审查方案见 `docs/design-docs/gitpilot-desktop-git-review-workbench-technical-design-v1.md`。
+- `/requirement` 在 Desktop 中通过独立的 `execute_command` RPC 调用扩展，不再把命令文本伪装为用户消息或占用普通流式发送态；需求选择器仍通过 `extension_ui_request` 事件回传。CLI 平台 HTTP 客户端统一使用有上限的 AbortController 超时，需求列表请求单独限制为 10 秒，超时以可读的 `PlatformApiError` 和 `rpc:error` 收敛，避免平台不可达时桌面长期停在“正在准备”。
+- GitPilot 规划以内置精选 extension 形式提供 slopchop、goal、plan-mode、subagents 和 pi-rtk-optimizer：CLI 保留上游 Pi TUI，Desktop 对标准 extension UI 走 RPC，对 slopchop 的任意 TUI custom 组件使用 Git Review Workbench 原生适配。五个包在构建期精确锁定并打入 CLI/sidecar，运行时统一解析到 GitPilot 的 Pi SDK 与 `~/.gitpilot/agent`，不依赖安装机 npm、不静默更新。Goal、Plan 与 subagent 不合并为新的总状态机，只通过工具集合、自动续跑所有权和取消传播定义组合边界；subagent 仍是同一 OS 用户下的协作进程，不作为安全沙箱。`pi-rtk-optimizer` 作为后台事件钩子型扩展提供 bash 命令重写与工具输出压缩，`rtk` 二进制不分发、缺失时降级运行原始命令，输出压缩纯文本管道离线可用；其配置目录经宿主 alias 自动桥接到 `~/.gitpilot/agent`，无需额外环境变量。详细方案见 `docs/design-docs/gitpilot-pi-productivity-extensions-technical-design-v1.md`。plan-mode 自 0.44.0 起本地 fork 到 `gitpilot-cli/src/extensions/plan-mode/`（loader 静态 import、VIRTUAL_MODULES、alias 三处绑定点改指向本地）：fork 内 `showReadyPlanMenu`/`showPlanModeMenu` 绕过 pi-tui-kit 的 runMenu/runDialogMenu 直接调 `ctx.ui.select`，非预设 choice 视为用户在输入框上方浮层"其他"输入框提交的自定义反馈，连同原计划发给 AI 修改，plan 模式不打断；上游升级时需手动合并。详细方案见 `docs/design-docs/plan-mode-local-fork-technical-design-v1.md`。
+
 ## 8. 当前存在的架构边界
 
 虽然当前系统已经比较完整，但仍然存在一些明显边界：
@@ -1065,7 +1104,7 @@ Woodpecker 在两种运行模式中都使用 Compose `woodpecker` profile，由�
 4. 为跨服务链路建立更稳定的 harness，包括真实样例、日志定位和故障回放方式。
 5. 收敛前端页面与后端 DTO 的字段约定，减少跨模块改动时的联动成本。
 6. 继续完善权限、审计、动作确认和内部接口鉴权机制，保证智能体写操作始终受控。
-7. 按 `docs/design-docs/gitpilot-cli-cloud-coding-handoff-technical-design-v1.md` 建设内嵌 Pi Agent Core 的 GitPilot CLI 与 Cloud Coding 接力链路；从 `pi-runtime` 提取共享 Agent Core，使本地 Pi 会话通过平台标准化 envelope 接力到云端 Codex/Pi，而不序列化 Runtime 私有对象。公众 SaaS 发布前必须把用户仓库执行从宿主机目录隔离升级为独立 Sandbox Worker，并补齐本地零污染、事件重放、结果分支和安全拉回 harness。
+7. 基于 `@earendil-works/pi-coding-agent@0.81.1` 源码 fork 建设 GitPilot CLI 与 Cloud Coding 接力链路：本地 Coding Agent 复用 Pi 的 Agent 循环、TUI 与工具，平台对接与云端接力以 Pi extension 形式接入；本地 Pi 会话通过平台标准化 envelope 接力到云端 Codex/Pi，不序列化 Runtime 私有对象。公众 SaaS 发布前必须把用户仓库执行从宿主机目录隔离升级为独立 Sandbox Worker，并补齐本地零污染、事件重放、结果分支和安全拉回 harness。
 
 ## 10. 相关文档
 

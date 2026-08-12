@@ -17,6 +17,7 @@ APITOKEN.md
 .gitnexus
 .scan-workspace
 .docker-config-temp
+.artifacts/
 .scripts/__pycache__
 __pycache__/
 *.pyc
@@ -26,3 +27,14 @@ __pycache__/
 # 数据库备份文件（大文件，不纳入版本管理）
 database/backups/*.sql
 nul
+
+*.tar
+
+# 前端构建依赖缓存（Vite 预构建产物，不纳入版本管理）
+frontend-public/.vite/
+
+# GitPilot 桌面版 spike 临时产物
+.tmp-spike/
+
+# Bun 构建的本地二进制缓存，不能作为源码提交
+*.bun-build

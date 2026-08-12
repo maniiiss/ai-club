@@ -886,7 +886,8 @@ const platformMenuSeedMap: Record<(typeof PLATFORM_MANAGEMENT_PERMISSION_CODES)[
   'data-workbench:view': { permission: 'data-workbench:view', fallbackPath: '/data-workbench', fallbackLabel: '数据工作台', shortLabel: '数据', fallbackIcon: DataAnalysis, matchNames: ['data-workbench'] },
   'scan:ruleset:view': { permission: 'scan:ruleset:view', fallbackPath: '/scan-rulesets', fallbackLabel: '扫描规则集', shortLabel: '规则集', fallbackIcon: Search, matchNames: ['scan-rulesets'] },
   'system:pr-review:view': { permission: 'system:pr-review:view', fallbackPath: '/pr-review-stats', fallbackLabel: 'PR评审统计', shortLabel: 'PR评审', fallbackIcon: DataAnalysis, matchNames: ['pr-review-stats'] },
-  'system:agent-usage:view': { permission: 'system:agent-usage:view', fallbackPath: '/agent-usage-stats', fallbackLabel: '智能体调用统计', shortLabel: '智能体', fallbackIcon: DataAnalysis, matchNames: ['agent-usage-stats'] }
+  'system:agent-usage:view': { permission: 'system:agent-usage:view', fallbackPath: '/agent-usage-stats', fallbackLabel: '智能体调用统计', shortLabel: '智能体', fallbackIcon: DataAnalysis, matchNames: ['agent-usage-stats'] },
+  'system:model-usage:view': { permission: 'system:model-usage:view', fallbackPath: '/model-usage-stats', fallbackLabel: '模型调用量统计', shortLabel: '模型用量', fallbackIcon: DataAnalysis, matchNames: ['model-usage-stats'] }
 }
 
 // 管理端菜单目录顺序由权限 taxonomy 统一维护，避免角色页与导航各自硬编码分组。

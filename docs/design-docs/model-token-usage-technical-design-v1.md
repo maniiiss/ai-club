@@ -1,5 +1,10 @@
 # 模型管理 Token 计量技术设计 v1
 
+> 状态：**superseded**（已废弃）。本设计提议新建 `ai_model_token_usage_event` 独立事件表，
+> 但未落地实现。后续「平台模型调用量统计」改用复用已实现的 `agent_invocation_log` 体系
+> （见 `platform-model-usage-stats-technical-design-v1.md`），不再新建独立事件表。
+> 以下内容仅作历史决策记录保留。
+
 ## 1. 设计目标
 
 本设计用于支撑模型管理页面第一版 token 计量能力，目标包括：

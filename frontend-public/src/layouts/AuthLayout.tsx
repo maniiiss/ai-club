@@ -3,7 +3,7 @@
  * 左右分屏设计：左侧品牌面板（渐变背景 + 产品特性），右侧表单面板。
  * 移动端仅显示表单面板。
  */
-import { Outlet, Navigate } from 'react-router-dom'
+import { Outlet, Navigate, useLocation } from 'react-router-dom'
 import { useAuthStore } from '@/src/stores/auth'
 import {
   FolderKanban,
@@ -28,9 +28,17 @@ const features = [
 
 export const AuthLayout = () => {
   const token = useAuthStore((s) => s.token)
+  const location = useLocation()
+  const isCliDeviceAuthorization = location.pathname === '/cli/device'
 
-  if (token) {
+  // CLI 设备授权需要复用已登录用户的会话，不能把带验证码的页面重定向到 Dashboard。
+  if (token && !isCliDeviceAuthorization) {
     return <Navigate to="/dashboard" replace />
+  }
+
+  // 设备授权页自带独立布局，已登录和未登录状态都必须保留原始 user_code。
+  if (isCliDeviceAuthorization) {
+    return <Outlet />
   }
 
   return (

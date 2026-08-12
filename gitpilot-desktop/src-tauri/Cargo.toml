@@ -1,0 +1,24 @@
+[package]
+name = "gitpilot-desktop"
+version = "0.1.0"
+description = "GitPilot 桌面版 - Tauri 2 原生 GUI，复用 gitpilot-cli RPC 核心"
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+# 系统托盘承载关闭后常驻与显式退出，必须启用 Tauri 原生 tray-icon 能力。
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-updater = "2"
+tauri-plugin-dialog = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+open = "5"
+
+[features]
+# 默认包含自定义协议
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]

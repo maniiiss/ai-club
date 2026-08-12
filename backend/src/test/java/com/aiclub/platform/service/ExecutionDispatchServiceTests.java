@@ -2,12 +2,14 @@ package com.aiclub.platform.service;
 
 import com.aiclub.platform.domain.model.AgentEntity;
 import com.aiclub.platform.domain.model.ExecutionArtifactEntity;
+import com.aiclub.platform.domain.model.ExecutionCreditSettlementEntity;
 import com.aiclub.platform.domain.model.ExecutionRunEntity;
 import com.aiclub.platform.domain.model.ExecutionStepEntity;
 import com.aiclub.platform.domain.model.ExecutionTaskEntity;
 import com.aiclub.platform.domain.model.ProjectEntity;
 import com.aiclub.platform.domain.model.TaskEntity;
 import com.aiclub.platform.repository.ExecutionArtifactRepository;
+import com.aiclub.platform.repository.ExecutionCreditSettlementRepository;
 import com.aiclub.platform.repository.ExecutionRunRepository;
 import com.aiclub.platform.repository.ExecutionStepRepository;
 import com.aiclub.platform.repository.ExecutionTaskRepository;
@@ -28,6 +30,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -103,6 +106,12 @@ class ExecutionDispatchServiceTests {
     @Mock
     private TechnicalDesignCreditSettlementService technicalDesignCreditSettlementService;
 
+    @Mock
+    private AgentCreditService agentCreditService;
+
+    @Mock
+    private ExecutionCreditSettlementRepository executionCreditSettlementRepository;
+
     private ExecutionDispatchService executionDispatchService;
 
     @BeforeEach
@@ -129,6 +138,8 @@ class ExecutionDispatchServiceTests {
                 chatRoomAgentService,
                 executionTaskQueuePublisher,
                 technicalDesignCreditSettlementService,
+                agentCreditService,
+                executionCreditSettlementRepository,
                 Runnable::run
         );
     }
@@ -835,6 +846,8 @@ class ExecutionDispatchServiceTests {
         ExecutionTaskEntity executionTask = buildExecutionTask();
         executionTask.setScenarioCode(ExecutionWorkflowService.SCENARIO_TECHNICAL_DESIGN_AUTHORING);
         when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+        when(executionCreditSettlementRepository.findByExecutionTaskIdForUpdate(anyLong()))
+                .thenReturn(Optional.of(mock(ExecutionCreditSettlementEntity.class)));
 
         executionDispatchService.markTaskQueueFailed(99L, "队列消费失败");
 
@@ -850,6 +863,8 @@ class ExecutionDispatchServiceTests {
         when(executionTaskRepository.claimQueuedTask(any(), anyString(), anyString(), anyString(), anyString(), any()))
                 .thenReturn(1);
         when(executionTaskRepository.findWithExecutionContextById(99L)).thenReturn(Optional.of(executionTask));
+        when(executionCreditSettlementRepository.findByExecutionTaskIdForUpdate(anyLong()))
+                .thenReturn(Optional.of(mock(ExecutionCreditSettlementEntity.class)));
 
         executionDispatchService.consumeQueuedTask(99L, false);
 
