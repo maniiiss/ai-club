@@ -1234,18 +1234,9 @@ export class AgentSession {
 		let messages: AgentMessage[] | undefined;
 
 		try {
-			// Handle extension commands first (execute immediately, even during streaming)
-			// Extension commands manage their own LLM interaction via pi.sendMessage()
-			if (expandPromptTemplates && text.startsWith("/")) {
-				const handled = await this._tryExecuteExtensionCommand(text);
-				if (handled) {
-					// Extension command executed, no prompt to send
-					preflightResult?.(true);
-					return;
-				}
-			}
-
-			// Emit input event for extension interception (before skill/template expansion)
+			// 先派发输入事件，再识别 slash command。业务意图：模式扩展需要先完成
+			// 工具策略切换（例如 /goal 接管任务前退出 Plan mode），命令本体才能在正确的
+			// 工具集与系统提示词下执行；普通输入仍保持在技能/模板展开之前被拦截的语义。
 			let currentText = text;
 			let currentImages = options?.images;
 			if (this._extensionRunner.hasHandlers("input")) {
@@ -1262,6 +1253,20 @@ export class AgentSession {
 				if (inputResult.action === "transform") {
 					currentText = inputResult.text;
 					currentImages = inputResult.images ?? currentImages;
+				}
+			}
+
+			// Handle extension commands after input interception (execute immediately, even during streaming).
+			// Extension commands manage their own LLM interaction via pi.sendMessage().
+			if (expandPromptTemplates && currentText.startsWith("/")) {
+				const handled = await this._tryExecuteExtensionCommand(currentText, () => {
+					// Goal 等扩展命令会等待其内部 Agent 回合完成；RPC 只需确认命令已经受理，
+					// 不能把 Tauri 同步桥接卡在整轮执行上。
+					preflightResult?.(true);
+				});
+				if (handled) {
+					// Extension command executed, no prompt to send.
+					return;
 				}
 			}
 
@@ -1384,7 +1389,7 @@ export class AgentSession {
 	/**
 	 * Try to execute an extension command. Returns true if command was found and executed.
 	 */
-	private async _tryExecuteExtensionCommand(text: string): Promise<boolean> {
+	private async _tryExecuteExtensionCommand(text: string, onAccepted?: () => void): Promise<boolean> {
 		// Parse command name and args
 		const spaceIndex = text.indexOf(" ");
 		const commandName = spaceIndex === -1 ? text.slice(1) : text.slice(1, spaceIndex);
@@ -1392,6 +1397,17 @@ export class AgentSession {
 
 		const command = this._extensionRunner.getCommand(commandName);
 		if (!command) return false;
+		onAccepted?.();
+
+		// 扩展命令不会进入普通 prompt 消息链；写入轻量 custom message 作为会话级用户操作记录，
+		// Desktop 切换/重载后才能恢复 /plan、/goal 等命令标识，而不会把命令再次交给模型执行。
+		await this.sendCustomMessage({
+			customType: "gitpilot.extension-command",
+			// 标识放在 details，不把 /goal 或 /plan 再注入下一轮模型上下文。
+			content: [],
+			display: false,
+			details: { commandName, args },
+		});
 
 		// Get command context from extension runner (includes session control methods)
 		const ctx = this._extensionRunner.createCommandContext();

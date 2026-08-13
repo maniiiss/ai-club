@@ -71,6 +71,8 @@ export interface UIMessage {
 	executionSteps?: ExecutionStep[];
 	/** 用户消息携带的附件元数据（仅展示用，文档原文已注入 prompt 文本不在此存）。 */
 	attachments?: UIAttachment[];
+	/** 用户消息中由 /skill:name 展开的技能名称，历史回放时用于恢复技能 chip。 */
+	skills?: string[];
 	/** 改动文件列表（仅 kind === 'changed_files'）。 */
 	changedFiles?: ChangedFile[];
 }
@@ -86,6 +88,14 @@ export interface GuidanceQueueItem {
 	/** 仅供再次派发时复用，不直接渲染到队列卡片。 */
 	images?: ImageContent[];
 	status: GuidanceStatus;
+}
+
+/** 输入框草稿按会话隔离；附件保留在内存中，切换会话时可直接恢复而无需重复解析。 */
+export interface ComposerDraft {
+	text: string;
+	selectedCommand: string | null;
+	attachments: PreparedAttachment[];
+	guidanceMode: GuidanceMode;
 }
 
 function newId(): string {
@@ -350,6 +360,8 @@ interface SessionStore {
 	sessions: SessionListItem[];
 	models: ModelInfo[];
 	commands: RpcSlashCommand[];
+	/** 未发送输入按 session 文件路径隔离，避免切换任务丢失文件/Skill/Plan/Goal 选择。 */
+	composerDrafts: Record<string, ComposerDraft>;
 
 	// 项目（工作目录）管理
 	projects: ProjectEntry[];
@@ -389,6 +401,8 @@ interface SessionStore {
 	/** 用户点击底栏状态时重新请求平台账户、模型与连通状态。 */
 	retryPlatformConnection: () => Promise<void>;
 	refreshSessionList: () => Promise<void>;
+	setComposerDraft: (sessionPath: string, draft: ComposerDraft) => void;
+	getComposerDraft: (sessionPath: string) => ComposerDraft | undefined;
 	/** 执行扩展命令；命令自身的选择器通过 extension_ui_request 打开，不占用普通发送态。 */
 	executeCommand: (name: string, args?: string) => Promise<void>;
 	prompt: (message: string, attachments?: PreparedAttachment[]) => Promise<void>;
@@ -438,6 +452,44 @@ function messageTextFromEvent(message: unknown): string {
 		.filter((part) => part.type === 'text' && typeof part.text === 'string')
 		.map((part) => part.text as string)
 		.join('');
+}
+
+/**
+ * @narumitw/pi-goal 会把目标、目标 ID 和续跑规则作为普通 user message 注入模型上下文。
+ * 这是 Agent 的内部控制提示，不是用户实际输入；必须保留在 sidecar 历史中供模型续跑，
+ * 但 Desktop 不应将其误渲染成一大段英文用户气泡。
+ */
+export function isInternalGoalPrompt(message: unknown): boolean {
+	if (!message || typeof message !== 'object') return false;
+	const candidate = message as { role?: unknown };
+	if (candidate.role !== 'user') return false;
+	const text = messageTextFromEvent(message);
+	return text.includes('<goal_objective>')
+		&& text.includes('</goal_objective>')
+		&& text.includes('<goal_id>')
+		&& text.includes('</goal_id>')
+		&& text.includes('Goal-mode rules:');
+}
+
+const EXTENSION_COMMAND_MESSAGE_TYPE = 'gitpilot.extension-command';
+
+/** 读取 sidecar 为扩展命令写入的轻量会话标记。它只用于展示，不会再次执行命令。 */
+function getExtensionCommandText(message: unknown): string | null {
+	if (!message || typeof message !== 'object') return null;
+	const candidate = message as { role?: unknown; customType?: unknown; content?: unknown; details?: unknown };
+	if (candidate.role !== 'custom' || candidate.customType !== EXTENSION_COMMAND_MESSAGE_TYPE) return null;
+	const details = candidate.details as { commandName?: unknown; args?: unknown } | undefined;
+	if (typeof details?.commandName === 'string' && details.commandName.trim()) {
+		return `/${details.commandName.trim()}${typeof details.args === 'string' && details.args.trim() ? ` ${details.args.trim()}` : ''}`;
+	}
+	const text = messageTextFromEvent(message);
+	return text.trim() || null;
+}
+
+function isConversationUserMessage(message: unknown): boolean {
+	if (getExtensionCommandText(message)) return true;
+	if (!message || typeof message !== 'object' || (message as { role?: unknown }).role !== 'user') return false;
+	return !isInternalGoalPrompt(message);
 }
 
 /**
@@ -496,7 +548,27 @@ function applyGuidanceQueueUpdate(set: SessionSetter, event: AgentSessionEvent):
 /** 队列项开始形成 user message 时，给实时聊天中的本地引导气泡补上“已交给 GitPilot”状态。 */
 function applyGuidanceMessageStart(set: SessionSetter, event: AgentSessionEvent): void {
 	const message = event.message as { role?: unknown; content?: unknown } | undefined;
+	const extensionCommandText = getExtensionCommandText(message);
+	if (extensionCommandText) {
+		set((state) => {
+			const lastMessage = state.messages.at(-1);
+			// 普通 prompt 会先乐观插入 /plan 或 /goal；扩展命令事件到达时只补缺失项，
+			// 避免实时事件把同一条命令再追加一次，同时保证从扩展入口发出的命令可见。
+			if (lastMessage?.role === 'user' && isEquivalentUserMessage(lastMessage.text, extensionCommandText)) return {};
+			return {
+				messages: [...state.messages, {
+					id: newId(),
+					role: 'user',
+					text: extensionCommandText,
+					kind: 'text',
+					meta: { extensionCommand: true },
+				}],
+			};
+		});
+		return;
+	}
 	if (message?.role !== 'user') return;
+	if (isInternalGoalPrompt(message)) return;
 	const text = messageTextFromEvent(message);
 	set((state) => {
 		const item = state.guidanceQueue.find((candidate) =>
@@ -708,9 +780,9 @@ function messageTimestamp(message: { timestamp?: unknown }): number | null {
 export function getRunningExecutionSeed(messages: unknown[], now = Date.now()): { prompt: string; startedAt: number } | null {
 	for (let index = messages.length - 1; index >= 0; index -= 1) {
 		const message = messages[index] as { role?: string; content?: Array<{ type?: string; text?: string }>; timestamp?: unknown };
-		if (message.role !== 'user') continue;
-		const rawText = (message.content ?? []).filter((content) => content.type === 'text').map((content) => content.text ?? '').join('');
-		const prompt = displayUserMessageText(rawText).trim();
+		if (!isConversationUserMessage(message)) continue;
+		const rawText = getExtensionCommandText(message) ?? (message.content ?? []).filter((content) => content.type === 'text').map((content) => content.text ?? '').join('');
+		const prompt = getExtensionCommandText(message) ?? displayUserMessageText(rawText).trim();
 		const timestamp = messageTimestamp(message);
 		return {
 			prompt,
@@ -718,6 +790,42 @@ export function getRunningExecutionSeed(messages: unknown[], now = Date.now()): 
 		};
 	}
 	return null;
+}
+
+/**
+ * 从 sidecar 持久化的 user message 恢复 Desktop 展示元数据。
+ * 文档附件会以 <file> 块注入 prompt，图片会作为 image content 持久化；
+ * 两者都不能只靠 text 回放，否则切换会话后文件/图片 chip 会消失。
+ */
+function parseHistoricalUserPresentation(content: unknown): { text: string; attachments?: UIAttachment[]; skills?: string[] } {
+	const parts = Array.isArray(content) ? content.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object')) : [];
+	const rawText = parts.filter((part) => part.type === 'text' && typeof part.text === 'string').map((part) => part.text as string).join('');
+	const attachments: UIAttachment[] = [];
+	const imageParts = parts.filter((part) => part.type === 'image' && typeof part.data === 'string');
+	for (const image of imageParts) {
+		const mimeType = typeof image.mimeType === 'string' ? image.mimeType : 'image/png';
+		attachments.push({ name: `图片-${attachments.length + 1}`, kind: 'image', mimeType, sizeBytes: 0, previewUrl: `data:${mimeType};base64,${image.data as string}` });
+	}
+
+	let text = rawText;
+	const skills: string[] = [];
+	const skillMatch = text.match(/^<skill name="([^"]+)" location="[^"]+">\n[\s\S]*?\n<\/skill>(?:\n\n([\s\S]+))?$/);
+	if (skillMatch) {
+		skills.push(skillMatch[1]);
+		text = skillMatch[2] ?? '';
+	}
+	text = text.replace(/\n?<file name="([^"]+)">\n[\s\S]*?\n<\/file>/g, (_block, name: string) => {
+		const dot = name.lastIndexOf('.');
+		const mimeType = dot > 0 ? `application/${name.slice(dot + 1).toLowerCase()}` : 'application/octet-stream';
+		attachments.push({ name, kind: 'document', mimeType, sizeBytes: 0 });
+		return '';
+	});
+	const displayText = displayUserMessageText(text).trim() || (attachments.length > 0 ? '（仅附件）' : '');
+	return {
+		text: displayText,
+		attachments: attachments.length > 0 ? attachments : undefined,
+		skills: skills.length > 0 ? skills : undefined,
+	};
 }
 
 export function agentMessagesToUi(messages: unknown[], isStreaming = false): UIMessage[] {
@@ -761,17 +869,33 @@ export function agentMessagesToUi(messages: unknown[], isStreaming = false): UIM
 		segmentUserIndex = -1;
 	};
 	messages.forEach((m, i) => {
-		const msg = m as { role?: string; content?: Array<{ type?: string; text?: string; thinking?: string }>; timestamp?: string };
+		const msg = m as { role?: string; customType?: string; details?: unknown; content?: Array<{ type?: string; text?: string; thinking?: string; data?: string; mimeType?: string }>; timestamp?: string };
 		const ts = messageTimestamp(msg);
-		if (msg.role === 'user') {
+		const extensionCommandText = getExtensionCommandText(msg);
+		if (extensionCommandText) {
 			flushExecutionBatch();
 			segmentStartTs = ts;
 			lastTs = ts;
-			const text = (msg.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
-			const displayText = displayUserMessageText(text);
+			segmentUserIndex = result.length;
+			result.push({ id: `hist-${i}`, role: 'user' as const, text: extensionCommandText, kind: 'text' as MessageKind, meta: { extensionCommand: true } });
+		} else if (msg.role === 'user') {
+			if (isInternalGoalPrompt(msg)) return;
+			const rawText = (msg.content ?? []).filter((c) => c.type === 'text').map((c) => c.text ?? '').join('');
+			const previous = result.at(-1);
+			// /plan、/goal 等扩展命令可能再把参数作为普通 user message 交给模型；
+			// 历史回放保留带标识的命令气泡即可，避免切换会话后出现一条重复的纯参数消息。
+			if (previous?.role === 'user' && previous.meta?.extensionCommand && isEquivalentUserMessage(previous.text, rawText)) {
+				lastTs = ts;
+				return;
+			}
+			flushExecutionBatch();
+			segmentStartTs = ts;
+			lastTs = ts;
+			const presentation = parseHistoricalUserPresentation(msg.content);
+			const displayText = presentation.text;
 			if (displayText.trim()) {
 				segmentUserIndex = result.length;
-				result.push({ id: `hist-${i}`, role: 'user' as const, text: displayText, kind: 'text' as MessageKind });
+				result.push({ id: `hist-${i}`, role: 'user' as const, text: displayText, kind: 'text' as MessageKind, attachments: presentation.attachments, skills: presentation.skills });
 			}
 		} else if (msg.role === 'assistant') {
 			if (ts != null) lastTs = ts;
@@ -815,7 +939,7 @@ export function agentMessagesToUi(messages: unknown[], isStreaming = false): UIM
 export function buildRestoredExecutionSteps(messages: unknown[]): ExecutionStep[] {
 	let lastUser = -1;
 	for (let i = messages.length - 1; i >= 0; i -= 1) {
-		if ((messages[i] as { role?: string }).role === 'user') {
+		if (isConversationUserMessage(messages[i])) {
 			lastUser = i;
 			break;
 		}
@@ -853,6 +977,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	sessions: [],
 	models: [],
 	commands: [],
+	composerDrafts: {},
 	thinkingLevels: ['off', 'low', 'medium', 'high'],
 		pendingExtensionUI: [],
 		extensionNotifications: [],
@@ -1167,6 +1292,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			// 列表刷新失败不能影响正在进行的 Agent 回合。
 		}
 	},
+	setComposerDraft: (sessionPath, draft) => {
+		set((state) => ({ composerDrafts: { ...state.composerDrafts, [sessionPath]: draft } }));
+	},
+	getComposerDraft: (sessionPath) => get().composerDrafts[sessionPath],
 
 	executeCommand: async (name, args) => {
 		try {
@@ -1489,6 +1618,16 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 					isStopping: false,
 					rpcCapabilities: snapshot.session.rpcCapabilities ?? get().rpcCapabilities,
 				});
+				// 目标会话可能拥有不同 cwd 下的 skills/prompts/extensions；snapshot 只恢复消息和运行态，
+				// 命令清单必须在 sidecar rebind 完成后重新拉取，避免沿用旧会话的 Skill/Plan/Goal 命令。
+				try {
+					const commandsRes = await rpc.getCommands();
+					if (requestVersion === sessionSwitchRequestVersion && commandsRes.success && commandsRes.command === 'get_commands') {
+						set({ commands: commandsRes.data.commands });
+					}
+				} catch {
+					// 命令刷新失败不影响已恢复的会话正文；保留上一份清单作为降级。
+				}
 				// 侧栏运行态由已有轮询维护；切换后补刷一次列表以立即反映目标会话状态。
 				void get().refreshSessionList();
 				return;
@@ -1612,6 +1751,10 @@ export function pickActiveExtensionUI(
 	return entries.find((entry) => entry.sessionPath === currentSession) ?? null;
 }
 
+/**
+ * Goal 的“替换目标”确认若被拒绝，产品语义是结束当前 Goal，而不是保留旧 Goal 继续自动续跑。
+ * 只匹配上游 pi-goal 固定协议，避免影响计划等其他扩展的普通取消操作。
+ */
 /**
  * 当前会话的待响应扩展 UI 请求（按会话隔离，见 pickActiveExtensionUI）。
  * 选择器返回稳定对象引用（find 命中元素或 null），避免无谓重渲染。

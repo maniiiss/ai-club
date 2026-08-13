@@ -1,10 +1,9 @@
 /** 目标工作台标题栏：只保留窗口、布局和账户入口，不混入旧标题栏 DOM。 */
-import { ArrowLeft, Minus, Square, X } from 'lucide-react';
+import { Minus, Square, X } from 'lucide-react';
 import type { MouseEvent } from 'react';
 import { closeWindow, minimizeWindow, startDraggingWindow, toggleMaximizeWindow } from '@/src/desktop/window';
 import { useSessionStore } from '@/src/store/session';
 import { useAppModeStore, type AppMode } from '@/src/store/app-mode';
-import { useDesignStore } from '@/src/store/design';
 import { TargetUserMenu } from './TargetUserMenu';
 import { Button } from '@/src/components/ui/button';
 import styles from './TargetTitleBar.module.css';
@@ -16,9 +15,6 @@ export function TargetTitleBar() {
 	const reportError = useSessionStore((s) => s.reportError);
 	const mode = useAppModeStore((s) => s.mode);
 	const setMode = useAppModeStore((s) => s.setMode);
-	const isDesignStarted = useDesignStore((s) => s.isProjectStarted);
-	const resetDesignProject = useDesignStore((s) => s.resetProject);
-
 	const startDragging = (event: MouseEvent<HTMLElement>) => {
 		if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
 		void startDraggingWindow();
@@ -33,7 +29,6 @@ export function TargetTitleBar() {
 	return (
 		<header className={styles.titlebar} onMouseDown={startDragging}>
 			<div className={styles.identity}>
-				{mode === 'design' && isDesignStarted && <Button variant="ghost" size="icon-sm" onClick={resetDesignProject} title="返回设计入口" aria-label="返回设计入口"><ArrowLeft /></Button>}
 				<img className={styles.icon} src={appIcon} alt="GitPilot" />
 				<span className={styles.brand}>GITPILOT</span>
 				<nav className={styles.modeSwitcher} aria-label="GitPilot 模式" onMouseDown={(event) => event.stopPropagation()}>

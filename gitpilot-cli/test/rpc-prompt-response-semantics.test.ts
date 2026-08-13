@@ -17,7 +17,7 @@ import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { runRpcMode } from "../src/modes/rpc/rpc-mode.ts";
 import { createModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
-import { createTestResourceLoader } from "./utilities.ts";
+import { createTestExtensionsResult, createTestResourceLoader } from "./utilities.ts";
 
 const rpcIo = vi.hoisted(() => ({
 	outputLines: [] as string[],
@@ -95,7 +95,12 @@ function sleep(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function createRuntimeHost(options: { withAuth: boolean; responseDelayMs: number; model?: Model<any> }): Promise<{
+async function createRuntimeHost(options: {
+	withAuth: boolean;
+	responseDelayMs: number;
+	model?: Model<any>;
+	extensionCommandHandler?: () => Promise<void>;
+}): Promise<{
 	runtimeHost: AgentSessionRuntime;
 	cleanup: () => Promise<void>;
 }> {
@@ -134,13 +139,21 @@ async function createRuntimeHost(options: { withAuth: boolean; responseDelayMs: 
 		await authStorage.modify("anthropic", async () => ({ type: "api_key", key: "test-key" }));
 	}
 
+	const extensionsResult = options.extensionCommandHandler
+		? await createTestExtensionsResult([
+			(pi) => {
+				pi.registerCommand("slow-goal", { handler: options.extensionCommandHandler! });
+			},
+		], tempDir)
+		: undefined;
+
 	const session = new AgentSession({
 		agent,
 		sessionManager,
 		settingsManager,
 		cwd: tempDir,
 		modelRuntime: getModelRuntime(modelRegistry),
-		resourceLoader: createTestResourceLoader(),
+		resourceLoader: createTestResourceLoader({ extensionsResult }),
 	});
 
 	const runtimeHost = {
@@ -170,7 +183,12 @@ async function createRuntimeHost(options: { withAuth: boolean; responseDelayMs: 
 	};
 }
 
-async function startRpcMode(options: { withAuth: boolean; responseDelayMs: number; model?: Model<any> }): Promise<{
+async function startRpcMode(options: {
+	withAuth: boolean;
+	responseDelayMs: number;
+	model?: Model<any>;
+	extensionCommandHandler?: () => Promise<void>;
+}): Promise<{
 	lineHandler: (line: string) => void;
 	cleanup: () => Promise<void>;
 }> {
@@ -282,6 +300,37 @@ describe("RPC prompt response semantics", () => {
 
 			await sleep(150);
 		} finally {
+			await cleanup();
+		}
+	});
+
+	it("acknowledges a long-running extension command before its Agent work settles", async () => {
+		let commandStarted!: () => void;
+		const started = new Promise<void>((resolve) => {
+			commandStarted = resolve;
+		});
+		let releaseCommand!: () => void;
+		const commandFinished = new Promise<void>((resolve) => {
+			releaseCommand = resolve;
+		});
+		const { lineHandler, cleanup } = await startRpcMode({
+			withAuth: true,
+			responseDelayMs: 0,
+			extensionCommandHandler: async () => {
+				commandStarted();
+				await commandFinished;
+			},
+		});
+
+		try {
+			lineHandler(JSON.stringify({ id: "goal-ack", type: "prompt", message: "/slow-goal" }));
+			await started;
+
+			expect(getPromptResponses(rpcIo.outputLines, "goal-ack")).toEqual([
+				expect.objectContaining({ id: "goal-ack", type: "response", command: "prompt", success: true }),
+			]);
+		} finally {
+			releaseCommand();
 			await cleanup();
 		}
 	});

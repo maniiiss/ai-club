@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { rpc } from '@/src/rpc/bridge';
-import { createDemoSnapshot, type DesignDocument, type DesignFileName, type DesignMessage, type DesignPlan, type DesignSnapshot, type DesignTarget } from '@/src/design/design-types';
+import { createDemoSnapshot, DESIGN_TARGETS, DESIGN_VIEWPORT_PRESETS, type DesignDocument, type DesignFileName, type DesignMessage, type DesignPlan, type DesignSnapshot, type DesignTarget, type DesignViewport } from '@/src/design/design-types';
 
 const STORAGE_KEY = 'gitpilot-desktop.design-snapshot';
 const STARTED_KEY = 'gitpilot-desktop.design-started';
@@ -28,6 +28,7 @@ export interface DesignState {
 	activeFile: DesignFileName;
 	activeTab: 'preview' | 'code';
 	target: DesignTarget;
+	viewport: DesignViewport;
 	zoom: number;
 	selectedElementId: string | null;
 	messages: DesignMessage[];
@@ -37,6 +38,7 @@ export interface DesignState {
 	isProjectStarted: boolean;
 	setTab: (tab: 'preview' | 'code') => void;
 	setTarget: (target: DesignTarget) => void;
+	setViewport: (viewport: DesignViewport) => void;
 	setZoom: (zoom: number) => void;
 	setActiveFile: (file: DesignFileName) => void;
 	selectElement: (id: string | null) => void;
@@ -77,6 +79,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
 		activeFile: 'index.html',
 		activeTab: 'preview',
 		target: 'desktop',
+		viewport: { width: DESIGN_TARGETS.desktop.width, height: DESIGN_TARGETS.desktop.height },
 		zoom: 100,
 		selectedElementId: null,
 		messages: [{ id: 'welcome', kind: 'assistant', text: '描述你想要的页面，我会把它变成适配手机和桌面的 HTML 原型。' }],
@@ -85,7 +88,11 @@ export const useDesignStore = create<DesignState>((set, get) => {
 		isGenerating: false,
 		error: null,
 		setTab: (activeTab) => set({ activeTab }),
-		setTarget: (target) => set({ target }),
+		setTarget: (target) => {
+			const preset = DESIGN_VIEWPORT_PRESETS[target][0] ?? DESIGN_TARGETS[target];
+			set({ target, viewport: { width: preset.width, height: preset.height } });
+		},
+		setViewport: (viewport) => set({ viewport }),
 		setZoom: (zoom) => set({ zoom }),
 		setActiveFile: (activeFile) => set({ activeFile }),
 		selectElement: (selectedElementId) => set({ selectedElementId }),
@@ -138,7 +145,8 @@ export const useDesignStore = create<DesignState>((set, get) => {
 		},
 		resetProject: () => {
 			try { localStorage.removeItem(STARTED_KEY); } catch {}
-			set({ isProjectStarted: false });
+			// 返回设计入口后清空上一轮会话，避免新项目在生成前复用旧结果并提前展示预览。
+			set({ isProjectStarted: false, messages: [{ id: 'welcome', kind: 'assistant', text: '描述你想要的页面，我会把它变成适配手机和桌面的 HTML 原型。' }], pendingPlan: null, selectedElementId: null, error: null });
 		},
 	};
 });

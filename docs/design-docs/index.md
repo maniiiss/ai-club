@@ -30,6 +30,7 @@
 - [GitPilot Desktop shadcn UI 整体替换技术设计](gitpilot-desktop-shadcn-ui-replacement-technical-design-v1.md) - 基于 Radix、Mira 和 Tailwind v4 重建桌面渲染层，保留 Tauri/RPC/Agent 行为契约并分阶段迁移
 - [GitPilot Desktop Git 与代码审查工作台技术设计](gitpilot-desktop-git-review-workbench-technical-design-v1.md) - 受限 sidecar Git、不可变审查快照、结构化 finding、平台治理与 GitLab 显式发布
 - [GitPilot Work 技术设计](gitpilot-work-technical-design-v1.md) - Code/Work 双模式、本机任务空间与受控联网研究
+- [GitPilot Desktop AI UI 设计编辑器技术设计](gitpilot-desktop-ai-ui-design-editor-technical-design-v1.md) - 单人结构化设计文档、DOM/CSS 画布、AI DesignPatch 与 Canvas/协作演进边界
 - [GitPilot Pi 生产力扩展技术设计](gitpilot-pi-productivity-extensions-technical-design-v1.md) - 内置 slopchop、goal、plan-mode、subagents、pi-rtk-optimizer 的 CLI/Desktop 双宿主适配、离线打包、自主委派边界与命令重写/输出压缩
 - [GitPilot 提问执行引导 P0 技术设计](gitpilot-execution-guidance-p0-technical-design-v1.md) - CLI 与 Desktop 的立即引导、完成后追加、队列展示和停止清队列语义
 - [AgentRuntime 统一聊天流式技术设计](agent-runtime-chat-streaming-technical-design-v1.md) - 多 Runtime 的 NDJSON 事件协议、Backend 转发和流式降级策略

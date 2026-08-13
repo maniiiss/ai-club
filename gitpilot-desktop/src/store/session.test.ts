@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyEvent, agentMessagesToUi, buildRestoredExecutionSteps, filterDesktopThinkingLevels, getAssistantMessageEndText, getPlanCompletionMessageEndText, getRunningExecutionSeed, platformConnectionStateFromResponse, shouldSkipProjectSwitch, useSessionStore, type UIMessage } from './session';
+import { applyEvent, agentMessagesToUi, buildRestoredExecutionSteps, filterDesktopThinkingLevels, getAssistantMessageEndText, getPlanCompletionMessageEndText, getRunningExecutionSeed, isInternalGoalPrompt, platformConnectionStateFromResponse, shouldSkipProjectSwitch, useSessionStore, type UIMessage } from './session';
 import { useWorkbenchStore } from './workbench';
 
 function applyToStreamingState(state: { messages: UIMessage[]; _streamingAssistantId: string | null; isStreaming: boolean }, event: Parameters<typeof applyEvent>[1]) {
@@ -10,6 +10,62 @@ function applyToStreamingState(state: { messages: UIMessage[]; _streamingAssista
 }
 
 describe('历史消息回放', () => {
+	const internalGoalPrompt = 'Goal mode is active. Complete this goal fully:\n\n<goal_objective>修复登录</goal_objective>\n\n<goal_id>goal-1</goal_id>\n\nGoal-mode rules:\n- Keep working.';
+
+	it('过滤 Goal 扩展注入的内部提示，但保留用户的 /goal 指令和助手回复', () => {
+		const messages = agentMessagesToUi([
+			{ role: 'user', content: [{ type: 'text', text: '/goal 修复登录' }], timestamp: 1_000 },
+			{ role: 'user', content: [{ type: 'text', text: internalGoalPrompt }], timestamp: 1_100 },
+			{ role: 'assistant', content: [{ type: 'text', text: '我会检查登录流程。' }], timestamp: 2_000 },
+		]);
+
+		expect(messages.map((message) => [message.role, message.text])).toEqual([
+			['user', '/goal 修复登录'],
+			['assistant', '我会检查登录流程。'],
+		]);
+		expect(getRunningExecutionSeed([
+			{ role: 'user', content: [{ type: 'text', text: '/goal 修复登录' }], timestamp: 1_000 },
+			{ role: 'user', content: [{ type: 'text', text: internalGoalPrompt }], timestamp: 1_100 },
+		])).toEqual({ prompt: '/goal 修复登录', startedAt: 1_000 });
+		expect(isInternalGoalPrompt({ role: 'user', content: [{ type: 'text', text: internalGoalPrompt }] })).toBe(true);
+		expect(isInternalGoalPrompt({ role: 'user', content: [{ type: 'text', text: '请分析 <goal_id>，无需启动 Goal 模式。' }] })).toBe(false);
+	});
+
+	it('从 session custom message 恢复 /goal 和 /plan 命令标识', () => {
+		const messages = agentMessagesToUi([
+			{ role: 'custom', customType: 'gitpilot.extension-command', content: [{ type: 'text', text: '/goal 修复登录' }], details: { commandName: 'goal', args: '修复登录' }, timestamp: 1_000 },
+			{ role: 'user', content: [{ type: 'text', text: 'Goal mode is active. Complete this goal fully:\n<goal_objective>修复登录</goal_objective>\n<goal_id>goal-1</goal_id>\nGoal-mode rules:' }], timestamp: 1_100 },
+			{ role: 'assistant', content: [{ type: 'text', text: '开始检查。' }], timestamp: 2_000 },
+		]);
+
+		expect(messages[0]).toMatchObject({ role: 'user', text: '/goal 修复登录', meta: { extensionCommand: true } });
+		expect(messages.some((message) => message.text.includes('Goal mode is active'))).toBe(false);
+		expect(getRunningExecutionSeed([
+			{ role: 'custom', customType: 'gitpilot.extension-command', content: [{ type: 'text', text: '/plan 设计登录' }], details: { commandName: 'plan', args: '设计登录' }, timestamp: 3_000 },
+		])).toEqual({ prompt: '/plan 设计登录', startedAt: 3_000 });
+	});
+
+	it('历史回放不重复展示扩展命令转发给模型的纯参数消息', () => {
+		const messages = agentMessagesToUi([
+			{ role: 'custom', customType: 'gitpilot.extension-command', content: [], details: { commandName: 'plan', args: '设计登录' }, timestamp: 1_000 },
+			{ role: 'user', content: [{ type: 'text', text: '设计登录' }], timestamp: 1_100 },
+			{ role: 'assistant', content: [{ type: 'text', text: '开始规划。' }], timestamp: 2_000 },
+		]);
+
+		expect(messages.map((message) => message.text)).toEqual(['/plan 设计登录', '开始规划。']);
+	});
+
+	it('恢复运行中 Goal 任务时不把内部提示当作当前段边界', () => {
+		const steps = buildRestoredExecutionSteps([
+			{ role: 'user', content: [{ type: 'text', text: '/goal 修复登录' }] },
+			{ role: 'assistant', content: [{ type: 'toolCall', id: 'old', name: 'read', arguments: {} }] },
+			{ role: 'user', content: [{ type: 'text', text: internalGoalPrompt }] },
+			{ role: 'assistant', content: [{ type: 'toolCall', id: 'current', name: 'edit', arguments: {} }] },
+		]);
+
+		expect(steps.map((step) => step.toolCallId)).toEqual(['old', 'current']);
+	});
+
 	it('切回运行中任务时从最后一条用户消息恢复计时起点', () => {
 		const seed = getRunningExecutionSeed([
 			{ role: 'user', content: [{ type: 'text', text: '上一轮' }], timestamp: 1_000 },
@@ -90,6 +146,27 @@ describe('历史消息回放', () => {
 		]);
 
 		expect(messages[0]?.text).toBe('# [#A1] 图片上传\n已选择需求，开始技术设计与开发。');
+	});
+
+	it('切换会话回放时恢复文件附件、图片附件和 Skill chip', () => {
+		const messages = agentMessagesToUi([
+			{
+				role: 'user',
+				content: [
+					{ type: 'text', text: '<skill name="office" location="C:\\skills\\office\\SKILL.md">\n解析办公文件\n</skill>\n\n请解析文件\n<file name="招标文件解析.xlsx">\n表格文本\n</file>' },
+					{ type: 'image', data: 'cG5n', mimeType: 'image/png' },
+				],
+			},
+		]);
+
+		expect(messages[0]).toMatchObject({
+			text: '请解析文件',
+			skills: ['office'],
+			attachments: [
+				{ name: '图片-1', kind: 'image', mimeType: 'image/png' },
+				{ name: '招标文件解析.xlsx', kind: 'document' },
+			],
+		});
 	});
 
 	it('任务已完成时最后一段正常归档执行批次（含改动文件，不再单独 changed_files）', () => {

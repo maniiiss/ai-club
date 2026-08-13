@@ -2,6 +2,17 @@ export type DesignFileName = 'index.html' | 'styles.css' | 'main.js';
 export type DesignTab = 'preview' | 'code';
 export type DesignTarget = 'mobile' | 'tablet' | 'desktop';
 
+/** 预览画布尺寸：既支持常用设备，也允许用户输入任意宽高。 */
+export interface DesignViewport {
+	width: number;
+	height: number;
+}
+
+export interface DesignViewportPreset extends DesignViewport {
+	id: string;
+	label: string;
+}
+
 export interface DesignFile {
 	path: DesignFileName;
 	language: 'html' | 'css' | 'javascript';
@@ -54,6 +65,32 @@ export const DESIGN_TARGETS: Record<DesignTarget, { label: string; width: number
 	mobile: { label: '手机', width: 375, height: 812 },
 	tablet: { label: '平板', width: 768, height: 1024 },
 	desktop: { label: '桌面', width: 1440, height: 900 },
+};
+
+/**
+ * 按设备类型分组的画布尺寸预设；切换设备后只展示当前类型的常用尺寸。
+ * 自定义宽高仍由 Design Store 单独承载，不污染这些产品预设。
+ */
+export const DESIGN_VIEWPORT_PRESETS: Record<DesignTarget, DesignViewportPreset[]> = {
+	mobile: [
+		{ id: 'mobile-compact', label: '紧凑手机', width: 360, height: 800 },
+		{ id: 'mobile-standard', label: '标准手机', width: 375, height: 812 },
+		{ id: 'mobile-large', label: '大屏手机', width: 390, height: 844 },
+		{ id: 'mobile-max', label: '超大屏手机', width: 430, height: 932 },
+	],
+	tablet: [
+		{ id: 'tablet-portrait', label: '竖屏平板', width: 768, height: 1024 },
+		{ id: 'tablet-air', label: '轻薄平板', width: 820, height: 1180 },
+		{ id: 'tablet-pro', label: '专业平板', width: 1024, height: 1366 },
+		{ id: 'tablet-landscape', label: '横屏平板', width: 1366, height: 1024 },
+	],
+	desktop: [
+		{ id: 'desktop-workspace', label: '工作区', width: 1440, height: 900 },
+		{ id: 'desktop-720p', label: '720p', width: 1280, height: 720 },
+		{ id: 'desktop-1080p', label: '1080p', width: 1920, height: 1080 },
+		{ id: 'desktop-2k', label: '2K', width: 2560, height: 1440 },
+		{ id: 'desktop-4k', label: '4K', width: 3840, height: 2160 },
+	],
 };
 
 const demoHtml = `<!doctype html>

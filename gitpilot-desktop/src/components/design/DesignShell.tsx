@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
-import { Check, ChevronDown, Clipboard, Code2, ExternalLink, FileText, Folder, Image as ImageIcon, Loader2, Monitor, Palette, RotateCcw, Send, Smartphone, Sparkles, Tablet, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { ArrowLeft, Check, ChevronDown, Clipboard, Code2, ExternalLink, FileText, Folder, Image as ImageIcon, Loader2, Monitor, Palette, RotateCcw, Send, Smartphone, Sparkles, Tablet, X } from 'lucide-react';
 import { TargetTitleBar } from '@/src/components/desktop/TargetTitleBar';
 import { ModelPicker } from '@/src/components/ModelPicker';
 import { Button } from '@/src/components/ui/button';
-import { DESIGN_TARGETS, type DesignFileName, type DesignMessage, type DesignSnapshot, type DesignTarget } from '@/src/design/design-types';
+import { DESIGN_TARGETS, DESIGN_VIEWPORT_PRESETS, type DesignFileName, type DesignMessage, type DesignSnapshot, type DesignTarget } from '@/src/design/design-types';
 import { isTauriEnv, rpc } from '@/src/rpc/bridge';
 import type { AttachmentInput, PreparedAttachment } from '@/src/rpc/types';
 import { useDesignStore } from '@/src/store/design';
@@ -106,6 +106,8 @@ function Conversation() {
 	const sendPrompt = useDesignStore((state) => state.sendPrompt);
 	const applyPlan = useDesignStore((state) => state.applyPlan);
 	const dismissPlan = useDesignStore((state) => state.dismissPlan);
+	// 返回入口属于设计会话上下文，放在会话标题行内避免占用原生窗口标题栏。
+	const resetProject = useDesignStore((state) => state.resetProject);
 	const [text, setText] = useState('');
 	const submit = (event?: FormEvent) => { event?.preventDefault(); if (!text.trim()) return; void sendPrompt(text); setText(''); };
 	// 兼容桌面端输入法：普通回车发送，Shift+Enter 保留换行。
@@ -123,7 +125,7 @@ function Conversation() {
 		textarea.addEventListener('keydown', onNativeKeyDown);
 		return () => textarea.removeEventListener('keydown', onNativeKeyDown);
 	}, [isGenerating, sendPrompt]);
-	return <aside className={styles.conversation} aria-label="设计对话"><header className={styles.conversationHeader}><div><span className={styles.kicker}>设计会话</span><h1>灵感工坊</h1></div><button type="button" className={styles.moreButton} aria-label="更多选项"><ChevronDown size={15} /></button></header><div className={`${styles.messageList} gp-scrollbar`}>{messages.map((message) => message.kind === 'plan' ? <DesignPlanCard key={message.id} message={message} onApply={() => void applyPlan()} onDismiss={dismissPlan} /> : <article key={message.id} className={`${styles.message} ${styles[`message_${message.kind}`]}`}><div className={styles.messageMeta}>{message.kind === 'user' ? '你' : message.kind === 'error' ? '错误' : 'GITPILOT'}</div><p>{message.kind === 'result' ? message.summary : message.kind === 'error' ? message.text : message.text}</p>{message.kind === 'result' && <span className={styles.revision}>修订版 {message.revisionId}</span>}</article>)}{pendingPlan && !messages.some((message) => message.kind === 'plan' && message.plan === pendingPlan) && <DesignPlanCard message={{ id: 'pending', kind: 'plan', plan: pendingPlan }} onApply={() => void applyPlan()} onDismiss={dismissPlan} />}{isGenerating && <div className={styles.generating}><span className={styles.pulse} /><span>正在生成新的设计方案…</span></div>}</div><form className={styles.composer} onSubmit={submit}><textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit(); }} placeholder="描述你想设计的页面…" aria-label="设计需求" disabled={isGenerating} /><div className={styles.composerFooter}><span>⌘ Enter 发送</span><Button type="submit" size="icon" disabled={isGenerating || !text.trim()} aria-label="发送设计需求"><Send size={15} /></Button></div></form></aside>;
+	return <aside className={styles.conversation} aria-label="设计对话"><header className={styles.conversationHeader}><div className={styles.conversationHeading}><Button type="button" variant="ghost" size="icon-sm" className={styles.backButton} onClick={resetProject} title="返回设计入口" aria-label="返回设计入口"><ArrowLeft size={16} /></Button><div><span className={styles.kicker}>设计会话</span><h1>灵感工坊</h1></div></div></header><div className={`${styles.messageList} gp-scrollbar`}>{messages.map((message) => message.kind === 'plan' ? <DesignPlanCard key={message.id} message={message} onApply={() => void applyPlan()} onDismiss={dismissPlan} /> : <article key={message.id} className={`${styles.message} ${styles[`message_${message.kind}`]}`}><div className={styles.messageMeta}>{message.kind === 'user' ? '你' : message.kind === 'error' ? '错误' : 'GITPILOT'}</div><p>{message.kind === 'result' ? message.summary : message.kind === 'error' ? message.text : message.text}</p>{message.kind === 'result' && <span className={styles.revision}>修订版 {message.revisionId}</span>}</article>)}{pendingPlan && !messages.some((message) => message.kind === 'plan' && message.plan === pendingPlan) && <DesignPlanCard message={{ id: 'pending', kind: 'plan', plan: pendingPlan }} onApply={() => void applyPlan()} onDismiss={dismissPlan} />}{isGenerating && <div className={styles.generating}><span className={styles.pulse} /><span>正在生成新的设计方案…</span></div>}</div><form className={styles.composer} onSubmit={submit}><textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit(); }} placeholder="描述你想设计的页面…" aria-label="设计需求" disabled={isGenerating} /><div className={styles.composerFooter}><span>⌘ Enter 发送</span><Button type="submit" size="icon" disabled={isGenerating || !text.trim()} aria-label="发送设计需求"><Send size={15} /></Button></div></form></aside>;
 }
 
 function DeviceButton({ target, active, onClick }: { target: DesignTarget; active: boolean; onClick: () => void }) {
@@ -131,15 +133,54 @@ function DeviceButton({ target, active, onClick }: { target: DesignTarget; activ
 	return <button type="button" className={`${styles.deviceButton} ${active ? styles.deviceActive : ''}`} onClick={onClick}><Icon size={14} />{DESIGN_TARGETS[target].label}</button>;
 }
 
+function parseViewportDimension(value: string, fallback: number): number {
+	const parsed = Number.parseInt(value, 10);
+	return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 5000) : fallback;
+}
+
+function ResolutionPicker() {
+	const target = useDesignStore((state) => state.target);
+	const viewport = useDesignStore((state) => state.viewport);
+	const setViewport = useDesignStore((state) => state.setViewport);
+	const [widthText, setWidthText] = useState(String(viewport.width));
+	const [heightText, setHeightText] = useState(String(viewport.height));
+	const presets = DESIGN_VIEWPORT_PRESETS[target];
+	const presetId = presets.find((preset) => preset.width === viewport.width && preset.height === viewport.height)?.id ?? 'custom';
+
+	useEffect(() => {
+		setWidthText(String(viewport.width));
+		setHeightText(String(viewport.height));
+	}, [viewport.height, viewport.width]);
+
+	const commit = () => {
+		const width = parseViewportDimension(widthText, viewport.width);
+		const height = parseViewportDimension(heightText, viewport.height);
+		setWidthText(String(width));
+		setHeightText(String(height));
+		setViewport({ width, height });
+	};
+	const applyPreset = (id: string) => {
+		const preset = presets.find((candidate) => candidate.id === id);
+		if (!preset) return;
+		setViewport({ width: preset.width, height: preset.height });
+	};
+	const commitOnEnter = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+		if (event.key === 'Enter') { event.preventDefault(); commit(); }
+	};
+
+	return <div className={styles.viewportControls} aria-label="预览分辨率"><span className={styles.viewportLabel}>画布尺寸</span><select className={styles.viewportSelect} value={presetId} onChange={(event) => applyPreset(event.target.value)} aria-label="分辨率预设"><option value="custom">自定义</option>{presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.label} {preset.width} × {preset.height}</option>)}</select><input className={styles.viewportInput} inputMode="numeric" value={widthText} onChange={(event) => setWidthText(event.target.value)} onBlur={commit} onKeyDown={commitOnEnter} aria-label="画布宽度" /><span>×</span><input className={styles.viewportInput} inputMode="numeric" value={heightText} onChange={(event) => setHeightText(event.target.value)} onBlur={commit} onKeyDown={commitOnEnter} aria-label="画布高度" /></div>;
+}
+
 function PreviewPanel() {
 	const snapshot = useDesignStore((state) => state.snapshot);
 	const target = useDesignStore((state) => state.target);
+	const viewport = useDesignStore((state) => state.viewport);
 	const zoom = useDesignStore((state) => state.zoom);
 	const setTarget = useDesignStore((state) => state.setTarget);
 	const setZoom = useDesignStore((state) => state.setZoom);
 	const selectElement = useDesignStore((state) => state.selectElement);
 	useEffect(() => { const onMessage = (event: MessageEvent) => { if (event.data?.type === 'design:select' && typeof event.data.id === 'string') selectElement(event.data.id); }; window.addEventListener('message', onMessage); return () => window.removeEventListener('message', onMessage); }, [selectElement]);
-	const dimensions = DESIGN_TARGETS[target];
+	const dimensions = viewport;
 	const srcDoc = useMemo(() => previewDocument(snapshot), [snapshot]);
 	return <div className={styles.previewPanel}><div className={styles.previewToolbar}><div className={styles.deviceGroup}>{(['mobile', 'tablet', 'desktop'] as DesignTarget[]).map((item) => <DeviceButton key={item} target={item} active={target === item} onClick={() => setTarget(item)} />)}</div><div className={styles.previewActions}><select value={zoom} onChange={(event) => setZoom(Number(event.target.value))} aria-label="预览缩放">{[50, 75, 100, 125].map((value) => <option key={value} value={value}>{value}%</option>)}</select><button type="button" title="刷新预览" onClick={() => selectElement(null)}><RotateCcw size={14} /></button><button type="button" title="在新窗口打开预览" onClick={() => window.open('', '_blank')}><ExternalLink size={14} /></button></div></div><div className={styles.previewStage}><div className={styles.deviceFrame} style={{ width: dimensions.width * zoom / 100, height: dimensions.height * zoom / 100 }}><iframe title="设计预览" sandbox="allow-scripts" srcDoc={srcDoc} /></div></div></div>;
 }
@@ -158,17 +199,12 @@ export function DesignShell() {
 	const activeTab = useDesignStore((state) => state.activeTab);
 	const setTab = useDesignStore((state) => state.setTab);
 	const snapshot = useDesignStore((state) => state.snapshot);
-	const target = useDesignStore((state) => state.target);
 	const revert = useDesignStore((state) => state.revert);
 	const exportDesign = useDesignStore((state) => state.exportDesign);
 	const error = useDesignStore((state) => state.error);
 	const clearError = useDesignStore((state) => state.clearError);
 	const selectedElementId = useDesignStore((state) => state.selectedElementId);
 	const messages = useDesignStore((state) => state.messages);
-	const isGenerating = useDesignStore((state) => state.isGenerating);
-	useEffect(() => {
-		const shell = document.querySelector<HTMLElement>('[data-ui-version="design"]');
-		shell?.toggleAttribute('data-design-empty', messages.length <= 1 || isGenerating);
-	}, [isGenerating, messages.length]);
-	return <div className={styles.shell} data-ui-version="design"><TargetTitleBar />{!isProjectStarted ? <DesignLanding /> : <div className={styles.body}><Conversation /><main className={styles.workspace}><header className={styles.workspaceHeader}><div className={styles.pageIdentity}><span className={styles.pageDot} /><div><strong>{snapshot.document.name}</strong><span>{snapshot.document.pages[0]?.name ?? '首页'} · 修订版 {snapshot.document.version}</span></div></div><div className={styles.tabs}><button type="button" className={activeTab === 'preview' ? styles.tabActive : ''} onClick={() => setTab('preview')}><Monitor size={14} />预览</button><button type="button" className={activeTab === 'code' ? styles.tabActive : ''} onClick={() => setTab('code')}><Code2 size={14} />代码</button></div><div className={styles.workspaceActions}><Button type="button" size="sm" variant="ghost" onClick={revert}><RotateCcw size={14} />回滚</Button><Button type="button" size="sm" variant="default" onClick={() => void exportDesign()}><Clipboard size={14} />导出 HTML</Button></div></header>{activeTab === 'preview' ? <PreviewPanel /> : <CodePanel />}<footer className={styles.statusbar}><span>● 就绪</span><span>{DESIGN_TARGETS[target].label} · {DESIGN_TARGETS[target].width} × {DESIGN_TARGETS[target].height}</span><span>{selectedElementId ? `已选中：${selectedElementId}` : '点击预览中的元素查看标识'}</span><span className={styles.statusGrow} /><span>.gitpilot/design/{snapshot.document.id}</span></footer></main></div>}{error && <div className={styles.error}><span>{error}</span><button type="button" onClick={clearError} aria-label="关闭错误提示"><X size={14} /></button></div>}</div>;
+	const hasGeneratedDesign = messages.some((message) => message.kind === 'result');
+	return <div className={styles.shell} data-ui-version="design" data-design-empty={!hasGeneratedDesign}><TargetTitleBar />{!isProjectStarted ? <DesignLanding /> : <div className={styles.body}><Conversation /><main className={styles.workspace}><header className={styles.workspaceHeader}><div className={styles.pageIdentity}><span className={styles.pageDot} /><div><strong>{snapshot.document.name}</strong><span>{snapshot.document.pages[0]?.name ?? '首页'} · 修订版 {snapshot.document.version}</span></div></div><div className={styles.tabs}><button type="button" className={activeTab === 'preview' ? styles.tabActive : ''} onClick={() => setTab('preview')}><Monitor size={14} />预览</button><button type="button" className={activeTab === 'code' ? styles.tabActive : ''} onClick={() => setTab('code')}><Code2 size={14} />代码</button></div><div className={styles.workspaceActions}><Button type="button" size="sm" variant="ghost" onClick={revert}><RotateCcw size={14} />回滚</Button><Button type="button" size="sm" variant="default" onClick={() => void exportDesign()}><Clipboard size={14} />导出 HTML</Button></div></header>{activeTab === 'preview' ? <PreviewPanel /> : <CodePanel />}<footer className={styles.statusbar}><ResolutionPicker /><span className={styles.statusHint}>{hasGeneratedDesign ? (selectedElementId ? `已选中：${selectedElementId}` : '点击预览中的元素查看标识') : ''}</span></footer></main></div>}{error && <div className={styles.error}><span>{error}</span><button type="button" onClick={clearError} aria-label="关闭错误提示"><X size={14} /></button></div>}</div>;
 }

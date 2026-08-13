@@ -158,7 +158,8 @@ export const rpc = {
 	workPrepareAttachments: (items: AttachmentInput[]) => send({ type: 'work_prepare_attachments', items }),
 	designCreate: (name?: string) => send({ type: 'design_create', name }),
 	designGetSnapshot: (designId: string) => send({ type: 'design_get_snapshot', designId }),
-	designGenerate: (payload: { designId: string; pageId: string; prompt: string; baseRevisionId?: string; targetProfiles: Array<'mobile' | 'tablet' | 'desktop'> }) => send({ type: 'design_generate', ...payload }, 120_000),
+	// Design 生成需要等待模型返回完整的三文件结构化结果，给本地模型和首次冷启动留出足够时间。
+	designGenerate: (payload: { designId: string; pageId: string; prompt: string; baseRevisionId?: string; targetProfiles: Array<'mobile' | 'tablet' | 'desktop'> }) => send({ type: 'design_generate', ...payload }, 150_000),
 	designPreview: (designId: string, pageId: string, revisionId?: string) => send({ type: 'design_preview', designId, pageId, revisionId }),
 	designCheck: (designId: string, pageId: string, revisionId?: string) => send({ type: 'design_check', designId, pageId, revisionId }),
 	designRevert: (designId: string, revisionId: string) => send({ type: 'design_revert', designId, revisionId }),

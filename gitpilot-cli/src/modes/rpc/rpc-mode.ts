@@ -251,11 +251,16 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		const services = await createAgentSessionServices({
 			cwd: workspacePath,
 			agentDir: getAgentDir(),
+			// Design 与主会话共享同一个 ModelRuntime，确保 keyring 加载的 GitPilot token、
+			// provider 配置和当前模型选择在独立 Agent 会话中保持一致。
+			modelRuntime: runtimeHost.services.modelRuntime,
 			// Design 仅注册 Web/MCP 扩展；noTools 会移除全部本地文件、Shell 与 Git 工具。
 			resourceLoaderOptions: { extensionFactories: createModeExtensions("design", workspacePath) },
 		});
 		const sessionManager = SessionManager.create(workspacePath, join(workspacePath, ".session"), { id: `design-${designId}` });
-		const created = await createAgentSessionFromServices({ services, sessionManager, model: session.model, thinkingLevel: session.thinkingLevel, noTools: "all" });
+		// Design 只需要三份可解析的结构化文件，不需要主会话的深度推理；
+		// 固定关闭 thinking，避免模型把输出预算消耗在隐藏推理上，导致 JSON 被截断。
+		const created = await createAgentSessionFromServices({ services, sessionManager, model: session.model, thinkingLevel: "off", noTools: "all" });
 		designSessions.set(designId, created.session);
 		return created.session;
 	};
@@ -263,6 +268,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		const current = designSnapshots.get(command.designId) ?? demoDesignSnapshot(command.designId);
 		const requestId = command.id ?? crypto.randomUUID();
 		const designSession = await createDesignSession(command.designId);
+		// Design 会话按 designId 缓存；主会话切换模型后，下一次生成要跟随新的选择，
+		// 避免继续使用旧模型或旧的未认证模型实例。
+		if (session.model && (!designSession.model || designSession.model.provider !== session.model.provider || designSession.model.id !== session.model.id)) {
+			await designSession.setModel(session.model);
+		}
 		if (!designSession.model) throw new Error("Design 尚未选择可用模型");
 		const existingFiles = current.files.map((file) => `--- ${file.path} ---\n${file.content}`).join("\n\n");
 		await designSession.prompt(`You are GitPilot Design Agent. You may use only supplied Web and authorized MCP tools for research. Never use local files, shell, Git, or write tools. Return JSON only: {"summary": string, "files": [{"path":"index.html|styles.css|main.js","content":string}]}. Return all three responsive, self-contained files and use no remote assets.\n\nCurrent files:\n${existingFiles}\n\nRequest:\n${command.prompt}`, { source: "rpc" });
@@ -711,7 +721,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					.catch((e) => {
 						if (!preflightSucceeded) {
 							output(error(id, "prompt", e.message));
+							return;
 						}
+						// 已确认受理的扩展命令可能在后续异步执行中失败；此时不能再发第二条
+						// 同 id response，否则 Rust 侧会误匹配。通过事件流通知 Desktop 即可。
+						output({ type: "rpc:error", message: e instanceof Error ? e.message : String(e) });
 					});
 				return undefined;
 			}
