@@ -79,11 +79,13 @@ interface RequestOptions {
 	token?: string;
 	/** 外部调用可缩短超时；平台查询默认必须有上限，避免扩展命令永久阻塞。 */
 	timeoutMs?: number;
+	headers?: Record<string, string>;
 }
 
 /** 发起平台请求并解包响应包络；非 2xx 或 success=false 抛 PlatformApiError。 */
 export async function requestJson<T>(platformUrl: string, path: string, options: RequestOptions = {}): Promise<T> {
 	const headers: Record<string, string> = { accept: "application/json" };
+	Object.assign(headers, options.headers ?? {});
 	if (options.body !== undefined) headers["content-type"] = "application/json";
 	if (options.token) headers.authorization = `Bearer ${options.token}`;
 

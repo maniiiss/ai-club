@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 export type WorkTaskStatus = 'active' | 'completed' | 'archived';
-export type WorkArtifactKind = 'plan' | 'notes' | 'conclusion';
+export type WorkFileChangeState = 'clean' | 'created' | 'updated' | 'deleted' | 'unsaved';
 
 export interface WorkSource {
 	id: string;
@@ -19,26 +19,45 @@ export interface WorkMessage {
 	sources?: WorkSource[];
 }
 
+export interface WorkFile {
+	path: string;
+	name: string;
+	type: string;
+	size: number;
+	updatedAt: number;
+	changeState: WorkFileChangeState;
+	content?: string;
+}
+
 export interface WorkTask {
 	id: string;
 	title: string;
 	status: WorkTaskStatus;
 	createdAt: number;
 	updatedAt: number;
+	sessionId?: string;
+	sessionPath?: string;
+	workspacePath?: string;
 	messages: WorkMessage[];
-	artifacts: Record<WorkArtifactKind, string>;
+	files: WorkFile[];
 }
 
+interface LegacyWorkTask extends Omit<WorkTask, 'files'> {
+	artifacts?: { plan?: string; notes?: string; conclusion?: string };
+}
 interface WorkSnapshot { tasks: WorkTask[]; activeTaskId: string | null; }
 
 const DB_NAME = 'gitpilot-work';
 const STORE_NAME = 'workspace';
 const SNAPSHOT_KEY = 'default';
+const PLACEHOLDER_TITLE = '新的 Work 任务';
 
 function openDb(): Promise<IDBDatabase> {
 	return new Promise((resolve, reject) => {
-		const request = indexedDB.open(DB_NAME, 1);
-		request.onupgradeneeded = () => request.result.createObjectStore(STORE_NAME);
+		const request = indexedDB.open(DB_NAME, 2);
+		request.onupgradeneeded = () => {
+			if (!request.result.objectStoreNames.contains(STORE_NAME)) request.result.createObjectStore(STORE_NAME);
+		};
 		request.onsuccess = () => resolve(request.result);
 		request.onerror = () => reject(request.error);
 	});
@@ -62,9 +81,25 @@ async function saveSnapshot(snapshot: WorkSnapshot): Promise<void> {
 	});
 }
 
-function newTask(title: string): WorkTask {
+function fileFromLegacy(_taskId: string, name: string, content: string | undefined): WorkFile | null {
+	if (!content?.trim()) return null;
+	const path = `${name}.md`;
+	return { path, name: `${name}.md`, type: 'text/markdown', size: content.length, updatedAt: Date.now(), changeState: 'created', content: `# ${name}\n\n${content.trim()}\n` };
+}
+
+function normalizeTask(raw: WorkTask | LegacyWorkTask): WorkTask {
+	const legacy = raw as LegacyWorkTask;
+	const files = Array.isArray((raw as WorkTask).files) ? (raw as WorkTask).files : [
+		fileFromLegacy(raw.id, 'plan', legacy.artifacts?.plan),
+		fileFromLegacy(raw.id, 'notes', legacy.artifacts?.notes),
+		fileFromLegacy(raw.id, 'conclusion', legacy.artifacts?.conclusion),
+	].filter((file): file is WorkFile => file !== null);
+	return { ...raw, title: raw.title?.trim() || PLACEHOLDER_TITLE, files };
+}
+
+function newTask(): WorkTask {
 	const now = Date.now();
-	return { id: crypto.randomUUID(), title: title.trim() || '未命名工作', status: 'active', createdAt: now, updatedAt: now, messages: [], artifacts: { plan: '', notes: '', conclusion: '' } };
+	return { id: crypto.randomUUID(), title: PLACEHOLDER_TITLE, status: 'active', createdAt: now, updatedAt: now, messages: [], files: [] };
 }
 
 function persist(tasks: WorkTask[], activeTaskId: string | null): void {
@@ -76,26 +111,29 @@ export interface WorkStore {
 	activeTaskId: string | null;
 	hydrated: boolean;
 	hydrate: () => Promise<void>;
-	createTask: (title: string) => WorkTask;
+	createTask: () => WorkTask;
 	selectTask: (id: string) => void;
-	updateTask: (id: string, patch: Partial<Pick<WorkTask, 'title' | 'status' | 'artifacts'>>) => void;
+	updateTask: (id: string, patch: Partial<Pick<WorkTask, 'title' | 'status' | 'sessionId' | 'sessionPath' | 'workspacePath'>>) => void;
 	deleteTask: (id: string) => void;
 	appendMessage: (taskId: string, message: WorkMessage) => void;
-	appendArtifact: (taskId: string, kind: WorkArtifactKind, text: string) => void;
+	upsertFile: (taskId: string, file: WorkFile) => void;
+	removeFile: (taskId: string, path: string) => void;
 }
 
-/** Work 数据只写浏览器 IndexedDB，不进入 Code session、项目目录或 sidecar 磁盘。 */
+/** Work 仅维护任务索引；会话和正式文件由任务目录中的 sidecar AgentSession 负责持久化。 */
 export const useWorkStore = create<WorkStore>((set, get) => ({
 	tasks: [], activeTaskId: null, hydrated: false,
 	hydrate: async () => {
 		if (get().hydrated) return;
 		try {
 			const snapshot = await loadSnapshot();
-			set({ tasks: snapshot?.tasks ?? [], activeTaskId: snapshot?.activeTaskId ?? null, hydrated: true });
+			const tasks = (snapshot?.tasks ?? []).map(normalizeTask);
+			set({ tasks, activeTaskId: snapshot?.activeTaskId ?? null, hydrated: true });
+			if (tasks.some((task) => !Array.isArray((snapshot?.tasks ?? []).find((entry) => entry.id === task.id)?.files))) persist(tasks, snapshot?.activeTaskId ?? null);
 		} catch { set({ hydrated: true }); }
 	},
-	createTask: (title) => {
-		const task = newTask(title);
+	createTask: () => {
+		const task = newTask();
 		const tasks = [task, ...get().tasks];
 		set({ tasks, activeTaskId: task.id });
 		persist(tasks, task.id);
@@ -115,8 +153,14 @@ export const useWorkStore = create<WorkStore>((set, get) => ({
 		const tasks = get().tasks.map((task) => task.id === taskId ? { ...task, messages: [...task.messages, message], updatedAt: Date.now() } : task);
 		set({ tasks }); persist(tasks, get().activeTaskId);
 	},
-	appendArtifact: (taskId, kind, text) => {
-		const tasks = get().tasks.map((task) => task.id === taskId ? { ...task, artifacts: { ...task.artifacts, [kind]: `${task.artifacts[kind].trim()}${task.artifacts[kind].trim() ? '\n\n' : ''}${text.trim()}` }, updatedAt: Date.now() } : task);
+	upsertFile: (taskId, file) => {
+		const tasks = get().tasks.map((task) => task.id === taskId ? { ...task, files: [...task.files.filter((entry) => entry.path !== file.path), file], updatedAt: Date.now() } : task);
+		set({ tasks }); persist(tasks, get().activeTaskId);
+	},
+	removeFile: (taskId, path) => {
+		const tasks = get().tasks.map((task) => task.id === taskId ? { ...task, files: task.files.filter((file) => file.path !== path), updatedAt: Date.now() } : task);
 		set({ tasks }); persist(tasks, get().activeTaskId);
 	},
 }));
+
+export { PLACEHOLDER_TITLE };

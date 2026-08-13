@@ -27,6 +27,8 @@
 			"pi-rtk-optimizer": ["./src/types/pi-rtk-optimizer.d.ts"],
 			"@narumitw/pi-goal/src/index.ts": ["./src/types/pi-goal.d.ts"],
 			"@narumitw/pi-plan-mode/src/index.ts": ["./src/types/pi-plan-mode.d.ts"]
+			,"pi-web-access": ["./src/types/pi-web-mcp-extensions.d.ts"]
+			,"pi-mcp-adapter": ["./src/types/pi-web-mcp-extensions.d.ts"]
 		},
 		"outDir": "./dist",
 		"rootDir": "./src"

@@ -1,12 +1,13 @@
 /** 目标标题栏账户入口：沿用平台账户 action，独立收口头像与菜单视觉。 */
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { ChevronDown, Coins, ExternalLink, LogOut, RefreshCw, UserRound, Wrench } from 'lucide-react';
+import { ChevronDown, Coins, ExternalLink, LogOut, Plug, RefreshCw, UserRound, Wrench } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
 import { Button } from '@/src/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/src/components/ui/dropdown-menu';
 import { THEME_OPTIONS, isThemeMode, useThemeStore } from '@/src/store/theme';
 import { useRtkStore } from '@/src/store/rtk';
+import { useMcpDialogStore } from '@/src/store/mcp';
 import styles from './TargetUserMenu.module.css';
 
 function displayName(account: ReturnType<typeof useSessionStore.getState>['platformAccount']): string { return account?.user.nickname?.trim() || account?.user.username || 'GitPilot 用户'; }
@@ -40,5 +41,6 @@ export function TargetUserMenu() {
 		<DropdownMenuSeparator />
 		<DropdownMenuItem onSelect={() => useRtkStore.getState().openSettings()}><Wrench />RTK 优化设置</DropdownMenuItem>
 		<DropdownMenuItem onSelect={() => void retryPlatformConnection()} disabled={platformConnection === 'checking'}><RefreshCw className={platformConnection === 'checking' ? 'animate-spin' : undefined} />重新检查连接</DropdownMenuItem><DropdownMenuItem onSelect={() => void openWeb()} disabled={!account?.platformUrl}><ExternalLink />前往 GitPilot Web</DropdownMenuItem><DropdownMenuItem onSelect={() => void logout()}><LogOut />退出登录</DropdownMenuItem>
+		<DropdownMenuItem onSelect={() => useMcpDialogStore.getState().show()}><Plug />MCP 管理</DropdownMenuItem>
 	</DropdownMenuContent></DropdownMenu>;
 }

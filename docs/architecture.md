@@ -1,6 +1,10 @@
 # AI Club 项目架构说明
 
+> GitPilot Work 使用 GitPilot agent 根目录下的独立任务 workspace、持久化 AgentSession 与文件产出；Code 继续使用项目 cwd 和 Code session。公众端项目、工作项、评论和附件通过 CLI 内置插件按需访问，写操作经 Desktop 确认并携带 Work 任务标识审计。详细设计见 `docs/design-docs/gitpilot-work-collaboration-technical-design-v1.md`。
+
 > GitPilot Desktop 现包含隔离的 `gitpilot-code` 与 `gitpilot-work` 模式：Code 保持项目编码 Agent 链路；Work 的任务、对话与成果只在 Desktop IndexedDB 保存。Work 的联网研究经 sidecar 调用受认证的 `/api/cli/work/research`，由后端托管搜索密钥、限流与结果裁剪，Desktop 不获得任意网络、Shell、Git 或项目文件权限。详见 `docs/design-docs/gitpilot-work-technical-design-v1.md`。
+
+> GitPilot Desktop Design Mode 复用同一 Tauri + React + sidecar 生命周期，以独立 Design RPC 管理 `.gitpilot/design/` 下的 HTML/CSS/JS 原型、修订和导出；React 只负责对话、设备预览与只读代码展示，预览 iframe 使用 sandbox 约束。详细设计见 `docs/design-docs/gitpilot-desktop-design-mode-technical-design-v1.md`。
 
 ## 1. 项目定位
 
@@ -1072,6 +1076,7 @@ Woodpecker 在两种运行模式中都使用 Compose `woodpecker` profile，由�
 GitPilot CLI 已改为基于 pi-coding-agent 二开的本地执行平面：
 
 - `gitpilot-cli` 是 `@earendil-works/pi-coding-agent@0.81.1` 的源码 fork，运行在用户设备上，直接复用 Pi 的 Agent 循环、交互式 TUI、`read`/`write`/`edit`/`bash`/`grep`/`find`/`ls` 内置工具和树形会话管理，不再自造 CLI 框架。品牌通过 `package.json` 的 `piConfig: { name: "gitpilot", configDir: ".gitpilot" }` 派生，配置目录为 `~/.gitpilot/agent`。
+- GitPilot 内置 `pi-web-access@0.22.0` 与 `pi-mcp-adapter@2.21.0`：Web 默认覆盖 Code、Work、Design，MCP 服务按独立的 `mcp-scopes.json` 分配三种模式，未分配服务默认仅 Code。标准连接定义仍保留在全局与项目 MCP 配置层，凭据和 OAuth 不进入 Desktop 状态；Bun sidecar 静态打包两个扩展及运行依赖。详细边界见 `docs/design-docs/gitpilot-web-mcp-extensions-technical-design-v1.md`。
 - 平台对接以 Pi 内置 extension 形式实现（`src/extensions/gitpilot/`），随源码编译并默认加载，不侵入核心 TUI 与工具：
   - `platform-auth`：`/gitpilot login|logout|status` 斜杠命令，设备授权换取独立 CLI Token（`gpt_`），Token 只保存在系统凭据库，服务端只保存 hash。
   - `platform-model`：注册 `gitpilot` provider，读取 `/api/cli/models` 启用 CHAT 模型（清单含 `contextLength`/`maxOutputTokens`，由 `ai_model_config` 表 V144 迁移新增、管理端可配置）；`toModelConfig` 透传两字段为 pi 的 `contextWindow`/`maxTokens`，未配置时回退默认 128K/16K。推理时用 `gpt_` 签发短期模型会话令牌（`gms_`，默认 900s），缓存并临近过期自动重建，通过 `streamSimple` 把请求改写到平台模型代理（OpenAI 走 `/chat/completions`、Anthropic 走 `/messages`）。平台模型 API Key、真实上游地址和完整请求审计留在 backend。CLI 据真实 `contextWindow` 在 `/model` 选择器详情与 `--list-models` 列动态展示窗口，并按 pi 原生 `shouldCompact`（已用 token > 窗口 − reserveTokens）触发自动压缩，无需自写压缩逻辑。

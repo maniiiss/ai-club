@@ -6,6 +6,9 @@
 
 ## 文档分类
 
+- [GitPilot Work 协同技术设计](gitpilot-work-collaboration-technical-design-v1.md) - 独立任务目录、文件产出与公众端协同插件
+- [GitPilot Web 与 MCP 扩展技术设计](gitpilot-web-mcp-extensions-technical-design-v1.md) - Web 研究、MCP 模式授权、Desktop/CLI 管理与凭据边界
+
 ### 核心理念
 
 - [核心设计理念](core-beliefs.md) - 设计原则、设计底线、价值导向
@@ -87,5 +90,9 @@
 
 ### 文档模板
 参考：[技术设计模板](architecture-design-template.md) - 技术设计模板
+
+### Design Mode
+
+- [GitPilot Desktop Design Mode 技术设计 v1](gitpilot-desktop-design-mode-technical-design-v1.md) - 基于自然语言生成 HTML 原型，支持移动端/桌面端预览，并规划多人协作与设计师画板演进
 
 *本索引自动更新，如有新增设计文档请同步维护。*

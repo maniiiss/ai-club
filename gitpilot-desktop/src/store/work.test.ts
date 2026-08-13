@@ -1,26 +1,29 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { useWorkStore } from './work';
+import { PLACEHOLDER_TITLE, useWorkStore } from './work';
 
-describe('GitPilot Work 本机任务空间', () => {
+describe('GitPilot Work 独立文件任务', () => {
 	beforeEach(() => useWorkStore.setState({ tasks: [], activeTaskId: null, hydrated: true }));
 
-	it('创建任务后独立维护消息与三个成果区', () => {
-		const task = useWorkStore.getState().createTask('学习 Rust');
-		useWorkStore.getState().appendMessage(task.id, { id: 'message-1', role: 'user', text: '帮我安排学习计划', createdAt: 1 });
-		useWorkStore.getState().appendArtifact(task.id, 'plan', '第一周：所有权');
-		const saved = useWorkStore.getState().tasks[0];
-		expect(saved.title).toBe('学习 Rust');
-		expect(saved.messages).toHaveLength(1);
-		expect(saved.artifacts.plan).toContain('第一周');
-		expect(saved.artifacts.notes).toBe('');
+	it('新建任务无需标题并立即成为当前任务', () => {
+		const task = useWorkStore.getState().createTask();
+		expect(task.title).toBe(PLACEHOLDER_TITLE);
+		expect(useWorkStore.getState().activeTaskId).toBe(task.id);
 	});
 
-	it('归档任务不会影响其他任务，永久删除会选择下一个可用任务', () => {
-		const first = useWorkStore.getState().createTask('任务一');
-		const second = useWorkStore.getState().createTask('任务二');
-		useWorkStore.getState().updateTask(first.id, { status: 'archived' });
+	it('文件索引与消息互相独立维护', () => {
+		const task = useWorkStore.getState().createTask();
+		useWorkStore.getState().appendMessage(task.id, { id: 'message-1', role: 'user', text: '推进协同', createdAt: 1 });
+		useWorkStore.getState().upsertFile(task.id, { path: 'brief.md', name: 'brief.md', type: 'text/markdown', size: 8, updatedAt: 1, changeState: 'created', content: '# brief' });
+		const saved = useWorkStore.getState().tasks[0];
+		expect(saved.messages).toHaveLength(1);
+		expect(saved.files[0].path).toBe('brief.md');
+	});
+
+	it('删除任务只影响 Work 索引', () => {
+		const first = useWorkStore.getState().createTask();
+		const second = useWorkStore.getState().createTask();
 		useWorkStore.getState().deleteTask(second.id);
 		expect(useWorkStore.getState().tasks).toHaveLength(1);
-		expect(useWorkStore.getState().activeTaskId).toBeNull();
+		expect(useWorkStore.getState().tasks[0].id).toBe(first.id);
 	});
 });

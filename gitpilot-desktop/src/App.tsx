@@ -13,6 +13,8 @@ import { TargetUIGallery } from '@/src/components/desktop/TargetUIGallery';
 import { Button } from '@/src/components/ui/button';
 import { TargetDesktopShell } from '@/src/components/desktop/TargetDesktopShell';
 import { TargetWorkShell } from '@/src/components/work/TargetWorkShell';
+import { DesignShell } from '@/src/components/design/DesignShell';
+import { McpManagerDialog } from '@/src/components/desktop/McpManagerDialog';
 import { resolveWorkbenchShortcut } from '@/src/workbench/shortcuts';
 import { useAppModeStore } from '@/src/store/app-mode';
 import styles from './App.module.css';
@@ -69,8 +71,9 @@ export default function App() {
 		content = <div className={styles.modeRoot} data-active-mode={appMode}>
 			<div className={styles.codeMode} aria-hidden={appMode !== 'code'}><TargetDesktopShell newSession={newSession} abort={abort} error={error} clearError={clearError} /></div>
 			<div className={styles.workMode} aria-hidden={appMode !== 'work'}><TargetWorkShell /></div>
+			<div className={styles.designMode} aria-hidden={appMode !== 'design'}><DesignShell /></div>
 		</div>;
 	}
 
-	return <TargetContextMenu>{content}</TargetContextMenu>;
+	return <TargetContextMenu>{content}<McpManagerDialog /></TargetContextMenu>;
 }

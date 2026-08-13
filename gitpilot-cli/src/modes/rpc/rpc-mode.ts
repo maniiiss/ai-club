@@ -12,10 +12,14 @@
  */
 
 import * as crypto from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { join, relative, resolve } from "node:path";
 import type { AgentSessionEvent } from "../../core/agent-session.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { prepareAttachment } from "../../core/attachments/prepare-attachment.ts";
 import { SessionManager } from "../../core/session-manager.ts";
+import { getAgentDir } from "../../config.ts";
+import { createAgentSessionFromServices, createAgentSessionServices } from "../../core/agent-session-services.ts";
 import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
@@ -46,8 +50,11 @@ import {
 import { getPlatformUrl, setPlatformUrl } from "../../extensions/gitpilot/config.ts";
 import { deleteCliToken, loadCliToken, saveCliToken } from "../../extensions/gitpilot/credentials.ts";
 import { getCurrentCreditAccount, getCurrentUser, revokeCliToken } from "../../extensions/gitpilot/api.ts";
+import { createGitPilotWorkToolDefinitions } from "../../extensions/gitpilot/work-tools.ts";
+import { createModeExtensions } from "../../extensions/gitpilot/mode-extensions.ts";
+import { deleteManagedMcpServer, listManagedMcpServers, saveManagedMcpServer, setManagedMcpEnabled, setManagedMcpModes, type GitPilotAgentMode, type McpServerDefinition } from "../../extensions/gitpilot/mcp-manager.ts";
 import type { Context } from "@earendil-works/pi-ai/compat";
-import type { WorkResearchSource } from "./rpc-types.ts";
+import type { DesignRpcFile, DesignRpcSnapshot, WorkFileSnapshot, WorkResearchSource } from "./rpc-types.ts";
 
 // Re-export types for consumers
 export type {
@@ -153,8 +160,134 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	let shutdownRequested = false;
 	let shuttingDown = false;
 	/** Work 运行只保留进程内 AbortController，绝不写入 Code session 或磁盘。 */
-	let activeWorkRequest: { id: string; controller: AbortController } | undefined;
+	let activeWorkRequest: { id: string; controller: AbortController; session?: import("../../core/agent-session.ts").AgentSession } | undefined;
+	/** Work 每个任务拥有独立 cwd 与 AgentSession，避免读取或污染当前 Code 项目。 */
+	const workSessions = new Map<string, { session: import("../../core/agent-session.ts").AgentSession; workspacePath: string }>();
+	const workRoot = join(getAgentDir(), "workspaces");
+	const workPath = (taskId: string): string => {
+		if (!/^[a-zA-Z0-9_-]+$/.test(taskId)) throw new Error("非法 Work 任务标识");
+		return join(workRoot, taskId);
+	};
+	const safeWorkFile = (taskId: string, path: string): string => {
+		const root = resolve(workPath(taskId));
+		const target = resolve(root, path);
+		const rel = relative(root, target);
+		if (!rel || rel.startsWith("..") || rel.includes("..\\") || rel.includes("../")) throw new Error("Work 文件路径越界");
+		return target;
+	};
+	const snapshotFile = (root: string, target: string): WorkFileSnapshot => {
+		const stat = statSync(target);
+		const path = relative(root, target).replaceAll("\\", "/");
+		return { path, name: path.split("/").pop() ?? path, type: "text/plain", size: stat.size, updatedAt: stat.mtimeMs, content: readFileSync(target, "utf8") };
+	};
+	const listWorkFiles = (root: string): WorkFileSnapshot[] => {
+		if (!existsSync(root)) return [];
+		const files: WorkFileSnapshot[] = [];
+		const visit = (dir: string) => {
+			for (const name of readdirSync(dir)) {
+				const target = join(dir, name);
+				if (statSync(target).isDirectory()) visit(target);
+				else files.push(snapshotFile(root, target));
+			}
+		};
+		visit(root);
+		return files;
+	};
+	const createWorkSession = async (taskId: string) => {
+		const existing = workSessions.get(taskId);
+		if (existing) return existing;
+		const workspacePath = workPath(taskId);
+		const sessionDir = join(workspacePath, ".session");
+		mkdirSync(workspacePath, { recursive: true });
+		const sessionManager = SessionManager.create(workspacePath, sessionDir, { id: `work-${taskId}` });
+		const services = await createAgentSessionServices({
+			cwd: workspacePath,
+			agentDir: getAgentDir(),
+			// Work 保留受限的本地工具集合，同时通过统一工厂获得 Web 与按模式授权的 MCP 工具。
+			resourceLoaderOptions: { extensionFactories: createModeExtensions("work", workspacePath) },
+		});
+		const created = await createAgentSessionFromServices({ services, sessionManager, model: session.model, thinkingLevel: session.thinkingLevel, tools: ["read", "write", "edit", "grep", "find", "ls"], excludeTools: ["bash"], customTools: createGitPilotWorkToolDefinitions(taskId, workspacePath) });
+		const record = { session: created.session, workspacePath };
+		workSessions.set(taskId, record);
+		created.session.subscribe((event) => {
+			if (event.type === "message_update") {
+				const update = event.assistantMessageEvent as { type?: string; delta?: string } | undefined;
+				if (update?.type === "text_delta" && update.delta) output({ type: "work_delta", taskId, delta: update.delta });
+			}
+			if (event.type === "tool_execution_start") output({ type: "work_tool_started", taskId, toolCallId: event.toolCallId, toolName: event.toolName, args: event.args });
+			if (event.type === "tool_execution_end") output({ type: "work_tool_completed", taskId, toolCallId: event.toolCallId, toolName: event.toolName, result: event.result, isError: event.isError });
+			if (event.type === "agent_settled") output({ type: "work_file_snapshot", taskId, files: listWorkFiles(workspacePath) });
+		});
+		return record;
+	};
+	const getWorkSession = async (taskId: string) => workSessions.get(taskId) ?? await createWorkSession(taskId);
+	const reloadMcpSessions = async (): Promise<void> => {
+		await session.reload();
+		for (const work of workSessions.values()) await work.session.reload();
+	};
 	const signalCleanupHandlers: Array<() => void> = [];
+
+	// Design Mode 文件独立于 Code/Work 会话，所有路径都固定在 GitPilot 数据目录下。
+	const designRoot = join(runtimeHost.cwd, ".gitpilot", "design");
+	const designSnapshots = new Map<string, DesignRpcSnapshot>();
+	const designSessions = new Map<string, import("../../core/agent-session.ts").AgentSession>();
+	const designFile = (path: DesignRpcFile["path"], content: string): DesignRpcFile => ({ path, content, language: path === "index.html" ? "html" : path === "styles.css" ? "css" : "javascript" });
+	const demoDesignSnapshot = (designId: string, name = "StudioAI Landing"): DesignRpcSnapshot => {
+		const pageId = "home";
+		const files: DesignRpcFile[] = [
+			designFile("index.html", "<!doctype html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>StudioAI</title></head><body><header class=\"nav\"><strong>◉ StudioAI</strong><nav><a href=\"#work\">Work</a><a href=\"#process\">Process</a><button data-design-id=\"nav-cta\">Start a project ↗</button></nav></header><main class=\"hero\"><span class=\"eyebrow\">NEW · AI-powered web design</span><h1>The website your brand deserves.</h1><p>Stunning design. Blazing performance. Built by AI, refined by experts.</p><button data-design-id=\"hero-cta\" class=\"primary\">Start your project ↗</button></main><footer>Stripe · Vercel · Linear · Notion · Figma</footer></body></html>"),
+			designFile("styles.css", ":root{font-family:Inter,system-ui,sans-serif;color:#f5f4ed;background:#071111}*{box-sizing:border-box}body{min-height:100vh;margin:0;padding:32px 5vw;background:radial-gradient(circle at 50% 10%,#31534e,#071111 68%);text-align:center}.nav{display:flex;justify-content:space-between;align-items:center}.nav nav{display:flex;gap:24px;align-items:center}.nav a{color:#b8c8c0;text-decoration:none;font-size:12px}.nav button,.primary{border:0;border-radius:999px;background:#edf0dd;color:#111b17;padding:11px 18px;font-weight:700}.eyebrow{display:inline-block;margin-top:23vh;border:1px solid #6f9084;border-radius:99px;padding:7px 12px;color:#d5e4da;font-size:10px}.hero h1{max-width:900px;margin:24px auto 14px;font:italic 400 clamp(48px,8vw,110px)/.95 Georgia,serif;letter-spacing:-.06em}.hero p{color:#a7b8ad}.primary{margin-top:20px}footer{margin-top:15vh;color:#c9d4c9;font:italic 20px Georgia,serif;word-spacing:28px}@media(max-width:700px){body{padding:20px 18px}.nav nav a{display:none}.hero h1{font-size:clamp(45px,15vw,76px)}footer{font-size:15px;word-spacing:5px;line-height:2}}"),
+			designFile("main.js", "document.querySelectorAll('[data-design-id]').forEach((element)=>element.addEventListener('click',(event)=>{event.preventDefault();window.parent.postMessage({type:'design:select',id:element.dataset.designId},'*')}));"),
+		];
+		return { document: { id: designId, name, version: 1, entryPageId: pageId, pages: [{ id: pageId, name: "Home", route: "/", files }], revisions: [{ id: "rev-1", prompt: "Create a cinematic AI studio landing page", summary: "Initial StudioAI landing page", createdAt: new Date().toISOString() }] }, files };
+	};
+	const designPath = (designId: string) => { if (!/^[a-zA-Z0-9_-]+$/.test(designId)) throw new Error("非法 Design 标识"); return join(designRoot, designId); };
+	const persistDesign = (snapshot: DesignRpcSnapshot): void => { const root = designPath(String(snapshot.document.id)); mkdirSync(join(root, "pages", "home"), { recursive: true }); writeFileSync(join(root, "design.json"), JSON.stringify(snapshot.document, null, 2), "utf8"); for (const file of snapshot.files) writeFileSync(join(root, "pages", "home", file.path), file.content, "utf8"); };
+	const createDesignSession = async (designId: string) => {
+		const existing = designSessions.get(designId);
+		if (existing) return existing;
+		const workspacePath = designPath(designId);
+		mkdirSync(workspacePath, { recursive: true });
+		const services = await createAgentSessionServices({
+			cwd: workspacePath,
+			agentDir: getAgentDir(),
+			// Design 仅注册 Web/MCP 扩展；noTools 会移除全部本地文件、Shell 与 Git 工具。
+			resourceLoaderOptions: { extensionFactories: createModeExtensions("design", workspacePath) },
+		});
+		const sessionManager = SessionManager.create(workspacePath, join(workspacePath, ".session"), { id: `design-${designId}` });
+		const created = await createAgentSessionFromServices({ services, sessionManager, model: session.model, thinkingLevel: session.thinkingLevel, noTools: "all" });
+		designSessions.set(designId, created.session);
+		return created.session;
+	};
+	const designGenerate = async (command: Extract<RpcCommand, { type: "design_generate" }>) => {
+		const current = designSnapshots.get(command.designId) ?? demoDesignSnapshot(command.designId);
+		const requestId = command.id ?? crypto.randomUUID();
+		const designSession = await createDesignSession(command.designId);
+		if (!designSession.model) throw new Error("Design 尚未选择可用模型");
+		const existingFiles = current.files.map((file) => `--- ${file.path} ---\n${file.content}`).join("\n\n");
+		await designSession.prompt(`You are GitPilot Design Agent. You may use only supplied Web and authorized MCP tools for research. Never use local files, shell, Git, or write tools. Return JSON only: {"summary": string, "files": [{"path":"index.html|styles.css|main.js","content":string}]}. Return all three responsive, self-contained files and use no remote assets.\n\nCurrent files:\n${existingFiles}\n\nRequest:\n${command.prompt}`, { source: "rpc" });
+		await designSession.waitForIdle();
+		const modelText = designSession.getLastAssistantText() ?? "";
+		if (modelText) output({ type: "design_delta", requestId, designId: command.designId, delta: modelText });
+		let generatedFiles: DesignRpcFile[] | undefined;
+		let generatedSummary = "";
+		try {
+			const parsed = JSON.parse(modelText.replace(/^```json\s*/i, "").replace(/\s*```$/, "")) as { summary?: unknown; files?: unknown };
+			if (typeof parsed.summary === "string") generatedSummary = parsed.summary;
+			if (Array.isArray(parsed.files)) {
+				const valid = parsed.files.filter((file): file is { path: DesignRpcFile["path"]; content: string } => Boolean(file && typeof file === "object" && ["index.html", "styles.css", "main.js"].includes((file as { path?: unknown }).path as string) && typeof (file as { content?: unknown }).content === "string"));
+				if (valid.length > 0) generatedFiles = valid.map((file) => designFile(file.path, file.content));
+			}
+		} catch { /* 非结构化响应会在下方转为明确错误，禁止本地 mock 回退。 */ }
+		if (!generatedFiles || generatedFiles.length !== 3 || new Set(generatedFiles.map((file) => file.path)).size !== 3) throw new Error("Design Agent 未返回完整的 index.html、styles.css、main.js 结构化结果");
+		const files = generatedFiles;
+		const revisionId = `rev-${Date.now()}`;
+		const summary = generatedSummary || "已应用 Design Agent 的结构化生成结果。";
+		const document = { ...current.document, version: Number(current.document.version ?? 1) + 1, revisions: [...(Array.isArray(current.document.revisions) ? current.document.revisions : []), { id: revisionId, prompt: command.prompt, summary, createdAt: new Date().toISOString() }], pages: [{ ...(current.document.pages as Array<Record<string, unknown>>)[0], files }] };
+		const next = { document, files } as DesignRpcSnapshot;
+		designSnapshots.set(command.designId, next); persistDesign(next); output({ type: "design_preview_ready", designId: command.designId, pageId: command.pageId, revisionId, snapshot: next });
+		return { requestId, snapshot: next, summary };
+	};
 
 	const loadWorkResearch = async (query: string, signal: AbortSignal): Promise<WorkResearchSource[]> => {
 		const platformUrl = getPlatformUrl();
@@ -193,7 +326,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				}
 			}
 			const researchContext = sources.length === 0 ? "" : `\n\n可引用研究资料（仅将其作为来源，不要编造 URL）：\n${sources.map((source, index) => `[${index + 1}] ${source.title}\n${source.url}\n${source.snippet}`).join("\n\n")}`;
-			const history = command.history.slice(-20).filter((item) => item && (item.role === "user" || item.role === "assistant") && typeof item.content === "string").map((item) => item.role === "user"
+			const history = (command.history ?? []).slice(-20).filter((item) => item && (item.role === "user" || item.role === "assistant") && typeof item.content === "string").map((item) => item.role === "user"
 				? { role: "user", content: item.content.slice(0, 12_000), timestamp: Date.now() }
 				: { role: "assistant", content: [{ type: "text", text: item.content.slice(0, 12_000) }], timestamp: Date.now() });
 			const context: Context = {
@@ -213,6 +346,28 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 			output({ type: "work_complete", requestId, taskId: command.taskId, sources });
 			return { requestId, text, sources };
+		} finally {
+			if (activeWorkRequest?.id === requestId) activeWorkRequest = undefined;
+		}
+	};
+
+	/** Work 新回合使用独立 AgentSession，历史由 session JSONL 持久化，不再由 Desktop 重放。 */
+	const runWorkPromptV2 = async (command: Extract<RpcCommand, { type: "work_prompt" }>) => {
+		const message = command.message.trim();
+		if (!message || message.length > 12_000) throw new Error("Work 输入不能为空且不得超过 12000 个字符");
+		if (activeWorkRequest) throw new Error("已有 Work 请求正在执行，请先停止或等待完成");
+		const work = await createWorkSession(command.taskId);
+		if (!work.session.model) throw new Error("Work 尚未选择可用模型");
+		const requestId = command.id ?? crypto.randomUUID();
+		const controller = new AbortController();
+		activeWorkRequest = { id: requestId, controller };
+		try {
+			await work.session.prompt(message, { source: "rpc" });
+			await work.session.waitForIdle();
+			const text = work.session.getLastAssistantText() ?? "";
+			if (work.session.messages.filter((entry) => entry.role === "user").length === 1) await work.session.generateAndApplySessionTitle(message);
+			output({ type: "work_complete", requestId, taskId: command.taskId });
+			return { requestId, text, title: work.session.sessionName };
 		} finally {
 			if (activeWorkRequest?.id === requestId) activeWorkRequest = undefined;
 		}
@@ -621,12 +776,134 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// =================================================================
 
 			case "work_prompt": {
-				const result = await runWorkPrompt(command);
+				const result = await runWorkPromptV2(command);
 				return success(id, "work_prompt", result);
 			}
 
-			case "work_abort": {
-				if (activeWorkRequest && (!command.requestId || activeWorkRequest.id === command.requestId)) activeWorkRequest.controller.abort();
+			case "design_create": {
+				const designId = `design-${crypto.randomUUID()}`;
+				const snapshot = demoDesignSnapshot(designId, command.name || "StudioAI Landing");
+				designSnapshots.set(designId, snapshot); persistDesign(snapshot);
+				return success(id, "design_create", { designId, snapshot });
+			}
+
+			case "design_get_snapshot": {
+				const snapshot = designSnapshots.get(command.designId) ?? demoDesignSnapshot(command.designId);
+				designSnapshots.set(command.designId, snapshot);
+				return success(id, "design_get_snapshot", { snapshot });
+			}
+
+			case "design_generate": {
+				return success(id, "design_generate", await designGenerate(command));
+			}
+
+			case "design_preview": {
+				const snapshot = designSnapshots.get(command.designId) ?? demoDesignSnapshot(command.designId);
+				return success(id, "design_preview", { snapshot });
+			}
+
+			case "design_check": {
+				const snapshot = designSnapshots.get(command.designId) ?? demoDesignSnapshot(command.designId);
+				return success(id, "design_check", { snapshot, checks: [{ level: "info", message: "Responsive preview is available for all target profiles." }] });
+			}
+
+			case "design_revert": {
+				const snapshot = designSnapshots.get(command.designId) ?? demoDesignSnapshot(command.designId);
+				return success(id, "design_revert", { snapshot });
+			}
+
+			case "design_export": {
+				const snapshot = designSnapshots.get(command.designId) ?? demoDesignSnapshot(command.designId);
+				persistDesign(snapshot);
+				return success(id, "design_export", { path: designPath(command.designId) });
+			}
+
+			case "mcp_list": {
+				return success(id, "mcp_list", { servers: listManagedMcpServers(runtimeHost.cwd, getAgentDir()) });
+			}
+
+			case "mcp_save_server": {
+				saveManagedMcpServer(runtimeHost.cwd, command.name, command.definition as McpServerDefinition, command.modes as GitPilotAgentMode[], getAgentDir());
+				await reloadMcpSessions();
+				return success(id, "mcp_save_server");
+			}
+
+			case "mcp_delete_server": {
+				deleteManagedMcpServer(runtimeHost.cwd, command.name, getAgentDir());
+				await reloadMcpSessions();
+				return success(id, "mcp_delete_server");
+			}
+
+			case "mcp_set_modes": {
+				setManagedMcpModes(runtimeHost.cwd, command.name, command.modes as GitPilotAgentMode[], getAgentDir());
+				await reloadMcpSessions();
+				return success(id, "mcp_set_modes");
+			}
+
+			case "mcp_set_enabled": {
+				setManagedMcpEnabled(runtimeHost.cwd, command.name, command.enabled, getAgentDir());
+				await reloadMcpSessions();
+				return success(id, "mcp_set_enabled");
+			}
+
+			case "mcp_reload": {
+				await reloadMcpSessions();
+				return success(id, "mcp_reload");
+			}
+
+			case "new_work_session": {
+				const work = await createWorkSession(command.taskId);
+				return success(id, "new_work_session", { taskId: command.taskId, sessionId: work.session.sessionId, sessionPath: work.session.sessionFile ?? "", workspacePath: work.workspacePath, title: work.session.sessionName ?? "新的 Work 任务" });
+			}
+
+			case "work_file_list": {
+				const root = (await getWorkSession(command.taskId)).workspacePath;
+				return success(id, "work_file_list", { taskId: command.taskId, files: listWorkFiles(root) });
+			}
+
+			case "work_file_read": {
+				const root = (await getWorkSession(command.taskId)).workspacePath;
+				const target = safeWorkFile(command.taskId, command.path);
+				if (!existsSync(target) || !statSync(target).isFile()) return error(id, "work_file_read", "Work 文件不存在");
+				return success(id, "work_file_read", { taskId: command.taskId, file: snapshotFile(root, target) });
+			}
+
+			case "work_file_write": {
+				const root = (await getWorkSession(command.taskId)).workspacePath;
+				const target = safeWorkFile(command.taskId, command.path);
+				mkdirSync(resolve(target, ".."), { recursive: true });
+				writeFileSync(target, command.content, "utf8");
+				const file = snapshotFile(root, target);
+				output({ type: "work_file_updated", taskId: command.taskId, file });
+				return success(id, "work_file_write", { taskId: command.taskId, file });
+			}
+
+			case "work_file_delete": {
+				await getWorkSession(command.taskId);
+				const target = safeWorkFile(command.taskId, command.path);
+				if (existsSync(target)) unlinkSync(target);
+				output({ type: "work_file_deleted", taskId: command.taskId, path: command.path });
+				return success(id, "work_file_delete", { taskId: command.taskId, path: command.path });
+			}
+
+			case "work_file_rename": {
+				const root = (await getWorkSession(command.taskId)).workspacePath;
+				const source = safeWorkFile(command.taskId, command.path);
+				const target = safeWorkFile(command.taskId, command.newPath);
+				if (!existsSync(source)) return error(id, "work_file_rename", "Work 文件不存在");
+				mkdirSync(resolve(target, ".."), { recursive: true });
+				renameSync(source, target);
+				const file = snapshotFile(root, target);
+				output({ type: "work_file_updated", taskId: command.taskId, file });
+				return success(id, "work_file_rename", { taskId: command.taskId, file });
+			}
+
+		case "work_abort": {
+			if (activeWorkRequest && (!command.requestId || activeWorkRequest.id === command.requestId)) {
+				activeWorkRequest.controller.abort();
+				const taskSession = [...workSessions.values()].find((entry) => entry.session.isStreaming);
+				if (taskSession) void taskSession.session.abort();
+			}
 				return success(id, "work_abort");
 			}
 

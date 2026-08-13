@@ -77,6 +77,20 @@ export interface PreparedAttachment {
 /** Work 对话只传递本机任务上下文；不包含 Code session、cwd 或任何凭据。 */
 export interface WorkConversationMessage { role: 'user' | 'assistant'; content: string; }
 export interface WorkResearchSource { id: string; title: string; url: string; snippet: string; publishedAt?: string; }
+export interface WorkFileSnapshot {
+	path: string;
+	name: string;
+	type: string;
+	size: number;
+	updatedAt: number;
+	content?: string;
+}
+
+export interface DesignRpcFile { path: 'index.html' | 'styles.css' | 'main.js'; language: 'html' | 'css' | 'javascript'; content: string }
+export interface DesignRpcSnapshot { document: Record<string, unknown>; files: DesignRpcFile[] }
+export type McpMode = 'code' | 'work' | 'design';
+/** 管理页只消费脱敏 MCP 摘要，凭据只在写入请求中短暂经过 sidecar。 */
+export interface ManagedMcpServer { name: string; source: 'global' | 'project' | 'project-override'; enabled: boolean; modes: McpMode[]; transport: 'stdio' | 'http' | 'unknown'; }
 
 /** Slash 命令来源信息（最小化） */
 export interface SourceInfo {
@@ -220,9 +234,29 @@ export type RpcCommand =
 	| { id?: string; type: 'new_session'; parentSession?: string; cwd?: string }
 	// 附件预解析（路径或内联 base64 -> 文本/图片，结果随下一条 prompt 注入）
 	| { id?: string; type: 'prepare_attachments'; items: AttachmentInput[] }
-	| { id?: string; type: 'work_prompt'; taskId: string; message: string; history: WorkConversationMessage[]; research?: boolean }
+	| { id?: string; type: 'new_work_session'; taskId: string }
+	| { id?: string; type: 'work_prompt'; taskId: string; message: string }
 	| { id?: string; type: 'work_abort'; requestId?: string }
+	| { id?: string; type: 'work_file_list'; taskId: string }
+	| { id?: string; type: 'work_file_read'; taskId: string; path: string }
+	| { id?: string; type: 'work_file_write'; taskId: string; path: string; content: string }
+	| { id?: string; type: 'work_file_delete'; taskId: string; path: string }
+	| { id?: string; type: 'work_file_rename'; taskId: string; path: string; newPath: string }
 	| { id?: string; type: 'work_prepare_attachments'; items: AttachmentInput[] }
+	| { id?: string; type: 'design_create'; name?: string }
+	| { id?: string; type: 'design_get_snapshot'; designId: string }
+	| { id?: string; type: 'design_generate'; designId: string; pageId: string; prompt: string; baseRevisionId?: string; targetProfiles: Array<'mobile' | 'tablet' | 'desktop'> }
+	| { id?: string; type: 'design_apply_patch'; designId: string; pageId: string; baseRevisionId: string; patch: Record<string, unknown> }
+	| { id?: string; type: 'design_preview'; designId: string; pageId: string; revisionId?: string }
+	| { id?: string; type: 'design_check'; designId: string; pageId: string; revisionId?: string }
+	| { id?: string; type: 'design_revert'; designId: string; revisionId: string }
+	| { id?: string; type: 'design_export'; designId: string; outputPath?: string }
+	| { id?: string; type: 'mcp_list' }
+	| { id?: string; type: 'mcp_save_server'; name: string; definition: Record<string, unknown>; modes: McpMode[] }
+	| { id?: string; type: 'mcp_delete_server'; name: string }
+	| { id?: string; type: 'mcp_set_modes'; name: string; modes: McpMode[] }
+	| { id?: string; type: 'mcp_set_enabled'; name: string; enabled: boolean }
+	| { id?: string; type: 'mcp_reload' }
 	| { id?: string; type: 'get_state' }
 	// 模型
 	| { id?: string; type: 'set_model'; provider: string; modelId: string }
@@ -296,9 +330,22 @@ export type RpcResponse =
 	  }
 	| { id?: string; type: 'response'; command: 'new_session'; success: true; data: { cancelled: boolean } }
 	| { id?: string; type: 'response'; command: 'prepare_attachments'; success: true; data: { attachments: PreparedAttachment[] } }
-	| { id?: string; type: 'response'; command: 'work_prompt'; success: true; data: { requestId: string; text: string; sources: WorkResearchSource[] } }
+	| { id?: string; type: 'response'; command: 'new_work_session'; success: true; data: { taskId: string; sessionId: string; sessionPath: string; workspacePath: string; title: string } }
+	| { id?: string; type: 'response'; command: 'work_prompt'; success: true; data: { requestId: string; text: string; title?: string; sources?: WorkResearchSource[] } }
 	| { id?: string; type: 'response'; command: 'work_abort'; success: true }
+	| { id?: string; type: 'response'; command: 'work_file_list'; success: true; data: { taskId: string; files: WorkFileSnapshot[] } }
+	| { id?: string; type: 'response'; command: 'work_file_read'; success: true; data: { taskId: string; file: WorkFileSnapshot } }
+	| { id?: string; type: 'response'; command: 'work_file_write'; success: true; data: { taskId: string; file: WorkFileSnapshot } }
+	| { id?: string; type: 'response'; command: 'work_file_delete'; success: true; data: { taskId: string; path: string } }
+	| { id?: string; type: 'response'; command: 'work_file_rename'; success: true; data: { taskId: string; file: WorkFileSnapshot } }
 	| { id?: string; type: 'response'; command: 'work_prepare_attachments'; success: true; data: { attachments: PreparedAttachment[] } }
+	| { id?: string; type: 'response'; command: 'design_create'; success: true; data: { designId: string; snapshot: DesignRpcSnapshot } }
+	| { id?: string; type: 'response'; command: 'design_get_snapshot' | 'design_preview' | 'design_check'; success: true; data: { snapshot?: DesignRpcSnapshot; checks?: Array<{ level: 'error' | 'warning' | 'info'; message: string }> } }
+	| { id?: string; type: 'response'; command: 'design_generate'; success: true; data: { requestId: string; snapshot?: DesignRpcSnapshot; summary?: string } }
+	| { id?: string; type: 'response'; command: 'design_apply_patch' | 'design_revert'; success: true; data: { snapshot: DesignRpcSnapshot } }
+	| { id?: string; type: 'response'; command: 'design_export'; success: true; data: { path: string } }
+	| { id?: string; type: 'response'; command: 'mcp_list'; success: true; data: { servers: ManagedMcpServer[] } }
+	| { id?: string; type: 'response'; command: 'mcp_save_server' | 'mcp_delete_server' | 'mcp_set_modes' | 'mcp_set_enabled' | 'mcp_reload'; success: true }
 	| { id?: string; type: 'response'; command: 'get_state'; success: true; data: RpcSessionState }
 	| { id?: string; type: 'response'; command: 'set_model'; success: true; data: ModelInfo }
 	| { id?: string; type: 'response'; command: 'cycle_model'; success: true; data: { model: ModelInfo; thinkingLevel: ThinkingLevel; isScoped: boolean } | null }
