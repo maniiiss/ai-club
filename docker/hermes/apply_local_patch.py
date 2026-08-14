@@ -105,22 +105,19 @@ def _resolve_last_reasoning_from_result(result: Any) -> str:
 
     content = replace_once(
         content,
-        "                    history = db.get_messages_as_conversation(session_id)\n",
-        "                    history = _strip_think_blocks_from_history(db.get_messages_as_conversation(session_id))\n",
+        "                    history = await asyncio.to_thread(db.get_messages_as_conversation, session_id)\n",
+        "                    history = _strip_think_blocks_from_history(await asyncio.to_thread(db.get_messages_as_conversation, session_id))\n",
         description="清洗 SessionDB 历史中的 assistant think 块",
     )
 
     content = replace_once(
         content,
         """        if stream:
-            import queue as _q
-            _stream_q: _q.Queue = _q.Queue()
+            _stream_q = ThreadSafeAsyncQueue()
 """,
         """        if stream:
-            import queue as _q
-            _stream_q: _q.Queue = _q.Queue()
-            _reasoning_open = False
-            _reasoning_seen = False
+            _stream_q = ThreadSafeAsyncQueue()
+            _reasoning_state = {"open": False, "seen": False}
 """,
         description="初始化流式 reasoning 状态",
     )
@@ -135,8 +132,10 @@ def _resolve_last_reasoning_from_result(result: Any) -> str:
                 # response, causing Open WebUI (and similar frontends) to miss
                 # the final answer after tool calls.  The SSE loop detects
                 # completion via agent_task.done() instead.
+                # Called from the worker thread running run_conversation —
+                # put_threadsafe (not put_nowait) is required here.
                 if delta is not None:
-                    _stream_q.put(delta)
+                    _stream_q.put_threadsafe(delta)
 """,
         """            def _on_delta(delta):
                 # Filter out None — the agent fires stream_delta_callback(None)
@@ -146,12 +145,14 @@ def _resolve_last_reasoning_from_result(result: Any) -> str:
                 # response, causing Open WebUI (and similar frontends) to miss
                 # the final answer after tool calls.  The SSE loop detects
                 # completion via agent_task.done() instead.
-                nonlocal _reasoning_open
+                # Called from the worker thread running run_conversation —
+                # put_threadsafe (not put_nowait) is required here.
+                nonlocal _reasoning_state
                 if delta is not None:
-                    if _reasoning_open:
-                        _stream_q.put("</think>")
-                        _reasoning_open = False
-                    _stream_q.put(delta)
+                    if _reasoning_state["open"]:
+                        _stream_q.put_threadsafe(" response")
+                        _reasoning_state["open"] = False
+                    _stream_q.put_threadsafe(delta)
 """,
         description="正文分片前自动闭合 think 块",
     )
@@ -168,7 +169,7 @@ def _resolve_last_reasoning_from_result(result: Any) -> str:
                 if not tool_call_id or tool_call_id not in _started_tool_call_ids:
                     return
                 _started_tool_call_ids.discard(tool_call_id)
-                _stream_q.put(("__tool_progress__", {
+                _stream_q.put_threadsafe(("__tool_progress__", {
                     "tool": function_name,
                     "toolCallId": tool_call_id,
                     "status": "completed",
@@ -186,22 +187,22 @@ def _resolve_last_reasoning_from_result(result: Any) -> str:
                 if not tool_call_id or tool_call_id not in _started_tool_call_ids:
                     return
                 _started_tool_call_ids.discard(tool_call_id)
-                _stream_q.put(("__tool_progress__", {
+                _stream_q.put_threadsafe(("__tool_progress__", {
                     "tool": function_name,
                     "toolCallId": tool_call_id,
                     "status": "completed",
                 }))
 
             def _on_tool_progress(event_type, tool_name=None, preview=None, args=None, **kwargs):
-                \"\"\"把 reasoning.available 事件实时转成 `<think>` 分片；普通 tool_progress 仍继续忽略。\"\"\"
-                nonlocal _reasoning_open, _reasoning_seen
+                \"\"\"把 reasoning.available 事件实时转成 ` thinking` 分片；普通 tool_progress 仍继续忽略。\"\"\"
+                nonlocal _reasoning_state
                 if event_type != "reasoning.available" or not preview:
                     return
-                if not _reasoning_open:
-                    _stream_q.put("<think>")
-                    _reasoning_open = True
-                _reasoning_seen = True
-                _stream_q.put(str(preview))
+                if not _reasoning_state["open"]:
+                    _stream_q.put_threadsafe(" thinking")
+                    _reasoning_state["open"] = True
+                _reasoning_state["seen"] = True
+                _stream_q.put_threadsafe(str(preview))
 
             # Start agent in background.  agent_ref is a mutable container
 """,
@@ -217,6 +218,7 @@ def _resolve_last_reasoning_from_result(result: Any) -> str:
                 tool_complete_callback=_on_tool_complete,
                 agent_ref=agent_ref,
                 gateway_session_key=gateway_session_key,
+                **agent_overrides,
                 route=route,
             ))
 """,
@@ -228,10 +230,46 @@ def _resolve_last_reasoning_from_result(result: Any) -> str:
                 tool_complete_callback=_on_tool_complete,
                 agent_ref=agent_ref,
                 gateway_session_key=gateway_session_key,
+                **agent_overrides,
                 route=route,
             ))
 """,
         description="为 chat completions 流式调用接入 tool_progress_callback",
+    )
+
+    content = replace_once(
+        content,
+        """    async def _write_sse_chat_completion(
+        self, request: "web.Request", completion_id: str, model: str,
+        created: int, stream_q, agent_task, agent_ref=None, session_id: str = None,
+        gateway_session_key: str = None,
+    ) -> "web.StreamResponse":
+""",
+        """    async def _write_sse_chat_completion(
+        self, request: "web.Request", completion_id: str, model: str,
+        created: int, stream_q, agent_task, agent_ref=None, session_id: str = None,
+        gateway_session_key: str = None, reasoning_state: dict = None,
+    ) -> "web.StreamResponse":
+""",
+        description="为 _write_sse_chat_completion 增加 reasoning 状态参数",
+    )
+
+    content = replace_once(
+        content,
+        """            return await self._write_sse_chat_completion(
+                request, completion_id, model_name, created, _stream_q,
+                agent_task, agent_ref, session_id=session_id,
+                gateway_session_key=gateway_session_key,
+            )
+""",
+        """            return await self._write_sse_chat_completion(
+                request, completion_id, model_name, created, _stream_q,
+                agent_task, agent_ref, session_id=session_id,
+                gateway_session_key=gateway_session_key,
+                reasoning_state=_reasoning_state,
+            )
+""",
+        description="向 _write_sse_chat_completion 传入 reasoning 状态",
     )
 
     content = replace_once(
@@ -248,10 +286,10 @@ def _resolve_last_reasoning_from_result(result: Any) -> str:
         """            try:
                 result, agent_usage = await agent_task
                 usage = agent_usage or usage
-                if _reasoning_open:
+                if reasoning_state and reasoning_state["open"]:
                     last_activity = await _emit("```")
-                    _reasoning_open = False
-                elif not _reasoning_seen:
+                    reasoning_state["open"] = False
+                elif reasoning_state and not reasoning_state["seen"]:
                     final_reasoning = _resolve_last_reasoning_from_result(result)
                     if final_reasoning:
                         last_activity = await _emit(f" reasoning{final_reasoning} ``` ")

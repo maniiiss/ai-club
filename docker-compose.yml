@@ -324,7 +324,7 @@ services:
       dockerfile: Dockerfile
       args:
         # Hermes API Server 的思考输出行为会随上游镜像变化；这里允许部署端显式 pin 基础镜像版本或 digest。
-        HERMES_BASE_IMAGE: ${HERMES_BASE_IMAGE:-nousresearch/hermes-agent:latest}
+        HERMES_BASE_IMAGE: ${HERMES_BASE_IMAGE:-nousresearch/hermes-agent@sha256:0a1cee02dbb00aeb213d2ef7df0335fcad679e0a5e16adde20afc56432c0ac4c}
     image: ${HERMES_IMAGE:-git-ai-club-hermes:latest}
     container_name: git-ai-club-hermes
     restart: unless-stopped
