@@ -14,8 +14,8 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
 /**
- * 业主仓库推送历史日志。
- * 每次手动推送业主代码仓库后落库一条记录，包含源/目标分支、推送方式、执行状态及 MR 信息。
+ * 仓库镜像推送历史日志。
+ * 每次手动推送仓库镜像后落库一条记录，包含源/目标分支、推送方式、执行状态及 MR 信息。
  */
 @Entity
 @Table(name = "owner_repo_push_log")
@@ -26,7 +26,7 @@ public class OwnerRepoPushLogEntity {
     private Long id;
 
     /**
-     * 对应的业主仓库绑定。
+     * 对应的仓库镜像绑定。
      */
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "binding_id", nullable = false)

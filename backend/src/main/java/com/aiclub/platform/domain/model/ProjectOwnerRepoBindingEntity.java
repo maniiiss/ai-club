@@ -15,8 +15,8 @@ import jakarta.persistence.Table;
 import java.time.LocalDateTime;
 
 /**
- * 业主代码仓库绑定。
- * 记录某个项目需要交付到的业主方 GitLab 仓库（其他 GitLab 实例）的访问信息，
+ * 仓库镜像绑定。
+ * 记录某个项目需要交付到的镜像 GitLab 仓库（其他 GitLab 实例）的访问信息，
  * 凭据按项目独立配置，Token 经 AES-GCM 加密后存储。
  * 配合 {@link OwnerRepoPushLogEntity} 记录每次推送的执行结果。
  */
@@ -29,14 +29,14 @@ public class ProjectOwnerRepoBindingEntity {
     private Long id;
 
     /**
-     * 所属业务项目，一个项目可配置多个业主仓库绑定。
+     * 所属业务项目，一个项目可配置多个仓库镜像绑定。
      */
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "project_id", nullable = false)
     private ProjectEntity project;
 
     /**
-     * 绑定名称，用于在列表与推送表单中区分多个业主仓库（如"XX业主交付仓"）。
+     * 绑定名称，用于在列表与推送表单中区分多个仓库镜像（如"XX镜像交付仓"）。
      */
     @Column(name = "name", nullable = false, length = 100)
     private String name;
@@ -45,7 +45,7 @@ public class ProjectOwnerRepoBindingEntity {
     private String apiBaseUrl;
 
     /**
-     * 业主仓库标识，支持 namespace/name 或数字 ID。
+     * 仓库镜像标识，支持 namespace/name 或数字 ID。
      */
     @Column(name = "gitlab_project_ref", nullable = false, length = 255)
     private String gitlabProjectRef;
@@ -63,13 +63,19 @@ public class ProjectOwnerRepoBindingEntity {
     private String gitlabProjectWebUrl;
 
     /**
-     * 业主仓库 HTTP Clone 地址，由 code-processing 执行 git push 时使用。
+     * 仓库镜像 HTTP Clone 地址，由 code-processing 执行 git push 时使用。
      */
     @Column(name = "gitlab_http_clone_url", length = 500)
     private String gitlabHttpCloneUrl;
 
     @Column(name = "gitlab_ssh_clone_url", length = 500)
     private String gitlabSshCloneUrl;
+
+    /**
+     * 仓库镜像自定义克隆地址，非空时推送优先使用，绕过 GitLab API 返回地址不可达的情况。
+     */
+    @Column(name = "custom_clone_url", length = 500)
+    private String customCloneUrl;
 
     /**
      * 默认目标分支，推送表单初始化时使用。
@@ -84,7 +90,7 @@ public class ProjectOwnerRepoBindingEntity {
     private String defaultPushMode = "NEW_BRANCH";
 
     /**
-     * 业主仓库访问 Token 密文，AES-GCM 加密，明文不入库。
+     * 仓库镜像访问 Token 密文，AES-GCM 加密，明文不入库。
      */
     @Column(name = "token_ciphertext", nullable = false, columnDefinition = "TEXT")
     private String tokenCiphertext;
@@ -208,6 +214,14 @@ public class ProjectOwnerRepoBindingEntity {
 
     public void setGitlabSshCloneUrl(String gitlabSshCloneUrl) {
         this.gitlabSshCloneUrl = gitlabSshCloneUrl;
+    }
+
+    public String getCustomCloneUrl() {
+        return customCloneUrl;
+    }
+
+    public void setCustomCloneUrl(String customCloneUrl) {
+        this.customCloneUrl = customCloneUrl;
     }
 
     public String getDefaultTargetBranch() {

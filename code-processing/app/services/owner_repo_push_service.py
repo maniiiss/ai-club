@@ -1,6 +1,6 @@
-"""业主仓库镜像推送服务。
+"""仓库镜像推送服务。
 
-负责把平台 GitLab 仓库的指定分支完整克隆（保留历史）后推送到业主方 GitLab 仓库。
+负责把平台 GitLab 仓库的指定分支完整克隆（保留历史）后推送到镜像 GitLab 仓库。
 认证策略复用 repository_scan_service 的三种方式（basic-auth / PRIVATE-TOKEN / Bearer），
 但 clone 时不使用 --depth 1，以保证完整的提交历史。
 推送是一次性交付动作，工作区用临时目录，推送完即删。
@@ -22,7 +22,7 @@ PUSH_MODE_MERGE_REQUEST = "MERGE_REQUEST"
 
 
 def mirror_push_to_owner_repo(request: OwnerRepoMirrorPushRequest) -> OwnerRepoMirrorPushResponse:
-    """克隆源仓库分支并推送到业主仓库目标分支。"""
+    """克隆源仓库分支并推送到仓库镜像目标分支。"""
     _validate_request(request)
     workspace_root = tempfile.mkdtemp(prefix="owner-repo-push-")
     repo_dir = os.path.join(workspace_root, "repo")
@@ -65,23 +65,24 @@ def _validate_request(request: OwnerRepoMirrorPushRequest) -> None:
 def _clone_source_repository(request: OwnerRepoMirrorPushRequest, workspace_root: str, repo_dir: str) -> str:
     """完整克隆源仓库指定分支（保留历史），依次尝试多种认证策略。"""
     repo_urls = _build_clone_url_candidates(request.sourceRepoUrl)
-    attempts: list[tuple[str, list[str]]] = []
+    attempts: list[tuple[str, list[str], str]] = []
     for repo_url in repo_urls:
+        url_scheme = urlsplit(repo_url).scheme or "http"
         # 策略①：basic-auth，oauth2:token@ 嵌入 URL
         attempts.append(("basic-auth", ["git", "-c", "core.longpaths=true", "-c", "http.sslVerify=false",
                                         "clone", "--branch", request.sourceBranch,
-                                        _build_authenticated_repo_url(repo_url, request.sourceAuthToken), repo_dir]))
+                                        _build_authenticated_repo_url(repo_url, request.sourceAuthToken), repo_dir], url_scheme))
         # 策略②：PRIVATE-TOKEN header
         attempts.append(("private-token-header", ["git", "-c", "core.longpaths=true", "-c", "http.sslVerify=false",
                                                   "-c", f"http.extraHeader=PRIVATE-TOKEN: {request.sourceAuthToken}",
-                                                  "clone", "--branch", request.sourceBranch, repo_url, repo_dir]))
+                                                  "clone", "--branch", request.sourceBranch, repo_url, repo_dir], url_scheme))
         # 策略③：Bearer header
         attempts.append(("bearer-header", ["git", "-c", "core.longpaths=true", "-c", "http.sslVerify=false",
                                            "-c", f"http.extraHeader=Authorization: Bearer {request.sourceAuthToken}",
-                                           "clone", "--branch", request.sourceBranch, repo_url, repo_dir]))
+                                           "clone", "--branch", request.sourceBranch, repo_url, repo_dir], url_scheme))
 
     error_messages: list[str] = []
-    for index, (strategy, command) in enumerate(attempts, start=1):
+    for index, (strategy, command, url_scheme) in enumerate(attempts, start=1):
         if os.path.exists(repo_dir):
             shutil.rmtree(repo_dir, ignore_errors=True)
         completed = subprocess.run(
@@ -97,8 +98,8 @@ def _clone_source_repository(request: OwnerRepoMirrorPushRequest, workspace_root
             return _resolve_commit_sha(repo_dir, request.sourceAuthToken)
         stdout = _sanitize_sensitive_text((completed.stdout or "").strip(), request.sourceAuthToken)
         stderr = _sanitize_sensitive_text((completed.stderr or "").strip(), request.sourceAuthToken)
-        error_messages.append(f"{strategy}: {stderr or stdout or '未知错误'}")
-    raise RuntimeError("克隆源仓库失败：" + "；".join(error_messages[-3:]))
+        error_messages.append(f"[{url_scheme}] {strategy}: {stderr or stdout or '未知错误'}")
+    raise RuntimeError("克隆源仓库失败：" + "；".join(msg[:200] for msg in error_messages))
 
 
 def _resolve_pushed_branch(request: OwnerRepoMirrorPushRequest) -> str:
@@ -119,6 +120,7 @@ def _push_to_target(request: OwnerRepoMirrorPushRequest, repo_dir: str, pushed_b
 
     error_messages: list[str] = []
     for target_url in target_urls:
+        url_scheme = urlsplit(target_url).scheme or "http"
         strategies = [
             ("basic-auth", _build_authenticated_repo_url(target_url, request.targetAuthToken), []),
             ("private-token-header", target_url, [f"http.extraHeader=PRIVATE-TOKEN: {request.targetAuthToken}"]),
@@ -130,7 +132,7 @@ def _push_to_target(request: OwnerRepoMirrorPushRequest, repo_dir: str, pushed_b
                 command.extend(["-c", cfg])
             command.extend(["push", remote_url, refspec])
             if force:
-                command.append("--force-with-lease")
+                command.append("--force")
             completed = subprocess.run(
                 command,
                 cwd=repo_dir,
@@ -144,8 +146,8 @@ def _push_to_target(request: OwnerRepoMirrorPushRequest, repo_dir: str, pushed_b
                 return _resolve_remote_commit_sha(repo_dir, remote_url, pushed_branch, request.targetAuthToken)
             stdout = _sanitize_sensitive_text((completed.stdout or "").strip(), request.targetAuthToken)
             stderr = _sanitize_sensitive_text((completed.stderr or "").strip(), request.targetAuthToken)
-            error_messages.append(f"{strategy}: {stderr or stdout or '未知错误'}")
-    raise RuntimeError("推送到业主仓库失败：" + "；".join(error_messages[-3:]))
+            error_messages.append(f"[{url_scheme}] {strategy}: {stderr or stdout or '未知错误'}")
+    raise RuntimeError("推送到仓库镜像失败：" + "；".join(msg[:200] for msg in error_messages))
 
 
 def _resolve_commit_sha(repo_dir: str, auth_token: str) -> str:

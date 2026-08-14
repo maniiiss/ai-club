@@ -858,9 +858,9 @@ class ClaudePlanningResponse(BaseModel):
 
 
 class OwnerRepoMirrorPushRequest(BaseModel):
-    """业主仓库镜像推送请求。
+    """仓库镜像推送请求。
 
-    由 backend 解密凭据后调用，code-processing 负责完整 clone 源仓库分支并 push 到业主仓库。
+    由 backend 解密凭据后调用，code-processing 负责完整 clone 源仓库分支并 push 到仓库镜像。
     pushMode 取值：DIRECT（强制覆盖目标分支）/ NEW_BRANCH（推到交付子分支）/ MERGE_REQUEST（推到子分支供后续建 MR）。
     """
 
@@ -881,7 +881,7 @@ class OwnerRepoMirrorPushRequest(BaseModel):
 
 
 class OwnerRepoMirrorPushResponse(BaseModel):
-    """业主仓库镜像推送结果。"""
+    """仓库镜像推送结果。"""
 
     sourceCommitSha: str
     targetCommitSha: str

@@ -1185,6 +1185,7 @@ export interface OwnerRepoBindingItem {
   gitlabProjectWebUrl: string | null
   gitlabHttpCloneUrl: string | null
   gitlabSshCloneUrl: string | null
+  customCloneUrl: string | null
   defaultTargetBranch: string | null
   defaultPushMode: string
   tokenConfigured: boolean

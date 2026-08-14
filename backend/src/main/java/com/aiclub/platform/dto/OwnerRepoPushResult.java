@@ -1,7 +1,7 @@
 package com.aiclub.platform.dto;
 
 /**
- * 业主仓库推送执行结果。
+ * 仓库镜像推送执行结果。
  * executionStatus 取值 SUCCESS / PARTIAL / FAILED。
  */
 public record OwnerRepoPushResult(

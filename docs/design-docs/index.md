@@ -38,7 +38,7 @@
 - [API 管理设计](api-management-technical-design-v1.md) - API 工作台设计
 - [GitLab 集成设计](../exec-plans/completed/gitlab-module.md) - 代码仓库集成
 - [GitLab 代码结构](gitlab-code-structure-technical-design-v1.md) - 代码结构分析
-- [GitLab 业主仓库推送](gitlab-owner-repo-push-technical-design-v1.md) - 代码推送到业主 GitLab 仓库
+- [GitLab 仓库镜像推送](gitlab-owner-repo-push-technical-design-v1.md) - 代码推送到镜像 GitLab 仓库
 - [服务器管理设计](server-management-technical-design-v1.md) - 服务器管理模块
 - [DataWorkbench 设计](data-workbench-technical-design-v1.md) - 项目内数据变更工作台
 - [DataWorkbench 语义查询设计](data-workbench-semantic-query-technical-design-v1.md) - 动态 PostgreSQL 数据源、语义层与自然语言只读查询

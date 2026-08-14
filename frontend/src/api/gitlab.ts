@@ -540,6 +540,7 @@ export interface OwnerRepoBindingPayload {
   name: string
   apiBaseUrl: string
   gitlabProjectRef: string
+  customCloneUrl?: string
   defaultTargetBranch: string
   defaultPushMode: string
   apiToken: string

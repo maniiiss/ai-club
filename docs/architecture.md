@@ -478,7 +478,7 @@ PR 评审检查清单：
 - 把 review / PATROL 等跨服务模型调用 usage 回传 backend
 - 与后端内部接口联动
 - 以 MCP Server 形式向 Hermes 暴露平台工具
-- 业主代码仓库镜像推送（`git clone` + `git push`，由 backend 解密凭据后调用）
+- 仓库镜像推送（`git clone` + `git push`，由 backend 解密凭据后调用）
 
 其中 GitLab 自动合并的 MR 审查现在额外承担“历史问题带入”“审查严格度门禁”和“版本指纹缓存”职责：backend 会按“GitLab 项目标识快照 + MR IID”读取最近一次 `AI_REJECTED` 日志里的结构化问题清单，并把自动合并策略上的 `reviewStrictness`（`HIGH / MEDIUM / LOW`，默认 `MEDIUM`）通过 `/api/code/review` 一并传给 `code-processing`；`code-processing` 需要在最终提示词中追加平台统一门禁规则，高严格度遇到明确不规范或潜在风险即拒绝，中严格度拒绝严重和中等风险，低严格度只拒绝线上故障、安全漏洞、数据破坏、兼容性破坏等严重问题。无论严格度如何，`code-processing` 都需要返回当前仍需处理的问题总表、已修复历史问题和未修复历史问题，backend 再据此决定是否放行自动合并，并把结果固化到自动合并日志；backend 仍保留安全兜底，只要 `unresolvedPreviousIssues` 非空，即使模型返回 `approved=true` 也不会继续自动合并。为了避免同一版 MR 在调度里重复消耗 token，自动合并日志还会额外保存 `review_fingerprint / review_fingerprint_source / review_result_json / review_cache_hit`：优先按 GitLab MR 详情里的 `sha + diff_refs.base_sha + diff_refs.start_sha` 结合审查配置生成 `SHA` 指纹，若远端未返回 SHA，再回退为基于归一化 diff 的 `DIFF` 指纹；同一 `项目 + MR IID + 指纹` 命中历史日志时直接复用结构化审查结果，不再重新调用模型。
 
@@ -752,16 +752,16 @@ GitNexus 全仓图中的 Nexus AI 属于 GitNexus Web UI 自身能力。Docker �
 
 这条链路属于 GitLab 管理子域内部的“仓库绑定扩展能力”，当前不接执行中心，也不和自动合并调度做联动。
 
-### 4.6.1 GitLab 业主仓库推送链路
+### 4.6.1 GitLab 仓库镜像推送链路
 
-业主代码仓库推送链路用于把平台 GitLab 仓库的代码交付到业主方 GitLab 仓库（其他实例），链路如下：
+仓库镜像推送链路用于把平台 GitLab 仓库的代码交付到镜像 GitLab 仓库（其他实例），链路如下：
 
-1. 管理员在 GitLab 管理页「业主仓库」Tab 配置业主仓库绑定（项目级，含业主 GitLab API 地址、仓库标识、访问 Token，Token 经 `TokenCipherService` AES-GCM 加密存储）
+1. 管理员在 GitLab 管理页「仓库镜像」Tab 配置仓库镜像绑定（项目级，含镜像 GitLab API 地址、仓库标识、访问 Token，Token 经 `TokenCipherService` AES-GCM 加密存储）
 2. 测试连接时后端调 `GitlabApiService.fetchProject` 校验 Token 并回写仓库元信息（Clone 地址等）
 3. 用户在管理端或公众端发起推送，选择源 GitLab 绑定、源分支、目标分支和推送方式（DIRECT / NEW_BRANCH / MERGE_REQUEST）
 4. 后端 `OwnerRepoPushService` 校验权限、解密源/目标 Token，调 `OwnerRepoPushClientService` 请求 code-processing
 5. code-processing `owner_repo_push_service` 完整 clone 源仓库分支（保留历史），复用 3 种认证策略添加目标 remote 并 `git push`（DIRECT 模式 `--force-with-lease`）
-6. MERGE_REQUEST 方式下后端再调 `GitlabApiService.createMergeRequest`（指向业主 GitLab 实例）从推送子分支到目标主分支创建 MR
+6. MERGE_REQUEST 方式下后端再调 `GitlabApiService.createMergeRequest`（指向镜像 GitLab 实例）从推送子分支到目标主分支创建 MR
 7. 后端落库 `owner_repo_push_log` 并更新绑定最近推送状态，返回三态结果（SUCCESS / PARTIAL / FAILED）
 
 这条链路的 git push 能力由 code-processing 承担（复用其 git subprocess 基础设施），backend 负责编排、凭据解密、权限校验和持久化。第一版为同步长超时执行（code-processing 600s），后续可演进为异步任务。详细设计见 `docs/design-docs/gitlab-owner-repo-push-technical-design-v1.md`。

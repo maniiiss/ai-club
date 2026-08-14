@@ -1,8 +1,8 @@
-# GitLab 推送到业主代码仓库 - 技术设计 v1
+# GitLab 推送到仓库镜像 - 技术设计 v1
 
 ## 1. 背景与目标
 
-平台需要将自身 GitLab 仓库的代码交付到业主方（其他 GitLab 实例）的代码仓库。第一版聚焦手动推送，支持整个分支镜像（保留完整提交历史），推送方式可选直接推送、推到新分支或创建 MR。
+平台需要将自身 GitLab 仓库的代码交付到镜像方（其他 GitLab 实例）的代码仓库。第一版聚焦手动推送，支持整个分支镜像（保留完整提交历史），推送方式可选直接推送、推到新分支或创建 MR。
 
 ### 需求确认
 
@@ -11,7 +11,7 @@
 | 目标平台 | GitLab（其他实例） |
 | 推送内容 | 整个分支镜像，保留完整提交历史 |
 | 推送方式 | DIRECT（直接推送覆盖）/ NEW_BRANCH（推到交付子分支）/ MERGE_REQUEST（推到子分支并发起 MR） |
-| 凭据管理 | 按项目独立配置业主仓库地址 + Token |
+| 凭据管理 | 按项目独立配置仓库镜像地址 + Token |
 | 触发方式 | 手动触发（管理端配置 + 推送，公众端推送） |
 
 ## 2. 架构决策
@@ -30,7 +30,7 @@
 code-processing 从"纯只读分析服务"扩展为"可执行代码推送"。这是合理演进：
 - 凭据管理仍在 backend（AES-GCM 加密存储，调用时解密传明文给 code-processing，内部网络 + Bearer 鉴权保障安全）
 - code-processing 日志/异常经 `_sanitize_sensitive_text` 脱敏（Token 和 `quote(token)` 都替换为 `***`）
-- 代码写入只在业主仓库，不影响平台自身仓库
+- 代码写入只在仓库镜像，不影响平台自身仓库
 
 ### 2.3 为何不用 GitLab REST API
 
@@ -38,14 +38,14 @@ GitLab Commits API 只能创建新 commit，无法推送已有的历史 commit �
 
 ## 3. 数据模型
 
-### 3.1 `project_owner_repo_binding` - 业主仓库绑定
+### 3.1 `project_owner_repo_binding` - 仓库镜像绑定
 
-项目级 CRUD，一个项目可配置多个业主仓库。Token 经 AES-GCM 加密存储（复用 `TokenCipherService`）。
+项目级 CRUD，一个项目可配置多个仓库镜像。Token 经 AES-GCM 加密存储（复用 `TokenCipherService`）。
 
 关键字段：
 - `project_id` - 关联项目（外键 CASCADE）
 - `name` - 绑定名称
-- `api_base_url` / `gitlab_project_ref` - 业主 GitLab API 地址 + 仓库标识
+- `api_base_url` / `gitlab_project_ref` - 镜像 GitLab API 地址 + 仓库标识
 - `gitlab_http_clone_url` - 测试连接时回写的 Clone 地址（推送时使用）
 - `default_target_branch` / `default_push_mode` - 默认目标分支与推送方式
 - `token_ciphertext` - AES-GCM 加密的访问 Token
@@ -90,7 +90,7 @@ GitLab Commits API 只能创建新 commit，无法推送已有的历史 commit �
 
 ### 6.1 管理端（frontend, Vue 3 + Element Plus）
 
-GitlabView.vue 新增第 5 个 Tab「业主仓库」：
+GitlabView.vue 新增第 5 个 Tab「仓库镜像」：
 - 绑定列表 + CRUD 表单 dialog（复用 `platform-form-dialog` 骨架）
 - 推送表单 dialog（选源绑定 → 选源分支 → 目标分支 → 推送方式 + DIRECT 风险提示）
 - 推送结果 dialog + 推送历史 drawer
@@ -98,8 +98,8 @@ GitlabView.vue 新增第 5 个 Tab「业主仓库」：
 
 ### 6.2 公众端（frontend-public, React 19 + Tailwind）
 
-DevelopmentPage.tsx 新增第 7 个 Tab「业主仓库」：
-- `OwnerRepoPushPanel.tsx` 组件：业主仓库列表 + 推送表单 SlideDrawer + 推送结果 + 推送历史
+DevelopmentPage.tsx 新增第 7 个 Tab「仓库镜像」：
+- `OwnerRepoPushPanel.tsx` 组件：仓库镜像列表 + 推送表单 SlideDrawer + 推送结果 + 推送历史
 - 沿用"管理端配置、公众端操作"模式（空绑定提示"请先在管理控制台配置"）
 - 复用自研组件（Select/Input/Button/SlideDrawer/ConfirmDialog/Toast），禁止原生 `<select>`
 - `ownerRepoPushUtils.ts` 纯函数 + Node 原生 test runner 测试
@@ -117,4 +117,4 @@ DevelopmentPage.tsx 新增第 7 个 Tab「业主仓库」：
 - 推送到非 GitLab 平台
 - 异步推送任务（第一版同步长超时，后续演进）
 - 业主/客户实体分组
-- 公众端配置业主仓库绑定
+- 公众端配置仓库镜像绑定

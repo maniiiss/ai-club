@@ -4,7 +4,7 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 /**
- * 触发业主仓库代码推送的请求。
+ * 触发仓库镜像代码推送的请求。
  * 指定源 GitLab 绑定、源分支、目标分支与推送方式。
  */
 public record OwnerRepoPushRequest(
