@@ -42,6 +42,8 @@ import { SettingsManager } from "./core/settings-manager.ts";
 import { printTimings, resetTimings, time } from "./core/timings.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.ts";
 import { builtInExtensions } from "./extensions/index.ts";
+import { createModeExtensions } from "./extensions/gitpilot/mode-extensions.ts";
+import { handleGitPilotMcpCommand } from "./extensions/gitpilot/mcp-cli.ts";
 import { loadCliToken } from "./extensions/gitpilot/credentials.ts";
 import { getPlatformUrl } from "./extensions/gitpilot/config.ts";
 import { runMigrations, showDeprecationWarnings } from "./migrations.ts";
@@ -474,6 +476,8 @@ export interface MainOptions {
 
 export async function main(args: string[], options?: MainOptions) {
 	resetTimings();
+	// 上游 Web/MCP 扩展依据此变量定位专属配置；GitPilot 必须始终使用自己的 agent 目录，不能污染 ~/.pi。
+	process.env.PI_CODING_AGENT_DIR = getAgentDir();
 	const extensionFactories = [...builtInExtensions, ...(options?.extensionFactories ?? [])];
 	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.PI_OFFLINE);
 	if (offlineMode) {
@@ -487,6 +491,7 @@ export async function main(args: string[], options?: MainOptions) {
 
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
+	if (await handleGitPilotMcpCommand(args, cwd)) return;
 	const bootstrapSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted: false });
 	applyHttpProxySettings(bootstrapSettingsManager.getGlobalSettings().httpProxy);
 	configureHttpDispatcher();
@@ -674,7 +679,7 @@ export async function main(args: string[], options?: MainOptions) {
 				noContextFiles: parsed.noContextFiles,
 				systemPrompt: parsed.systemPrompt,
 				appendSystemPrompt: parsed.appendSystemPrompt,
-				extensionFactories,
+				extensionFactories: [...extensionFactories, ...createModeExtensions("code", cwd)],
 			},
 		});
 		const { settingsManager, modelRuntime, resourceLoader } = services;

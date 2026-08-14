@@ -22,10 +22,15 @@ use tauri::{AppHandle, Emitter, Wry};
 
 /// 渲染层调用入口：invoke("rpc_send", { command }) -> 等待 sidecar 响应 -> 返回响应 JSON。
 /// command 是 RpcCommand 的 JSON 对象（含 id）。
+///
+/// Design/Work 请求可能持续几十秒；必须把同步 stdin/stdout 等待放到阻塞线程，
+/// 不能占用 Tauri 的命令执行线程，否则 WebView 会被误判为“未响应”。
 #[tauri::command]
-pub fn rpc_send(command: Value, state: State<'_, SidecarBridge>) -> Result<Value, String> {
-	eprintln!("[rpc] invoke rpc_send: {}", command);
-	state.send_command(command)
+pub async fn rpc_send(command: Value, state: State<'_, SidecarBridge>) -> Result<Value, String> {
+	let bridge = state.inner().clone();
+	tauri::async_runtime::spawn_blocking(move || bridge.send_command(command))
+		.await
+		.map_err(|error| format!("RPC 等待线程失败: {error}"))?
 }
 
 /// 在系统文件管理器中打开指定目录（Windows 资源管理器 / Finder 等）。

@@ -2606,6 +2606,7 @@
         </div>
         <el-form-item label="GitLab API 地址" prop="apiBaseUrl"><el-input v-model="ownerRepoForm.apiBaseUrl" placeholder="https://gitlab.example.com/api/v4" /></el-form-item>
         <el-form-item label="项目标识" prop="gitlabProjectRef"><el-input v-model="ownerRepoForm.gitlabProjectRef" placeholder="namespace/name 或数字 ID" /></el-form-item>
+        <el-form-item label="克隆地址" prop="customCloneUrl"><el-input v-model="ownerRepoForm.customCloneUrl" placeholder="留空则自动从 GitLab 获取；填写后推送优先使用，如 http://git.example.com/group/repo.git" /></el-form-item>
         <el-form-item label="默认目标分支" prop="defaultTargetBranch"><el-input v-model="ownerRepoForm.defaultTargetBranch" placeholder="如 main" /></el-form-item>
         <el-form-item prop="defaultPushMode">
           <template #label>
@@ -2661,6 +2662,7 @@
         </div>
         <el-form-item label="GitLab API 地址" prop="apiBaseUrl"><el-input v-model="ownerRepoForm.apiBaseUrl" placeholder="https://gitlab.example.com/api/v4" /></el-form-item>
         <el-form-item label="项目标识" prop="gitlabProjectRef"><el-input v-model="ownerRepoForm.gitlabProjectRef" placeholder="namespace/name 或数字 ID" /></el-form-item>
+        <el-form-item label="克隆地址" prop="customCloneUrl"><el-input v-model="ownerRepoForm.customCloneUrl" placeholder="留空则自动从 GitLab 获取；填写后推送优先使用，如 http://git.example.com/group/repo.git" /></el-form-item>
         <el-form-item label="默认目标分支" prop="defaultTargetBranch"><el-input v-model="ownerRepoForm.defaultTargetBranch" placeholder="如 main" /></el-form-item>
         <el-form-item prop="defaultPushMode">
           <template #label>
@@ -3167,6 +3169,7 @@ interface OwnerRepoForm {
   name: string
   apiBaseUrl: string
   gitlabProjectRef: string
+  customCloneUrl: string
   defaultTargetBranch: string
   defaultPushMode: string
   apiToken: string
@@ -3184,12 +3187,22 @@ const ownerRepoIsEditing = ref(false)
 const ownerRepoSubmitting = ref(false)
 const ownerRepoFormRef = ref<FormInstance>()
 const currentOwnerRepoBindingId = ref<number | null>(null)
-const ownerRepoForm = reactive<OwnerRepoForm>({ projectId: null, name: '', apiBaseUrl: '', gitlabProjectRef: '', defaultTargetBranch: '', defaultPushMode: 'NEW_BRANCH', apiToken: '', enabled: true })
+const ownerRepoForm = reactive<OwnerRepoForm>({ projectId: null, name: '', apiBaseUrl: '', gitlabProjectRef: '', customCloneUrl: '', defaultTargetBranch: '', defaultPushMode: 'NEW_BRANCH', apiToken: '', enabled: true })
 const ownerRepoRules: FormRules = {
   name: [{ required: true, message: '请输入绑定名称', trigger: 'blur' }],
   projectId: [{ required: true, message: '请选择项目', trigger: 'change' }],
   apiBaseUrl: [{ required: true, message: '请输入 GitLab API 地址', trigger: 'blur' }],
   gitlabProjectRef: [{ required: true, message: '请输入项目标识', trigger: 'blur' }],
+  customCloneUrl: [{
+    validator: (_rule, value, callback) => {
+      if (value && !/^https?:\/\/.+/.test(value)) {
+        callback(new Error('克隆地址需以 http:// 或 https:// 开头'))
+      } else {
+        callback()
+      }
+    },
+    trigger: 'blur'
+  }],
   defaultPushMode: [{ required: true, message: '请选择推送方式', trigger: 'change' }]
 }
 const ownerRepoTestingId = ref<number | null>(null)
@@ -3294,6 +3307,7 @@ const resetOwnerRepoForm = () => {
   ownerRepoForm.name = ''
   ownerRepoForm.apiBaseUrl = ''
   ownerRepoForm.gitlabProjectRef = ''
+  ownerRepoForm.customCloneUrl = ''
   ownerRepoForm.defaultTargetBranch = ''
   ownerRepoForm.defaultPushMode = 'NEW_BRANCH'
   ownerRepoForm.apiToken = ''
@@ -3314,6 +3328,7 @@ const handleOwnerRepoEdit = (item: OwnerRepoBindingItem) => {
   ownerRepoForm.name = item.name
   ownerRepoForm.apiBaseUrl = item.apiBaseUrl
   ownerRepoForm.gitlabProjectRef = item.gitlabProjectRef
+  ownerRepoForm.customCloneUrl = item.customCloneUrl || ''
   ownerRepoForm.defaultTargetBranch = item.defaultTargetBranch || ''
   ownerRepoForm.defaultPushMode = item.defaultPushMode
   ownerRepoForm.apiToken = ''
@@ -3334,6 +3349,7 @@ const handleOwnerRepoSubmit = async () => {
       name: ownerRepoForm.name.trim(),
       apiBaseUrl: ownerRepoForm.apiBaseUrl.trim(),
       gitlabProjectRef: ownerRepoForm.gitlabProjectRef.trim(),
+      customCloneUrl: ownerRepoForm.customCloneUrl.trim(),
       defaultTargetBranch: ownerRepoForm.defaultTargetBranch.trim(),
       defaultPushMode: ownerRepoForm.defaultPushMode,
       apiToken: ownerRepoForm.apiToken.trim(),

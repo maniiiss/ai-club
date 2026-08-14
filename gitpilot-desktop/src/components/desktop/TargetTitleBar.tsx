@@ -15,7 +15,6 @@ export function TargetTitleBar() {
 	const reportError = useSessionStore((s) => s.reportError);
 	const mode = useAppModeStore((s) => s.mode);
 	const setMode = useAppModeStore((s) => s.setMode);
-
 	const startDragging = (event: MouseEvent<HTMLElement>) => {
 		if (event.button !== 0 || (event.target as HTMLElement).closest('button')) return;
 		void startDraggingWindow();
@@ -33,7 +32,7 @@ export function TargetTitleBar() {
 				<img className={styles.icon} src={appIcon} alt="GitPilot" />
 				<span className={styles.brand}>GITPILOT</span>
 				<nav className={styles.modeSwitcher} aria-label="GitPilot 模式" onMouseDown={(event) => event.stopPropagation()}>
-					{(['code', 'work'] as AppMode[]).map((item) => <button key={item} type="button" className={mode === item ? styles.modeActive : styles.mode} aria-current={mode === item ? 'page' : undefined} onClick={() => setMode(item)}>{item === 'code' ? 'CODE' : 'WORK'}</button>)}
+					{(['code', 'work', 'design'] as AppMode[]).map((item) => <button key={item} type="button" className={mode === item ? styles.modeActive : styles.mode} aria-current={mode === item ? 'page' : undefined} onClick={() => setMode(item)}>{item === 'code' ? 'CODE' : item === 'work' ? 'WORK' : 'DESIGN'}</button>)}
 				</nav>
 			</div>
 			<div className={styles.spacer} />

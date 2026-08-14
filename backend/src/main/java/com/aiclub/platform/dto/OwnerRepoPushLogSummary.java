@@ -1,7 +1,7 @@
 package com.aiclub.platform.dto;
 
 /**
- * 业主仓库推送历史日志详情。
+ * 仓库镜像推送历史日志详情。
  */
 public record OwnerRepoPushLogSummary(
         Long id,

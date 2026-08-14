@@ -160,6 +160,9 @@ export function convertToLlm(messages: AgentMessage[]): Message[] {
 						timestamp: m.timestamp,
 					};
 				case "custom": {
+					// GitPilot Desktop 的扩展命令标记仅用于跨会话回放；业务意图是记录
+					// 用户操作但绝不能作为空 user message 重新注入模型上下文。
+					if (m.customType === "gitpilot.extension-command") return undefined;
 					const content = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
 					return {
 						role: "user",

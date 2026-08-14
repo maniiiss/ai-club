@@ -244,7 +244,14 @@ describe("AgentSession prompt characterization", () => {
 		await harness.session.prompt("/testcmd hello world");
 
 		expect(commandRuns).toEqual(["hello world"]);
-		expect(harness.session.messages).toEqual([]);
+		expect(harness.session.messages).toEqual([
+			expect.objectContaining({
+				role: "custom",
+				customType: "gitpilot.extension-command",
+				content: [],
+				details: { commandName: "testcmd", args: "hello world" },
+			}),
+		]);
 		expect(harness.getPendingResponseCount()).toBe(1);
 	});
 

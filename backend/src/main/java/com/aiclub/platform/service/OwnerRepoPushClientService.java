@@ -15,8 +15,8 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 
 /**
- * 业主仓库镜像推送内部客户端。
- * 负责调用 code-processing 的镜像推送接口，把源仓库分支完整推送到业主仓库。
+ * 仓库镜像推送内部客户端。
+ * 负责调用 code-processing 的镜像推送接口，把源仓库分支完整推送到仓库镜像。
  * 推送是长任务（clone + push），超时设为 600 秒。
  */
 @Service
@@ -60,8 +60,8 @@ public class OwnerRepoPushClientService {
      * @param sourceRepoUrl    源仓库 HTTP Clone 地址
      * @param sourceAuthToken  源仓库访问 Token（明文）
      * @param sourceBranch     源分支
-     * @param targetRepoUrl    业主仓库 HTTP Clone 地址
-     * @param targetAuthToken  业主仓库访问 Token（明文）
+     * @param targetRepoUrl    仓库镜像 HTTP Clone 地址
+     * @param targetAuthToken  仓库镜像访问 Token（明文）
      * @param targetBranch     目标分支
      * @param pushMode         推送方式 DIRECT / NEW_BRANCH / MERGE_REQUEST
      * @return 推送结果（源/目标 commit SHA、实际推送分支、策略）
@@ -96,10 +96,10 @@ public class OwnerRepoPushClientService {
             }
             return objectMapper.readValue(response.body(), responseType);
         } catch (IOException exception) {
-            throw new IllegalStateException("调用业主仓库推送服务失败", exception);
+            throw new IllegalStateException("调用仓库镜像推送服务失败", exception);
         } catch (InterruptedException exception) {
             Thread.currentThread().interrupt();
-            throw new IllegalStateException("调用业主仓库推送服务被中断", exception);
+            throw new IllegalStateException("调用仓库镜像推送服务被中断", exception);
         }
     }
 
@@ -109,16 +109,16 @@ public class OwnerRepoPushClientService {
             if (node.hasNonNull("detail")) {
                 JsonNode detailNode = node.get("detail");
                 if (detailNode.isTextual()) {
-                    return "业主仓库推送服务调用失败，HTTP " + statusCode + "：" + detailNode.asText();
+                    return "仓库镜像推送服务调用失败，HTTP " + statusCode + "：" + detailNode.asText();
                 }
-                return "业主仓库推送服务调用失败，HTTP " + statusCode + "：" + detailNode.toString();
+                return "仓库镜像推送服务调用失败，HTTP " + statusCode + "：" + detailNode.toString();
             }
         } catch (Exception ignored) {
         }
         if (responseBody != null && !responseBody.isBlank()) {
-            return "业主仓库推送服务调用失败，HTTP " + statusCode + "：" + responseBody.trim();
+            return "仓库镜像推送服务调用失败，HTTP " + statusCode + "：" + responseBody.trim();
         }
-        return "业主仓库推送服务调用失败，HTTP " + statusCode;
+        return "仓库镜像推送服务调用失败，HTTP " + statusCode;
     }
 
     private String trimSlash(String value) {

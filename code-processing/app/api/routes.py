@@ -328,7 +328,7 @@ def gitlab_spring_api_extract(request_http: Request,
 @router.post("/owner-repo-push/mirror", response_model=OwnerRepoMirrorPushResponse)
 def owner_repo_mirror_push(request_http: Request,
                            payload: OwnerRepoMirrorPushRequest) -> OwnerRepoMirrorPushResponse:
-    """供 backend 把平台 GitLab 仓库分支镜像推送到业主方 GitLab 仓库。"""
+    """供 backend 把平台 GitLab 仓库分支镜像推送到镜像 GitLab 仓库。"""
     _require_internal_service_auth(request_http)
     try:
         return mirror_push_to_owner_repo(payload)

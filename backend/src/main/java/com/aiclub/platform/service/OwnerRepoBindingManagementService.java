@@ -23,9 +23,9 @@ import java.util.List;
 import java.util.NoSuchElementException;
 
 /**
- * 业主代码仓库绑定的管理服务。
+ * 仓库镜像绑定的管理服务。
  * 负责绑定的增删改查与连通性测试，凭据经 TokenCipherService 加密存储。
- * 业主仓库地址由用户独立配置（不复用平台默认 GitLab 地址），测试连接时复用 GitlabApiService。
+ * 仓库镜像地址由用户独立配置（不复用平台默认 GitLab 地址），测试连接时复用 GitlabApiService。
  */
 @Service
 @Transactional(readOnly = true)
@@ -55,7 +55,7 @@ public class OwnerRepoBindingManagementService {
     }
 
     /**
-     * 分页查询当前用户可见项目下的业主仓库绑定。
+     * 分页查询当前用户可见项目下的仓库镜像绑定。
      */
     public PageResponse<OwnerRepoBindingSummary> pageBindings(int page, int size, String keyword, Long projectId) {
         ProjectDataPermissionService.ProjectDataScope scope = projectDataPermissionService.requireCurrentScope();
@@ -69,7 +69,7 @@ public class OwnerRepoBindingManagementService {
     }
 
     /**
-     * 查询指定项目下的全部业主仓库绑定（供公众端推送表单下拉使用）。
+     * 查询指定项目下的全部仓库镜像绑定（供公众端推送表单下拉使用）。
      */
     public List<OwnerRepoBindingSummary> listByProject(Long projectId) {
         ProjectEntity project = requireProject(projectId);
@@ -89,6 +89,7 @@ public class OwnerRepoBindingManagementService {
         entity.setName(requireName(request.name()));
         entity.setApiBaseUrl(apiBaseUrl);
         entity.setGitlabProjectRef(projectRef);
+        entity.setCustomCloneUrl(trimToNull(request.customCloneUrl()));
         entity.setDefaultTargetBranch(trimToNull(request.defaultTargetBranch()));
         entity.setDefaultPushMode(normalizePushMode(request.defaultPushMode(), PUSH_MODE_NEW_BRANCH));
         entity.setTokenCiphertext(tokenCipherService.encrypt(requireToken(request.apiToken())));
@@ -107,6 +108,7 @@ public class OwnerRepoBindingManagementService {
         entity.setName(requireName(request.name()));
         entity.setApiBaseUrl(apiBaseUrl);
         entity.setGitlabProjectRef(projectRef);
+        entity.setCustomCloneUrl(trimToNull(request.customCloneUrl()));
         entity.setDefaultTargetBranch(trimToNull(request.defaultTargetBranch()));
         entity.setDefaultPushMode(normalizePushMode(request.defaultPushMode(), entity.getDefaultPushMode()));
         entity.setEnabled(defaultBoolean(request.enabled(), true));
@@ -123,7 +125,7 @@ public class OwnerRepoBindingManagementService {
     }
 
     /**
-     * 测试业主仓库连通性，回写仓库元信息与测试状态。
+     * 测试仓库镜像连通性，回写仓库元信息与测试状态。
      * 失败时仍落库 FAILED 状态后再抛出异常，不回滚状态更新。
      */
     @Transactional(noRollbackFor = RuntimeException.class)
@@ -156,7 +158,7 @@ public class OwnerRepoBindingManagementService {
     }
 
     ProjectOwnerRepoBindingEntity requireBinding(Long id) {
-        ProjectOwnerRepoBindingEntity binding = bindingRepository.findById(id).orElseThrow(() -> new NoSuchElementException("业主仓库绑定不存在: " + id));
+        ProjectOwnerRepoBindingEntity binding = bindingRepository.findById(id).orElseThrow(() -> new NoSuchElementException("仓库镜像绑定不存在: " + id));
         projectDataPermissionService.requireProjectVisible(binding.getProject());
         return binding;
     }
@@ -166,7 +168,7 @@ public class OwnerRepoBindingManagementService {
                 ? bindingRepository.existsByProject_IdAndApiBaseUrlAndGitlabProjectRef(projectId, apiBaseUrl, projectRef)
                 : bindingRepository.existsByProject_IdAndApiBaseUrlAndGitlabProjectRefAndIdNot(projectId, apiBaseUrl, projectRef, currentBindingId);
         if (duplicated) {
-            throw new IllegalArgumentException("当前项目已绑定该业主仓库，请勿重复创建");
+            throw new IllegalArgumentException("当前项目已绑定该仓库镜像，请勿重复创建");
         }
     }
 
@@ -245,6 +247,7 @@ public class OwnerRepoBindingManagementService {
                 entity.getGitlabProjectWebUrl(),
                 entity.getGitlabHttpCloneUrl(),
                 entity.getGitlabSshCloneUrl(),
+                entity.getCustomCloneUrl(),
                 entity.getDefaultTargetBranch(),
                 entity.getDefaultPushMode(),
                 hasText(entity.getTokenCiphertext()),
@@ -260,7 +263,7 @@ public class OwnerRepoBindingManagementService {
     private String requireApiBaseUrl(String value) {
         String apiBaseUrl = trimToNull(value);
         if (!hasText(apiBaseUrl)) {
-            throw new IllegalArgumentException("业主仓库 GitLab API 地址不能为空");
+            throw new IllegalArgumentException("仓库镜像 GitLab API 地址不能为空");
         }
         while (apiBaseUrl.endsWith("/")) {
             apiBaseUrl = apiBaseUrl.substring(0, apiBaseUrl.length() - 1);
@@ -271,7 +274,7 @@ public class OwnerRepoBindingManagementService {
     private String requireProjectRef(String value) {
         String projectRef = trimToNull(value);
         if (!hasText(projectRef)) {
-            throw new IllegalArgumentException("业主仓库 GitLab 项目标识不能为空，请填写项目 ID 或 group/path");
+            throw new IllegalArgumentException("仓库镜像 GitLab 项目标识不能为空，请填写项目 ID 或 group/path");
         }
         return projectRef;
     }
@@ -287,7 +290,7 @@ public class OwnerRepoBindingManagementService {
     private String requireToken(String value) {
         String token = trimToNull(value);
         if (!hasText(token)) {
-            throw new IllegalArgumentException("业主仓库访问 Token 不能为空");
+            throw new IllegalArgumentException("仓库镜像访问 Token 不能为空");
         }
         return token;
     }

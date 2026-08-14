@@ -17,6 +17,24 @@ import styles from './ExtensionUIModal.module.css';
 
 type RespondValue = { value: string } | { confirmed: boolean } | { cancelled: true };
 
+type ConfirmRequest = Extract<RpcExtensionUIRequest, { method: 'confirm' }>;
+
+/**
+ * Goal 扩展的确认协议来自上游英文插件；仅适配固定的“替换目标”请求，
+ * 保留用户填写的目标原文，并明确确认后当前目标会被停止，避免误操作。
+ */
+export function localizeGoalReplaceConfirmation(req: ConfirmRequest): Pick<ConfirmRequest, 'title' | 'message'> {
+	if (req.title !== 'Replace goal?') return { title: req.title, message: req.message };
+	const message = req.message
+		.replace(/^Current goal:\s*/, '当前目标：')
+		.replace(/\n\nQueued goals also removed:\n/, '\n\n以下排队目标也会被移除：\n')
+		.replace(/\n\nNew goal:\s*/, '\n\n新目标：');
+	return {
+		title: '替换当前目标？',
+		message: `${message}\n\n确认后，当前目标将停止，并立即开始执行新目标。`,
+	};
+}
+
 /** 将需求选择器的协议字符串拆成稳定的代码、名称和元信息，避免整行挤在一条按钮里。 */
 function parseRequirementOption(option: string): { code: string; name: string; meta: string } | null {
 	const match = option.match(/^\[([^\]]+)\]\s*(.*?)\s+·\s+(.+)$/);
@@ -146,14 +164,15 @@ export function ExtensionUIConfirmCard() {
 	}, [req]);
 
 	if (!req || req.method !== 'confirm') return null;
+	const display = localizeGoalReplaceConfirmation(req);
 
 	return (
 		<div className={styles.confirmCard} role="alertdialog" aria-modal="false" aria-labelledby="extension-confirm-title" aria-describedby="extension-confirm-message">
 			<div className={styles.confirmHeader}>
 				<CircleAlert size={15} aria-hidden="true" />
-				<strong id="extension-confirm-title">{req.title}</strong>
+				<strong id="extension-confirm-title">{display.title}</strong>
 			</div>
-			<p id="extension-confirm-message" className={styles.confirmMessage}>{req.message}</p>
+			<p id="extension-confirm-message" className={styles.confirmMessage}>{display.message}</p>
 			<div className={styles.confirmActions}>
 				<Button type="button" variant="ghost" size="sm" onClick={() => respond(req, { confirmed: false })}>
 					<X size={14} aria-hidden="true" />

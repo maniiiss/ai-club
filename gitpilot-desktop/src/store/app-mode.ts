@@ -1,12 +1,13 @@
 import { create } from 'zustand';
 
-export type AppMode = 'code' | 'work';
+export type AppMode = 'code' | 'work' | 'design';
 
 const STORAGE_KEY = 'gitpilot-desktop.app-mode';
 
 function readMode(): AppMode {
 	try {
-		return localStorage.getItem(STORAGE_KEY) === 'work' ? 'work' : 'code';
+		const stored = localStorage.getItem(STORAGE_KEY);
+		return stored === 'work' || stored === 'design' ? stored : 'code';
 	} catch {
 		return 'code';
 	}

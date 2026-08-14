@@ -9,12 +9,12 @@ import java.util.List;
 public interface ProjectOwnerRepoBindingRepository extends JpaRepository<ProjectOwnerRepoBindingEntity, Long>, JpaSpecificationExecutor<ProjectOwnerRepoBindingEntity> {
 
     /**
-     * 查询指定项目下的全部业主仓库绑定，按创建顺序返回。
+     * 查询指定项目下的全部仓库镜像绑定，按创建顺序返回。
      */
     List<ProjectOwnerRepoBindingEntity> findByProject_IdOrderByIdAsc(Long projectId);
 
     /**
-     * 判断同一项目下是否已存在相同的业主仓库绑定，避免重复创建。
+     * 判断同一项目下是否已存在相同的仓库镜像绑定，避免重复创建。
      */
     boolean existsByProject_IdAndApiBaseUrlAndGitlabProjectRef(Long projectId, String apiBaseUrl, String gitlabProjectRef);
 

@@ -6,6 +6,9 @@
 
 ## 文档分类
 
+- [GitPilot Work 协同技术设计](gitpilot-work-collaboration-technical-design-v1.md) - 独立任务目录、文件产出与公众端协同插件
+- [GitPilot Web 与 MCP 扩展技术设计](gitpilot-web-mcp-extensions-technical-design-v1.md) - Web 研究、MCP 模式授权、Desktop/CLI 管理与凭据边界
+
 ### 核心理念
 
 - [核心设计理念](core-beliefs.md) - 设计原则、设计底线、价值导向
@@ -27,6 +30,7 @@
 - [GitPilot Desktop shadcn UI 整体替换技术设计](gitpilot-desktop-shadcn-ui-replacement-technical-design-v1.md) - 基于 Radix、Mira 和 Tailwind v4 重建桌面渲染层，保留 Tauri/RPC/Agent 行为契约并分阶段迁移
 - [GitPilot Desktop Git 与代码审查工作台技术设计](gitpilot-desktop-git-review-workbench-technical-design-v1.md) - 受限 sidecar Git、不可变审查快照、结构化 finding、平台治理与 GitLab 显式发布
 - [GitPilot Work 技术设计](gitpilot-work-technical-design-v1.md) - Code/Work 双模式、本机任务空间与受控联网研究
+- [GitPilot Desktop AI UI 设计编辑器技术设计](gitpilot-desktop-ai-ui-design-editor-technical-design-v1.md) - 单人结构化设计文档、DOM/CSS 画布、AI DesignPatch 与 Canvas/协作演进边界
 - [GitPilot Pi 生产力扩展技术设计](gitpilot-pi-productivity-extensions-technical-design-v1.md) - 内置 slopchop、goal、plan-mode、subagents、pi-rtk-optimizer 的 CLI/Desktop 双宿主适配、离线打包、自主委派边界与命令重写/输出压缩
 - [GitPilot 提问执行引导 P0 技术设计](gitpilot-execution-guidance-p0-technical-design-v1.md) - CLI 与 Desktop 的立即引导、完成后追加、队列展示和停止清队列语义
 - [AgentRuntime 统一聊天流式技术设计](agent-runtime-chat-streaming-technical-design-v1.md) - 多 Runtime 的 NDJSON 事件协议、Backend 转发和流式降级策略
@@ -34,7 +38,7 @@
 - [API 管理设计](api-management-technical-design-v1.md) - API 工作台设计
 - [GitLab 集成设计](../exec-plans/completed/gitlab-module.md) - 代码仓库集成
 - [GitLab 代码结构](gitlab-code-structure-technical-design-v1.md) - 代码结构分析
-- [GitLab 业主仓库推送](gitlab-owner-repo-push-technical-design-v1.md) - 代码推送到业主 GitLab 仓库
+- [GitLab 仓库镜像推送](gitlab-owner-repo-push-technical-design-v1.md) - 代码推送到镜像 GitLab 仓库
 - [服务器管理设计](server-management-technical-design-v1.md) - 服务器管理模块
 - [DataWorkbench 设计](data-workbench-technical-design-v1.md) - 项目内数据变更工作台
 - [DataWorkbench 语义查询设计](data-workbench-semantic-query-technical-design-v1.md) - 动态 PostgreSQL 数据源、语义层与自然语言只读查询
@@ -87,5 +91,9 @@
 
 ### 文档模板
 参考：[技术设计模板](architecture-design-template.md) - 技术设计模板
+
+### Design Mode
+
+- [GitPilot Desktop Design Mode 技术设计 v1](gitpilot-desktop-design-mode-technical-design-v1.md) - 基于自然语言生成 HTML 原型，支持移动端/桌面端预览，并规划多人协作与设计师画板演进
 
 *本索引自动更新，如有新增设计文档请同步维护。*

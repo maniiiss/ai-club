@@ -25,7 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 /**
- * 业主代码仓库推送接口。
+ * 仓库镜像推送接口。
  * 归属 GitLab 模块，复用 gitlab:view 查看权限与 gitlab:owner-repo:manage 维护权限。
  */
 @RestController
@@ -42,7 +42,7 @@ public class OwnerRepoController {
     }
 
     /**
-     * 分页查询业主仓库绑定。
+     * 分页查询仓库镜像绑定。
      */
     @GetMapping("/bindings")
     @RequirePermission("gitlab:view")
@@ -56,7 +56,7 @@ public class OwnerRepoController {
     }
 
     /**
-     * 查询指定项目下的全部业主仓库绑定（供公众端推送表单使用）。
+     * 查询指定项目下的全部仓库镜像绑定（供公众端推送表单使用）。
      */
     @GetMapping("/bindings/by-project/{projectId}")
     @RequirePermission("gitlab:view")
@@ -85,7 +85,7 @@ public class OwnerRepoController {
     }
 
     /**
-     * 测试业主仓库连通性，回写仓库元信息与测试状态。
+     * 测试仓库镜像连通性，回写仓库元信息与测试状态。
      */
     @PostMapping("/bindings/{id}/test")
     @RequirePermission("gitlab:owner-repo:manage")
@@ -103,7 +103,7 @@ public class OwnerRepoController {
     }
 
     /**
-     * 触发推送到业主仓库。
+     * 触发推送到仓库镜像。
      */
     @PostMapping("/bindings/{id}/push")
     @RequirePermission("gitlab:owner-repo:manage")

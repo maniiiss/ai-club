@@ -32,6 +32,11 @@
 
 .modeRoot { height: 100%; min-height: 0; }
 .codeMode,
-.workMode { height: 100%; min-height: 0; }
+.workMode,
+.designMode { height: 100%; min-height: 0; }
 .modeRoot[data-active-mode='code'] .workMode,
-.modeRoot[data-active-mode='work'] .codeMode { display: none; }
+.modeRoot[data-active-mode='code'] .designMode,
+.modeRoot[data-active-mode='work'] .codeMode,
+.modeRoot[data-active-mode='work'] .designMode,
+.modeRoot[data-active-mode='design'] .codeMode,
+.modeRoot[data-active-mode='design'] .workMode { display: none; }

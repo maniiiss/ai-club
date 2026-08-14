@@ -14,6 +14,8 @@ const { bridgeLifecycle, initBridge, destroyBridge, rpcMocks } = vi.hoisted(() =
 		switchSession: vi.fn(async () => ({ success: false })),
 		getState: vi.fn(async () => ({ success: false })),
 		getMessages: vi.fn(async () => ({ success: false })),
+		respondConfirmed: vi.fn(async () => ({ success: true })),
+		executeCommand: vi.fn(async () => ({ success: true })),
 	},
 }));
 
@@ -249,6 +251,23 @@ describe('桌面会话生命周期契约', () => {
 		useSessionStore.setState({ selectedSessionPath: 'C:\\sessions\\A.jsonl' });
 		const backA = useSessionStore.getState();
 		expect(pickActiveExtensionUI(backA.pendingExtensionUI, backA.selectedSessionPath ?? null)?.id).toBe('confirm-1');
+	});
+
+	it('拒绝替换 Goal 时只解除本次确认，不触发新的 Goal 确认', async () => {
+		const request = {
+			type: 'extension_ui_request' as const,
+			id: 'goal-replace',
+			method: 'confirm' as const,
+			title: 'Replace goal?',
+			message: 'Current goal: 实施\n\nNew goal: 实施',
+		};
+		useSessionStore.setState({ pendingExtensionUI: [{ ...request, sessionPath: null }] });
+
+		await useSessionStore.getState().respondExtensionUI(request, { confirmed: false });
+
+		expect(rpcMocks.respondConfirmed).toHaveBeenCalledWith('goal-replace', false);
+		expect(rpcMocks.executeCommand).not.toHaveBeenCalled();
+		expect(useSessionStore.getState().pendingExtensionUI).toHaveLength(0);
 	});
 
 	it('延迟到达的计划确认使用 sidecar 来源会话，不会被乐观切换误归属', async () => {

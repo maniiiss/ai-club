@@ -113,6 +113,9 @@ function mergePreparedAttachments(previous: PreparedAttachment[], next: Prepared
 }
 
 export function InputBox() {
+	const composerSessionPath = useSessionStore((s) => s.selectedSessionPath ?? s.sessionState?.sessionFile ?? '__new__');
+	const setComposerDraft = useSessionStore((s) => s.setComposerDraft);
+	const getComposerDraft = useSessionStore((s) => s.getComposerDraft);
 	const isStreaming = useSessionStore((s) => s.isStreaming);
 	const isSessionLoading = useSessionStore((s) => s.isSessionLoading);
 	const commands = useSessionStore((s) => s.commands);
@@ -153,6 +156,10 @@ export function InputBox() {
 	const [guidanceMode, setGuidanceMode] = useState<GuidanceMode>('steer');
 	const [submitting, setSubmitting] = useState(false);
 	const rootRef = useRef<HTMLDivElement>(null);
+	const previousComposerSessionPathRef = useRef(composerSessionPath);
+	const composerSessionPathRef = useRef(composerSessionPath);
+	const composerSessionInitializedRef = useRef(false);
+	const composerDraftRef = useRef({ text: '', selectedCommand: null as string | null, attachments: [] as PreparedAttachment[], guidanceMode: 'steer' as GuidanceMode });
 	const showPaletteRef = useRef(false);
 	const hasActionSelectRef = useRef(false);
 	const isStreamingRef = useRef(isStreaming);
@@ -160,6 +167,7 @@ export function InputBox() {
 	showPaletteRef.current = showPalette;
 	hasActionSelectRef.current = hasPendingActionSelect;
 	isStreamingRef.current = isStreaming;
+	composerSessionPathRef.current = composerSessionPath;
 
 	const editor = useEditor({
 		extensions: COMPOSER_EXTENSIONS,
@@ -428,6 +436,48 @@ export function InputBox() {
 	const canSend = canSubmitPrompt(selectedCommand ?? text, attachments.length, preparing || isSessionLoading) && !submitting && !isStopping && !isFlushingGuidance;
 	const visibleGuidance = guidanceQueue.slice(-5);
 	const hasComposerContent = selectedCommand !== null || text.trim().length > 0 || attachments.length > 0;
+	composerDraftRef.current = { text, selectedCommand, attachments, guidanceMode };
+
+	/** 会话切换前先保存旧草稿，再恢复目标会话的文件、Skill、Plan/Goal 命令和输入文本。 */
+	useEffect(() => {
+		const previousPath = previousComposerSessionPathRef.current;
+		const shouldLoadDraft = !composerSessionInitializedRef.current || previousPath !== composerSessionPath;
+		if (shouldLoadDraft) {
+			if (composerSessionInitializedRef.current) setComposerDraft(previousPath, composerDraftRef.current);
+			const draft = getComposerDraft(composerSessionPath);
+			setText(draft?.text ?? '');
+			setSelectedCommand(draft?.selectedCommand ?? null);
+			setAttachments(draft?.attachments ?? []);
+			setGuidanceMode(draft?.guidanceMode ?? 'steer');
+			if (editor) {
+				const match = draft?.text.trim().match(/^\/(\S+)(?:\s+([\s\S]*))?$/);
+				const command = match ? commands.find((item) => item.name === match[1]) : undefined;
+				// 命令清单刷新是异步的；切换会话首帧可能还没有目标 cwd 的 plan/goal/skill。
+				// 先按草稿中的命令名恢复 token，避免 setContent 普通文本触发 onUpdate 把标识清空。
+				const draftCommand = draft?.selectedCommand
+					? { name: draft.selectedCommand, source: draft.selectedCommand.startsWith('skill:') ? 'skill' as const : (command?.source ?? 'extension') }
+					: undefined;
+				const commandToRestore = command ?? draftCommand;
+				editor.commands.setContent(commandToRestore
+					? createCommandDocument(commandToRestore.name, commandToRestore.source, command ? (match?.[2] ?? '') : (draft?.text ?? '').replace(/^\/\S+\s*/, ''))
+					: { type: 'doc', content: (draft?.text ?? '').split('\n').map((line) => ({ type: 'paragraph', content: line ? [{ type: 'text', text: line }] : undefined })) });
+			}
+			previousComposerSessionPathRef.current = composerSessionPath;
+			composerSessionInitializedRef.current = true;
+		}
+		return () => {
+			setComposerDraft(composerSessionPath, composerDraftRef.current);
+		};
+	}, [commands, composerSessionPath, editor, getComposerDraft, setComposerDraft]);
+
+	// 编辑过程中持续写入当前会话草稿；切换会话不再依赖 effect cleanup 的时序，
+	// 因而命令 token（尤其 /plan、/goal）和附件不会因快速切换被旧状态覆盖。
+	useEffect(() => {
+		if (!composerSessionInitializedRef.current) return;
+		setComposerDraft(composerSessionPathRef.current, { text, selectedCommand, attachments, guidanceMode });
+	// 故意不把 composerSessionPath 放入依赖：路径变化时先由上面的切换 effect 保存旧路径并恢复目标，
+	// 不能在恢复前把旧编辑态写入目标会话。
+	}, [attachments, guidanceMode, selectedCommand, setComposerDraft, text]);
 
 	return (
 		<div ref={rootRef} className={`${styles.root} ${isDragOver ? styles.dragOver : ''}`}>

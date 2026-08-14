@@ -116,18 +116,25 @@ fn resolve_sidecar() -> Result<(String, String), Box<dyn std::error::Error>> {
 		.parent()
 		.map(PathBuf::from)
 		.unwrap_or_else(|| PathBuf::from("."));
+	let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 	for sidecar_name in sidecar_names {
 		let prod_candidate = exe_dir.join(sidecar_name);
 		if prod_candidate.exists() {
+			// tauri dev 会把主程序放在 target/debug，但 Bun sidecar 的资源仍由
+			// src-tauri/resources 提供；安装态才从主程序同级 resources 读取。
+			let resource_dir = if cfg!(debug_assertions) {
+				manifest.join("resources")
+			} else {
+				exe_dir.join("resources")
+			};
 			return Ok((
 				prod_candidate.to_string_lossy().to_string(),
-				exe_dir.join("resources").to_string_lossy().to_string(),
+				resource_dir.to_string_lossy().to_string(),
 			));
 		}
 	}
 
 	// 开发期 fallback：sidecar exe 在 binaries/，资源在 resources/（sidecar cwd 指向 resources/，相对路径读取 theme/、export-html/）
-	let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
 	let dev_exe = sidecar_names
 		.iter()
 		.map(|name| manifest.join("binaries").join(name))

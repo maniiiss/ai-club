@@ -21,3 +21,46 @@
 .artifactContent { min-height: 0; flex: 1; margin-top: 10px; }
 .artifactContent textarea { box-sizing: border-box; width: 100%; height: 100%; min-height: 220px; resize: none; border: 1px solid var(--gp-border); border-radius: 7px; outline: 0; background: var(--gp-code-surface); padding: 10px; color: var(--gp-text); font: 12px/1.65 var(--font-sans); }
 .artifactContent textarea:focus { border-color: var(--gp-accent); box-shadow: 0 0 0 2px var(--gp-accent-soft); }
+
+/* 文件区采用资源管理器式单列布局：文件是主操作，危险操作仅在需要时显现。 */
+.fileTabs { display: flex; min-width: 0; flex: 0 0 34px; align-items: end; gap: 3px; overflow-x: auto; border-bottom: 1px solid var(--gp-border); padding: 5px 7px 0; scrollbar-width: thin; }
+.fileTab { display: inline-flex; min-width: 0; max-width: 170px; height: 28px; flex: 0 1 auto; align-items: center; gap: 5px; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; background: transparent; padding: 0 6px 0 8px; color: var(--gp-text-muted); font: 10px var(--font-mono); white-space: nowrap; cursor: pointer; }
+.fileTab > svg { width: 13px; height: 13px; flex: 0 0 auto; color: var(--gp-accent); }
+.fileTab > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.fileTab:hover { background: var(--gp-surface-hover); color: var(--gp-text-secondary); }
+.fileTab:focus-visible { border-color: var(--gp-border-strong); outline: none; }
+.fileTabActive, .fileTabActive:hover { border-color: var(--gp-border-strong); background: var(--gp-surface); color: var(--gp-text); box-shadow: inset 0 2px 0 var(--gp-accent); }
+.fileTabClose { display: inline-grid; width: 17px; height: 17px; flex: 0 0 17px; place-items: center; border: 0; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; }
+.fileTabClose:hover, .fileTabClose:focus-visible { background: var(--gp-danger); color: var(--primary-foreground); outline: none; }
+.addFileTab { width: 25px; height: 25px; flex: 0 0 auto; margin-left: auto; color: var(--gp-text-muted); }
+.addFileTab:hover { color: var(--gp-accent); }
+.fileList { min-height: 0; flex: 1; padding: 7px 7px 12px; }
+.fileRows { display: grid; gap: 3px; min-width: 0; }
+.fileRow { box-sizing: border-box; display: grid; width: 100%; min-width: 0; min-height: 58px; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 3px; border: 1px solid transparent; border-left: 2px solid transparent; border-radius: 7px; padding: 3px 4px 3px 2px; transition: background-color 140ms ease, border-color 140ms ease, box-shadow 140ms ease; }
+.fileRow:hover { border-color: var(--gp-border); background: var(--gp-surface-hover); }
+.fileRow:focus-within { border-color: var(--gp-border-strong); border-left-color: var(--gp-accent); background: var(--gp-surface-hover); box-shadow: none; }
+.fileRowActive, .fileRowActive:hover, .fileRowActive:focus-within { border-color: color-mix(in srgb, var(--gp-accent) 26%, var(--gp-border)); border-left-color: var(--gp-accent); background: color-mix(in srgb, var(--gp-accent-soft) 72%, var(--gp-surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--gp-accent) 12%, transparent); }
+.fileRowButton { display: grid; width: 100%; height: 100%; min-width: 0; grid-template-columns: 26px minmax(0, 1fr); align-items: center; justify-content: start; gap: 8px; border-radius: 5px; padding: 5px 5px; color: var(--gp-text); text-align: left; }
+.fileRowButton:hover { background: transparent; }
+.fileRowButton:focus-visible { box-shadow: none; }
+.fileIcon { display: inline-grid; width: 25px; height: 25px; place-items: center; border: 1px solid color-mix(in srgb, var(--gp-accent) 28%, var(--gp-border)); border-radius: 6px; background: color-mix(in srgb, var(--gp-accent-soft) 72%, var(--gp-surface)); color: var(--gp-accent); }
+.fileIcon svg { width: 15px; height: 15px; }
+.fileIcon_json, .fileIcon_jsonl { border-color: color-mix(in srgb, #d97706 38%, var(--gp-border)); background: color-mix(in srgb, #f59e0b 13%, var(--gp-surface)); color: #d97706; }
+.fileIcon_ts, .fileIcon_tsx, .fileIcon_js, .fileIcon_jsx, .fileIcon_py, .fileIcon_java, .fileIcon_go, .fileIcon_rs, .fileIcon_sql, .fileIcon_sh { border-color: color-mix(in srgb, #2563eb 38%, var(--gp-border)); background: color-mix(in srgb, #3b82f6 12%, var(--gp-surface)); color: #2563eb; }
+.fileIcon_png, .fileIcon_jpg, .fileIcon_jpeg, .fileIcon_gif, .fileIcon_svg, .fileIcon_webp, .fileIcon_ico { border-color: color-mix(in srgb, #db2777 35%, var(--gp-border)); background: color-mix(in srgb, #ec4899 12%, var(--gp-surface)); color: #db2777; }
+.fileIcon_zip, .fileIcon_tar, .fileIcon_gz, .fileIcon_7z, .fileIcon_rar { border-color: color-mix(in srgb, #7c3aed 35%, var(--gp-border)); background: color-mix(in srgb, #8b5cf6 12%, var(--gp-surface)); color: #7c3aed; }
+.fileBody { display: grid; min-width: 0; gap: 3px; }
+.fileName { overflow: hidden; color: var(--gp-text); font-size: 11px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.fileMeta { display: flex; min-width: 0; align-items: center; gap: 6px; overflow: hidden; color: var(--gp-text-muted); font-family: var(--font-mono); font-size: 9px; white-space: nowrap; }
+.fileMeta > span { overflow: hidden; text-overflow: ellipsis; }
+.fileMeta > span + span::before { margin-right: 6px; color: var(--gp-border-strong); content: '•'; }
+.fileStatus { color: var(--gp-status-success); }
+.fileActions { display: flex; align-items: center; gap: 1px; opacity: 0; transition: opacity 140ms ease; }
+.fileRow:hover .fileActions, .fileRow:focus-within .fileActions { opacity: 1; }
+.fileActions button { color: var(--gp-text-muted); }
+.fileActions button:hover { color: var(--gp-accent); }
+.deleteFileButton:hover { color: var(--gp-danger) !important; }
+.fileEmpty { display: flex; min-height: 150px; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px 16px; color: var(--gp-text-muted); text-align: center; }
+.fileEmpty svg { color: var(--gp-accent); }
+.fileEmpty span { color: var(--gp-text-secondary); font-size: 11px; font-weight: 600; }
+.fileEmpty small { max-width: 220px; color: var(--gp-text-muted); font-size: 10px; line-height: 1.5; }

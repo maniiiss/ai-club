@@ -285,6 +285,16 @@ export default function planMode(
 		}
 	});
 
+	pi.on("input", (event, ctx) => {
+		if (!state.enabled || !startsGoalActivation(event.text)) return;
+
+		// Goal 需要完整的执行工具及 goal_complete/goal_blocked 终止工具；Plan mode 的
+		// 只读白名单不应让用户先手动退出再重试。这里仅在真正启动或恢复 Goal 前退出，
+		// 查询、暂停、清理等管理命令仍保留在 Plan mode 内执行。
+		exitPlanMode(ctx);
+		ctx.ui.notify("Plan mode disabled. Goal mode is taking over the task.", "info");
+	});
+
 	pi.on("session_shutdown", (_event, ctx) => {
 		menuGeneration += 1;
 		menuController.abort(new DOMException("Plan-mode session shut down", "AbortError"));
@@ -830,6 +840,13 @@ export default function planMode(
 				planWorkflowGeneration === workflowGeneration &&
 				!controller.signal.aborted,
 		};
+	}
+
+	function startsGoalActivation(text: string) {
+		const match = text.trim().match(/^\/goal(?:\s+([\s\S]*))?$/i);
+		const args = match?.[1]?.trim();
+		if (!args) return false;
+		return !/^(?:show|status|pause|clear|drop-last|skip)(?:\s|$)/i.test(args);
 	}
 
 	function activatePlanModeTools() {

@@ -117,6 +117,11 @@ export const MessageBubble = memo(function MessageBubble({ message }: { message:
 				{isUser && message.attachments && message.attachments.length > 0 && (
 					<AttachmentRow attachments={message.attachments} />
 				)}
+				{isUser && message.skills && message.skills.length > 0 && (
+					<div className={styles.attachments} aria-label="已使用技能">
+						{message.skills.map((skill) => <span key={skill} className={styles.attachmentChip} title={`Skill: ${skill}`}>✣ Skill:{skill}</span>)}
+					</div>
+				)}
 				{isUser ? (
 					<span className={styles.userText}>{renderHighlightedUserText(message.text)}</span>
 				) : (

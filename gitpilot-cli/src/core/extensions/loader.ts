@@ -27,6 +27,8 @@ import { CONFIG_DIR_NAME, getAgentDir, isBunBinary } from "../../config.ts";
 import * as _bundledPiCodingAgent from "../../index.ts";
 import * as _bundledRtkOptimizer from "pi-rtk-optimizer";
 import * as _bundledGoal from "@narumitw/pi-goal/src/index.ts";
+import * as _bundledMcpAdapter from "pi-mcp-adapter";
+import * as _bundledWebAccess from "pi-web-access";
 // plan-mode 已本地 fork 到 src/extensions/plan-mode/：plan 确认浮层需支持"其他"自定义反馈，
 // 而 runDialogMenu 的 label 精确匹配会丢弃自定义 choice，故在 fork 内绕过 runMenu 直接调 ctx.ui.select。
 // 上游 @narumitw/pi-plan-mode 升级时需手动合并到本地 fork。
@@ -93,6 +95,9 @@ const VIRTUAL_MODULES: Record<string, unknown> = {
 	"pi-rtk-optimizer": _bundledRtkOptimizer,
 	"@narumitw/pi-goal/src/index.ts": _bundledGoal,
 	"@narumitw/pi-plan-mode/src/index.ts": _bundledPlanMode,
+	// GitPilot 内置的 Web/MCP 扩展也必须以静态依赖进入 Bun sidecar，安装版不能依赖用户机器上的 Node/npm。
+	"pi-mcp-adapter": _bundledMcpAdapter,
+	"pi-web-access": _bundledWebAccess,
 };
 
 const require = createRequire(import.meta.url);
@@ -114,6 +119,8 @@ function getAliases(): Record<string, string> {
 	const typeboxValueEntry = require.resolve("typebox/value");
 	const rtkOptimizerEntry = require.resolve("pi-rtk-optimizer");
 	const goalEntry = require.resolve("@narumitw/pi-goal/src/index.ts");
+	const mcpAdapterEntry = require.resolve("pi-mcp-adapter");
+	const webAccessEntry = require.resolve("pi-web-access");
 	// plan-mode 走本地 fork（见顶部 _bundledPlanMode 注释），不走 node_modules 的 require.resolve。
 	const planModeEntry = path.resolve(__dirname, "../../extensions/plan-mode/index.ts");
 
@@ -163,6 +170,8 @@ function getAliases(): Record<string, string> {
 		"pi-rtk-optimizer": rtkOptimizerEntry,
 		"@narumitw/pi-goal/src/index.ts": goalEntry,
 		"@narumitw/pi-plan-mode/src/index.ts": planModeEntry,
+		"pi-mcp-adapter": mcpAdapterEntry,
+		"pi-web-access": webAccessEntry,
 	};
 
 	return _aliases;

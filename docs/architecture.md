@@ -1,6 +1,10 @@
 # AI Club 项目架构说明
 
+> GitPilot Work 使用 GitPilot agent 根目录下的独立任务 workspace、持久化 AgentSession 与文件产出；Code 继续使用项目 cwd 和 Code session。公众端项目、工作项、评论和附件通过 CLI 内置插件按需访问，写操作经 Desktop 确认并携带 Work 任务标识审计。详细设计见 `docs/design-docs/gitpilot-work-collaboration-technical-design-v1.md`。
+
 > GitPilot Desktop 现包含隔离的 `gitpilot-code` 与 `gitpilot-work` 模式：Code 保持项目编码 Agent 链路；Work 的任务、对话与成果只在 Desktop IndexedDB 保存。Work 的联网研究经 sidecar 调用受认证的 `/api/cli/work/research`，由后端托管搜索密钥、限流与结果裁剪，Desktop 不获得任意网络、Shell、Git 或项目文件权限。详见 `docs/design-docs/gitpilot-work-technical-design-v1.md`。
+
+> GitPilot Desktop Design Mode 复用同一 Tauri + React + sidecar 生命周期，以独立 Design RPC 管理 `.gitpilot/design/` 下的 HTML/CSS/JS 原型、修订和导出；React 只负责对话、设备预览与只读代码展示，预览 iframe 使用 sandbox 约束。详细设计见 `docs/design-docs/gitpilot-desktop-design-mode-technical-design-v1.md`。
 
 ## 1. 项目定位
 
@@ -474,7 +478,7 @@ PR 评审检查清单：
 - 把 review / PATROL 等跨服务模型调用 usage 回传 backend
 - 与后端内部接口联动
 - 以 MCP Server 形式向 Hermes 暴露平台工具
-- 业主代码仓库镜像推送（`git clone` + `git push`，由 backend 解密凭据后调用）
+- 仓库镜像推送（`git clone` + `git push`，由 backend 解密凭据后调用）
 
 其中 GitLab 自动合并的 MR 审查现在额外承担“历史问题带入”“审查严格度门禁”和“版本指纹缓存”职责：backend 会按“GitLab 项目标识快照 + MR IID”读取最近一次 `AI_REJECTED` 日志里的结构化问题清单，并把自动合并策略上的 `reviewStrictness`（`HIGH / MEDIUM / LOW`，默认 `MEDIUM`）通过 `/api/code/review` 一并传给 `code-processing`；`code-processing` 需要在最终提示词中追加平台统一门禁规则，高严格度遇到明确不规范或潜在风险即拒绝，中严格度拒绝严重和中等风险，低严格度只拒绝线上故障、安全漏洞、数据破坏、兼容性破坏等严重问题。无论严格度如何，`code-processing` 都需要返回当前仍需处理的问题总表、已修复历史问题和未修复历史问题，backend 再据此决定是否放行自动合并，并把结果固化到自动合并日志；backend 仍保留安全兜底，只要 `unresolvedPreviousIssues` 非空，即使模型返回 `approved=true` 也不会继续自动合并。为了避免同一版 MR 在调度里重复消耗 token，自动合并日志还会额外保存 `review_fingerprint / review_fingerprint_source / review_result_json / review_cache_hit`：优先按 GitLab MR 详情里的 `sha + diff_refs.base_sha + diff_refs.start_sha` 结合审查配置生成 `SHA` 指纹，若远端未返回 SHA，再回退为基于归一化 diff 的 `DIFF` 指纹；同一 `项目 + MR IID + 指纹` 命中历史日志时直接复用结构化审查结果，不再重新调用模型。
 
@@ -748,16 +752,16 @@ GitNexus 全仓图中的 Nexus AI 属于 GitNexus Web UI 自身能力。Docker �
 
 这条链路属于 GitLab 管理子域内部的“仓库绑定扩展能力”，当前不接执行中心，也不和自动合并调度做联动。
 
-### 4.6.1 GitLab 业主仓库推送链路
+### 4.6.1 GitLab 仓库镜像推送链路
 
-业主代码仓库推送链路用于把平台 GitLab 仓库的代码交付到业主方 GitLab 仓库（其他实例），链路如下：
+仓库镜像推送链路用于把平台 GitLab 仓库的代码交付到镜像 GitLab 仓库（其他实例），链路如下：
 
-1. 管理员在 GitLab 管理页「业主仓库」Tab 配置业主仓库绑定（项目级，含业主 GitLab API 地址、仓库标识、访问 Token，Token 经 `TokenCipherService` AES-GCM 加密存储）
+1. 管理员在 GitLab 管理页「仓库镜像」Tab 配置仓库镜像绑定（项目级，含镜像 GitLab API 地址、仓库标识、访问 Token，Token 经 `TokenCipherService` AES-GCM 加密存储）
 2. 测试连接时后端调 `GitlabApiService.fetchProject` 校验 Token 并回写仓库元信息（Clone 地址等）
 3. 用户在管理端或公众端发起推送，选择源 GitLab 绑定、源分支、目标分支和推送方式（DIRECT / NEW_BRANCH / MERGE_REQUEST）
 4. 后端 `OwnerRepoPushService` 校验权限、解密源/目标 Token，调 `OwnerRepoPushClientService` 请求 code-processing
 5. code-processing `owner_repo_push_service` 完整 clone 源仓库分支（保留历史），复用 3 种认证策略添加目标 remote 并 `git push`（DIRECT 模式 `--force-with-lease`）
-6. MERGE_REQUEST 方式下后端再调 `GitlabApiService.createMergeRequest`（指向业主 GitLab 实例）从推送子分支到目标主分支创建 MR
+6. MERGE_REQUEST 方式下后端再调 `GitlabApiService.createMergeRequest`（指向镜像 GitLab 实例）从推送子分支到目标主分支创建 MR
 7. 后端落库 `owner_repo_push_log` 并更新绑定最近推送状态，返回三态结果（SUCCESS / PARTIAL / FAILED）
 
 这条链路的 git push 能力由 code-processing 承担（复用其 git subprocess 基础设施），backend 负责编排、凭据解密、权限校验和持久化。第一版为同步长超时执行（code-processing 600s），后续可演进为异步任务。详细设计见 `docs/design-docs/gitlab-owner-repo-push-technical-design-v1.md`。
@@ -1072,6 +1076,7 @@ Woodpecker 在两种运行模式中都使用 Compose `woodpecker` profile，由�
 GitPilot CLI 已改为基于 pi-coding-agent 二开的本地执行平面：
 
 - `gitpilot-cli` 是 `@earendil-works/pi-coding-agent@0.81.1` 的源码 fork，运行在用户设备上，直接复用 Pi 的 Agent 循环、交互式 TUI、`read`/`write`/`edit`/`bash`/`grep`/`find`/`ls` 内置工具和树形会话管理，不再自造 CLI 框架。品牌通过 `package.json` 的 `piConfig: { name: "gitpilot", configDir: ".gitpilot" }` 派生，配置目录为 `~/.gitpilot/agent`。
+- GitPilot 内置 `pi-web-access@0.22.0` 与 `pi-mcp-adapter@2.21.0`：Web 默认覆盖 Code、Work、Design，MCP 服务按独立的 `mcp-scopes.json` 分配三种模式，未分配服务默认仅 Code。标准连接定义仍保留在全局与项目 MCP 配置层，凭据和 OAuth 不进入 Desktop 状态；Bun sidecar 静态打包两个扩展及运行依赖。详细边界见 `docs/design-docs/gitpilot-web-mcp-extensions-technical-design-v1.md`。
 - 平台对接以 Pi 内置 extension 形式实现（`src/extensions/gitpilot/`），随源码编译并默认加载，不侵入核心 TUI 与工具：
   - `platform-auth`：`/gitpilot login|logout|status` 斜杠命令，设备授权换取独立 CLI Token（`gpt_`），Token 只保存在系统凭据库，服务端只保存 hash。
   - `platform-model`：注册 `gitpilot` provider，读取 `/api/cli/models` 启用 CHAT 模型（清单含 `contextLength`/`maxOutputTokens`，由 `ai_model_config` 表 V144 迁移新增、管理端可配置）；`toModelConfig` 透传两字段为 pi 的 `contextWindow`/`maxTokens`，未配置时回退默认 128K/16K。推理时用 `gpt_` 签发短期模型会话令牌（`gms_`，默认 900s），缓存并临近过期自动重建，通过 `streamSimple` 把请求改写到平台模型代理（OpenAI 走 `/chat/completions`、Anthropic 走 `/messages`）。平台模型 API Key、真实上游地址和完整请求审计留在 backend。CLI 据真实 `contextWindow` 在 `/model` 选择器详情与 `--list-models` 列动态展示窗口，并按 pi 原生 `shouldCompact`（已用 token > 窗口 − reserveTokens）触发自动压缩，无需自写压缩逻辑。

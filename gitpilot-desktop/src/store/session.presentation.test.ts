@@ -100,4 +100,40 @@ describe('对话展示压力场景', () => {
 		expect(useSessionStore.getState().messages).toHaveLength(1);
 		expect(useSessionStore.getState().messages[0].text).toBe('/plan 开发chat-plan');
 	});
+
+	it('实时 Goal 内部提示不会追加为用户气泡', () => {
+		useSessionStore.setState({ messages: [{ id: 'goal-command', role: 'user', text: '/goal 修复登录', kind: 'text' }] });
+		const setter = (partial: unknown) => useSessionStore.setState(partial as never);
+
+		applyEvent(setter, {
+			type: 'message_start',
+			message: {
+				role: 'user',
+				content: [{ type: 'text', text: 'Goal mode is active. Complete this goal fully:\n<goal_objective>修复登录</goal_objective>\n<goal_id>goal-1</goal_id>\nGoal-mode rules:' }],
+			},
+		});
+
+		expect(useSessionStore.getState().messages).toEqual([
+			{ id: 'goal-command', role: 'user', text: '/goal 修复登录', kind: 'text' },
+		]);
+	});
+
+	it('扩展命令 custom marker 到达时保留 Goal/Plan 用户标识且不重复乐观消息', () => {
+		useSessionStore.setState({ messages: [{ id: 'plan-command', role: 'user', text: '/plan 设计登录', kind: 'text' }] });
+		const setter = (partial: unknown) => useSessionStore.setState(partial as never);
+
+		applyEvent(setter, {
+			type: 'message_start',
+			message: {
+				role: 'custom',
+				customType: 'gitpilot.extension-command',
+				content: [],
+				details: { commandName: 'plan', args: '设计登录' },
+			},
+		});
+
+		expect(useSessionStore.getState().messages).toEqual([
+			{ id: 'plan-command', role: 'user', text: '/plan 设计登录', kind: 'text' },
+		]);
+	});
 });

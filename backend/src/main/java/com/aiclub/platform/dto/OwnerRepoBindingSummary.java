@@ -1,7 +1,7 @@
 package com.aiclub.platform.dto;
 
 /**
- * 业主代码仓库绑定详情。
+ * 仓库镜像绑定详情。
  * Token 不回显，仅返回 tokenConfigured 标识是否已配置。
  */
 public record OwnerRepoBindingSummary(
@@ -17,6 +17,7 @@ public record OwnerRepoBindingSummary(
         String gitlabProjectWebUrl,
         String gitlabHttpCloneUrl,
         String gitlabSshCloneUrl,
+        String customCloneUrl,
         String defaultTargetBranch,
         String defaultPushMode,
         Boolean tokenConfigured,

@@ -22,7 +22,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.NoSuchElementException;
 
 /**
- * 业主仓库代码推送编排服务。
+ * 仓库镜像代码推送编排服务。
  * 负责：权限校验 -> 解密源/目标凭据 -> 调 code-processing 镜像推送 ->
  * MERGE_REQUEST 方式时调 GitLab API 创建 MR -> 落库推送日志 + 更新绑定状态 -> 返回三态结果。
  * 编排模式参照 GiteeTestPlanPushService。
@@ -105,27 +105,27 @@ public class OwnerRepoPushService {
             // 1. 调 code-processing 执行镜像推送
             OwnerRepoPushClientService.MirrorPushResponse pushResponse = ownerRepoPushClientService.mirrorPush(
                     sourceRepoUrl, sourceToken, sourceBranch,
-                    binding.getGitlabHttpCloneUrl(), targetToken, targetBranch, pushMode
+                    resolveTargetCloneUrl(binding), targetToken, targetBranch, pushMode
             );
 
             String mergeRequestIid = null;
             String mergeRequestWebUrl = null;
             String summaryMessage;
 
-            // 2. MERGE_REQUEST 方式：在业主仓库创建 MR（从推送的子分支到目标主分支）
+            // 2. MERGE_REQUEST 方式：在仓库镜像创建 MR（从推送的子分支到目标主分支）
             if (PUSH_MODE_MERGE_REQUEST.equals(pushMode)) {
                 GitlabApiService.GitlabCreatedMergeRequest mr = createOwnerMergeRequest(
                         binding, targetToken, pushResponse.pushedBranch(), targetBranch, sourceBranch
                 );
                 mergeRequestIid = String.valueOf(mr.iid());
                 mergeRequestWebUrl = mr.webUrl();
-                summaryMessage = String.format("推送成功并创建 MR !%s：源分支 %s -> 业主仓库 %s",
+                summaryMessage = String.format("推送成功并创建 MR !%s：源分支 %s -> 仓库镜像 %s",
                         mergeRequestIid, sourceBranch, pushResponse.pushedBranch());
             } else if (PUSH_MODE_DIRECT.equals(pushMode)) {
-                summaryMessage = String.format("推送成功：源分支 %s -> 业主仓库 %s（直接覆盖）",
+                summaryMessage = String.format("推送成功：源分支 %s -> 仓库镜像 %s（直接覆盖）",
                         sourceBranch, targetBranch);
             } else {
-                summaryMessage = String.format("推送成功：源分支 %s -> 业主仓库 %s",
+                summaryMessage = String.format("推送成功：源分支 %s -> 仓库镜像 %s",
                         sourceBranch, pushResponse.pushedBranch());
             }
 
@@ -166,20 +166,20 @@ public class OwnerRepoPushService {
         ProjectGitlabBindingEntity sourceBinding = gitlabBindingRepository.findById(sourceBindingId)
                 .orElseThrow(() -> new NoSuchElementException("源 GitLab 绑定不存在: " + sourceBindingId));
         if (!sourceBinding.getProject().getId().equals(ownerBinding.getProject().getId())) {
-            throw new IllegalArgumentException("源 GitLab 绑定与业主仓库绑定不属于同一项目");
+            throw new IllegalArgumentException("源 GitLab 绑定与仓库镜像绑定不属于同一项目");
         }
         return sourceBinding;
     }
 
     private String resolveDisabledReason(ProjectOwnerRepoBindingEntity binding) {
         if (!Boolean.TRUE.equals(binding.getEnabled())) {
-            return "业主仓库绑定已禁用";
+            return "仓库镜像绑定已禁用";
         }
         if (!hasText(binding.getTokenCiphertext())) {
-            return "业主仓库未配置访问 Token";
+            return "仓库镜像未配置访问 Token";
         }
-        if (!hasText(binding.getGitlabHttpCloneUrl())) {
-            return "业主仓库未测试连接，缺少 Clone 地址";
+        if (!hasText(binding.getCustomCloneUrl()) && !hasText(binding.getGitlabHttpCloneUrl())) {
+            return "仓库镜像未测试连接且未配置自定义克隆地址，缺少 Clone 地址";
         }
         return null;
     }
@@ -190,7 +190,7 @@ public class OwnerRepoPushService {
                                                                                String targetBranch,
                                                                                String originSourceBranch) {
         String title = String.format("交付推送：%s -> %s", originSourceBranch, targetBranch);
-        String description = String.format("由平台代码仓库 %s 分支推送到业主仓库 %s 分支的交付 MR。\n\n推送分支：%s",
+        String description = String.format("由平台代码仓库 %s 分支推送到仓库镜像 %s 分支的交付 MR。\n\n推送分支：%s",
                 originSourceBranch, targetBranch, sourceBranch);
         return gitlabApiService.createMergeRequest(
                 binding.getApiBaseUrl(), targetToken, binding.getGitlabProjectRef(),
@@ -204,6 +204,17 @@ public class OwnerRepoPushService {
             throw new IllegalStateException("源 GitLab 绑定未测试连接，缺少 Clone 地址");
         }
         return cloneUrl;
+    }
+
+    /**
+     * 推送目标克隆地址：优先用户自定义地址，留空回退到测试连接探测的地址。
+     */
+    private String resolveTargetCloneUrl(ProjectOwnerRepoBindingEntity binding) {
+        String customCloneUrl = trimToNull(binding.getCustomCloneUrl());
+        if (customCloneUrl != null) {
+            return customCloneUrl;
+        }
+        return binding.getGitlabHttpCloneUrl();
     }
 
     private void savePushLog(ProjectOwnerRepoBindingEntity binding,

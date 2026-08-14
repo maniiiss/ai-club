@@ -87,11 +87,12 @@ fn write_protocol_log(log: Option<&Arc<Mutex<File>>>, line: &str) {
 }
 
 /// agent sidecar 桥接器。主进程持有一个实例，由 Tauri 状态管理。
+#[derive(Clone)]
 pub struct SidecarBridge {
 	/// sidecar 子进程（kill 时 take 出来）
-	child: Mutex<Option<Child>>,
+	child: Arc<Mutex<Option<Child>>>,
 	/// sidecar 的 stdin（发命令）
-	stdin: Mutex<Option<ChildStdin>>,
+	stdin: Arc<Mutex<Option<ChildStdin>>>,
 	/// Tauri 应用句柄（emit 事件用）
 	app: AppHandle,
 	/// 待响应命令：id -> mpsc sender。stdout 线程读到对应 id 的 response 后回传给 invoke 调用方。
@@ -193,8 +194,8 @@ impl SidecarBridge {
 		}
 
 		Ok(Self {
-			child: Mutex::new(Some(child)),
-			stdin: Mutex::new(stdin),
+			child: Arc::new(Mutex::new(Some(child))),
+			stdin: Arc::new(Mutex::new(stdin)),
 			app,
 			pending,
 		})
@@ -230,8 +231,13 @@ impl SidecarBridge {
 				.map_err(|e| format!("写入 stdin 失败: {e}"))?;
 		}
 
-		// 等待对应 id 的响应（30s 超时）
-		match rx.recv_timeout(Duration::from_secs(30)) {
+		// Design 生成需要等待完整的模型结构化结果，允许比普通 RPC 更长的响应时间；
+		// 普通命令仍保持 30 秒保护，避免 sidecar 异常时同步 invoke 永久挂起。
+		let timeout = match command.get("type").and_then(Value::as_str) {
+			Some("design_generate") => Duration::from_secs(120),
+			_ => Duration::from_secs(30),
+		};
+		match rx.recv_timeout(timeout) {
 			Ok(v) => Ok(v),
 			Err(_) => {
 				self.pending
@@ -259,6 +265,11 @@ impl SidecarBridge {
 
 impl Drop for SidecarBridge {
 	fn drop(&mut self) {
-		self.kill();
+		// rpc_send 会把桥接器的共享句柄交给阻塞线程；临时副本释放时不能
+		// 误杀仍由 Tauri State 持有的 sidecar。只有最后一个桥接器所有者释放时
+		// 才执行进程清理。
+		if Arc::strong_count(&self.child) == 1 {
+			self.kill();
+		}
 	}
 }
