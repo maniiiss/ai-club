@@ -13,6 +13,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { Loader2, ExternalLink, LogIn, AlertCircle } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
 import { rpc, isTauriEnv } from '@/src/rpc/bridge';
+import { DEPLOYMENT } from '@/src/lib/config';
 import { Button } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
 import styles from './LoginPage.module.css';
@@ -38,7 +39,7 @@ export function LoginPage() {
 	const clearError = useSessionStore((s) => s.clearError);
 	const error = useSessionStore((s) => s.error);
 
-	const [platformUrl, setPlatformUrl] = useState('http://localhost:8080');
+	const [platformUrl, setPlatformUrl] = useState<string>(DEPLOYMENT.apiBaseUrl);
 	const [phase, setPhase] = useState<'idle' | 'requesting' | 'polling' | 'done'>('idle');
 	const [auth, setAuth] = useState<DeviceAuth | null>(null);
 	const [localError, setLocalError] = useState<string | null>(null);
