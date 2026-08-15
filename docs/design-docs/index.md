@@ -74,6 +74,7 @@
 - [智能体调用量统计](agent-invocation-tracking-technical-design-v1.md) - 智能体调用统计
 - [积分与 Token 关联及智能体计费设计](credit-token-agent-billing-technical-design-v1.md) - 模型 token 定价、智能体按 token 计费（预扣+终态结算）、激活 cost_credits 建立 token 与积分关联
 - [模型 Token 计费管理端 UI 设计](model-token-billing-console-ui-v1.md) - 模型管理页 token 计费配置入口、列表计费状态列、积分管理页 TOKEN_BASED 规则标注
+- [GitPilot CLI 模型会话 Token 计费设计](cli-model-session-token-billing-v1.md) - CLI/Desktop 模型调用按实际 token 即时扣积分，复用 ModelPricingService/CreditService
 
 ### 工程规范
 
@@ -96,5 +97,7 @@
 ### Design Mode
 
 - [GitPilot Desktop Design Mode 技术设计 v1](gitpilot-desktop-design-mode-technical-design-v1.md) - 基于自然语言生成 HTML 原型，支持移动端/桌面端预览，并规划多人协作与设计师画板演进
+- [GitPilot Desktop Design Mode 流式执行技术设计 v2](gitpilot-desktop-design-mode-streaming-technical-design-v2.md) - 独立 Design Agent 会话、结构化 patch、实时预览、审批、恢复与 Design 专属队列
+- [GitPilot Desktop Design Mode 多项目与多文件技术设计 v1](gitpilot-desktop-design-mode-multi-project-multi-file-technical-design-v1.md) - 项目级 Design Workspace、页面树/文件树、canonical manifest、多项目事件隔离与受控预览
 
 *本索引自动更新，如有新增设计文档请同步维护。*
