@@ -73,6 +73,7 @@
 - [模型调用量缓存命中统计设计](model-usage-cache-hit-stats-technical-design-v1.md) - 缓存命中率与命中 token 数的采集、聚合与看板展示
 - [智能体调用量统计](agent-invocation-tracking-technical-design-v1.md) - 智能体调用统计
 - [积分与 Token 关联及智能体计费设计](credit-token-agent-billing-technical-design-v1.md) - 模型 token 定价、智能体按 token 计费（预扣+终态结算）、激活 cost_credits 建立 token 与积分关联
+- [模型 Token 计费管理端 UI 设计](model-token-billing-console-ui-v1.md) - 模型管理页 token 计费配置入口、列表计费状态列、积分管理页 TOKEN_BASED 规则标注
 
 ### 工程规范
 
