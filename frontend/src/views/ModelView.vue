@@ -95,6 +95,7 @@
               <div class="atelier-data-head-item model-col-api">接口地址</div>
               <div class="atelier-data-head-item model-col-key center">密钥</div>
               <div class="atelier-data-head-item model-col-status center">状态</div>
+              <div class="atelier-data-head-item model-col-billing center">计费</div>
               <div class="atelier-data-head-item model-col-actions right">操作</div>
             </div>
             <div v-for="row in list" :key="row.id" class="atelier-data-row model-list-row">
@@ -133,6 +134,11 @@
               <div class="atelier-data-cell model-col-status center" data-label="状态">
                 <span class="management-list-pill" :class="row.enabled ? 'success' : 'danger'">
                   {{ row.enabled ? '启用' : '停用' }}
+                </span>
+              </div>
+              <div class="atelier-data-cell model-col-billing center" data-label="计费">
+                <span class="management-list-pill" :class="isBilling(row) ? 'success' : 'info'">
+                  {{ isBilling(row) ? '已计费' : '未计费' }}
                 </span>
               </div>
               <div class="atelier-data-cell model-col-actions right" data-label="操作">
@@ -215,6 +221,14 @@
                     <div class="mobile-entity-field-content">
                       <span class="management-list-pill" :class="row.enabled ? 'success' : 'danger'">
                         {{ row.enabled ? '启用' : '停用' }}
+                      </span>
+                    </div>
+                  </div>
+                  <div class="mobile-entity-field">
+                    <span class="mobile-entity-field-label">计费</span>
+                    <div class="mobile-entity-field-content">
+                      <span class="management-list-pill" :class="isBilling(row) ? 'success' : 'info'">
+                        {{ isBilling(row) ? '已计费' : '未计费' }}
                       </span>
                     </div>
                   </div>
@@ -326,6 +340,25 @@
             <el-switch v-model="form.enabled" />
           </el-form-item>
         </section>
+        <section class="platform-form-section">
+          <div class="platform-form-section-head">
+            <div class="platform-form-section-title">Token 计费</div>
+            <div class="platform-form-section-subtitle">启用后，公众端智能体执行按模型 token 用量扣积分（预扣 + 终态结算）。</div>
+          </div>
+          <el-form-item label="启用 Token 计费">
+            <el-switch v-model="form.tokenBillingEnabled" />
+          </el-form-item>
+          <el-form-item label="输入单价（分/千token）" prop="inputCreditPer1k">
+            <el-input-number v-model="form.inputCreditPer1k" :min="0" :step="0.1" :precision="4" controls-position="right" :disabled="!form.tokenBillingEnabled" style="width: 100%" placeholder="启用计费时必填" />
+          </el-form-item>
+          <el-form-item label="输出单价（分/千token）" prop="outputCreditPer1k">
+            <el-input-number v-model="form.outputCreditPer1k" :min="0" :step="0.1" :precision="4" controls-position="right" :disabled="!form.tokenBillingEnabled" style="width: 100%" placeholder="启用计费时必填" />
+          </el-form-item>
+          <el-form-item label="缓存命中单价（分/千token，可选）">
+            <el-input-number v-model="form.cachedInputCreditPer1k" :min="0" :step="0.1" :precision="4" controls-position="right" :disabled="!form.tokenBillingEnabled" style="width: 100%" />
+            <div class="platform-form-section-subtitle" style="margin-top: 6px">留空按输入单价 ×0.5 兜底（缓存命中折扣计费）。</div>
+          </el-form-item>
+        </section>
       </el-form>
       <template #footer>
         <div class="platform-dialog-footer">
@@ -400,6 +433,25 @@
             <el-switch v-model="form.enabled" />
           </el-form-item>
         </section>
+        <section class="platform-form-section">
+          <div class="platform-form-section-head">
+            <div class="platform-form-section-title">Token 计费</div>
+            <div class="platform-form-section-subtitle">启用后，公众端智能体执行按模型 token 用量扣积分（预扣 + 终态结算）。</div>
+          </div>
+          <el-form-item label="启用 Token 计费">
+            <el-switch v-model="form.tokenBillingEnabled" />
+          </el-form-item>
+          <el-form-item label="输入单价（分/千token）" prop="inputCreditPer1k">
+            <el-input-number v-model="form.inputCreditPer1k" :min="0" :step="0.1" :precision="4" controls-position="right" :disabled="!form.tokenBillingEnabled" style="width: 100%" placeholder="启用计费时必填" />
+          </el-form-item>
+          <el-form-item label="输出单价（分/千token）" prop="outputCreditPer1k">
+            <el-input-number v-model="form.outputCreditPer1k" :min="0" :step="0.1" :precision="4" controls-position="right" :disabled="!form.tokenBillingEnabled" style="width: 100%" placeholder="启用计费时必填" />
+          </el-form-item>
+          <el-form-item label="缓存命中单价（分/千token，可选）">
+            <el-input-number v-model="form.cachedInputCreditPer1k" :min="0" :step="0.1" :precision="4" controls-position="right" :disabled="!form.tokenBillingEnabled" style="width: 100%" />
+            <div class="platform-form-section-subtitle" style="margin-top: 6px">留空按输入单价 ×0.5 兜底（缓存命中折扣计费）。</div>
+          </el-form-item>
+        </section>
       </el-form>
       <template #footer>
         <div class="platform-dialog-footer mobile-form-drawer-footer">
@@ -464,6 +516,10 @@ interface ModelForm {
   enabled: boolean
   contextLength?: number
   maxOutputTokens?: number
+  tokenBillingEnabled?: boolean
+  inputCreditPer1k?: number
+  outputCreditPer1k?: number
+  cachedInputCreditPer1k?: number
 }
 
 const loading = ref(false)
@@ -524,6 +580,10 @@ const modelNamePlaceholder = computed(() =>
 const modelTypeLabel = (modelType: AiModelType) =>
   modelTypeOptions.find(item => item.value === modelType)?.label || modelType
 
+/** 是否已开启 token 计费：开关开启且输入/输出单价齐全才视为生效。 */
+const isBilling = (row: AiModelConfigItem) =>
+  !!row.tokenBillingEnabled && row.inputCreditPer1k != null && row.outputCreditPer1k != null
+
 watch(
   () => form.modelType,
   (modelType) => {
@@ -555,7 +615,31 @@ const rules: FormRules<ModelForm> = {
   modelType: [{ required: true, message: '请选择模型类型', trigger: 'change' }],
   provider: [{ required: true, message: '请选择提供商', trigger: 'change' }],
   apiBaseUrl: [{ required: true, message: '请输入 API 地址', trigger: 'blur' }],
-  modelName: [{ required: true, message: '请输入模型名', trigger: 'blur' }]
+  modelName: [{ required: true, message: '请输入模型名', trigger: 'blur' }],
+  inputCreditPer1k: [
+    {
+      validator: (_rule, _value, callback) => {
+        if (form.tokenBillingEnabled && (form.inputCreditPer1k === undefined || form.inputCreditPer1k === null)) {
+          callback(new Error('启用 token 计费时必须填写输入单价'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'change'
+    }
+  ],
+  outputCreditPer1k: [
+    {
+      validator: (_rule, _value, callback) => {
+        if (form.tokenBillingEnabled && (form.outputCreditPer1k === undefined || form.outputCreditPer1k === null)) {
+          callback(new Error('启用 token 计费时必须填写输出单价'))
+        } else {
+          callback()
+        }
+      },
+      trigger: 'change'
+    }
+  ]
 }
 
 const dialogTitle = computed(() => {
@@ -589,6 +673,10 @@ const resetForm = () => {
   form.enabled = true
   form.contextLength = undefined
   form.maxOutputTokens = undefined
+  form.tokenBillingEnabled = false
+  form.inputCreditPer1k = undefined
+  form.outputCreditPer1k = undefined
+  form.cachedInputCreditPer1k = undefined
   formRef.value?.clearValidate()
 }
 
@@ -656,6 +744,10 @@ const fillForm = (row: AiModelConfigItem) => {
   form.enabled = row.enabled
   form.contextLength = row.contextLength
   form.maxOutputTokens = row.maxOutputTokens
+  form.tokenBillingEnabled = row.tokenBillingEnabled ?? false
+  form.inputCreditPer1k = row.inputCreditPer1k
+  form.outputCreditPer1k = row.outputCreditPer1k
+  form.cachedInputCreditPer1k = row.cachedInputCreditPer1k
 }
 
 const openDetailDialog = (row: AiModelConfigItem) => {
@@ -823,6 +915,7 @@ onMounted(() => {
     minmax(0, 1.6fr)
     minmax(0, 0.9fr)
     minmax(0, 0.9fr)
+    minmax(0, 0.9fr)
     minmax(0, 1fr);
 }
 
@@ -833,6 +926,7 @@ onMounted(() => {
 .model-col-api,
 .model-col-key,
 .model-col-status,
+.model-col-billing,
 .model-col-actions {
   min-width: 0;
 }
@@ -863,6 +957,7 @@ onMounted(() => {
       minmax(0, 0.82fr)
       minmax(0, 1fr)
       minmax(0, 1.35fr)
+      minmax(0, 0.72fr)
       minmax(0, 0.72fr)
       minmax(0, 0.72fr)
       minmax(0, 0.82fr);

@@ -357,6 +357,7 @@ public class ModelConfigService {
         entity.setMaxOutputTokens(request.maxOutputTokens());
         entity.setDescription(request.description() == null ? "" : request.description().trim());
         entity.setEnabled(request.enabled() == null || request.enabled());
+        applyTokenBilling(entity, request);
 
         if (createMode) {
             entity.setApiKeyCiphertext(tokenCipherService.encrypt(requireApiKey(request.apiKey())));
@@ -364,6 +365,23 @@ public class ModelConfigService {
             entity.setApiKeyCiphertext(tokenCipherService.encrypt(request.apiKey().trim()));
         } else if (!hasText(entity.getApiKeyCiphertext())) {
             throw new IllegalArgumentException("API Key 不能为空");
+        }
+    }
+
+    /**
+     * 应用模型 token 计费配置：单价与计费开关联动校验后写入实体。
+     * 启用计费要求输入/输出单价齐全；关闭计费时忽略单价并保留 DB 原值（不清空）。
+     */
+    private void applyTokenBilling(AiModelConfigEntity entity, AiModelConfigRequest request) {
+        boolean enabled = request.tokenBillingEnabled() != null && request.tokenBillingEnabled();
+        if (enabled && (request.inputCreditPer1k() == null || request.outputCreditPer1k() == null)) {
+            throw new IllegalArgumentException("启用 token 计费必须配置输入与输出单价");
+        }
+        entity.setTokenBillingEnabled(enabled);
+        if (enabled) {
+            entity.setInputCreditPer1k(request.inputCreditPer1k());
+            entity.setOutputCreditPer1k(request.outputCreditPer1k());
+            entity.setCachedInputCreditPer1k(request.cachedInputCreditPer1k());
         }
     }
 
@@ -404,7 +422,11 @@ public class ModelConfigService {
                 entity.getDescription(),
                 entity.getEnabled(),
                 entity.getContextLength(),
-                entity.getMaxOutputTokens()
+                entity.getMaxOutputTokens(),
+                entity.getTokenBillingEnabled(),
+                entity.getInputCreditPer1k(),
+                entity.getOutputCreditPer1k(),
+                entity.getCachedInputCreditPer1k()
         );
     }
 

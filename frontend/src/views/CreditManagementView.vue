@@ -197,9 +197,10 @@
                 <span>{{ item.featureCode }}</span>
               </div>
               <div class="credit-feature-meta">
-                <span>{{ item.costAmount }} 分/次</span>
+                <span v-if="item.chargeMode === 'TOKEN_BASED'">按 token 计费</span>
+                <span v-else>{{ item.costAmount }} 分/次</span>
                 <el-tag :type="item.enabled ? 'success' : 'info'" effect="plain">{{ item.enabled ? '启用' : '停用' }}</el-tag>
-                <button v-if="canManage" class="management-list-row-button" type="button" title="编辑规则" @click="openFeatureDialog(item)">
+                <button v-if="canManage && item.chargeMode !== 'TOKEN_BASED'" class="management-list-row-button" type="button" title="编辑规则" @click="openFeatureDialog(item)">
                   <el-icon><EditPen /></el-icon>
                 </button>
               </div>

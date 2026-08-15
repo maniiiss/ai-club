@@ -13,6 +13,14 @@ export interface AiModelConfigPayload {
   enabled: boolean
   contextLength?: number
   maxOutputTokens?: number
+  /** 是否启用 token 计费（灰度开关）。 */
+  tokenBillingEnabled?: boolean
+  /** 每千输入 token 积分单价。 */
+  inputCreditPer1k?: number
+  /** 每千输出 token 积分单价。 */
+  outputCreditPer1k?: number
+  /** 每千缓存命中输入 token 单价；为空时按输入单价 ×0.5 兜底。 */
+  cachedInputCreditPer1k?: number
 }
 
 export interface AiModelConfigQuery {

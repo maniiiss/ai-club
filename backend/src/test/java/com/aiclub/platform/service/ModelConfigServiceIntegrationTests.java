@@ -12,6 +12,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.io.IOException;
 import java.io.OutputStream;
+import java.math.BigDecimal;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -43,6 +44,10 @@ class ModelConfigServiceIntegrationTests {
                 "默认对话模型",
                 true,
                 null,
+                null,
+                null,
+                null,
+                null,
                 null
         ));
         AiModelConfigSummary embeddingModel = modelConfigService.createConfig(new AiModelConfigRequest(
@@ -55,6 +60,10 @@ class ModelConfigServiceIntegrationTests {
                 "embedding-key",
                 "默认向量模型",
                 true,
+                null,
+                null,
+                null,
+                null,
                 null,
                 null
         ));
@@ -107,6 +116,10 @@ class ModelConfigServiceIntegrationTests {
                     "本地测试服务",
                     true,
                     null,
+                    null,
+                    null,
+                    null,
+                    null,
                     null
             ));
 
@@ -135,6 +148,10 @@ class ModelConfigServiceIntegrationTests {
                 "embedding-key",
                 "向量模型",
                 true,
+                null,
+                null,
+                null,
+                null,
                 null,
                 null
         ));
@@ -174,6 +191,10 @@ class ModelConfigServiceIntegrationTests {
                     "vision-key",
                     "视觉请求测试",
                     true,
+                    null,
+                    null,
+                    null,
+                    null,
                     null,
                     null
             ));
@@ -216,7 +237,7 @@ class ModelConfigServiceIntegrationTests {
             AiModelConfigSummary model = modelConfigService.createConfig(new AiModelConfigRequest(
                     "Chat 视觉模型", ModelConfigService.MODEL_TYPE_CHAT, ModelConfigService.PROVIDER_OPENAI,
                     "http://127.0.0.1:" + server.getAddress().getPort(), "vision-chat",
-                    ModelConfigService.OPENAI_API_MODE_CHAT_COMPLETIONS, "vision-key", "", true, null, null));
+                    ModelConfigService.OPENAI_API_MODE_CHAT_COMPLETIONS, "vision-key", "", true, null, null, null, null, null, null));
 
             ModelConfigService.ModelInvocation invocation = modelConfigService.invokeVisionPromptWithUsage(
                     modelConfigService.resolveModelConfig(model.id()), "系统提示", "描述图片",
@@ -252,7 +273,7 @@ class ModelConfigServiceIntegrationTests {
             AiModelConfigSummary model = modelConfigService.createConfig(new AiModelConfigRequest(
                     "Anthropic 视觉模型", ModelConfigService.MODEL_TYPE_CHAT, ModelConfigService.PROVIDER_ANTHROPIC,
                     "http://127.0.0.1:" + server.getAddress().getPort(), "claude-vision",
-                    ModelConfigService.OPENAI_API_MODE_AUTO, "vision-key", "", true, null, null));
+                    ModelConfigService.OPENAI_API_MODE_AUTO, "vision-key", "", true, null, null, null, null, null, null));
 
             ModelConfigService.ModelInvocation invocation = modelConfigService.invokeVisionPromptWithUsage(
                     modelConfigService.resolveModelConfig(model.id()), "系统提示", "描述图片",
@@ -267,5 +288,51 @@ class ModelConfigServiceIntegrationTests {
         } finally {
             server.stop(0);
         }
+    }
+
+    /**
+     * 启用 token 计费但缺少输入/输出单价时，应被拒绝并给出中文提示。
+     */
+    @Test
+    void shouldRejectTokenBillingWithoutPrices() {
+        assertThatThrownBy(() -> modelConfigService.createConfig(new AiModelConfigRequest(
+                "缺单价模型", ModelConfigService.MODEL_TYPE_CHAT, ModelConfigService.PROVIDER_OPENAI,
+                "https://api.openai.com/v1", "gpt-billing-missing",
+                ModelConfigService.OPENAI_API_MODE_AUTO, "key", "", true, null, null,
+                true, null, null, null)))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("启用 token 计费必须配置输入与输出单价");
+    }
+
+    /**
+     * 完整 token 计费配置应成功落库并可回显；关闭计费时忽略单价并保留原值。
+     */
+    @Test
+    void shouldPersistAndRoundTripTokenBilling() {
+        AiModelConfigSummary created = modelConfigService.createConfig(new AiModelConfigRequest(
+                "计费对话模型", ModelConfigService.MODEL_TYPE_CHAT, ModelConfigService.PROVIDER_OPENAI,
+                "https://api.openai.com/v1", "gpt-billing",
+                ModelConfigService.OPENAI_API_MODE_AUTO, "key", "", true, null, null,
+                true, BigDecimal.ONE, BigDecimal.valueOf(2), BigDecimal.valueOf(0.5)));
+
+        assertThat(created.tokenBillingEnabled()).isTrue();
+        assertThat(created.inputCreditPer1k()).isEqualByComparingTo(BigDecimal.ONE);
+        assertThat(created.outputCreditPer1k()).isEqualByComparingTo(BigDecimal.valueOf(2));
+        assertThat(created.cachedInputCreditPer1k()).isEqualByComparingTo(BigDecimal.valueOf(0.5));
+
+        AiModelConfigSummary detail = modelConfigService.getConfig(created.id());
+        assertThat(detail.tokenBillingEnabled()).isTrue();
+        assertThat(detail.inputCreditPer1k()).isEqualByComparingTo(BigDecimal.ONE);
+
+        // 关闭计费时忽略单价，保留 DB 原值不清空
+        AiModelConfigSummary updated = modelConfigService.updateConfig(created.id(), new AiModelConfigRequest(
+                "计费对话模型", ModelConfigService.MODEL_TYPE_CHAT, ModelConfigService.PROVIDER_OPENAI,
+                "https://api.openai.com/v1", "gpt-billing",
+                ModelConfigService.OPENAI_API_MODE_AUTO, "key", "", true, null, null,
+                false, BigDecimal.TEN, BigDecimal.TEN, null));
+
+        assertThat(updated.tokenBillingEnabled()).isFalse();
+        assertThat(updated.inputCreditPer1k()).isEqualByComparingTo(BigDecimal.ONE);
+        assertThat(updated.outputCreditPer1k()).isEqualByComparingTo(BigDecimal.valueOf(2));
     }
 }

@@ -358,7 +358,8 @@ public class CreditService {
                 entity.getFeatureName(),
                 entity.getCostAmount(),
                 entity.isEnabled(),
-                formatTime(entity.getUpdatedAt())
+                formatTime(entity.getUpdatedAt()),
+                entity.getChargeMode()
         );
     }
 

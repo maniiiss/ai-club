@@ -1,5 +1,7 @@
 package com.aiclub.platform.dto;
 
+import java.math.BigDecimal;
+
 public record AiModelConfigSummary(
         Long id,
         String name,
@@ -24,6 +26,22 @@ public record AiModelConfigSummary(
         /**
          * 模型最大输出 token 数。
          */
-        Integer maxOutputTokens
+        Integer maxOutputTokens,
+        /**
+         * 是否对该模型启用 token 计费（灰度开关）。
+         */
+        Boolean tokenBillingEnabled,
+        /**
+         * 每千输入 token 积分单价。
+         */
+        BigDecimal inputCreditPer1k,
+        /**
+         * 每千输出 token 积分单价。
+         */
+        BigDecimal outputCreditPer1k,
+        /**
+         * 每千缓存命中输入 token 单价；为空时按输入单价 ×0.5 兜底。
+         */
+        BigDecimal cachedInputCreditPer1k
 ) {
 }

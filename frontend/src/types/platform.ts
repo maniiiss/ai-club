@@ -2138,6 +2138,14 @@ export interface AiModelConfigItem {
   contextLength?: number
   /** 模型最大输出 token 数。 */
   maxOutputTokens?: number
+  /** 是否对该模型启用 token 计费（灰度开关），关闭时智能体执行不按 token 扣费。 */
+  tokenBillingEnabled?: boolean
+  /** 每千输入 token 积分单价。 */
+  inputCreditPer1k?: number
+  /** 每千输出 token 积分单价。 */
+  outputCreditPer1k?: number
+  /** 每千缓存命中输入 token 单价；为空时按输入单价 ×0.5 兜底。 */
+  cachedInputCreditPer1k?: number
 }
 
 export interface ModelTestResult {
@@ -2335,6 +2343,8 @@ export interface CreditFeatureConfigItem {
   costAmount: number
   enabled: boolean
   updatedAt: string | null
+  /** 计费模式：FIXED 固定积分 / TOKEN_BASED 按 token 计费（如 AGENT_TOKEN，cost_amount 为占位 0）。 */
+  chargeMode?: string
 }
 
 export interface CreditAccountItem {

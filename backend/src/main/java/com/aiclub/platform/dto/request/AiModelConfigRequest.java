@@ -1,8 +1,11 @@
 package com.aiclub.platform.dto.request;
 
+import jakarta.validation.constraints.DecimalMin;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
+
+import java.math.BigDecimal;
 
 public record AiModelConfigRequest(
         @NotBlank(message = "模型名称不能为空")
@@ -40,6 +43,25 @@ public record AiModelConfigRequest(
          * 模型最大输出 token 数；为空时 CLI 回退默认。
          */
         @Positive(message = "最大输出必须为正数")
-        Integer maxOutputTokens
+        Integer maxOutputTokens,
+        /**
+         * 是否对该模型启用 token 计费（灰度开关），关闭时智能体执行不按 token 扣费。
+         */
+        Boolean tokenBillingEnabled,
+        /**
+         * 每千输入 token 积分单价；启用 token 计费时必填。
+         */
+        @DecimalMin(value = "0", message = "输入 token 单价不能为负")
+        BigDecimal inputCreditPer1k,
+        /**
+         * 每千输出 token 积分单价；启用 token 计费时必填。
+         */
+        @DecimalMin(value = "0", message = "输出 token 单价不能为负")
+        BigDecimal outputCreditPer1k,
+        /**
+         * 每千缓存命中输入 token 单价（可选）；为空时后端按输入单价 ×0.5 兜底。
+         */
+        @DecimalMin(value = "0", message = "缓存命中 token 单价不能为负")
+        BigDecimal cachedInputCreditPer1k
 ) {
 }

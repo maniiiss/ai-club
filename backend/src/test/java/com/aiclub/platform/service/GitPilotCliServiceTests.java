@@ -45,8 +45,8 @@ class GitPilotCliServiceTests {
         AuthService authService = mock(AuthService.class);
         ModelConfigService modelConfigService = mock(ModelConfigService.class);
         when(modelConfigService.listEnabledOptions(ModelConfigService.MODEL_TYPE_CHAT)).thenReturn(List.of(
-                new AiModelConfigSummary(1L, "平台 GPT", "CHAT", "OPENAI", "https://secret.example/v1", "gpt-test", "CHAT_COMPLETIONS", true, "代码模型", true, null, null),
-                new AiModelConfigSummary(2L, "已停用模型", "CHAT", "OPENAI", "https://secret.example/v1", "disabled", "AUTO", true, "停用", false, null, null)
+                new AiModelConfigSummary(1L, "平台 GPT", "CHAT", "OPENAI", "https://secret.example/v1", "gpt-test", "CHAT_COMPLETIONS", true, "代码模型", true, null, null, null, null, null, null),
+                new AiModelConfigSummary(2L, "已停用模型", "CHAT", "OPENAI", "https://secret.example/v1", "disabled", "AUTO", true, "停用", false, null, null, null, null, null, null)
         ));
 
         GitPilotCliService service = new GitPilotCliService(properties, tokenRepository, redis, new ObjectMapper(), authService, modelConfigService);
