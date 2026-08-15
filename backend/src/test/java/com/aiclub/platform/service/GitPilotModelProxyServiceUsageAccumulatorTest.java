@@ -14,7 +14,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 class GitPilotModelProxyServiceUsageAccumulatorTest {
 
     private final GitPilotModelProxyService service =
-            new GitPilotModelProxyService(null, null, null, new ObjectMapper(), null);
+            new GitPilotModelProxyService(null, null, null, new ObjectMapper(), null, null, null);
 
     @Test
     void observe_openAi流末抽取cached_tokens() {

@@ -134,6 +134,15 @@ public class CreditService {
         return getAccount(currentUserId());
     }
 
+    /**
+     * 只读查询用户积分余额，账户不存在时返回 0（不创建账户），供余额门槛预检等场景使用。
+     */
+    public int getCreditBalance(Long userId) {
+        return userCreditAccountRepository.findByUser_Id(userId)
+                .map(UserCreditAccountEntity::getBalance)
+                .orElse(0);
+    }
+
     public PageResponse<CreditTransactionSummary> pageAccountTransactions(Long userId, int page, int size) {
         Pageable pageable = PageRequest.of(Math.max(page - 1, 0), Math.max(1, Math.min(size, 100)), Sort.by(Sort.Direction.DESC, "createdAt").and(Sort.by(Sort.Direction.DESC, "id")));
         return PageResponse.from(userCreditTransactionRepository.findAllByUser_Id(userId, pageable).map(this::toTransactionSummary));

@@ -68,6 +68,16 @@ public class ModelPricingService {
     }
 
     /**
+     * 判断模型是否启用 token 计费且输入/输出单价齐全。模型不存在或未启用计费返回 false。
+     */
+    public boolean isTokenBillingEnabled(Long modelConfigId) {
+        return aiModelConfigRepository.findById(modelConfigId)
+                .map(model -> Boolean.TRUE.equals(model.getTokenBillingEnabled())
+                        && model.getInputCreditPer1k() != null && model.getOutputCreditPer1k() != null)
+                .orElse(false);
+    }
+
+    /**
      * 按单次调用 token 计算积分成本（向上取整）。调用前应确保模型已启用计费且单价齐全。
      * 缓存命中输入单价为空时按输入单价 × 0.5 兜底。
      */

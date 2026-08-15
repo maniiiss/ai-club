@@ -12,6 +12,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedReader;
@@ -34,23 +36,31 @@ import java.util.Set;
 @Service
 public class GitPilotModelProxyService {
 
+    private static final Logger log = LoggerFactory.getLogger(GitPilotModelProxyService.class);
+
     private final GitPilotCliService cliService;
     private final ModelConfigService modelConfigService;
     private final GitPilotCliProperties properties;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
     private final AgentInvocationRecorder agentInvocationRecorder;
+    private final GitPilotModelCreditService cliModelCreditService;
+    private final CreditService creditService;
 
     public GitPilotModelProxyService(GitPilotCliService cliService,
                                      ModelConfigService modelConfigService,
                                      GitPilotCliProperties properties,
                                      ObjectMapper objectMapper,
-                                     AgentInvocationRecorder agentInvocationRecorder) {
+                                     AgentInvocationRecorder agentInvocationRecorder,
+                                     GitPilotModelCreditService cliModelCreditService,
+                                     CreditService creditService) {
         this.cliService = cliService;
         this.modelConfigService = modelConfigService;
         this.properties = properties;
         this.objectMapper = objectMapper;
         this.agentInvocationRecorder = agentInvocationRecorder;
+        this.cliModelCreditService = cliModelCreditService;
+        this.creditService = creditService;
         this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
     }
 
@@ -66,6 +76,20 @@ public class GitPilotModelProxyService {
             return;
         }
         GitPilotCliService.ModelSessionState state = cliService.requireModelSession(sessionId, credential);
+        // 模型启用 token 计费时，转发前做余额门槛预检：余额不足直接拒绝，避免零余额用户免费服务后再扣费失败。
+        if (cliModelCreditService.isTokenBillingEnabled(state.modelConfigId())
+                && state.userId() != null
+                && creditService.getCreditBalance(state.userId()) <= 0) {
+            try {
+                servletResponse.setStatus(HttpServletResponse.SC_PAYMENT_REQUIRED);
+                servletResponse.setCharacterEncoding(StandardCharsets.UTF_8.name());
+                servletResponse.setContentType("application/json; charset=utf-8");
+                servletResponse.getWriter().write("{\"error\":\"积分余额不足，请联系管理员充值\"}");
+            } catch (IOException ignored) {
+                // 响应写出失败不影响拒绝语义，状态码已设置。
+            }
+            return;
+        }
         var summary = modelConfigService.getConfig(state.modelConfigId());
         if (!Boolean.TRUE.equals(summary.enabled()) || !ModelConfigService.MODEL_TYPE_CHAT.equalsIgnoreCase(summary.modelType())) throw new IllegalArgumentException("模型未启用或不是 CHAT 模型");
         ModelConfigService.ResolvedModelConfig config = modelConfigService.resolveModelConfig(state.modelConfigId());
@@ -117,6 +141,16 @@ public class GitPilotModelProxyService {
                 if (usageHandle != null) {
                     UsageSink sink = usageHandle.sink();
                     sink.setUsage(usage.promptTokens, usage.completionTokens, usage.totalTokens, usage.cachedTokens);
+                    // 按本次实际 token 即时计费并回填 cost_credits；模型未启用计费时返回 0 不扣费。
+                    try {
+                        sink.setCostCredits(cliModelCreditService.chargeForModelCall(
+                                state.userId(), state.modelConfigId(), state.sessionId(),
+                                usage.promptTokens, usage.completionTokens, usage.cachedTokens));
+                    } catch (RuntimeException ex) {
+                        // 计费失败不阻断已写出的流式响应，仅记录告警；后续调用仍受转发前余额预检约束。
+                        log.warn("GitPilot CLI 模型调用计费失败：sessionId={}, modelConfigId={}, userId={}, message={}",
+                                state.sessionId(), state.modelConfigId(), state.userId(), ex.getMessage());
+                    }
                     usageHandle.commit();
                 }
             } catch (RuntimeException | IOException ex) {

@@ -35,12 +35,18 @@ class GitPilotModelProxyServiceTests {
     @Mock
     private AgentInvocationRecorder agentInvocationRecorder;
 
+    @Mock
+    private GitPilotModelCreditService cliModelCreditService;
+
+    @Mock
+    private CreditService creditService;
+
     private GitPilotModelProxyService service;
 
     @BeforeEach
     void setUp() {
         service = new GitPilotModelProxyService(cliService, modelConfigService, properties,
-                new ObjectMapper(), agentInvocationRecorder);
+                new ObjectMapper(), agentInvocationRecorder, cliModelCreditService, creditService);
     }
 
     private record ForwardResult(GitPilotModelProxyService.UsageAccumulator usage, String forwarded) {
