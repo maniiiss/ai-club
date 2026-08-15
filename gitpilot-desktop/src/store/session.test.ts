@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyEvent, agentMessagesToUi, buildRestoredExecutionSteps, filterDesktopThinkingLevels, getAssistantMessageEndText, getPlanCompletionMessageEndText, getRunningExecutionSeed, isInternalGoalPrompt, platformConnectionStateFromResponse, shouldSkipProjectSwitch, useSessionStore, type UIMessage } from './session';
+import { applyEvent, agentMessagesToUi, buildRestoredExecutionSteps, filterDesktopThinkingLevels, getAssistantMessageEndText, getPlanCompletionMessageEndText, getRunningExecutionSeed, isInternalGoalPrompt, mergeCurrentSessionIntoList, platformConnectionStateFromResponse, shouldSkipProjectSwitch, useSessionStore, type UIMessage } from './session';
 import { useWorkbenchStore } from './workbench';
 
 function applyToStreamingState(state: { messages: UIMessage[]; _streamingAssistantId: string | null; isStreaming: boolean }, event: Parameters<typeof applyEvent>[1]) {
@@ -169,6 +169,33 @@ describe('历史消息回放', () => {
 		});
 	});
 
+	it('实时消息同样隐藏 Skill 正文，仅保留用户任务和 Skill 标签', () => {
+		const state = {
+			messages: [{ id: 'optimistic-skill', role: 'user' as const, text: '/skill:cross-agent-harness 为仓库补充协作规范', kind: 'text' as const }],
+			_streamingAssistantId: null,
+			isStreaming: true,
+			guidanceQueue: [],
+		};
+		const skillBody = '# Cross-Agent Harness\n\nUse this skill to package repository-native harness guidance.';
+		applyToStreamingState(state, {
+			type: 'message_start',
+			message: {
+				role: 'user',
+				content: [{
+					type: 'text',
+					text: `<skill name="cross-agent-harness" location="C:\\skills\\cross-agent-harness\\SKILL.md">\nReferences are relative to C:\\skills\\cross-agent-harness.\n\n${skillBody}\n</skill>\n\n为仓库补充协作规范`,
+				}],
+			},
+		});
+
+		expect(state.messages).toHaveLength(1);
+		expect(state.messages[0]).toMatchObject({
+			text: '为仓库补充协作规范',
+			skills: ['cross-agent-harness'],
+		});
+		expect(state.messages[0]?.text).not.toContain(skillBody);
+	});
+
 	it('任务已完成时最后一段正常归档执行批次（含改动文件，不再单独 changed_files）', () => {
 		const messages = agentMessagesToUi([
 			{ role: 'user', content: [{ type: 'text', text: '改一下' }], timestamp: '2026-08-03T10:00:00Z' },
@@ -336,6 +363,39 @@ describe('会话切换去重', () => {
 
 	it('项目任务已选中时，项目行不视为已选中', () => {
 		expect(shouldSkipProjectSwitch('C:\\workspace\\gitpilot', 'task-session', [{ path: 'task-session', cwd: 'C:\\workspace\\gitpilot\\frontend' }], 'C:\\workspace\\gitpilot')).toBe(false);
+	});
+
+	it('项目路径带 Windows 扩展前缀时仍能识别当前项目任务', () => {
+		expect(shouldSkipProjectSwitch('\\\\?\\C:\\workspace\\gitpilot', 'task-session', [{ path: 'task-session', cwd: 'C:\\workspace\\gitpilot\\frontend' }], 'C:\\workspace\\gitpilot')).toBe(false);
+	});
+});
+
+describe('新建空会话列表可见性', () => {
+	const state = (sessionFile: string, sessionId: string, messageCount = 0) => ({
+		thinkingLevel: 'off' as const,
+		isStreaming: false,
+		isCompacting: false,
+		steeringMode: 'all' as const,
+		followUpMode: 'all' as const,
+		sessionFile,
+		sessionId,
+		autoCompactionEnabled: true,
+		messageCount,
+		pendingMessageCount: 0,
+	});
+
+	it('连续新建时不把尚未正式提问的空会话加入历史列表', () => {
+		const first = mergeCurrentSessionIntoList([], state('C:\\sessions\\first.jsonl', 'first'), [], 'C:\\workspace');
+		const second = mergeCurrentSessionIntoList([], state('C:\\sessions\\second.jsonl', 'second'), first, 'C:\\workspace');
+
+		expect(first).toEqual([]);
+		expect(second).toEqual([]);
+	});
+
+	it('首条正式提问后才把会话加入历史列表', () => {
+		const current = state('C:\\sessions\\prompted.jsonl', 'prompted', 1);
+		expect(mergeCurrentSessionIntoList([], current, [], 'C:\\workspace')).toHaveLength(1);
+		expect(mergeCurrentSessionIntoList([], current, [], 'C:\\workspace', ['C:\\sessions\\prompted.jsonl'])).toEqual([]);
 	});
 });
 

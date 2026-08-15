@@ -13,4 +13,6 @@ public interface TaskTestCaseRelationRepository extends JpaRepository<TaskTestCa
     Optional<TaskTestCaseRelationEntity> findByTask_IdAndTestCase_Id(Long taskId, Long testCaseId);
 
     List<TaskTestCaseRelationEntity> findAllByTask_IdOrderByCreatedAtAscIdAsc(Long taskId);
+
+    long countByTask_Id(Long taskId);
 }

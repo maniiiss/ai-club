@@ -32,7 +32,7 @@ export function TargetUserMenu() {
 	const avatar = (large = false) => <span className={`${styles.avatar} ${large ? styles.large : ''}`}>{avatarUrl ? <img src={avatarUrl} alt={`${name}的头像`} onError={() => setAvatarFailed(true)} /> : initials(name)}</span>;
 	const openWeb = async () => { if (DEPLOYMENT.webBaseUrl) await invoke('open_platform_web', { platformUrl: DEPLOYMENT.webBaseUrl }); };
 	return <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className={styles.trigger} title={`账户菜单，平台${connectionLabel}`} aria-label={`账户菜单，平台${connectionLabel}`}><span className={styles.avatarWithStatus}>{account ? avatar() : <span className={styles.avatar}><UserRound size={14} /></span>}<span className={`${styles.statusDot} ${isConnected ? styles.statusReady : styles.statusOffline}`} title={`平台${connectionLabel}`} aria-label={`平台${connectionLabel}`} /></span><ChevronDown size={12} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className={styles.content}>
-		<div className={styles.identity}>{avatar(true)}<span><b>{name}</b><small>{account?.user.username ?? '正在读取账户信息…'}</small></span></div>
+		<div className={styles.identityHeader}><div className={styles.identity}>{avatar(true)}<span><b>{name}</b><small>{account?.user.username ?? '正在读取账户信息…'}</small></span></div><Button variant="ghost" size="icon-sm" className={styles.refreshButton} onClick={() => void retryPlatformConnection()} disabled={platformConnection === 'checking'} title="重新检查连接" aria-label="重新检查连接"><RefreshCw className={platformConnection === 'checking' ? 'animate-spin' : undefined} /></Button></div>
 		<div className={styles.credits}><Coins size={14} /><span>积分</span><b>{account?.creditBalance ?? '—'}</b></div>
 		<DropdownMenuSeparator />
 		<DropdownMenuLabel>界面主题</DropdownMenuLabel>
@@ -41,7 +41,7 @@ export function TargetUserMenu() {
 		</DropdownMenuRadioGroup>
 		<DropdownMenuSeparator />
 		<DropdownMenuItem onSelect={() => useRtkStore.getState().openSettings()}><Wrench />RTK 优化设置</DropdownMenuItem>
-		<DropdownMenuItem onSelect={() => void retryPlatformConnection()} disabled={platformConnection === 'checking'}><RefreshCw className={platformConnection === 'checking' ? 'animate-spin' : undefined} />重新检查连接</DropdownMenuItem><DropdownMenuItem onSelect={() => void openWeb()} disabled={!DEPLOYMENT.webBaseUrl}><ExternalLink />前往 GitPilot Web</DropdownMenuItem><DropdownMenuItem onSelect={() => void logout()}><LogOut />退出登录</DropdownMenuItem>
+		<DropdownMenuItem onSelect={() => void openWeb()} disabled={!DEPLOYMENT.webBaseUrl}><ExternalLink />前往 GitPilot Web</DropdownMenuItem><DropdownMenuItem onSelect={() => void logout()}><LogOut />退出登录</DropdownMenuItem>
 		<DropdownMenuItem onSelect={() => useMcpDialogStore.getState().show()}><Plug />MCP 管理</DropdownMenuItem>
 	</DropdownMenuContent></DropdownMenu>;
 }

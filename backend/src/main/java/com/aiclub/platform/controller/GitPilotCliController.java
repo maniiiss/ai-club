@@ -23,6 +23,7 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
+import java.util.Locale;
 
 /** GitPilot CLI 设备授权、模型目录和短期模型 session 接口。 */
 @RestController
@@ -97,6 +98,29 @@ public class GitPilotCliController {
         String token = AuthContextHolder.get().orElseThrow().token();
         cliService.requireScope(token, GitPilotCliService.SCOPE_MODEL_READ);
         return ApiResponse.success(cliService.listModels());
+    }
+
+    /**
+     * 列出当前 CLI 用户可见的项目，供 Code/Work 的 /project 对话绑定使用。
+     * 独立放在 /api/cli 下，确保 gpt_ CLI Token 不会被普通 Web JWT 校验链误判。
+     */
+    @GetMapping("/projects")
+    public ApiResponse<List<CliDtos.CliProjectSummary>> projects(
+            @RequestParam(required = false) String keyword) {
+        var context = AuthContextHolder.get().orElseThrow();
+        cliService.requireScope(context.token(), GitPilotCliService.SCOPE_PROJECT_READ);
+        String normalizedKeyword = keyword == null ? "" : keyword.trim().toLowerCase(Locale.ROOT);
+        List<CliDtos.CliProjectSummary> projects = platformStoreService.listAllProjects().stream()
+                .filter(project -> normalizedKeyword.isBlank()
+                        || project.name().toLowerCase(Locale.ROOT).contains(normalizedKeyword))
+                .map(project -> new CliDtos.CliProjectSummary(
+                        project.id(),
+                        project.name(),
+                        project.status(),
+                        project.description(),
+                        project.owner()))
+                .toList();
+        return ApiResponse.success(projects);
     }
 
     /**

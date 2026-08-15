@@ -118,7 +118,7 @@ function toModelConfig(model: CliModel): ProviderModelConfig {
 async function resolveCliToken(): Promise<string | undefined> {
 	const platformUrl = getPlatformUrl();
 	if (!platformUrl) return getCachedCliToken();
-	return (getCachedCliToken() ?? (await loadCliToken(platformUrl))) ?? undefined;
+	return (getCachedCliToken(platformUrl) ?? (await loadCliToken(platformUrl))) ?? undefined;
 }
 
 /**
@@ -280,7 +280,7 @@ export function platformModelExtension(pi: ExtensionAPI): void {
 				debugLog(`refreshModels no platformUrl, return cached len=${cachedPlatformModels.length}`);
 				return cachedPlatformModels;
 			}
-			const cliToken = getCachedCliToken() ?? (await loadCliToken(platformUrl));
+			const cliToken = getCachedCliToken(platformUrl) ?? (await loadCliToken(platformUrl));
 			if (!cliToken) {
 				debugLog(`refreshModels no cliToken, return cached len=${cachedPlatformModels.length}`);
 				return cachedPlatformModels;

@@ -40,6 +40,17 @@ public final class CliDtos {
             Integer maxOutputTokens
     ) {}
 
+    /**
+     * CLI 项目绑定所需的最小项目摘要，避免把成员、统计和编辑权限等管理端字段带到本地。
+     */
+    public record CliProjectSummary(
+            Long id,
+            String name,
+            String status,
+            String description,
+            String owner
+    ) {}
+
     public record ModelSessionRequest(Long modelConfigId, String clientVersion) {}
 
     public record ModelSessionResponse(

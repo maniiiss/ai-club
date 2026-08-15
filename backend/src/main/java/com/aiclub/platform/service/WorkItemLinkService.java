@@ -9,6 +9,7 @@ import com.aiclub.platform.domain.model.TaskWorkItemRelationEntity;
 import com.aiclub.platform.domain.model.TestCaseEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.PageResponse;
+import com.aiclub.platform.dto.TaskLinksCount;
 import com.aiclub.platform.dto.TaskLinksSummary;
 import com.aiclub.platform.dto.TaskSummary;
 import com.aiclub.platform.dto.request.TaskLinkRequest;
@@ -123,6 +124,28 @@ public class WorkItemLinkService {
                 .map(this::toAttachmentSummary)
                 .toList();
         return new TaskLinksSummary(children, parentWorkItems, relatedWorkItems, testCases, attachments);
+    }
+
+    /**
+     * 轻量返回工作项各关联类型的数量，供详情页角标即时展示。
+     * 仅做权限校验 + 若干条索引化 COUNT，避免为显示角标而加载完整关联列表并触发 N+1 汇总。
+     * 注：关联项计数在“需求同时又是 RELATED 关联”的罕见边界会多算 1，与 {@link #relatedWorkItems} 的去重逻辑略有出入。
+     */
+    public TaskLinksCount getLinksCount(Long taskId) {
+        TaskEntity task = requireTask(taskId);
+        long children = taskWorkItemRelationRepository
+                .countBySourceTask_IdAndRelationType(task.getId(), RELATION_CHILD);
+        long parentWorkItems = taskWorkItemRelationRepository
+                .countByTargetTask_IdAndRelationType(task.getId(), RELATION_CHILD);
+        long relatedWorkItems = taskWorkItemRelationRepository
+                .countByRelationTypeAndSourceTask_IdOrRelationTypeAndTargetTask_Id(
+                        RELATION_RELATED, task.getId(), RELATION_RELATED, task.getId());
+        if (task.getRequirementTask() != null) {
+            relatedWorkItems += 1;
+        }
+        long testCases = taskTestCaseRelationRepository.countByTask_Id(task.getId());
+        long attachments = taskAttachmentRepository.countByTask_Id(task.getId());
+        return new TaskLinksCount(children, parentWorkItems, relatedWorkItems, testCases, attachments);
     }
 
     @Transactional

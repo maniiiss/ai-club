@@ -50,7 +50,14 @@ interface WorkSnapshot { tasks: WorkTask[]; activeTaskId: string | null; }
 const DB_NAME = 'gitpilot-work';
 const STORE_NAME = 'workspace';
 const SNAPSHOT_KEY = 'default';
-const PLACEHOLDER_TITLE = '新的 Work 任务';
+const PLACEHOLDER_TITLE = '未命名任务';
+const LEGACY_PLACEHOLDER_TITLE = '新的 Work 任务';
+
+/** 业务意图：空 Work 任务需要保留在列表中，但不能提前展示 sidecar 的默认业务标题。 */
+export function getWorkTaskTitle(title?: string): string {
+	const normalized = title?.trim();
+	return !normalized || normalized === LEGACY_PLACEHOLDER_TITLE ? PLACEHOLDER_TITLE : normalized;
+}
 
 function openDb(): Promise<IDBDatabase> {
 	return new Promise((resolve, reject) => {
@@ -94,7 +101,7 @@ function normalizeTask(raw: WorkTask | LegacyWorkTask): WorkTask {
 		fileFromLegacy(raw.id, 'notes', legacy.artifacts?.notes),
 		fileFromLegacy(raw.id, 'conclusion', legacy.artifacts?.conclusion),
 	].filter((file): file is WorkFile => file !== null);
-	return { ...raw, title: raw.title?.trim() || PLACEHOLDER_TITLE, files };
+	return { ...raw, title: getWorkTaskTitle(raw.title), files };
 }
 
 function newTask(): WorkTask {
@@ -127,9 +134,14 @@ export const useWorkStore = create<WorkStore>((set, get) => ({
 		if (get().hydrated) return;
 		try {
 			const snapshot = await loadSnapshot();
-			const tasks = (snapshot?.tasks ?? []).map(normalizeTask);
+			const rawTasks = snapshot?.tasks ?? [];
+			const tasks = rawTasks.map(normalizeTask);
 			set({ tasks, activeTaskId: snapshot?.activeTaskId ?? null, hydrated: true });
-			if (tasks.some((task) => !Array.isArray((snapshot?.tasks ?? []).find((entry) => entry.id === task.id)?.files))) persist(tasks, snapshot?.activeTaskId ?? null);
+			const needsMigration = tasks.some((task, index) => {
+				const raw = rawTasks[index];
+				return !Array.isArray(raw?.files) || raw?.title?.trim() !== task.title;
+			});
+			if (needsMigration) persist(tasks, snapshot?.activeTaskId ?? null);
 		} catch { set({ hydrated: true }); }
 	},
 	createTask: () => {

@@ -1,7 +1,6 @@
 /** 目标工作台布局：单一 Grid 控制列宽，面板拖动和键盘调整共享同一状态。 */
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, SquareTerminal, X } from 'lucide-react';
-import { useSessionStore } from '@/src/store/session';
 import { useWorkbenchStore, WORKBENCH_BOTTOM_HEIGHT_LIMITS, WORKBENCH_WIDTH_LIMITS } from '@/src/store/workbench';
 import { Button } from '@/src/components/ui/button';
 import { Separator } from '@/src/components/ui/separator';
@@ -17,7 +16,9 @@ interface TargetWorkbenchLayoutProps {
 	terminal?: ReactNode;
 	/** Work 等无项目目录模式不显示 Code 的终端面板和入口。 */
 	showBottom?: boolean;
-	/** 状态栏中的空间名称；未传入时仍显示当前 Code 项目目录。 */
+	/** 当前模式拥有的工作目录；布局不能自行读取 Code store，避免跨模式串目录。 */
+	workspacePath?: string | null;
+	/** 状态栏中的空间名称；未传入时显示当前模式的工作目录。 */
 	statusLabel?: string;
 	leftPanelTitle?: string;
 	leftPanelDescription?: string;
@@ -98,6 +99,7 @@ export function TargetWorkbenchLayout({
 	bottom,
 	terminal,
 	showBottom = true,
+	workspacePath = null,
 	statusLabel,
 	leftPanelTitle = '项目与任务',
 	leftPanelDescription = '切换当前工作目录或会话。',
@@ -106,7 +108,6 @@ export function TargetWorkbenchLayout({
 }: TargetWorkbenchLayoutProps) {
 	const layout = useWorkbenchStore((s) => s.layout);
 	const updateLayout = useWorkbenchStore((s) => s.updateLayout);
-	const currentProjectPath = useSessionStore((s) => s.currentProjectPath);
 	const [bottomView, setBottomView] = useState<'terminal' | 'output'>('terminal');
 	const [isCompact, setIsCompact] = useState(false);
 	const [bottomResizing, setBottomResizing] = useState(false);
@@ -124,7 +125,8 @@ export function TargetWorkbenchLayout({
 	const terminalOpen = showBottom && layout.bottomOpen && bottomView === 'terminal';
 	const leftPanelLabel = layout.leftCollapsed ? `打开${leftPanelTitle}` : `关闭${leftPanelTitle}`;
 	const rightPanelLabel = layout.rightCollapsed ? `打开${rightPanelTitle}` : `关闭${rightPanelTitle}`;
-	const displayedStatus = statusLabel ?? currentProjectPath ?? '未选择工作目录';
+	const displayedStatus = statusLabel ?? workspacePath ?? '未选择工作目录';
+	const terminalAvailable = showBottom && Boolean(workspacePath && terminal);
 
 	return <div className={styles.root}>
 		<div className={`${styles.panels} ${layout.leftCollapsed ? styles.leftCollapsed : ''}`} style={{ gridTemplateColumns: columns }}>
@@ -147,7 +149,7 @@ export function TargetWorkbenchLayout({
 			<Button type="button" variant="ghost" size="icon-sm" className={styles.leftPanelToggle} onClick={() => updateLayout({ leftCollapsed: !layout.leftCollapsed })} aria-label={leftPanelLabel} title={leftPanelLabel}>{layout.leftCollapsed ? <PanelLeftOpen /> : <PanelLeftClose />}</Button>
 			<Button type="button" variant="ghost" size="sm" className={styles.mobileToggle} onClick={() => setMobileLeftOpen(true)} aria-label={`打开${leftPanelTitle}`}>{leftPanelTitle}</Button>
 			{right && <Button type="button" variant="ghost" size="sm" className={styles.mobileToggle} onClick={() => setMobileRightOpen(true)} aria-label={`打开${rightPanelTitle}`}>{rightPanelTitle}</Button>}
-			{showBottom && <Button type="button" variant="ghost" size="icon-sm" className={terminalOpen ? styles.active : ''} disabled={!currentProjectPath} onClick={() => { if (!currentProjectPath) return; if (terminalOpen) updateLayout({ bottomOpen: false }); else { setBottomView('terminal'); updateLayout({ bottomOpen: true }); } }} title={currentProjectPath ? '在应用内打开当前项目终端' : '请先选择项目目录'} aria-label="在应用内打开当前项目终端"><SquareTerminal /></Button>}
+			{showBottom && <Button type="button" variant="ghost" size="icon-sm" className={terminalOpen ? styles.active : ''} disabled={!terminalAvailable} onClick={() => { if (!terminalAvailable) return; if (terminalOpen) updateLayout({ bottomOpen: false }); else { setBottomView('terminal'); updateLayout({ bottomOpen: true }); } }} title={terminalAvailable ? '在应用内打开当前项目终端' : '请先选择当前模式的工作目录'} aria-label="在应用内打开当前模式终端"><SquareTerminal /></Button>}
 			<span className={styles.path} title={displayedStatus}>{displayedStatus}</span><span className={styles.grow} />
 			<Button type="button" variant="ghost" size="icon-sm" className={styles.rightPanelToggle} onClick={() => updateLayout({ rightCollapsed: !layout.rightCollapsed })} aria-label={rightPanelLabel} title={rightPanelLabel}>{layout.rightCollapsed ? <PanelRightOpen /> : <PanelRightClose />}</Button>
 		</footer>

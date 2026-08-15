@@ -1,21 +1,21 @@
 /**
  * 登录页：图形化设备授权。
  *
- * 流程：输入平台地址 -> 调 Rust cli_login_start 拿设备码并自动打开浏览器 ->
+ * 流程：使用部署配置中的平台地址 -> 调 Rust cli_login_start 拿设备码 ->
  * 显示验证码 + 轮询 cli_login_poll -> 拿到 token 后通过 RPC set_token 注入 sidecar ->
  * refreshAll 重新拉取状态（登录态变 true，App 切到主界面）。
  *
  * 对应设计文档第 8 节平台集成；与 CLI 的 /login 走同一套 /api/cli/device/* API，
  * 但触发与 UI 在桌面版侧，规避 RPC 模式不支持 /login 的问题。
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { Loader2, ExternalLink, LogIn, AlertCircle } from 'lucide-react';
+import { AlertCircle, BriefcaseBusiness, Code2, ExternalLink, Loader2, LogIn, Palette, ShieldCheck } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
 import { rpc, isTauriEnv } from '@/src/rpc/bridge';
 import { DEPLOYMENT } from '@/src/lib/config';
+import { startDraggingWindow } from '@/src/desktop/window';
 import { Button } from '@/src/components/ui/button';
-import { Input } from '@/src/components/ui/input';
 import styles from './LoginPage.module.css';
 
 interface DeviceAuth {
@@ -39,11 +39,35 @@ export function LoginPage() {
 	const clearError = useSessionStore((s) => s.clearError);
 	const error = useSessionStore((s) => s.error);
 
-	const [platformUrl, setPlatformUrl] = useState<string>(DEPLOYMENT.apiBaseUrl);
+	// 平台地址由部署配置统一管理，登录页只呈现授权动作，不暴露环境地址。
+	const platformUrl = DEPLOYMENT.apiBaseUrl;
 	const [phase, setPhase] = useState<'idle' | 'requesting' | 'polling' | 'done'>('idle');
 	const [auth, setAuth] = useState<DeviceAuth | null>(null);
 	const [localError, setLocalError] = useState<string | null>(null);
 	const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+	const startDragging = (event: MouseEvent<HTMLDivElement>) => {
+		if (event.button !== 0 || (event.target instanceof Element && event.target.closest('button, a, input, textarea, [role="button"]'))) return;
+		void startDraggingWindow();
+	};
+	const normalizeLoginError = (error: unknown): string => {
+		const message = error instanceof Error ? error.message : String(error);
+		if (message.includes('error sending request') || message.includes('请求失败')) return '无法连接登录服务，请检查网络或平台服务是否启动。';
+		if (message.includes('打开 GitPilot Web')) return '无法打开授权页面，请检查系统默认浏览器。';
+		return message.replaceAll(DEPLOYMENT.apiBaseUrl, '平台服务').replaceAll(DEPLOYMENT.webBaseUrl, '平台服务');
+	};
+	const requestDeviceAuthorization = async (): Promise<{ auth: DeviceAuth; platformUrl: string }> => {
+		let lastError: unknown = null;
+		// 源码模式下公众端 Vite 没有 /api 代理，先直连后端；Web 地址只作为旧部署的回退。
+		for (const candidate of [...new Set([DEPLOYMENT.apiBaseUrl, DEPLOYMENT.webBaseUrl].filter(Boolean))]) {
+			try {
+				const auth = await invoke<DeviceAuth>('cli_login_start', { platformUrl: candidate });
+				return { auth, platformUrl: candidate };
+			} catch (error) {
+				lastError = error;
+			}
+		}
+		throw lastError ?? new Error('无法连接登录服务');
+	};
 
 	useEffect(() => {
 		return () => {
@@ -60,22 +84,25 @@ export function LoginPage() {
 		}
 		setPhase('requesting');
 		try {
-			const res = await invoke<DeviceAuth>('cli_login_start', { platformUrl });
+			const authorization = await requestDeviceAuthorization();
+			const { auth: res, platformUrl: requestPlatformUrl } = authorization;
 			setAuth(res);
+			// 浏览器打开由前端显式触发，失败时把原生层错误反馈给用户，而不是静默进入轮询。
+			await invoke('open_platform_web', { platformUrl: res.verificationUri });
 			setPhase('polling');
-			poll(res.deviceCode, res.intervalSeconds);
+			poll(res.deviceCode, res.intervalSeconds, requestPlatformUrl);
 		} catch (e) {
-			setLocalError(e instanceof Error ? e.message : String(e));
+			setLocalError(normalizeLoginError(e));
 			setPhase('idle');
 		}
 	};
 
-	const poll = (deviceCode: string, interval: number) => {
+	const poll = (deviceCode: string, interval: number, requestPlatformUrl: string) => {
 		const tick = async () => {
 			try {
-				const res = await invoke<PollResult>('cli_login_poll', { platformUrl, deviceCode });
+				const res = await invoke<PollResult>('cli_login_poll', { platformUrl: requestPlatformUrl, deviceCode });
 				if (res.status === 'success' && res.token) {
-					await rpc.setToken(platformUrl, res.token);
+					await rpc.setToken(requestPlatformUrl, res.token);
 					// token 已注入 sidecar，立即标记已登录（与模型列表可用性解耦，避免平台暂无模型时卡回登录页）
 					markLoggedIn();
 					setPhase('done');
@@ -90,7 +117,7 @@ export function LoginPage() {
 				// pending / slow_down：继续轮询
 				pollRef.current = setTimeout(tick, Math.max(interval, 2) * 1000);
 			} catch (e) {
-				setLocalError(e instanceof Error ? e.message : String(e));
+				setLocalError(normalizeLoginError(e));
 				setPhase('idle');
 			}
 		};
@@ -101,29 +128,23 @@ export function LoginPage() {
 	const displayError = localError || error;
 
 	return (
-		<div className={styles.page}>
-			<div className={styles.card}>
-				<div className={styles.brandRow}>
-						<div className={styles.logo}>
-						<LogIn size={18} />
+		<div className={styles.page} onMouseDown={startDragging}>
+			<div className={styles.ambientGlow} aria-hidden="true" />
+			<div className={styles.grid} aria-hidden="true" />
+			<main className={styles.layout}>
+				<section className={styles.intro}>
+					<div className={styles.brandLockup}><span className={styles.brandPulse} /><span>GitPilot Desktop</span></div>
+				</section>
+
+				<section className={styles.card} aria-labelledby="login-title">
+					<div className={styles.brandRow}>
+						<div className={styles.logo}><LogIn size={18} /></div>
+						<div><h1 id="login-title" className={styles.title}>登录 GitPilot</h1><p className={styles.subtitle}>使用设备授权安全登录</p></div>
 					</div>
-					<div>
-						<h1 className={styles.title}>登录 AI Club 平台</h1>
-						<p className={styles.subtitle}>设备授权登录 GitPilot</p>
-					</div>
-				</div>
 
 				{phase !== 'polling' && phase !== 'done' && (
 					<>
-						<label className={styles.label} htmlFor="platform-url">平台地址</label>
-						<Input
-							id="platform-url"
-							value={platformUrl}
-							onChange={(e) => setPlatformUrl(e.target.value)}
-							disabled={busy}
-							placeholder="https://gitpilot.example.com"
-							className={styles.input}
-						/>
+						<div className={styles.authorizationNote}><ShieldCheck size={15} /><span>无需输入密码，授权后自动返回</span></div>
 						<Button
 							type="button"
 							variant="default"
@@ -133,7 +154,7 @@ export function LoginPage() {
 							className={styles.submit}
 						>
 							{busy ? <Loader2 size={15} className="animate-spin" /> : <LogIn size={15} />}
-							{phase === 'requesting' ? '正在请求设备授权…' : '登录平台'}
+							{phase === 'requesting' ? '正在准备授权…' : '登录'}
 						</Button>
 					</>
 				)}
@@ -173,7 +194,9 @@ export function LoginPage() {
 						<span>{displayError}</span>
 					</div>
 				)}
-			</div>
+					<div className={styles.modes} aria-label="工作模式"><div><Code2 size={15} /><span>Code</span><small>编写与执行</small></div><div><Palette size={15} /><span>Design</span><small>设计与预览</small></div><div><BriefcaseBusiness size={15} /><span>Work</span><small>任务与协作</small></div></div>
+				</section>
+			</main>
 		</div>
 	);
 }

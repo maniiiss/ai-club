@@ -3,16 +3,19 @@ import { useState, type ReactNode } from 'react';
 import { CheckSquare, Clipboard, Copy, FilePlus2, FolderOpen, Scissors, Trash2 } from 'lucide-react';
 import { invoke } from '@tauri-apps/api/core';
 import { useSessionStore } from '@/src/store/session';
+import { useWorkStore } from '@/src/store/work';
+import { useDesignStore } from '@/src/store/design';
 import { Button } from '@/src/components/ui/button';
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger } from '@/src/components/ui/context-menu';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/src/components/ui/dialog';
 import styles from './TargetContextMenu.module.css';
 
 type EditableElement = HTMLInputElement | HTMLTextAreaElement;
-type SidebarMenuKind = 'project' | 'project-task' | 'standalone-task';
+type SidebarMenuKind = 'project' | 'project-task' | 'standalone-task' | 'work-task' | 'design-project';
 interface EditMenuState { kind: 'edit'; target: EventTarget | null; hasSelection: boolean; }
-interface SidebarMenuState { kind: SidebarMenuKind; projectPath?: string; sessionPath?: string; cwd?: string; }
-interface DeleteState { kind: 'project' | 'session'; path: string; }
+/** Work 任务通过自身 id 删除，工作目录只负责“打开文件夹”，避免误走 Code 会话删除流程。 */
+interface SidebarMenuState { kind: SidebarMenuKind; projectPath?: string; sessionPath?: string; cwd?: string; workTaskId?: string; }
+interface DeleteState { kind: 'project' | 'session' | 'work-task' | 'design-project'; path: string; workTaskId?: string; }
 type MenuState = EditMenuState | SidebarMenuState;
 
 function editableTarget(target: EventTarget | null): EditableElement | null {
@@ -27,8 +30,8 @@ function sidebarTarget(target: EventTarget | null): SidebarMenuState | null {
 	if (!(target instanceof Element)) return null;
 	const row = target.closest<HTMLElement>('[data-sidebar-menu-kind]');
 	const kind = row?.dataset.sidebarMenuKind as SidebarMenuKind | undefined;
-	if (!row || !kind || !['project', 'project-task', 'standalone-task'].includes(kind)) return null;
-	return { kind, projectPath: row.dataset.projectPath, sessionPath: row.dataset.sessionPath, cwd: row.dataset.sessionCwd };
+	if (!row || !kind || !['project', 'project-task', 'standalone-task', 'work-task', 'design-project'].includes(kind)) return null;
+	return { kind, projectPath: row.dataset.projectPath, sessionPath: row.dataset.sessionPath, cwd: row.dataset.sessionCwd, workTaskId: row.dataset.workTaskId };
 }
 
 async function revealFolder(path: string | undefined, reportError: (message: string) => void): Promise<void> {
@@ -46,6 +49,8 @@ export function TargetContextMenu({ children }: { children: ReactNode }) {
 	const newSession = useSessionStore((s) => s.newSession);
 	const removeProject = useSessionStore((s) => s.removeProject);
 	const removeSessionFromList = useSessionStore((s) => s.removeSessionFromList);
+	const deleteWorkTask = useWorkStore((s) => s.deleteTask);
+	const removeDesignProject = useDesignStore((s) => s.removeProject);
 	const reportError = useSessionStore((s) => s.reportError);
 	const connection = useSessionStore((s) => s.connection);
 
@@ -77,15 +82,17 @@ export function TargetContextMenu({ children }: { children: ReactNode }) {
 	};
 
 	const requestDelete = (current: SidebarMenuState) => {
-		const path = current.kind === 'project' ? current.projectPath : current.sessionPath;
-		if (!path) return;
+		const path = current.kind === 'project' || current.kind === 'design-project' ? current.projectPath : current.kind === 'work-task' ? (current.cwd || current.workTaskId) : current.sessionPath;
+		if (!path || (current.kind === 'work-task' && !current.workTaskId)) return;
 		setMenu(null);
-		setDeleteState({ kind: current.kind === 'project' ? 'project' : 'session', path });
+		setDeleteState({ kind: current.kind === 'project' ? 'project' : current.kind === 'design-project' ? 'design-project' : current.kind === 'work-task' ? 'work-task' : 'session', path, workTaskId: current.workTaskId });
 	};
 
 	const confirmDelete = () => {
 		if (!deleteState) return;
 		if (deleteState.kind === 'project') removeProject(deleteState.path);
+		else if (deleteState.kind === 'design-project') removeDesignProject(deleteState.path);
+		else if (deleteState.kind === 'work-task') deleteWorkTask(deleteState.workTaskId ?? deleteState.path);
 		else removeSessionFromList(deleteState.path);
 		setDeleteState(null);
 	};
@@ -96,7 +103,7 @@ export function TargetContextMenu({ children }: { children: ReactNode }) {
 			await newSession(current.projectPath);
 			return;
 		}
-		await revealFolder(current.kind === 'project' ? current.projectPath : current.cwd, reportError);
+		await revealFolder(current.kind === 'project' || current.kind === 'design-project' ? current.projectPath : current.cwd, reportError);
 	};
 
 	const shortcut = (text: string) => <span className={styles.shortcut}>{text}</span>;
@@ -137,7 +144,7 @@ export function TargetContextMenu({ children }: { children: ReactNode }) {
 			<Dialog open={deleteState !== null} onOpenChange={(open) => { if (!open) setDeleteState(null); }}>
 				<DialogContent aria-describedby="sidebar-delete-description">
 					<DialogHeader>
-						<DialogTitle>{deleteState?.kind === 'project' ? '删除工作目录' : '从列表删除任务'}</DialogTitle>
+						<DialogTitle>{deleteState?.kind === 'project' ? '删除工作目录' : deleteState?.kind === 'design-project' ? '从列表删除 Design 项目' : deleteState?.kind === 'work-task' ? '从列表删除 Work 任务' : '从列表删除任务'}</DialogTitle>
 						<DialogDescription id="sidebar-delete-description">仅从 GitPilot 侧栏列表移除，不会删除磁盘上的文件。</DialogDescription>
 					</DialogHeader>
 					<div className="px-5 py-4 text-xs text-[var(--muted-foreground)]">确认要移除“{deleteState?.path ?? ''}”吗？</div>

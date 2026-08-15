@@ -37,6 +37,7 @@ import type {
 } from '@/src/rpc/types';
 import { getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionStep } from '@/src/store/workbench';
 import { aggregateChangedFiles, parseExecutionStepsFromMessages, parseOpsFromMessages, parseOpsFromSteps, type ChangedFile, type EditOperation } from '@/src/store/changed-files';
+import { isProjectPathWithin, isSameProjectPath, isTemporaryWorkspacePath } from '@/src/utils/project-path';
 
 // ============================================================================
 // UI 消息模型
@@ -206,6 +207,8 @@ const HIDDEN_SESSION_PATHS_KEY = 'gitpilot-desktop.hiddenSessionPaths';
 let platformConnectionRequestVersion = 0;
 /** 只采纳最后一次会话切换响应，避免快速点击任务时旧会话覆盖新会话。 */
 let sessionSwitchRequestVersion = 0;
+/** 只采纳最后一次完整会话刷新，避免新建任务后旧刷新结果覆盖当前会话。 */
+let sessionRefreshRequestVersion = 0;
 
 interface ProjectEntry {
 	name: string;
@@ -227,7 +230,8 @@ function saveProjects(projects: ProjectEntry[]): void {
 }
 function loadCurrentProject(): string | null {
 	try {
-		return localStorage.getItem(CURRENT_PROJECT_KEY);
+		const saved = localStorage.getItem(CURRENT_PROJECT_KEY);
+		return isTemporaryWorkspacePath(saved) ? null : saved;
 	} catch {
 		return null;
 	}
@@ -274,11 +278,7 @@ function saveHiddenSessionPaths(paths: string[]): void {
 
 /** 判断会话工作目录是否属于项目根目录，兼容 Windows 分隔符与大小写。 */
 function isWithinProject(path: string | undefined, projectPath: string): boolean {
-	if (!path) return false;
-	const normalize = (value: string) => value.replace(/\\/g, '/').toLowerCase().replace(/\/$/, '');
-	const target = normalize(path);
-	const root = normalize(projectPath);
-	return target === root || target.startsWith(`${root}/`);
+	return isProjectPathWithin(path, projectPath);
 }
 
 /** 已选中的项目没有对应任务节点时，重复点击项目无需重建或重新加载会话。 */
@@ -288,11 +288,46 @@ export function shouldSkipProjectSwitch(
 	sessions: Pick<SessionListItem, 'path' | 'cwd'>[],
 	projectPath: string,
 ): boolean {
-	if (currentProjectPath !== projectPath) return false;
+	if (!isSameProjectPath(currentProjectPath, projectPath)) return false;
 	// 尚未有活动会话时，点击项目仍要创建该项目的首个空任务。
 	if (!currentSessionFile) return false;
 	// 会话已出现在项目任务树中时，项目行并非当前选中项，仍交给任务切换保护判断。
 	return !sessions.some((session) => session.path === currentSessionFile && isWithinProject(session.cwd, projectPath));
+}
+
+/**
+ * 将尚未写入磁盘的当前会话合并进桌面列表。
+ *
+ * 业务意图：SessionManager 为避免空会话污染历史，会延迟创建 JSONL 文件；
+ * Desktop 仍需立即显示新任务，否则连续点击“新建任务”时用户会误以为会话被复用，
+ * 且下一次 list_sessions 刷新会把刚创建的空任务再次冲掉。
+ */
+export function mergeCurrentSessionIntoList(
+	sessions: SessionListItem[],
+	currentState: RpcSessionState | null,
+	existingSessions: SessionListItem[] = [],
+	fallbackCwd = '',
+	hiddenSessionPaths: readonly string[] = [],
+): SessionListItem[] {
+	const sessionPath = currentState?.sessionFile;
+	// 空会话只是编辑器当前上下文，不是历史记录；只有首条正式提问落盘后才进入侧栏。
+	const historicalSessions = sessions.filter((session) => session.messageCount > 0 && !hiddenSessionPaths.includes(session.path));
+	if (!sessionPath || currentState?.messageCount === 0 || hiddenSessionPaths.includes(sessionPath)) return historicalSessions;
+	if (historicalSessions.some((session) => session.path === sessionPath)) return historicalSessions;
+	const previous = existingSessions.find((session) => session.path === sessionPath);
+	const now = new Date().toISOString();
+	return [{
+		path: sessionPath,
+		id: currentState.sessionId,
+		name: currentState.sessionName,
+		cwd: fallbackCwd || previous?.cwd || '',
+		created: previous?.created ?? now,
+		modified: previous?.modified ?? now,
+		messageCount: currentState.messageCount,
+		firstMessage: previous?.firstMessage ?? '',
+		isStreaming: currentState.isStreaming,
+		execution: previous?.execution,
+	}, ...historicalSessions];
 }
 
 /** 仅保存 provider/id，模型详情始终以 sidecar 当前返回的可用列表为准。 */
@@ -570,17 +605,44 @@ function applyGuidanceMessageStart(set: SessionSetter, event: AgentSessionEvent)
 	if (message?.role !== 'user') return;
 	if (isInternalGoalPrompt(message)) return;
 	const text = messageTextFromEvent(message);
+	const presentation = parseUserMessagePresentation((message as { content?: unknown }).content);
 	set((state) => {
 		const item = state.guidanceQueue.find((candidate) =>
 			(candidate.status === 'applying' || candidate.status === 'queued') &&
 			(candidate.wireText === text || candidate.displayText === text),
 		);
 		if (!item) {
+			const lastMessage = state.messages.at(-1);
+			const invokedSkill = lastMessage?.role === 'user'
+				? lastMessage.text.trim().match(/^\/skill:([^\s]+)/)?.[1]
+				: undefined;
+			const matchingSkill = invokedSkill && presentation.skills?.includes(invokedSkill);
+			if (lastMessage && matchingSkill) {
+				// 输入框已乐观展示 /skill:name；用可见任务文本与 Skill 标签替换它，不能再追加完整 SKILL.md。
+				const messages = [...state.messages];
+				messages[messages.length - 1] = {
+					...lastMessage,
+					text: presentation.text,
+					attachments: presentation.attachments ?? lastMessage.attachments,
+					skills: presentation.skills,
+				};
+				return { messages };
+			}
 			// 扩展通过 sendUserMessage 触发的真实需求指令也要进入当前对话；
-			// 普通 prompt 已由输入框乐观插入，因此用末条正文去重，避免出现两个相同气泡。
-			const displayText = displayUserMessageText(text);
-			if (!text.trim() || (state.messages.at(-1)?.role === 'user' && isEquivalentUserMessage(state.messages.at(-1)?.text ?? '', displayText))) return {};
-			return { messages: [...state.messages, { id: newId(), role: 'user', text: displayText, kind: 'text' }] };
+			// 普通 prompt 已由输入框乐观插入，因此用可见正文去重，避免出现两个相同气泡。
+			const displayText = presentation.text;
+			if ((!displayText.trim() && !presentation.attachments?.length && !presentation.skills?.length)
+				|| (lastMessage?.role === 'user' && isEquivalentUserMessage(lastMessage.text, displayText))) return {};
+			return {
+				messages: [...state.messages, {
+					id: newId(),
+					role: 'user',
+					text: displayText,
+					kind: 'text',
+					attachments: presentation.attachments,
+					skills: presentation.skills,
+				}],
+			};
 		}
 		return {
 			// 进入主对话后移出排队列表，避免列表卡片与已发送消息重复展示。
@@ -793,11 +855,14 @@ export function getRunningExecutionSeed(messages: unknown[], now = Date.now()): 
 }
 
 /**
- * 从 sidecar 持久化的 user message 恢复 Desktop 展示元数据。
+ * 统一用户消息展示规范：sidecar 可将 Skill、附件等内部上下文拼入模型消息，
+ * 但 Desktop 只能展示用户任务文本和轻量元数据，绝不回显内部说明正文。
+ *
+ * 历史回放与实时 message_start 必须共用此函数，防止任一链路泄露 SKILL.md、文件正文等上下文。
  * 文档附件会以 <file> 块注入 prompt，图片会作为 image content 持久化；
  * 两者都不能只靠 text 回放，否则切换会话后文件/图片 chip 会消失。
  */
-function parseHistoricalUserPresentation(content: unknown): { text: string; attachments?: UIAttachment[]; skills?: string[] } {
+function parseUserMessagePresentation(content: unknown): { text: string; attachments?: UIAttachment[]; skills?: string[] } {
 	const parts = Array.isArray(content) ? content.filter((item): item is Record<string, unknown> => Boolean(item && typeof item === 'object')) : [];
 	const rawText = parts.filter((part) => part.type === 'text' && typeof part.text === 'string').map((part) => part.text as string).join('');
 	const attachments: UIAttachment[] = [];
@@ -891,7 +956,7 @@ export function agentMessagesToUi(messages: unknown[], isStreaming = false): UIM
 			flushExecutionBatch();
 			segmentStartTs = ts;
 			lastTs = ts;
-			const presentation = parseHistoricalUserPresentation(msg.content);
+			const presentation = parseUserMessagePresentation(msg.content);
 			const displayText = presentation.text;
 			if (displayText.trim()) {
 				segmentUserIndex = result.length;
@@ -1161,6 +1226,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
 	disconnect: async () => {
 		sessionSwitchRequestVersion += 1;
+		sessionRefreshRequestVersion += 1;
 		get()._unsubs.forEach((u) => u());
 		set({ _unsubs: [] });
 		await destroyBridge();
@@ -1168,6 +1234,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	},
 
 	refreshAll: async () => {
+		const requestVersion = ++sessionRefreshRequestVersion;
 		const next: Partial<SessionStore> = {};
 		// 会话状态
 		try {
@@ -1192,7 +1259,15 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		try {
 			const sessionsRes = await rpc.listSessions('all');
 			if (sessionsRes.success && sessionsRes.command === 'list_sessions') {
-				next.sessions = sessionsRes.data.sessions.filter((session) => !get().hiddenSessionPaths.includes(session.path));
+				const hiddenSessionPaths = get().hiddenSessionPaths;
+				const visibleSessions = sessionsRes.data.sessions.filter((session) => !hiddenSessionPaths.includes(session.path) && session.messageCount > 0);
+				next.sessions = mergeCurrentSessionIntoList(
+					visibleSessions,
+					next.sessionState ?? get().sessionState,
+					get().sessions,
+					get().currentProjectPath ?? '',
+					hiddenSessionPaths,
+				);
 			}
 		} catch {}
 		// 命令
@@ -1248,6 +1323,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		} catch {
 			// 拉取失败保留上次已知档位，不阻塞会话刷新。
 		}
+		if (requestVersion !== sessionRefreshRequestVersion) return;
 		set(next);
 		if (next.sessions) useWorkbenchStore.getState().reconcileRightPanelTabs(next.sessions.map((session) => session.path));
 		if (next.platformConnection === 'connected') {
@@ -1281,10 +1357,20 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	},
 
 	refreshSessionList: async () => {
+		const requestVersion = ++sessionRefreshRequestVersion;
 		try {
 			const sessionsRes = await rpc.listSessions('all');
 			if (sessionsRes.success && sessionsRes.command === 'list_sessions') {
-				const sessions = sessionsRes.data.sessions.filter((session) => !get().hiddenSessionPaths.includes(session.path));
+				const hiddenSessionPaths = get().hiddenSessionPaths;
+				const visibleSessions = sessionsRes.data.sessions.filter((session) => !hiddenSessionPaths.includes(session.path) && session.messageCount > 0);
+				const sessions = mergeCurrentSessionIntoList(
+					visibleSessions,
+					get().sessionState,
+					get().sessions,
+					get().currentProjectPath ?? '',
+					hiddenSessionPaths,
+				);
+				if (requestVersion !== sessionRefreshRequestVersion) return;
 				set({ sessions });
 				useWorkbenchStore.getState().reconcileRightPanelTabs(sessions.map((session) => session.path));
 			}
@@ -1479,13 +1565,25 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	newSession: async (cwd?: string) => {
 		try {
 			sessionSwitchRequestVersion += 1;
+			sessionRefreshRequestVersion += 1;
 			// 任务工作目录：优先传入（项目内子目录），否则用当前项目根
 			const taskCwd = cwd ?? get().currentProjectPath ?? undefined;
+			// 项目旁新增任务必须立即切换工作区，保证底部地址和 Agent 实际 cwd 同步。
+			// 未传 cwd 时沿用当前项目，不改动用户当前的项目选择。
+			if (cwd) {
+				saveCurrentProject(cwd);
+				set({ currentProjectPath: cwd });
+			}
 			// 空任务没有历史记录可选中，创建时立即取消旧任务高亮。
 			set({ sessionState: null, selectedSessionPath: null, isSessionLoading: false, messages: [], _streamingAssistantId: null, isStreaming: false, guidanceQueue: [], isFlushingGuidance: false, isStopping: false });
 			// 切换会话清空执行状态，避免上一会话步骤残留导致跨会话实时归档错位。
 			useWorkbenchStore.getState().resetExecution();
-			await rpc.newSession(taskCwd);
+			const response = await rpc.newSession(taskCwd);
+			if (!response.success) throw new Error(response.error || '新建会话失败');
+			if (response.command === 'new_session' && response.data.cancelled) {
+				await get().refreshAll();
+				return;
+			}
 			await get().refreshAll();
 		} catch (err) {
 			set({ error: err instanceof Error ? err.message : String(err) });
@@ -1494,6 +1592,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	newStandaloneSession: async () => {
 		try {
 			sessionSwitchRequestVersion += 1;
+			sessionRefreshRequestVersion += 1;
 			// 独立任务固定从 GitPilot 根目录启动，不能继承上一次项目任务的 cwd。
 			const rootPath = await getGitPilotRoot();
 			if (!rootPath) throw new Error('无法获取 GitPilot 根目录');
@@ -1502,7 +1601,12 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			set({ currentProjectPath: rootPath, sessionState: null, selectedSessionPath: null, isSessionLoading: false, messages: [], _streamingAssistantId: null, isStreaming: false, guidanceQueue: [], isFlushingGuidance: false, isStopping: false });
 			// 切换会话清空执行状态，避免上一会话步骤残留导致跨会话实时归档错位。
 			useWorkbenchStore.getState().resetExecution();
-			await rpc.newSession(rootPath);
+			const response = await rpc.newSession(rootPath);
+			if (!response.success) throw new Error(response.error || '新建会话失败');
+			if (response.command === 'new_session' && response.data.cancelled) {
+				await get().refreshAll();
+				return;
+			}
 			await get().refreshAll();
 			const sessionPath = get().sessionState?.sessionFile;
 			if (!sessionPath) return;
@@ -1582,6 +1686,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			const session = get().sessions.find((item) => item.path === sessionPath);
 			if (!session) return;
 			requestVersion = ++sessionSwitchRequestVersion;
+			sessionRefreshRequestVersion += 1;
 			const project = get().projects.find((item) => isWithinProject(session?.cwd, item.path));
 			const activePath = project?.path ?? session?.cwd;
 			if (activePath && activePath !== get().currentProjectPath) {

@@ -8,6 +8,7 @@ import com.aiclub.platform.domain.model.TestCaseEntity;
 import com.aiclub.platform.domain.model.TestPlanEntity;
 import com.aiclub.platform.domain.model.UserEntity;
 import com.aiclub.platform.dto.ProjectSummary;
+import com.aiclub.platform.dto.TaskLinksCount;
 import com.aiclub.platform.dto.TaskLinksSummary;
 import com.aiclub.platform.dto.TaskSummary;
 import com.aiclub.platform.dto.request.ProjectRequest;
@@ -204,6 +205,76 @@ class WorkItemLinkServiceIntegrationTests {
         assertThatThrownBy(() -> workItemLinkService.downloadAttachment(otherTask.id(), attachment.id()))
                 .isInstanceOf(java.util.NoSuchElementException.class)
                 .hasMessage("工作项附件不存在");
+    }
+
+    @Test
+    void shouldReturnLightweightLinkCountsMatchingFullLinks() {
+        UserEntity creator = createUser("links-creator-f", "关联创建人己");
+        ProjectEntity project = createProjectAs(creator, "工作项关联项目F");
+        loginAs(creator);
+        mockAttachmentStorage("计数附件.txt", "text/plain", "count".getBytes());
+        TaskSummary requirement = createWorkItem(project.getId(), "需求", "计数父需求F");
+        TaskSummary task = createWorkItem(project.getId(), "任务", "计数任务F");
+        TaskSummary child = createWorkItem(project.getId(), "缺陷", "计数子缺陷F");
+        TaskSummary related = createWorkItem(project.getId(), "任务", "计数关联任务F");
+        TestCaseEntity testCase = createTestCase(project, "计数用例F");
+
+        // 任务挂一个子项、一个普通关联、一个用例、一个附件，并关联一个需求（需求计入关联项）。
+        workItemLinkService.addChild(task.id(), new TaskLinkRequest(child.id()));
+        workItemLinkService.addRelatedWorkItem(task.id(), new TaskLinkRequest(related.id()));
+        workItemLinkService.addTestCase(task.id(), new TaskLinkRequest(testCase.getId()));
+        workItemLinkService.uploadAttachment(task.id(), new MockMultipartFile(
+                "file",
+                "计数附件.txt",
+                "text/plain",
+                "count".getBytes()
+        ));
+        TaskSummary linkedRequirement = createWorkItem(project.getId(), "需求", "旧关联需求F");
+        TaskSummary legacyTask = platformStoreService.createTask(new TaskRequest(
+                "旧关联任务F",
+                "任务",
+                "待开始",
+                "中",
+                "",
+                null,
+                List.of(),
+                "旧关联任务描述",
+                "",
+                "",
+                "",
+                false,
+                false,
+                null,
+                "开发任务",
+                null,
+                null,
+                project.getId(),
+                null,
+                null,
+                linkedRequirement.id()
+        ));
+
+        TaskLinksSummary links = workItemLinkService.getLinks(task.id());
+        TaskLinksCount counts = workItemLinkService.getLinksCount(task.id());
+
+        assertThat(counts.children()).isEqualTo(links.children().size());
+        assertThat(counts.parentWorkItems()).isEqualTo(links.parentWorkItems().size());
+        assertThat(counts.relatedWorkItems()).isEqualTo(links.relatedWorkItems().size());
+        assertThat(counts.testCases()).isEqualTo(links.testCases().size());
+        assertThat(counts.attachments()).isEqualTo(links.attachments().size());
+
+        // 具体计数值：1 子项 + 0 父项 + 1 普通关联 + 1 用例 + 1 附件。
+        assertThat(counts)
+                .extracting(TaskLinksCount::children,
+                        TaskLinksCount::parentWorkItems,
+                        TaskLinksCount::relatedWorkItems,
+                        TaskLinksCount::testCases,
+                        TaskLinksCount::attachments)
+                .containsExactly(1L, 0L, 1L, 1L, 1L);
+
+        // 旧式 requirementTask 会作为关联项计入角标计数。
+        TaskLinksCount legacyCounts = workItemLinkService.getLinksCount(legacyTask.id());
+        assertThat(legacyCounts.relatedWorkItems()).isEqualTo(1L);
     }
 
     private void mockAttachmentStorage(String fileName, String contentType, byte[] bytes) {

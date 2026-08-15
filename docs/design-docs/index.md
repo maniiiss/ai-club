@@ -99,5 +99,6 @@
 - [GitPilot Desktop Design Mode 技术设计 v1](gitpilot-desktop-design-mode-technical-design-v1.md) - 基于自然语言生成 HTML 原型，支持移动端/桌面端预览，并规划多人协作与设计师画板演进
 - [GitPilot Desktop Design Mode 流式执行技术设计 v2](gitpilot-desktop-design-mode-streaming-technical-design-v2.md) - 独立 Design Agent 会话、结构化 patch、实时预览、审批、恢复与 Design 专属队列
 - [GitPilot Desktop Design Mode 多项目与多文件技术设计 v1](gitpilot-desktop-design-mode-multi-project-multi-file-technical-design-v1.md) - 项目级 Design Workspace、页面树/文件树、canonical manifest、多项目事件隔离与受控预览
+- [GitPilot Desktop Design Mode 项目级设计规范技术设计 v1](gitpilot-desktop-design-mode-project-guidelines-technical-design-v1.md) - 项目独立的品牌、Token、组件、交互和可访问性约束，以及规范恢复与 Agent 注入链路
 
 *本索引自动更新，如有新增设计文档请同步维护。*

@@ -11,7 +11,7 @@
  */
 export const DEPLOYMENT = {
 	/** 后端 API 基地址（登录与所有 /api/cli/* 请求）。 */
-	apiBaseUrl: 'http://192.168.111.74:8899',
+	apiBaseUrl: import.meta.env.TAURI_GITPILOT_API_BASE_URL || 'http://localhost:8080',
 	/** 前端 Web 基地址（「前往 GitPilot Web」跳转目标）。 */
-	webBaseUrl: 'http://192.168.111.74:9138',
+	webBaseUrl: import.meta.env.TAURI_GITPILOT_WEB_BASE_URL || 'http://localhost:5175',
 } as const;

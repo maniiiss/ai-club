@@ -15,7 +15,7 @@ import {
   createIteration, updateIteration, deleteIteration,
   batchDeleteWorkItems, batchUpdateWorkItems, createWorkItem, updateWorkItem, updateWorkItemInline, deleteWorkItem, getWorkItemDetail,
   getProjectBurndown, listTaskComments, createTaskComment, pageTaskUpdateRecords,
-  getWorkItemLinks, addWorkItemChild, removeWorkItemChild,
+  getWorkItemLinks, getWorkItemLinksCount, addWorkItemChild, removeWorkItemChild,
   addRelatedWorkItem, removeRelatedWorkItem, addWorkItemTestCase, removeWorkItemTestCase,
   pageProjectTestCases, uploadWorkItemAttachment, deleteWorkItemAttachment, downloadWorkItemAttachment,
 } from '@/src/api/planning'
@@ -36,7 +36,7 @@ import { getBatchWorkItemAvailability, toggleAllBatchWorkItemSelection, toggleBa
 import { buildPlanningIterationRoute, buildPlanningWorkItemRoute, buildWorkItemShareUrl } from '@/src/lib/planningShareUtils'
 import { TASK_TYPE_OPTIONS, isDevelopmentExecutionEntryVisible, isRequirementAiEntryVisible, normalizeTaskType } from '@/src/lib/requirementAiUtils'
 import { isTechnicalDesignEntryVisible } from '@/src/lib/technicalDesignAiUtils'
-import type { IterationBoardItem, IterationItem, WorkItem, WorkItemStats, WorkItemPayload, IterationPayload, BurndownItem, TaskComment, WorkItemLinks, LinkedTestCase, WorkItemSortDirection, WorkItemSortField } from '@/src/types/planning'
+import type { IterationBoardItem, IterationItem, WorkItem, WorkItemStats, WorkItemPayload, IterationPayload, BurndownItem, TaskComment, WorkItemLinks, TaskLinksCount, LinkedTestCase, WorkItemSortDirection, WorkItemSortField } from '@/src/types/planning'
 import type { PageResponse } from '@/src/types/api'
 import { Button } from '@/src/components/common/Button'
 import { Input } from '@/src/components/common/Input'
@@ -150,14 +150,23 @@ const batchFieldLabel: Record<BatchField, string> = {
   iteration: '所属迭代',
 }
 
-const getDetailTabCount = (tab: DetailTab, links: WorkItemLinks | null) => {
-  if (!links) return 0
-  if (tab === 'children') return links.children.length
-  if (tab === 'related') return links.relatedWorkItems.length
-  if (tab === 'testCases') return links.testCases.length
-  if (tab === 'attachments') return links.attachments.length
+const getDetailTabCount = (tab: DetailTab, counts: TaskLinksCount | null) => {
+  if (!counts) return 0
+  if (tab === 'children') return counts.children
+  if (tab === 'related') return counts.relatedWorkItems
+  if (tab === 'testCases') return counts.testCases
+  if (tab === 'attachments') return counts.attachments
   return 0
 }
+
+/** 从完整关联列表推导轻量计数，供变更后同步角标。 */
+const toLinksCount = (links: WorkItemLinks): TaskLinksCount => ({
+  children: links.children.length,
+  parentWorkItems: links.parentWorkItems.length,
+  relatedWorkItems: links.relatedWorkItems.length,
+  testCases: links.testCases.length,
+  attachments: links.attachments.length,
+})
 
 /* ═══════════════════════════════════════════════
    主页面
@@ -1603,7 +1612,10 @@ const WorkItemDetailDrawer = ({ item, loading, userOptions, canGoBack, canCreate
   const [activeTab, setActiveTab] = useState<DetailTab>('detail')
   const [activityTab, setActivityTab] = useState<ActivityTab>('comments')
   const [links, setLinks] = useState<WorkItemLinks | null>(null)
+  const [linkCounts, setLinkCounts] = useState<TaskLinksCount | null>(null)
   const [linksLoading, setLinksLoading] = useState(false)
+  /** 记录已针对哪个工作项拉取过完整关联列表，避免失败后反复重试触发请求风暴。 */
+  const linksFetchedTaskIdRef = useRef<number | null>(null)
   const [workItemOptions, setWorkItemOptions] = useState<WorkItem[]>([])
   const [selectedWorkItemId, setSelectedWorkItemId] = useState('')
   const [testCaseOptions, setTestCaseOptions] = useState<LinkedTestCase[]>([])
@@ -1659,29 +1671,49 @@ const WorkItemDetailDrawer = ({ item, loading, userOptions, canGoBack, canCreate
     return () => { cancelled = true }
   }, [item.id, historyRefreshKey])
 
+  // 轻量计数：角标即时展示，不等待完整关联列表。
   useEffect(() => {
     let cancelled = false
+    getWorkItemLinksCount(item.id)
+      .then((counts) => { if (!cancelled) setLinkCounts(counts) })
+      .catch(() => { if (!cancelled) setLinkCounts(null) })
+    return () => { cancelled = true }
+  }, [item.id])
+
+  // 关联列表懒加载：仅当打开非详情 Tab 时才拉取完整 links，且每个工作项只拉一次。
+  useEffect(() => {
+    if (activeTab === 'detail' || linksFetchedTaskIdRef.current === item.id) return
+    let cancelled = false
     setLinksLoading(true)
-    Promise.all([
-      getWorkItemLinks(item.id),
-      listProjectWorkItems(item.projectId, {}),
-      pageProjectTestCases(item.projectId, { page: 1, size: 50 }),
-    ])
-      .then(([linkData, workItems, testCases]) => {
-        if (cancelled) return
-        setLinks(linkData)
-        setWorkItemOptions(workItems.filter((option) => option.id !== item.id))
-        setTestCaseOptions(testCases.records)
-      })
-      .catch(() => {
-        if (cancelled) return
-        setLinks(null)
-        setWorkItemOptions([])
-        setTestCaseOptions([])
-      })
+    linksFetchedTaskIdRef.current = item.id
+    getWorkItemLinks(item.id)
+      .then((data) => { if (!cancelled) setLinks(data) })
+      .catch(() => { if (!cancelled) setLinks(null) })
       .finally(() => { if (!cancelled) setLinksLoading(false) })
     return () => { cancelled = true }
-  }, [item.id, item.projectId])
+  }, [activeTab, item.id])
+
+  // 工作项选择器选项懒加载：打开子工作项/关联项 Tab 时才拉取。
+  useEffect(() => {
+    if (activeTab !== 'children' && activeTab !== 'related') return
+    if (workItemOptions.length > 0) return
+    let cancelled = false
+    listProjectWorkItems(item.projectId, {})
+      .then((options) => { if (!cancelled) setWorkItemOptions(options.filter((option) => option.id !== item.id)) })
+      .catch(() => { if (!cancelled) setWorkItemOptions([]) })
+    return () => { cancelled = true }
+  }, [activeTab, item.projectId, item.id, workItemOptions.length])
+
+  // 测试用例选择器选项懒加载：打开测试用例 Tab 时才拉取。
+  useEffect(() => {
+    if (activeTab !== 'testCases') return
+    if (testCaseOptions.length > 0) return
+    let cancelled = false
+    pageProjectTestCases(item.projectId, { page: 1, size: 50 })
+      .then((data) => { if (!cancelled) setTestCaseOptions(data.records) })
+      .catch(() => { if (!cancelled) setTestCaseOptions([]) })
+    return () => { cancelled = true }
+  }, [activeTab, item.projectId, testCaseOptions.length])
 
   // 提交评论
   const handleSubmitComment = async () => {
@@ -1725,7 +1757,9 @@ const WorkItemDetailDrawer = ({ item, loading, userOptions, canGoBack, canCreate
     if (linkSubmitting) return
     setLinkSubmitting(true)
     try {
-      setLinks(await operation())
+      const data = await operation()
+      setLinks(data)
+      setLinkCounts(toLinksCount(data))
       setHistoryRefreshKey((value) => value + 1)
       setSelectedWorkItemId('')
       setSelectedTestCaseId('')
@@ -1738,7 +1772,9 @@ const WorkItemDetailDrawer = ({ item, loading, userOptions, canGoBack, canCreate
     setAttachmentUploading(true)
     try {
       await uploadWorkItemAttachment(item.id, file)
-      setLinks(await getWorkItemLinks(item.id))
+      const data = await getWorkItemLinks(item.id)
+      setLinks(data)
+      setLinkCounts(toLinksCount(data))
       setHistoryRefreshKey((value) => value + 1)
     } catch { /* 静默 */ }
     finally { setAttachmentUploading(false) }
@@ -1823,9 +1859,9 @@ const WorkItemDetailDrawer = ({ item, loading, userOptions, canGoBack, canCreate
                 )}
               >
                 <span>{tab.label}</span>
-                {getDetailTabCount(tab.key, links) > 0 && (
+                {getDetailTabCount(tab.key, linkCounts) > 0 && (
                   <span className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[var(--color-primary)] px-1 text-[11px] font-bold leading-none text-white">
-                    {getDetailTabCount(tab.key, links)}
+                    {getDetailTabCount(tab.key, linkCounts)}
                   </span>
                 )}
               </button>

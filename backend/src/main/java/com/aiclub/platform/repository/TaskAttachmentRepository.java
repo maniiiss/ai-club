@@ -10,5 +10,7 @@ public interface TaskAttachmentRepository extends JpaRepository<TaskAttachmentEn
 
     List<TaskAttachmentEntity> findAllByTask_IdOrderByCreatedAtAscIdAsc(Long taskId);
 
+    long countByTask_Id(Long taskId);
+
     Optional<TaskAttachmentEntity> findByIdAndTask_Id(Long id, Long taskId);
 }

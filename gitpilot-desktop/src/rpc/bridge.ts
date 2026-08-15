@@ -9,6 +9,7 @@
 
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import { createDemoSnapshot } from '@/src/design/design-types';
 import type {
 	AgentSessionEvent,
 	AttachmentInput,
@@ -17,6 +18,9 @@ import type {
 	RpcCommand,
 	RpcExtensionUIRequest,
 	RpcResponse,
+	DesignProjectGuidelines,
+	DesignRpcSnapshot,
+	DesignStreamLine,
 	RpcSessionState,
 	RpcStreamLine,
 	ThinkingLevel,
@@ -32,11 +36,13 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 // ============================================================================
 
 type EventCb = (e: AgentSessionEvent) => void;
+type DesignEventCb = (e: DesignStreamLine) => void;
 type ExtensionUICb = (req: RpcExtensionUIRequest) => void;
 type ErrorCb = (msg: string) => void;
 type LifecycleCb = () => void;
 
 const eventCbs = new Set<EventCb>();
+const designEventCbs = new Set<DesignEventCb>();
 const extUICbs = new Set<ExtensionUICb>();
 const errorCbs = new Set<ErrorCb>();
 const readyCbs = new Set<LifecycleCb>();
@@ -46,6 +52,23 @@ let unlisten: UnlistenFn | null = null;
 let mockTimer: ReturnType<typeof setInterval> | null = null;
 // Mock 模式下跟踪用户选择的思考级别，使非 Tauri 预览也能反映切换结果。
 let mockThinkingLevel: ThinkingLevel = 'off';
+let mockDesignSnapshot: DesignRpcSnapshot | null = null;
+
+function createMockDesignSnapshot(designId: string, name = 'GitPilot Design'): DesignRpcSnapshot {
+	const base = createDemoSnapshot();
+	const files = base.files.map((file) => ({ id: file.id, path: file.path, scope: file.scope, language: file.language, content: file.content ?? '', hash: file.hash }));
+	const projectPath = 'mock-project';
+	return {
+		document: {
+			...base.document,
+			id: designId,
+			name,
+			pages: base.document.pages.map((page) => ({ ...page, files: undefined })),
+		},
+		files,
+		context: { projectId: encodeURIComponent(projectPath), projectPath, designId },
+	};
+}
 
 /** 将 sidecar 错误收敛为可读提示，避免模型上下文或原始 JSON 撑满桌面界面。 */
 export function normalizeSidecarError(raw: string): string {
@@ -67,6 +90,12 @@ function dispatchLine(line: RpcStreamLine): void {
 	if (line.type === 'rpc:error' || line.type === 'error') {
 		const raw = (line as { message?: string; error?: string }).message ?? (line as { error?: string }).error ?? '未知错误';
 		errorCbs.forEach((cb) => cb(normalizeSidecarError(raw)));
+		return;
+	}
+	// Design 是独立 Agent 会话；在桥接层截断事件，避免 Code reducer 或执行中心
+	// 将 Design 的 message/tool/settled 误认为当前 Code 会话的执行事件。
+	if (line.type.startsWith('design_')) {
+		designEventCbs.forEach((cb) => cb(line as unknown as DesignStreamLine));
 		return;
 	}
 	// agent 事件流
@@ -156,14 +185,21 @@ export const rpc = {
 	workFileDelete: (taskId: string, path: string) => send({ type: 'work_file_delete', taskId, path }),
 	workFileRename: (taskId: string, path: string, newPath: string) => send({ type: 'work_file_rename', taskId, path, newPath }),
 	workPrepareAttachments: (items: AttachmentInput[]) => send({ type: 'work_prepare_attachments', items }),
-	designCreate: (name?: string) => send({ type: 'design_create', name }),
-	designGetSnapshot: (designId: string) => send({ type: 'design_get_snapshot', designId }),
+	designOpen: (projectPath: string) => send({ type: 'design_open', projectPath }),
+	designSaveGuidelines: (projectPath: string, designId: string, guidelines: DesignProjectGuidelines) => send({ type: 'design_save_guidelines', projectPath, designId, guidelines }),
+	designCreate: (projectPath: string, name?: string) => send({ type: 'design_create', projectPath, name }),
+	designGetSnapshot: (projectPath: string, designId: string) => send({ type: 'design_get_snapshot', projectPath, designId }),
+	designPrompt: (payload: { projectPath: string; designId: string; pageId: string; prompt: string; baseRevisionId?: string; targetProfiles: Array<'mobile' | 'tablet' | 'desktop'> }) => send({ type: 'design_prompt', ...payload }),
+	designFollowUp: (projectPath: string, designId: string, message: string) => send({ type: 'design_follow_up', projectPath, designId, message }),
+	designAbort: (projectPath: string, designId: string) => send({ type: 'design_abort', projectPath, designId }),
+	designApplyPatch: (payload: { projectPath: string; designId: string; pageId: string; baseRevisionId: string; patch: Record<string, unknown> }) => send({ type: 'design_apply_patch', ...payload }),
+	designApprovalResponse: (projectPath: string, designId: string, approvalId: string, approved: boolean) => send({ type: 'design_approval_response', projectPath, designId, approvalId, approved }),
 	// Design 生成需要等待模型返回完整的三文件结构化结果，给本地模型和首次冷启动留出足够时间。
-	designGenerate: (payload: { designId: string; pageId: string; prompt: string; baseRevisionId?: string; targetProfiles: Array<'mobile' | 'tablet' | 'desktop'> }) => send({ type: 'design_generate', ...payload }, 150_000),
-	designPreview: (designId: string, pageId: string, revisionId?: string) => send({ type: 'design_preview', designId, pageId, revisionId }),
-	designCheck: (designId: string, pageId: string, revisionId?: string) => send({ type: 'design_check', designId, pageId, revisionId }),
-	designRevert: (designId: string, revisionId: string) => send({ type: 'design_revert', designId, revisionId }),
-	designExport: (designId: string, outputPath?: string) => send({ type: 'design_export', designId, outputPath }),
+	designGenerate: (payload: { projectPath: string; designId: string; pageId: string; prompt: string; baseRevisionId?: string; targetProfiles: Array<'mobile' | 'tablet' | 'desktop'> }) => send({ type: 'design_generate', ...payload }, 150_000),
+	designPreview: (projectPath: string, designId: string, pageId: string, revisionId?: string) => send({ type: 'design_preview', projectPath, designId, pageId, revisionId }),
+	designCheck: (projectPath: string, designId: string, pageId: string, revisionId?: string) => send({ type: 'design_check', projectPath, designId, pageId, revisionId }),
+	designRevert: (projectPath: string, designId: string, revisionId: string) => send({ type: 'design_revert', projectPath, designId, revisionId }),
+	designExport: (projectPath: string, designId: string, outputPath?: string) => send({ type: 'design_export', projectPath, designId, outputPath }),
 	mcpList: () => send({ type: 'mcp_list' }),
 	mcpSaveServer: (name: string, definition: Record<string, unknown>, modes: Array<'code' | 'work' | 'design'>) => send({ type: 'mcp_save_server', name, definition, modes }),
 	mcpDeleteServer: (name: string) => send({ type: 'mcp_delete_server', name }),
@@ -190,6 +226,8 @@ export const rpc = {
 	setToken: (platformUrl: string, token: string) => send({ type: 'set_token', platformUrl, token }),
 	getPlatformAccount: () => send({ type: 'get_platform_account' }),
 	getPlatformConnection: () => send({ type: 'get_platform_connection' }),
+	/** 查询当前账号可访问的 Web 端项目，供 Design 入口建立请求上下文。 */
+	getPlatformProjects: (keyword?: string) => send({ type: 'get_platform_projects', keyword }),
 	logout: () => send({ type: 'logout' }),
 	respondValue: (id: string, value: string) => send({ type: 'extension_ui_response', id, value }),
 	respondConfirmed: (id: string, confirmed: boolean) => send({ type: 'extension_ui_response', id, confirmed }),
@@ -203,6 +241,10 @@ export const rpc = {
 export function onEvent(cb: EventCb): () => void {
 	eventCbs.add(cb);
 	return () => eventCbs.delete(cb);
+}
+export function onDesignEvent(cb: DesignEventCb): () => void {
+	designEventCbs.add(cb);
+	return () => designEventCbs.delete(cb);
 }
 export function onExtensionUI(cb: ExtensionUICb): () => void {
 	extUICbs.add(cb);
@@ -236,7 +278,36 @@ export async function getGitPilotRoot(): Promise<string> {
 
 function mockResponseFor(cmd: RpcCommand & { id: string }): RpcResponse {
 	const id = cmd.id;
+	const designContext = 'designId' in cmd ? { projectId: encodeURIComponent(cmd.projectPath), projectPath: cmd.projectPath, designId: cmd.designId } : undefined;
 	switch (cmd.type) {
+		case 'design_open': {
+			const designId = `design-mock-${encodeURIComponent(cmd.projectPath)}`;
+			const snapshot = createMockDesignSnapshot(designId, 'GitPilot Design');
+			mockDesignSnapshot = snapshot;
+			return { id, type: 'response', command: 'design_open', success: true, data: { designId, snapshot } };
+		}
+		case 'design_save_guidelines': {
+			const snapshot = mockDesignSnapshot?.document.id === cmd.designId ? { ...mockDesignSnapshot, guidelines: cmd.guidelines } : { ...createMockDesignSnapshot(cmd.designId), guidelines: cmd.guidelines };
+			mockDesignSnapshot = snapshot;
+			return { id, type: 'response', command: 'design_save_guidelines', success: true, data: { designId: cmd.designId, snapshot } };
+		}
+		case 'design_create': {
+			const designId = `design-mock-${encodeURIComponent(cmd.projectPath)}`;
+			const snapshot = createMockDesignSnapshot(designId, cmd.name ?? 'GitPilot Design');
+			mockDesignSnapshot = snapshot;
+			return { id, type: 'response', command: 'design_create', success: true, data: { designId, snapshot } };
+		}
+		case 'design_get_snapshot':
+			return { id, type: 'response', command: 'design_get_snapshot', success: true, data: { snapshot: mockDesignSnapshot?.document.id === cmd.designId ? mockDesignSnapshot : createMockDesignSnapshot(cmd.designId) } };
+		case 'design_prompt': {
+			const requestId = id;
+			const runId = `design-run-mock-${Date.now()}`;
+			setTimeout(() => {
+				dispatchLine({ type: 'design_event', ...designContext!, requestId, runId, sequence: 1, emittedAt: Date.now(), event: { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '[mock] 已开始流式执行。' } } as AgentSessionEvent } as RpcStreamLine);
+				setTimeout(() => dispatchLine({ type: 'design_run_settled', ...designContext!, requestId, runId, sequence: 2, emittedAt: Date.now(), snapshot: mockDesignSnapshot?.document.id === cmd.designId ? mockDesignSnapshot : createMockDesignSnapshot(cmd.designId) } as RpcStreamLine), 20);
+			}, 0);
+			return { id, type: 'response', command: 'design_prompt', success: true, data: { requestId, runId } };
+		}
 		case 'get_state':
 			return {
 				id,
@@ -300,6 +371,9 @@ function mockResponseFor(cmd: RpcCommand & { id: string }): RpcResponse {
 		case 'get_platform_connection':
 			// 浏览器预览没有 sidecar 与真实后端，固定模拟为可用以保持工作台可进入。
 			return { id, type: 'response', command: 'get_platform_connection', success: true, data: { connected: true } };
+		case 'get_platform_projects':
+			// 浏览器预览用固定项目联调选择器的加载、选择和绑定上下文。
+			return { id, type: 'response', command: 'get_platform_projects', success: true, data: { projects: [{ id: 1, name: '星河营销站', status: '进行中' }, { id: 2, name: 'GitPilot 控制台', status: '进行中' }] } };
 		case 'get_tree':
 			return { id, type: 'response', command: 'get_tree', success: true, data: { tree: [], leafId: null } };
 		case 'prepare_attachments': {

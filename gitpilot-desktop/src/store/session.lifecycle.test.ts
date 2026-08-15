@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { bridgeLifecycle, initBridge, destroyBridge, rpcMocks } = vi.hoisted(() => ({
+const { bridgeLifecycle, initBridge, destroyBridge, getGitPilotRoot, rpcMocks } = vi.hoisted(() => ({
 	bridgeLifecycle: {
 		ready: new Set<() => void>(),
 		disconnect: new Set<() => void>(),
@@ -10,7 +10,9 @@ const { bridgeLifecycle, initBridge, destroyBridge, rpcMocks } = vi.hoisted(() =
 	},
 	initBridge: vi.fn(async () => undefined),
 	destroyBridge: vi.fn(async () => undefined),
+	getGitPilotRoot: vi.fn(async () => ''),
 	rpcMocks: {
+		newSession: vi.fn(async () => ({ success: false })),
 		switchSession: vi.fn(async () => ({ success: false })),
 		getState: vi.fn(async () => ({ success: false })),
 		getMessages: vi.fn(async () => ({ success: false })),
@@ -23,7 +25,7 @@ vi.mock('@/src/rpc/bridge', () => ({
 	initBridge,
 	destroyBridge,
 	isTauriEnv: () => false,
-	getGitPilotRoot: vi.fn(async () => ''),
+	getGitPilotRoot,
 	onReady: (callback: () => void) => {
 		bridgeLifecycle.ready.add(callback);
 		return () => bridgeLifecycle.ready.delete(callback);
@@ -59,11 +61,21 @@ describe('桌面会话生命周期契约', () => {
 		bridgeLifecycle.extension.clear();
 		initBridge.mockClear();
 		destroyBridge.mockClear();
+	getGitPilotRoot.mockReset().mockResolvedValue('');
 		Object.values(rpcMocks).forEach((mock) => mock.mockReset().mockResolvedValue({ success: false }));
 		(globalThis as { window?: Window }).window = {
 			setInterval: ((callback: TimerHandler) => setInterval(callback, 10_000)) as typeof window.setInterval,
 			clearInterval: ((handle: number) => clearInterval(handle)) as typeof window.clearInterval,
 		} as Window;
+		const storage = new Map<string, string>();
+		(globalThis as { localStorage?: Storage }).localStorage = {
+			getItem: (key: string) => storage.get(key) ?? null,
+			setItem: (key: string, value: string) => { storage.set(key, value); },
+			removeItem: (key: string) => { storage.delete(key); },
+			clear: () => storage.clear(),
+			key: (index: number) => [...storage.keys()][index] ?? null,
+			get length() { return storage.size; },
+		} as Storage;
 		useSessionStore.setState({
 			connection: 'idle',
 			platformConnection: 'checking',
@@ -90,6 +102,60 @@ describe('桌面会话生命周期契约', () => {
 		bridgeLifecycle.disconnect.forEach((callback) => callback());
 		expect(useSessionStore.getState().connection).toBe('disconnected');
 		expect(useSessionStore.getState().isStreaming).toBe(false);
+	});
+
+	it('新建会话被扩展取消后恢复原会话状态，不误显示为空任务', async () => {
+		const sessionPath = 'C:\\sessions\\current.jsonl';
+		rpcMocks.newSession.mockResolvedValue({
+			success: true,
+			command: 'new_session',
+			data: { cancelled: true },
+		} as never);
+		rpcMocks.getState.mockResolvedValue({
+			success: true,
+			command: 'get_state',
+			data: {
+				thinkingLevel: 'off', isStreaming: false, isCompacting: false, steeringMode: 'all', followUpMode: 'all',
+				sessionFile: sessionPath, sessionId: 'current', autoCompactionEnabled: true, messageCount: 1, pendingMessageCount: 0,
+			},
+		} as never);
+
+		await useSessionStore.getState().newSession('C:\\workspace');
+
+		expect(rpcMocks.newSession).toHaveBeenCalledWith('C:\\workspace');
+		expect(useSessionStore.getState().sessionState?.sessionFile).toBe(sessionPath);
+		expect(useSessionStore.getState().selectedSessionPath).toBe(sessionPath);
+		expect(useSessionStore.getState().currentProjectPath).toBe('C:\\workspace');
+		expect(localStorage.getItem('gitpilot-desktop.currentProject')).toBe('C:\\workspace');
+	});
+
+	it('从项目旁新增任务时同步切换工作区地址', async () => {
+		const projectA = 'C:\\workspace\\project-a';
+		const projectB = 'C:\\workspace\\project-b';
+		useSessionStore.setState({ currentProjectPath: projectA });
+		localStorage.setItem('gitpilot-desktop.currentProject', projectA);
+		rpcMocks.newSession.mockResolvedValue({ success: true, command: 'new_session', data: { cancelled: false } } as never);
+
+		await useSessionStore.getState().newSession(projectB);
+
+		expect(rpcMocks.newSession).toHaveBeenCalledWith(projectB);
+		expect(useSessionStore.getState().currentProjectPath).toBe(projectB);
+		expect(localStorage.getItem('gitpilot-desktop.currentProject')).toBe(projectB);
+	});
+
+	it('从底部任务入口新增时切换到 GitPilot 根目录', async () => {
+		const projectPath = 'C:\\workspace\\project-a';
+		const rootPath = 'C:\\workspace\\gitpilot';
+		useSessionStore.setState({ currentProjectPath: projectPath });
+		localStorage.setItem('gitpilot-desktop.currentProject', projectPath);
+		getGitPilotRoot.mockResolvedValue(rootPath);
+		rpcMocks.newSession.mockResolvedValue({ success: true, command: 'new_session', data: { cancelled: false } } as never);
+
+		await useSessionStore.getState().newStandaloneSession();
+
+		expect(rpcMocks.newSession).toHaveBeenCalledWith(rootPath);
+		expect(useSessionStore.getState().currentProjectPath).toBe(rootPath);
+		expect(localStorage.getItem('gitpilot-desktop.currentProject')).toBe(rootPath);
 	});
 
 	it('卸载时撤销全部订阅并销毁桥接，不遗留轮询定时器', async () => {

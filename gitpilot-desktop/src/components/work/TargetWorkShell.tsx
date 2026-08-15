@@ -7,14 +7,17 @@ import { Button } from '@/src/components/ui/button';
 import { ScrollArea } from '@/src/components/ui/scroll-area';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/src/components/ui/dropdown-menu';
 import { MessageBubble } from '@/src/components/MessageBubble';
+import { CommandPalette } from '@/src/components/CommandPalette';
 import { onEvent, rpc } from '@/src/rpc/bridge';
+import { useSessionStore } from '@/src/store/session';
 import type { WorkFile, WorkMessage, WorkTask } from '@/src/store/work';
-import { useWorkStore } from '@/src/store/work';
+import { getWorkTaskTitle, useWorkStore } from '@/src/store/work';
 import type { UIMessage } from '@/src/store/session';
 import chatStyles from '@/src/components/ChatView.module.css';
 import inputStyles from '@/src/components/InputBox.module.css';
 import inspectorStyles from '@/src/components/features/TargetExecutionInspector.module.css';
 import sidebarStyles from '@/src/components/workbench/TargetSessionSidebar.module.css';
+import { getAdditionalScrollTail, getConversationFollowScrollTop, getConversationScrollBehavior, scrollMessageToSafeZone, shouldAnchorNewMessage } from '@/src/components/conversation-scroll';
 import styles from './TargetWorkShell.module.css';
 
 function id(): string { return crypto.randomUUID(); }
@@ -55,22 +58,196 @@ function fileChangeLabel(changeState: WorkFile['changeState']): string | null {
 
 function WorkTaskSidebar({ tasks, activeTaskId, runningTaskId, onCreate, onSelect }: { tasks: WorkTask[]; activeTaskId: string | null; runningTaskId: string | null; onCreate: () => void; onSelect: (id: string) => void }) {
 	return <aside className={sidebarStyles.root} aria-label="Work 任务">
-		<header className={sidebarStyles.header}><div className={sidebarStyles.headerCopy}><span>Work</span></div><Button type="button" variant="secondary" size="sm" onClick={onCreate} title="新建任务"><FilePlus2 />新建</Button></header>
-		<ScrollArea fitContent className={sidebarStyles.scroll}><div className={sidebarStyles.content}>{tasks.length === 0 ? <div className={sidebarStyles.emptyTask}>暂无任务</div> : <div className={sidebarStyles.standaloneList}>{tasks.map((task) => <Button key={task.id} type="button" variant="ghost" size="sm" onClick={() => onSelect(task.id)} className={`${sidebarStyles.taskRow} ${task.id === activeTaskId ? sidebarStyles.taskActive : ''}`} title={task.title}>{task.id === runningTaskId ? <Loader2 className={`${sidebarStyles.taskIcon} ${sidebarStyles.taskLoading}`} /> : <FileText className={sidebarStyles.taskIcon} />}<span className={sidebarStyles.label}>{task.title}</span></Button>)}</div>}</div></ScrollArea>
+		<header className={sidebarStyles.header}><div className={sidebarStyles.headerCopy}><span>工作</span></div><Button type="button" variant="secondary" size="sm" onClick={onCreate} title="新建任务"><FilePlus2 />新建</Button></header>
+		<ScrollArea fitContent className={sidebarStyles.scroll}><div className={sidebarStyles.content}>{tasks.length === 0 ? <div className={sidebarStyles.emptyTask}>暂无任务</div> : <div className={sidebarStyles.standaloneList}>{tasks.map((task) => { const label = getWorkTaskTitle(task.title); return <Button key={task.id} type="button" variant="ghost" size="sm" data-sidebar-menu-kind="work-task" data-work-task-id={task.id} data-session-cwd={task.workspacePath} onClick={() => onSelect(task.id)} className={`${sidebarStyles.taskRow} ${task.id === activeTaskId ? sidebarStyles.taskActive : ''}`} title={label}>{task.id === runningTaskId ? <Loader2 className={`${sidebarStyles.taskIcon} ${sidebarStyles.taskLoading}`} /> : <FileText className={sidebarStyles.taskIcon} />}<span className={sidebarStyles.label}>{label}</span></Button>; })}</div>}</div></ScrollArea>
 	</aside>;
 }
 
 function WorkInputBox({ disabled, running, onSend, onAbort }: { disabled: boolean; running: boolean; onSend: (text: string) => void; onAbort: () => void }) {
 	const [text, setText] = useState('');
-	const submit = () => { if (!text.trim() || disabled || running) return; onSend(text.trim()); setText(''); };
-	const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey) && !event.shiftKey) { event.preventDefault(); submit(); } };
-	return <div className={inputStyles.root}><div className={inputStyles.surface}><div className={inputStyles.composerRow}><textarea className={`${inputStyles.editorShell} ${inputStyles.editorSurface} ${styles.workEditor}`} value={text} onChange={(event) => setText(event.target.value)} onKeyDown={onKeyDown} disabled={disabled} placeholder="描述你要推进的工作" aria-label="发送 Work 消息" /></div><div className={inputStyles.toolbar}><div className={inputStyles.actions}><ModelPicker />{running ? <Button type="button" variant="ghost" size="icon" onClick={onAbort} title="停止"><Square size={15} /></Button> : <Button type="button" variant="default" size="icon" onClick={submit} disabled={disabled || !text.trim()} title="发送"><Send size={16} /></Button>}</div></div></div></div>;
+	const commands = useSessionStore((state) => state.commands);
+	const [showPalette, setShowPalette] = useState(false);
+	const submit = () => { if (!text.trim() || disabled || running) return; onSend(text.trim()); setText(''); setShowPalette(false); };
+	// Work 输入框遵循即时发送习惯：普通回车发送，Shift+Enter 保留换行；/project 等命令交给 Work 专属 AgentSession 执行。
+	const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+		if (showPalette && ['ArrowDown', 'ArrowUp', 'Enter', 'Escape'].includes(event.key)) {
+			event.preventDefault();
+			return;
+		}
+		if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); submit(); }
+	};
+	const onTextChange = (value: string) => {
+		setText(value);
+		setShowPalette(value.startsWith('/') && !value.includes(' '));
+	};
+	const pickCommand = (name: string) => { setText(`/${name} `); setShowPalette(false); };
+	return <div className={inputStyles.root}><div className={inputStyles.surface}>{showPalette && <CommandPalette commands={commands} query={text.slice(1)} onPick={pickCommand} onDismiss={() => setShowPalette(false)} />}<div className={inputStyles.composerRow}><textarea className={`${inputStyles.editorShell} ${inputStyles.editorSurface} ${styles.workEditor}`} value={text} onChange={(event) => onTextChange(event.target.value)} onKeyDown={onKeyDown} disabled={disabled} placeholder="描述你要推进的工作" aria-label="发送 Work 消息" /></div><div className={inputStyles.toolbar}><div className={inputStyles.actions}><ModelPicker />{running ? <Button type="button" variant="ghost" size="icon" onClick={onAbort} title="停止"><Square size={15} /></Button> : <Button type="button" variant="default" size="icon" onClick={submit} disabled={disabled || !text.trim()} title="发送"><Send size={16} /></Button>}</div></div></div></div>;
 }
 
 function WorkConversation({ task, streamingText, running, inputBlocked, onSend, onAbort }: { task: WorkTask | null; streamingText: string; running: boolean; inputBlocked: boolean; onSend: (text: string) => void; onAbort: () => void }) {
 	const scrollRef = useRef<HTMLDivElement>(null);
-	useLayoutEffect(() => { if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight; }, [task?.id, task?.messages, streamingText]);
-	return <main className={styles.conversation} aria-label="Work 对话工作区"><div className={chatStyles.surface}><div ref={scrollRef} className={chatStyles.scroll}><div className={chatStyles.frame}><div className={chatStyles.content}>{task ? (task.messages.length === 0 && !running ? <div className={chatStyles.empty}><div className={chatStyles.emptyIcon}><Sparkles size={26} /></div><div><h2>开始一项 Work</h2><p>围绕 GitPilot 公众端协同推进工作，正式产出请写入工作区文件。</p></div></div> : <div className={chatStyles.messages}>{task.messages.map((message) => <article key={message.id} className={styles.message}><MessageBubble message={{ id: message.id, role: message.role, text: message.text, kind: 'text' } as UIMessage} />{message.sources?.length ? <div className={styles.sources}>{message.sources.map((source) => <a key={source.id} href={source.url} target="_blank" rel="noreferrer"><strong>{source.title}</strong><span>{source.snippet}</span></a>)}</div> : null}</article>)}{running && <article className={`${styles.message} ${styles.assistantMessage} ${styles.streaming}`}><Loader2 size={15} className="animate-spin" />{streamingText || '正在处理…'}</article>}</div>) : <div className={chatStyles.empty}><h2>点击新建开始 Work</h2></div>}</div></div></div></div><WorkInputBox disabled={inputBlocked || !task} running={running} onSend={onSend} onAbort={onAbort} /></main>;
+	const contentRef = useRef<HTMLDivElement>(null);
+	const messageNodes = useRef(new Map<string, HTMLElement>());
+	const scrollMode = useRef<'bottom' | 'positioning' | 'following' | 'manual'>('bottom');
+	const scrollingToNewMessage = useRef(false);
+	const previousTaskId = useRef<string | null>(task?.id ?? null);
+	const previousUserId = useRef<string | null>(null);
+	const initializedTask = useRef(false);
+	const newMessageTimer = useRef<number | null>(null);
+	const newMessageExtraSpace = useRef(0);
+	const newMessageAnchorTop = useRef(0);
+	const [newMessageId, setNewMessageId] = useState<string | null>(null);
+	const latestUserId = useMemo(() => [...(task?.messages ?? [])].reverse().find((message) => message.role === 'user')?.id ?? null, [task?.messages]);
+	const taskRef = useRef(task);
+	const runningRef = useRef(running);
+	const streamingTextRef = useRef(streamingText);
+	taskRef.current = task;
+	runningRef.current = running;
+	streamingTextRef.current = streamingText;
+
+	/** Work 发送后先把用户消息抬到安全区；首段流式回复出现后再恢复底部跟随。 */
+	useLayoutEffect(() => {
+		if (previousTaskId.current !== (task?.id ?? null)) {
+			previousTaskId.current = task?.id ?? null;
+			previousUserId.current = latestUserId;
+			initializedTask.current = true;
+			scrollMode.current = 'bottom';
+			scrollingToNewMessage.current = false;
+			newMessageExtraSpace.current = 0;
+			newMessageAnchorTop.current = 0;
+			contentRef.current?.style.setProperty('--gp-new-message-extra-space', '0px');
+			setNewMessageId(null);
+			if (newMessageTimer.current != null) window.clearTimeout(newMessageTimer.current);
+			return;
+		}
+		if (!initializedTask.current) {
+			initializedTask.current = true;
+			previousUserId.current = latestUserId;
+			return;
+		}
+		const previousId = previousUserId.current;
+		previousUserId.current = latestUserId;
+		if (!task || !latestUserId || !shouldAnchorNewMessage({ initialized: initializedTask.current, currentUserId: latestUserId, previousUserId: previousId })) return;
+
+		const container = scrollRef.current;
+		const message = messageNodes.current.get(latestUserId);
+		if (!container || !message) return;
+		scrollMode.current = 'positioning';
+		// 新一轮发送重新计算尾部空间，避免上一轮的人工留白参与本轮目标计算。
+		newMessageExtraSpace.current = 0;
+		newMessageAnchorTop.current = 0;
+		contentRef.current?.style.setProperty('--gp-new-message-extra-space', '0px');
+		newMessageExtraSpace.current = getAdditionalScrollTail(container, message);
+		contentRef.current?.style.setProperty('--gp-new-message-extra-space', `${newMessageExtraSpace.current}px`);
+		setNewMessageId(latestUserId);
+		if (newMessageTimer.current != null) window.clearTimeout(newMessageTimer.current);
+
+		let removeScrollEndListener: (() => void) | undefined;
+		const frame = window.requestAnimationFrame(() => {
+			const currentContainer = scrollRef.current;
+			const currentMessage = messageNodes.current.get(latestUserId);
+			if (!currentContainer || !currentMessage) return;
+			const reducedMotion = getConversationScrollBehavior() === 'auto';
+			scrollingToNewMessage.current = !reducedMotion;
+			newMessageAnchorTop.current = scrollMessageToSafeZone(currentContainer, currentMessage, { reducedMotion });
+			let finished = false;
+			const finish = () => {
+				if (finished) return;
+				finished = true;
+				scrollingToNewMessage.current = false;
+				const latestTask = taskRef.current;
+				const latestMessages = latestTask?.messages ?? [];
+				const latestUserIndex = latestMessages.findIndex((entry) => entry.id === latestUserId);
+				const replyStarted = latestUserIndex >= 0 && latestMessages.some((item, index) => item.role === 'assistant' && index > latestUserIndex);
+				if (replyStarted || (runningRef.current && streamingTextRef.current)) {
+					scrollMode.current = 'following';
+					currentContainer.scrollTop = getConversationFollowScrollTop(currentContainer, newMessageExtraSpace.current, newMessageAnchorTop.current);
+				} else if (runningRef.current) {
+					scrollMode.current = 'positioning';
+				} else {
+					scrollMode.current = 'manual';
+				}
+			};
+			if (reducedMotion) {
+				finish();
+				return;
+			}
+			currentContainer.addEventListener('scrollend', finish, { once: true });
+			removeScrollEndListener = () => currentContainer.removeEventListener('scrollend', finish);
+			newMessageTimer.current = window.setTimeout(finish, 520);
+		});
+
+		return () => {
+			window.cancelAnimationFrame(frame);
+			removeScrollEndListener?.();
+			scrollingToNewMessage.current = false;
+			if (newMessageTimer.current != null) window.clearTimeout(newMessageTimer.current);
+		};
+	}, [latestUserId, task?.id]);
+
+	useLayoutEffect(() => {
+		if (!newMessageId || scrollMode.current !== 'positioning' || scrollingToNewMessage.current) return;
+		const container = scrollRef.current;
+		const userIndex = task?.messages.findIndex((message) => message.id === newMessageId) ?? -1;
+		const replyStarted = userIndex >= 0 && Boolean(task?.messages.slice(userIndex + 1).some((message) => message.role === 'assistant'));
+		if (!container) return;
+		if (!running && !replyStarted) {
+			scrollMode.current = 'manual';
+			return;
+		}
+		if (!replyStarted && !streamingText) return;
+		scrollMode.current = 'following';
+		container.scrollTop = getConversationFollowScrollTop(container, newMessageExtraSpace.current, newMessageAnchorTop.current);
+	}, [newMessageId, running, streamingText, task?.messages]);
+
+	useLayoutEffect(() => {
+		const container = scrollRef.current;
+		if (!container) return;
+		if (scrollMode.current === 'bottom') {
+			container.scrollTop = container.scrollHeight;
+		} else if (scrollMode.current === 'following' && running) {
+			container.scrollTop = getConversationFollowScrollTop(container, newMessageExtraSpace.current, newMessageAnchorTop.current);
+		}
+	}, [task?.id, task?.messages, running, streamingText]);
+
+	const onScroll = () => {
+		if (scrollingToNewMessage.current) return;
+		const container = scrollRef.current;
+		if (!container) return;
+		const latestScrollTop = newMessageExtraSpace.current > 0
+			? getConversationFollowScrollTop(container, newMessageExtraSpace.current, newMessageAnchorTop.current)
+			: container.scrollHeight - container.clientHeight;
+		if (newMessageExtraSpace.current > 0 && container.scrollTop > latestScrollTop + 1) {
+			// 人工尾部留白只服务于发送后的定位，用户手动下滚不能把正文继续顶出视口。
+			container.scrollTop = latestScrollTop;
+			return;
+		}
+		const atBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 80;
+		// 用户主动上滚查看历史时停止自动跟随，避免新 token 抢回阅读位置。
+		if (!atBottom && (scrollMode.current === 'following' || scrollMode.current === 'positioning')) scrollMode.current = 'manual';
+	};
+
+	return <main className={styles.conversation} aria-label="Work 对话工作区">
+		<div className={chatStyles.surface} data-new-message={newMessageId ? 'true' : undefined}>
+			<div ref={scrollRef} onScroll={onScroll} className={chatStyles.scroll}>
+				<div className={chatStyles.frame}>
+					<div ref={contentRef} className={chatStyles.content}>
+						{task ? (task.messages.length === 0 && !running ? <div className={chatStyles.empty}><div className={chatStyles.emptyIcon}><Sparkles size={26} /></div><div><h2>开始一项 Work</h2><p>围绕 GitPilot 公众端协同推进工作，正式产出请写入工作区文件。</p></div></div> : <div className={chatStyles.messages}>
+							{task.messages.map((message) => <article key={message.id} className={`${styles.message} ${newMessageId === message.id ? chatStyles.newMessageSlot : ''}`} ref={(node) => {
+								if (node) messageNodes.current.set(message.id, node);
+								else messageNodes.current.delete(message.id);
+							}}>
+								<MessageBubble message={{ id: message.id, role: message.role, text: message.text, kind: 'text' } as UIMessage} />
+								{message.sources?.length ? <div className={styles.sources}>{message.sources.map((source) => <a key={source.id} href={source.url} target="_blank" rel="noreferrer"><strong>{source.title}</strong><span>{source.snippet}</span></a>)}</div> : null}
+							</article>)}
+							{running && <article className={styles.message}><MessageBubble message={{ id: `work-streaming-${task.id}`, role: 'assistant', text: streamingText || '正在处理…', kind: 'text', streaming: true }} /></article>}
+						</div>) : <div className={chatStyles.empty}><h2>点击新建开始 Work</h2></div>}
+					</div>
+				</div>
+			</div>
+		</div>
+		<WorkInputBox disabled={inputBlocked || !task} running={running} onSend={onSend} onAbort={onAbort} />
+	</main>;
 }
 
 
@@ -121,12 +298,12 @@ export function TargetWorkShell() {
 		if ((line.type === 'work_file_created' || line.type === 'work_file_updated') && line.file) upsertFile(line.taskId, { ...line.file, changeState: line.type === 'work_file_created' ? 'created' : 'updated' });
 		if (line.type === 'work_file_deleted' && line.path) removeFile(line.taskId, line.path);
 	}), [upsertFile, removeFile]);
-	const create = async () => { const task = createTask(); selectTask(task.id); try { const response = await rpc.newWorkSession(task.id); if (response.success && response.command === 'new_work_session') updateTask(task.id, { sessionId: response.data.sessionId, sessionPath: response.data.sessionPath, workspacePath: response.data.workspacePath, title: response.data.title }); } catch { /* 延迟到首次消息时重试绑定 */ } };
-	const send = async (text: string) => { if (!activeTask || runningTaskId) return; const task = activeTask; const user: WorkMessage = { id: id(), role: 'user', text, createdAt: Date.now() }; appendMessage(task.id, user); setRunningTaskId(task.id); setStreaming({ taskId: task.id, text: '' }); try { const response = await rpc.workPrompt({ taskId: task.id, message: text }); if (!response.success || response.command !== 'work_prompt') throw new Error(('error' in response && response.error) || 'Work 请求失败'); updateTask(task.id, { title: response.data.title ?? task.title }); appendMessage(task.id, { id: id(), role: 'assistant', text: response.data.text, createdAt: Date.now() }); } catch (error) { appendMessage(task.id, { id: id(), role: 'assistant', text: `请求失败：${error instanceof Error ? error.message : String(error)}`, createdAt: Date.now() }); } finally { setRunningTaskId(null); setStreaming(null); } };
+	const create = async () => { const task = createTask(); selectTask(task.id); try { const response = await rpc.newWorkSession(task.id); if (response.success && response.command === 'new_work_session') updateTask(task.id, { sessionId: response.data.sessionId, sessionPath: response.data.sessionPath, workspacePath: response.data.workspacePath }); } catch { /* 延迟到首次消息时重试绑定 */ } };
+	const send = async (text: string) => { if (!activeTask || runningTaskId) return; const task = activeTask; const user: WorkMessage = { id: id(), role: 'user', text, createdAt: Date.now() }; appendMessage(task.id, user); setRunningTaskId(task.id); setStreaming({ taskId: task.id, text: '' }); try { const response = await rpc.workPrompt({ taskId: task.id, message: text }); if (!response.success || response.command !== 'work_prompt') throw new Error(('error' in response && response.error) || 'Work 请求失败'); const title = response.data.title?.trim(); if (title) updateTask(task.id, { title }); appendMessage(task.id, { id: id(), role: 'assistant', text: response.data.text, createdAt: Date.now() }); } catch (error) { appendMessage(task.id, { id: id(), role: 'assistant', text: `请求失败：${error instanceof Error ? error.message : String(error)}`, createdAt: Date.now() }); } finally { setRunningTaskId(null); setStreaming(null); } };
 	const openFile = async (file: WorkFile) => { if (!activeTask) return; const response = await rpc.workFileRead(activeTask.id, file.path); if (response.success && response.command === 'work_file_read') { const content = window.prompt(`预览/编辑 ${file.path}`, response.data.file.content ?? ''); if (content != null && content !== response.data.file.content) { const saved = await rpc.workFileWrite(activeTask.id, file.path, content); if (saved.success && saved.command === 'work_file_write') upsertFile(activeTask.id, { ...saved.data.file, changeState: 'unsaved' }); } else upsertFile(activeTask.id, { ...response.data.file, changeState: 'clean' }); } };
 	const renameFile = async (file: WorkFile) => { if (!activeTask) return; const newPath = window.prompt('新文件名', file.path)?.trim(); if (!newPath || newPath === file.path) return; const response = await rpc.workFileRename(activeTask.id, file.path, newPath); if (response.success && response.command === 'work_file_rename') { removeFile(activeTask.id, file.path); upsertFile(activeTask.id, { ...response.data.file, changeState: 'updated' }); } };
 	const deleteFile = async (file: WorkFile) => { if (!activeTask || !window.confirm(`删除 ${file.path}？`)) return; const response = await rpc.workFileDelete(activeTask.id, file.path); if (response.success && response.command === 'work_file_delete') removeFile(activeTask.id, file.path); };
 	if (!hydrated) return <div className={styles.loading}><Loader2 className="animate-spin" />正在加载 Work 工作区…</div>;
 	const streamingText = streaming && streaming.taskId === activeTask?.id ? streaming.text : '';
-	return <div className={styles.shell} data-ui-version="work"><TargetTitleBar /><TargetWorkbenchLayout left={<WorkTaskSidebar tasks={tasks} activeTaskId={activeTaskId} runningTaskId={runningTaskId} onCreate={() => void create()} onSelect={selectTask} />} center={<WorkConversation task={activeTask} streamingText={streamingText} running={runningTaskId === activeTask?.id} inputBlocked={runningTaskId !== null && runningTaskId !== activeTask?.id} onSend={(text) => void send(text)} onAbort={() => { void rpc.workAbort(); }} />} right={<WorkFilesInspector task={activeTask} onOpen={(file) => void openFile(file)} onRename={(file) => void renameFile(file)} onDelete={(file) => void deleteFile(file)} />} showBottom={false} statusLabel="Work 公众端协同" leftPanelTitle="任务" leftPanelDescription="Work 独立任务列表。" rightPanelTitle="工作区文件" rightPanelDescription="管理当前 Work 任务的文件产出。" /></div>;
+	return <div className={styles.shell} data-ui-version="work"><TargetTitleBar /><TargetWorkbenchLayout left={<WorkTaskSidebar tasks={tasks} activeTaskId={activeTaskId} runningTaskId={runningTaskId} onCreate={() => void create()} onSelect={selectTask} />} center={<WorkConversation task={activeTask} streamingText={streamingText} running={runningTaskId === activeTask?.id} inputBlocked={runningTaskId !== null && runningTaskId !== activeTask?.id} onSend={(text) => void send(text)} onAbort={() => { void rpc.workAbort(); }} />} right={<WorkFilesInspector task={activeTask} onOpen={(file) => void openFile(file)} onRename={(file) => void renameFile(file)} onDelete={(file) => void deleteFile(file)} />} showBottom={false} workspacePath={activeTask?.workspacePath ?? null} statusLabel={activeTask ? `Work · ${activeTask.title}` : 'Work 独立任务空间'} leftPanelTitle="任务" leftPanelDescription="Work 独立任务列表。" rightPanelTitle="工作区文件" rightPanelDescription="管理当前 Work 任务的文件产出。" /></div>;
 }

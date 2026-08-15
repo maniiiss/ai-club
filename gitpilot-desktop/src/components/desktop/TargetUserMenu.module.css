@@ -7,6 +7,10 @@
 .statusReady { background: #22c55e; }
 .statusOffline { background: #ef4444; }
 .content { width: 238px; padding: 5px; }
+.identityHeader { display: flex; align-items: center; gap: 2px; }
+.identityHeader .identity { min-width: 0; flex: 1; }
+.refreshButton { width: 30px; height: 30px; margin-right: 4px; color: var(--gp-text-muted); }
+.refreshButton:hover { color: var(--gp-accent); }
 .identity { display: flex; min-width: 0; align-items: center; gap: 9px; border-radius: var(--radius-sm); padding: 10px; }
 .identity > span:last-child { min-width: 0; }
 .identity b, .identity small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

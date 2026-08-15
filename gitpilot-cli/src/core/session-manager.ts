@@ -41,6 +41,8 @@ export interface SessionHeader {
 export interface NewSessionOptions {
 	id?: string;
 	parentSession?: string;
+	/** 仅供需要显式创建可发现空会话的内部调用；普通桌面新建任务不会使用该选项。 */
+	persistImmediately?: boolean;
 }
 
 export interface SessionEntryBase {
@@ -475,8 +477,17 @@ export function buildSessionContext(
  * Compute the default session directory for a cwd.
  * Encodes cwd into a safe directory name under ~/.pi/agent/sessions/.
  */
+export function stripWindowsNamespacePrefix(path: string): string {
+	// Windows 的 canonicalize/realpath 可能返回 \\?\C:\\... 扩展路径。
+	// 该前缀适合传给 Windows 文件 API，但不能直接编码进目录名：其中的 ?
+	// 会让 mkdirSync 在新建任务时失败。UNC 扩展路径需要还原成普通 UNC 路径。
+	if (/^\\\\\?\\UNC\\/i.test(path)) return path.replace(/^\\\\\?\\UNC\\/i, "\\\\");
+	if (/^\\\\\?\\/i.test(path)) return path.slice(4);
+	return path;
+}
+
 function getDefaultSessionDirPath(cwd: string, agentDir: string = getDefaultAgentDir()): string {
-	const resolvedCwd = resolvePath(cwd);
+	const resolvedCwd = stripWindowsNamespacePrefix(resolvePath(cwd));
 	const resolvedAgentDir = resolvePath(agentDir);
 	const safePath = `--${resolvedCwd.replace(/^[/\\]/, "").replace(/[/\\:]/g, "-")}--`;
 	return join(resolvedAgentDir, "sessions", safePath);
@@ -950,9 +961,12 @@ export class SessionManager {
 		this.leafId = null;
 		this.flushed = false;
 
-		if (this.persist) {
+	if (this.persist) {
 			const fileTimestamp = timestamp.replace(/[:.]/g, "-");
 			this.sessionFile = join(this.getSessionDir(), `${fileTimestamp}_${this.sessionId}.jsonl`);
+		}
+		if (options?.persistImmediately) {
+			this.flushToDisk();
 		}
 		return this.sessionFile;
 	}
@@ -1679,44 +1693,38 @@ export class SessionManager {
 			return sessions;
 		}
 
-		const sessionsDir = getSessionsDir();
-
+		// 全局历史只读取当前 GitPilot 配置目录；`.pi` 是另一套应用的数据，不能混入。
+		const sessionDirs = [getSessionsDir()];
 		try {
-			if (!existsSync(sessionsDir)) {
-				return [];
-			}
-			const entries = await readdir(sessionsDir, { withFileTypes: true });
-			const dirs = entries.filter((e) => e.isDirectory()).map((e) => join(sessionsDir, e.name));
-
-			// Count total files first for accurate progress
-			let totalFiles = 0;
 			const dirFiles: string[][] = [];
-			for (const dir of dirs) {
-				try {
-					const files = (await readdir(dir)).filter((f) => f.endsWith(".jsonl"));
-					dirFiles.push(files.map((f) => join(dir, f)));
-					totalFiles += files.length;
-				} catch {
-					dirFiles.push([]);
+			let totalFiles = 0;
+			for (const sessionsDir of sessionDirs) {
+				if (!existsSync(sessionsDir)) continue;
+				const entries = await readdir(sessionsDir, { withFileTypes: true });
+				const dirs = entries.filter((e) => e.isDirectory()).map((e) => join(sessionsDir, e.name));
+				for (const dir of dirs) {
+					try {
+						const files = (await readdir(dir)).filter((f) => f.endsWith(".jsonl"));
+						dirFiles.push(files.map((f) => join(dir, f)));
+						totalFiles += files.length;
+					} catch {
+						dirFiles.push([]);
+					}
 				}
 			}
 
-			// Process all files with progress tracking
 			let loaded = 0;
-			const sessions: SessionInfo[] = [];
 			const allFiles = dirFiles.flat();
-
 			const results = await buildSessionInfosWithConcurrency(allFiles, () => {
 				loaded++;
 				progress?.(loaded, totalFiles);
 			});
-
-			for (const info of results) {
-				if (info) {
-					sessions.push(info);
-				}
-			}
-
+			const sessions = results.filter((info): info is SessionInfo => {
+				if (!info) return false;
+				// 已删除的临时执行目录不能再被恢复为桌面任务；这也避免测试临时会话
+				// 污染生产侧栏。项目目录删除后同样不可切换，因此不保留失效条目。
+				return !info.cwd || existsSync(resolvePath(info.cwd));
+			});
 			sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
 			return sessions;
 		} catch {

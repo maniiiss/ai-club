@@ -22,6 +22,7 @@ import type {
   WorkItemInlineUpdateResult,
   WorkItemQuery,
   WorkItemStats,
+  TaskLinksCount,
 } from '@/src/types/planning'
 
 /* ── 迭代 ── */
@@ -115,6 +116,11 @@ export const batchDeleteWorkItems = async (taskIds: number[]): Promise<BatchWork
 
 export const getWorkItemLinks = async (id: number): Promise<WorkItemLinks> => {
   const res = await http.get<ApiResponse<WorkItemLinks>>(`/api/tasks/${id}/links`)
+  return unwrap(res)
+}
+
+export const getWorkItemLinksCount = async (id: number): Promise<TaskLinksCount> => {
+  const res = await http.get<ApiResponse<TaskLinksCount>>(`/api/tasks/${id}/links/counts`)
   return unwrap(res)
 }
 

@@ -1,3 +1,5 @@
+import { isProjectPathWithin, normalizeProjectPath } from '@/src/utils/project-path';
+
 /**
  * 项目树将项目与其项目任务建立展示关系；独立任务不会进入该树。
  */
@@ -22,13 +24,6 @@ export interface ProjectTreeTask {
 	isStreaming?: boolean;
 }
 
-function isWithinProject(path: string, projectPath: string): boolean {
-	const normalize = (value: string) => value.replace(/\\/g, '/').toLowerCase().replace(/\/$/, '');
-	const target = normalize(path);
-	const root = normalize(projectPath);
-	return target === root || target.startsWith(`${root}/`);
-}
-
 function sortByModified<T extends { modified?: string }>(items: T[]): T[] {
 	return [...items].sort((left, right) => Date.parse(right.modified ?? '') - Date.parse(left.modified ?? ''));
 }
@@ -40,18 +35,24 @@ function sortByModified<T extends { modified?: string }>(items: T[]): T[] {
 export function buildProjectTree(projects: ProjectTreeProject[], tasks: ProjectTreeTask[], standaloneTaskPaths: string[] = []): { projectTree: ProjectTreeNode[]; standaloneTasks: ProjectTreeTask[] } {
 	const projectTree = projects.map((project) => ({ project, tasks: [] as ProjectTreeTask[] }));
 	const standaloneTasks: ProjectTreeTask[] = [];
-	const standalonePaths = new Set(standaloneTaskPaths);
+	const standaloneTaskSet = new Set(standaloneTaskPaths);
 
 	for (const task of tasks) {
-		if (standalonePaths.has(task.path)) {
+		if (standaloneTaskSet.has(task.path)) {
+			// 底部“任务”入口是明确的独立任务语义；即使它的 cwd 恰好落在某个项目目录内，
+			// 也不能仅凭路径前缀把它重新归入项目，否则新建任务会从底部列表跳到项目下面。
 			standaloneTasks.push(task);
 			continue;
 		}
 		const owner = projectTree
-			.filter((node) => isWithinProject(task.cwd, node.project.path))
-			.sort((left, right) => right.project.path.length - left.project.path.length)[0];
-		if (owner) owner.tasks.push(task);
-		else standaloneTasks.push(task);
+			.filter((node) => isProjectPathWithin(task.cwd, node.project.path))
+			.sort((left, right) => normalizeProjectPath(right.project.path).length - normalizeProjectPath(left.project.path).length)[0];
+		if (owner) {
+			// 未被独立任务入口标记的会话，才按 cwd 归属最近的项目根目录。
+			owner.tasks.push(task);
+			continue;
+		}
+		standaloneTasks.push(task);
 	}
 
 	return {

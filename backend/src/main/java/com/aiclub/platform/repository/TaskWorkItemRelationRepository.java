@@ -22,4 +22,15 @@ public interface TaskWorkItemRelationRepository extends JpaRepository<TaskWorkIt
             String targetRelationType,
             Long targetTaskId
     );
+
+    long countBySourceTask_IdAndRelationType(Long sourceTaskId, String relationType);
+
+    long countByTargetTask_IdAndRelationType(Long targetTaskId, String relationType);
+
+    long countByRelationTypeAndSourceTask_IdOrRelationTypeAndTargetTask_Id(
+            String sourceRelationType,
+            Long sourceTaskId,
+            String targetRelationType,
+            Long targetTaskId
+    );
 }

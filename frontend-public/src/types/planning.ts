@@ -112,6 +112,15 @@ export interface WorkItemLinks {
   attachments: TaskAttachment[]
 }
 
+/** 工作项详情页签关联的轻量计数，供角标即时展示，避免为显示角标而加载完整关联列表。 */
+export interface TaskLinksCount {
+  children: number
+  parentWorkItems: number
+  relatedWorkItems: number
+  testCases: number
+  attachments: number
+}
+
 /** 创建/更新工作项载荷。 */
 export interface WorkItemPayload {
   name: string

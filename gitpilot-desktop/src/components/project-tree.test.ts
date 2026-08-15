@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { buildProjectTree } from './project-tree';
 
 describe('项目树', () => {
-	it('将项目任务归入项目树，未关联项目的任务保留为独立任务', () => {
+	it('独立任务标记优先于 cwd，未标记的会话按项目归属', () => {
 		const { projectTree, standaloneTasks } = buildProjectTree([
 			{ name: 'git-ai-club', path: 'C:\\workspace\\git-ai-club' },
 			{ name: 'crm-ai', path: 'C:\\workspace\\crm-ai' },
@@ -37,5 +37,16 @@ describe('项目树', () => {
 		expect(projectTree[0].tasks).toHaveLength(60);
 		expect(projectTree[0].tasks[0].name).toContain('超长任务名称');
 		expect(new Set(projectTree[0].tasks.map((task) => task.path))).toEqual(new Set(tasks.map((task) => task.path)));
+	});
+
+	it('将 Windows 扩展路径会话归入普通路径项目', () => {
+		const { projectTree, standaloneTasks } = buildProjectTree([
+			{ name: 'git-ai-club', path: 'C:\\workspace\\git-ai-club' },
+		], [
+			{ path: 'session-extended', name: '扩展路径任务', firstMessage: '', cwd: '\\\\?\\C:\\workspace\\git-ai-club\\gitpilot-desktop', messageCount: 1 },
+		]);
+
+		expect(projectTree[0].tasks.map((task) => task.path)).toEqual(['session-extended']);
+		expect(standaloneTasks).toEqual([]);
 	});
 });

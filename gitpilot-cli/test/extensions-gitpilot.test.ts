@@ -4,6 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizePlatformUrl } from "../src/extensions/gitpilot/config.ts";
+import { listProjects } from "../src/extensions/gitpilot/api.ts";
 import { clearModelSessions, ensureModelSession } from "../src/extensions/gitpilot/session-cache.ts";
 
 const PLATFORM_URL = "http://localhost:8080";
@@ -68,5 +69,22 @@ describe("ensureModelSession", () => {
 		expect(mockFetch).toHaveBeenCalledTimes(2);
 		expect(refreshed.accessToken).toBe("gms_new");
 		expect(refreshed.proxyBaseUrl).toBe(`${PLATFORM_URL}/api/cli/model-sessions/s2`);
+	});
+});
+
+describe("listProjects", () => {
+	it("通过 CLI 项目接口读取并按名称筛选项目", async () => {
+		mockFetch.mockResolvedValueOnce(platformOk([
+			{ id: 1, name: "订单中心", status: "进行中", description: "订单域" },
+			{ id: 2, name: "知识库", status: "规划中", description: "知识域" },
+		]));
+
+		const projects = await listProjects(PLATFORM_URL, "gpt_test", "订单");
+
+		expect(mockFetch).toHaveBeenCalledWith(
+			`${PLATFORM_URL}/api/cli/projects`,
+			expect.objectContaining({ headers: expect.objectContaining({ authorization: "Bearer gpt_test" }) }),
+		);
+		expect(projects).toEqual([{ id: 1, name: "订单中心", status: "进行中", description: "订单域" }]);
 	});
 });

@@ -14,7 +14,9 @@
 .artifactActions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
 .artifactActions button { height: 25px; color: var(--gp-text-muted); font-size: 11px; }
 .artifactActions button:hover { color: var(--gp-accent); }
+/* Work 使用原生 textarea，但聚焦反馈应由外层 composer 统一承载，避免出现第二层内框。 */
 .workEditor { resize: none; }
+.workEditor:focus, .workEditor:focus-visible { border: 0; outline: none; box-shadow: none; background: transparent; }
 .artifactTabs { display: flex; min-height: 0; flex: 1; flex-direction: column; padding: 10px 9px 12px; }
 .artifactTabs > div:first-child { width: 100%; }
 .artifactTabs button { flex: 1; font-size: 11px; }

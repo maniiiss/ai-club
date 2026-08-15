@@ -2,10 +2,25 @@ import { constants as bufferConstants } from "buffer";
 import { appendFileSync, closeSync, mkdirSync, openSync, readFileSync, rmSync, writeFileSync, writeSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { findMostRecentSession, loadEntriesFromFile, SessionManager } from "../../src/core/session-manager.ts";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+	findMostRecentSession,
+	loadEntriesFromFile,
+	SessionManager,
+	stripWindowsNamespacePrefix,
+} from "../../src/core/session-manager.ts";
 
 const HEADER_SCAN_LIMIT_BYTES = 1024 * 1024;
+
+describe("Windows session path normalization", () => {
+	it("removes the extended path prefix before encoding a session directory", () => {
+		expect(stripWindowsNamespacePrefix("\\\\?\\C:\\Users\\dlhxy\\project")).toBe("C:\\Users\\dlhxy\\project");
+		expect(stripWindowsNamespacePrefix("\\\\?\\UNC\\server\\share\\project")).toBe(
+			"\\\\server\\share\\project",
+		);
+		expect(stripWindowsNamespacePrefix("C:\\Users\\dlhxy\\project")).toBe("C:\\Users\\dlhxy\\project");
+	});
+});
 
 describe("loadEntriesFromFile", () => {
 	let tempDir: string;
@@ -294,6 +309,36 @@ describe("SessionManager custom flat session directory", () => {
 
 		const continuedA = SessionManager.continueRecent(projectA, tempDir);
 		expect(continuedA.getSessionFile()).toBe(sessionA);
+	});
+
+	it("can persist an empty session header for Desktop history and cwd restoration", async () => {
+		const session = SessionManager.create(projectA, tempDir, { persistImmediately: true });
+		const sessionFile = session.getSessionFile();
+
+		expect(sessionFile).toBeDefined();
+		expect(readFileSync(sessionFile!, "utf8")).toContain('"type":"session"');
+		expect((await SessionManager.listAll(tempDir)).map((item) => item.path)).toContain(sessionFile);
+	});
+
+	it("全局历史只读取当前 GitPilot 目录，并跳过已删除工作目录", async () => {
+		const agentDir = join(tempDir, "gitpilot-agent");
+		const existingCwd = join(tempDir, "existing-project");
+		const removedCwd = join(tempDir, "removed-project");
+		mkdirSync(existingCwd, { recursive: true });
+		mkdirSync(removedCwd, { recursive: true });
+
+		vi.stubEnv("GITPILOT_CODING_AGENT_DIR", agentDir);
+		try {
+			const current = SessionManager.create(existingCwd, undefined, { persistImmediately: true });
+			const stale = SessionManager.create(removedCwd, undefined, { persistImmediately: true });
+			rmSync(removedCwd, { recursive: true, force: true });
+
+			const sessions = await SessionManager.listAll();
+			expect(sessions.map((item) => item.path)).toContain(current.getSessionFile());
+			expect(sessions.map((item) => item.path)).not.toContain(stale.getSessionFile());
+		} finally {
+			vi.unstubAllEnvs();
+		}
 	});
 });
 

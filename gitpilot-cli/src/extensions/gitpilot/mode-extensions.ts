@@ -3,9 +3,10 @@ import webAccessExtension from "pi-web-access";
 import { createMcpAdapter } from "pi-mcp-adapter";
 import type { InlineExtension } from "../../core/extensions/types.ts";
 import { loadMcpConfigurationForMode, type GitPilotAgentMode } from "./mcp-manager.ts";
+import { createProjectBindingExtension } from "./project-binding.ts";
 
 export function createModeExtensions(mode: GitPilotAgentMode, cwd: string): InlineExtension[] {
-	return [
+	const extensions: InlineExtension[] = [
 		{ name: "gitpilot-web-access", factory: webAccessExtension },
 		{
 			name: `gitpilot-mcp-${mode}`,
@@ -13,4 +14,7 @@ export function createModeExtensions(mode: GitPilotAgentMode, cwd: string): Inli
 			factory: createMcpAdapter({ config: loadMcpConfigurationForMode(mode, cwd) }),
 		},
 	];
+	// 项目绑定是 Code/Work 的工作区上下文能力，Design 使用自己的项目级设计规范与产物目录。
+	if (mode === "code" || mode === "work") extensions.unshift(createProjectBindingExtension(mode, cwd));
+	return extensions;
 }

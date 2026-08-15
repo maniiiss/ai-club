@@ -19,7 +19,7 @@ export function registerRequirementCommand(pi: ExtensionAPI): void {
 				ctx.ui.notify("未配置平台地址，请先设置 GITPILOT_PLATFORM_URL 或运行 /login gitpilot", "warning");
 				return;
 			}
-			const token = getCachedCliToken() ?? (await loadCliToken(platformUrl));
+			const token = getCachedCliToken(platformUrl) ?? (await loadCliToken(platformUrl));
 			if (!token) {
 				ctx.ui.notify("未登录平台，请运行 /login gitpilot", "warning");
 				return;

@@ -6,6 +6,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::time::Duration;
 
 const CLIENT_VERSION: &str = "0.1.0";
 
@@ -55,20 +56,17 @@ pub struct PollResult {
 	pub message: Option<String>,
 }
 
-/// 启动设备授权：返回设备码 + 验证信息，并自动打开浏览器到验证页。
+/// 启动设备授权：只负责从平台取得设备码，浏览器打开由前端显式调用受控命令完成。
 #[tauri::command]
 pub async fn cli_login_start(platform_url: String) -> Result<DeviceAuthorization, String> {
 	let body = serde_json::json!({ "clientVersion": CLIENT_VERSION });
-	let auth: DeviceAuthorization = request_json(&platform_url, "/api/cli/device/authorizations", reqwest::Method::POST, Some(body), None).await?;
-	// 自动打开浏览器到验证页
-	let _ = open::that(&auth.verificationUri);
-	Ok(auth)
+	request_json(&platform_url, "/api/cli/device/authorizations", reqwest::Method::POST, Some(body), None).await
 }
 
 /// 轮询设备令牌：pending(428)/slow_down(429)/expired(410) 返回对应状态，成功返回 token。
 #[tauri::command]
 pub async fn cli_login_poll(platform_url: String, device_code: String) -> Result<PollResult, String> {
-	let client = reqwest::Client::new();
+	let client = platform_http_client()?;
 	let resp = client
 		.post(format!("{}/api/cli/device/token", platform_url))
 		.header("accept", "application/json")
@@ -126,7 +124,8 @@ pub fn open_platform_web(platform_url: String) -> Result<(), String> {
 	if parsed.scheme() != "http" && parsed.scheme() != "https" {
 		return Err("平台地址必须使用 http 或 https".to_string());
 	}
-	open::that(parsed.as_str()).map_err(|err| format!("打开 GitPilot Web 失败: {err}"))
+	// 使用 detached 启动，避免系统浏览器启动器阻塞 Tauri 命令线程。
+	open::that_detached(parsed.as_str()).map_err(|err| format!("打开 GitPilot Web 失败: {err}"))
 }
 
 /// 通用平台请求：解包 {success,message,data} 包络，非 2xx 或 success=false 报错。
@@ -137,7 +136,7 @@ async fn request_json<T: serde::de::DeserializeOwned>(
 	body: Option<Value>,
 	token: Option<&str>,
 ) -> Result<T, String> {
-	let client = reqwest::Client::new();
+	let client = platform_http_client()?;
 	let url = format!("{}{}", platform_url, path);
 	let mut req = client.request(method, &url).header("accept", "application/json");
 	if let Some(t) = token {
@@ -158,4 +157,13 @@ async fn request_json<T: serde::de::DeserializeOwned>(
 		return Err(parsed.message.unwrap_or_else(|| format!("平台请求失败: {}", status.as_u16())));
 	}
 	parsed.data.ok_or_else(|| "响应缺 data".into())
+}
+
+/// 平台登录请求必须有连接和总超时，避免网络不可达时前端永久停在“正在准备授权”。
+fn platform_http_client() -> Result<reqwest::Client, String> {
+	reqwest::Client::builder()
+		.connect_timeout(Duration::from_secs(8))
+		.timeout(Duration::from_secs(20))
+		.build()
+		.map_err(|error| format!("创建平台请求客户端失败: {error}"))
 }

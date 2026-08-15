@@ -9,6 +9,7 @@ import com.aiclub.platform.dto.TaskPrdAnalyzeResult;
 import com.aiclub.platform.dto.TaskPrdDetail;
 import com.aiclub.platform.dto.TaskAgentRunSummary;
 import com.aiclub.platform.dto.TaskCommentSummary;
+import com.aiclub.platform.dto.TaskLinksCount;
 import com.aiclub.platform.dto.TaskLinksSummary;
 import com.aiclub.platform.dto.TaskSummary;
 import com.aiclub.platform.dto.TaskUpdateRecordSummary;
@@ -105,6 +106,16 @@ public class TaskController {
     @RequirePermission("task:view")
     public ApiResponse<TaskLinksSummary> links(@PathVariable Long id) {
         return ApiResponse.success(workItemLinkService.getLinks(id));
+    }
+
+    /**
+     * 工作项详情页关联角标的轻量计数端点。
+     * 前端角标即时展示用，避免每次打开详情都加载完整关联列表。
+     */
+    @GetMapping("/{id}/links/counts")
+    @RequirePermission("task:view")
+    public ApiResponse<TaskLinksCount> linksCounts(@PathVariable Long id) {
+        return ApiResponse.success(workItemLinkService.getLinksCount(id));
     }
 
     @PostMapping("/{id}/children")

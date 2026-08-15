@@ -40,3 +40,30 @@
 .modeRoot[data-active-mode='work'] .designMode,
 .modeRoot[data-active-mode='design'] .codeMode,
 .modeRoot[data-active-mode='design'] .workMode { display: none; }
+
+.modeRoot[data-active-mode='code'] .codeMode > div > header + *,
+.modeRoot[data-active-mode='work'] .workMode > div > header + *,
+.modeRoot[data-active-mode='design'] .designMode > div[data-design-landing='false'] > header + *,
+.modeRoot[data-active-mode='design'] .designMode > div[data-design-landing='true'] > header + * [data-mode-animation-content] {
+	animation: mode-content-enter 240ms cubic-bezier(.22, .61, .36, 1) both;
+}
+
+@keyframes mode-content-enter {
+	from {
+		opacity: 0;
+		transform: translateY(8px) scale(.998);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.modeRoot[data-active-mode='code'] .codeMode > div > header + *,
+	.modeRoot[data-active-mode='work'] .workMode > div > header + *,
+	.modeRoot[data-active-mode='design'] .designMode > div[data-design-landing='false'] > header + *,
+	.modeRoot[data-active-mode='design'] .designMode > div[data-design-landing='true'] > header + * [data-mode-animation-content] {
+		animation: none;
+	}
+}

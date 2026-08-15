@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { PLACEHOLDER_TITLE, useWorkStore } from './work';
+import { getWorkTaskTitle, PLACEHOLDER_TITLE, useWorkStore } from './work';
 
 describe('GitPilot Work 独立文件任务', () => {
 	beforeEach(() => useWorkStore.setState({ tasks: [], activeTaskId: null, hydrated: true }));
@@ -7,7 +7,15 @@ describe('GitPilot Work 独立文件任务', () => {
 	it('新建任务无需标题并立即成为当前任务', () => {
 		const task = useWorkStore.getState().createTask();
 		expect(task.title).toBe(PLACEHOLDER_TITLE);
+		expect(task.title).toBe('未命名任务');
 		expect(useWorkStore.getState().activeTaskId).toBe(task.id);
+	});
+
+	it('兼容旧的默认标题，并在首条响应后显示生成标题', () => {
+		const task = useWorkStore.getState().createTask();
+		expect(getWorkTaskTitle('新的 Work 任务')).toBe(PLACEHOLDER_TITLE);
+		useWorkStore.getState().updateTask(task.id, { title: '公众端协同方案' });
+		expect(getWorkTaskTitle(useWorkStore.getState().tasks[0].title)).toBe('公众端协同方案');
 	});
 
 	it('文件索引与消息互相独立维护', () => {

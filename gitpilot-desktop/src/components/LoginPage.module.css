@@ -1,37 +1,59 @@
-/* 登录是独立状态页，使用局部布局保证后续工作台换肤不会影响设备授权流程。 */
+/* 登录页只承担授权入口，使用简洁的品牌分栏和模式说明建立桌面产品识别。 */
 .page {
+	position: relative;
 	display: flex;
 	height: 100%;
+	min-height: 520px;
 	align-items: center;
 	justify-content: center;
-	background: var(--gp-background);
-	padding: 24px;
+	overflow: hidden;
+	background: #050807;
+	color: var(--gp-text);
+	padding: 48px;
 }
 
-.card {
-	width: 100%;
-	max-width: 384px;
-	border: 1px solid var(--gp-border);
-	border-radius: 12px;
-	background: var(--gp-surface);
-	padding: 28px;
-	box-shadow: var(--shadow-lg);
-}
+.page::before,
+.page::after { position: absolute; content: ''; pointer-events: none; }
+.page::before { inset: 0; background: radial-gradient(circle at 76% 31%, color-mix(in srgb, var(--gp-accent) 11%, transparent), transparent 29%), radial-gradient(circle at 18% 80%, color-mix(in srgb, var(--gp-warm) 6%, transparent), transparent 24%); }
+.page::after { top: 8%; right: 5%; width: 34vw; height: 34vw; max-width: 520px; max-height: 520px; border: 1px solid color-mix(in srgb, var(--gp-accent) 13%, transparent); border-radius: 50%; box-shadow: 0 0 0 24px color-mix(in srgb, var(--gp-accent) 3%, transparent), 0 0 0 48px color-mix(in srgb, var(--gp-accent) 2%, transparent); opacity: .7; }
+.ambientGlow { position: absolute; top: 18%; right: 13%; width: 220px; height: 220px; border-radius: 50%; background: var(--gp-accent); filter: blur(100px); opacity: .1; }
+.grid { position: absolute; inset: 0; background-image: linear-gradient(color-mix(in srgb, var(--gp-border) 25%, transparent) 1px, transparent 1px), linear-gradient(90deg, color-mix(in srgb, var(--gp-border) 25%, transparent) 1px, transparent 1px); background-position: center; background-size: 56px 56px; mask-image: linear-gradient(90deg, transparent, #000 22%, #000 78%, transparent); opacity: .22; }
 
-.brandRow { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
-.logo { display: flex; width: 36px; height: 36px; align-items: center; justify-content: center; border-radius: 8px; background: var(--gp-selection); color: var(--gp-action); }
-.title { margin: 0; color: var(--gp-text); font-size: 16px; font-weight: 500; }
-.subtitle { margin: 2px 0 0; color: var(--gp-text-muted); font-size: 12px; }
-.label { display: block; margin-bottom: 6px; color: var(--gp-text-muted); font-size: 12px; }
-.input { margin-bottom: 16px; }
-.submit { width: 100%; }
-.polling { padding: 8px 0; }
-.pollingDescription { margin: 0 0 12px; color: var(--gp-text-muted); font-size: 14px; }
-.codeBox { margin-bottom: 16px; border: 1px dashed var(--gp-border-strong); border-radius: 8px; background: var(--gp-surface-raised); padding: 16px; text-align: center; }
-.codeLabel { color: var(--gp-text-muted); font-size: 12px; }
-.code { margin-top: 4px; color: var(--gp-action); font-family: var(--font-mono); font-size: 24px; font-weight: 600; letter-spacing: .18em; }
+.layout { position: relative; z-index: 1; display: grid; width: min(100%, 820px); grid-template-columns: minmax(220px, 1fr) minmax(360px, 430px); align-items: center; gap: clamp(48px, 9vw, 112px); }
+.intro { display: flex; align-items: center; justify-content: center; min-height: 270px; }
+.brandLockup { display: flex; align-items: center; gap: 12px; color: var(--gp-text); font-family: var(--font-mono); font-size: clamp(19px, 2.4vw, 27px); font-weight: 600; letter-spacing: .04em; }
+.brandPulse { width: 9px; height: 9px; border-radius: 50%; background: var(--gp-accent); box-shadow: 0 0 0 5px color-mix(in srgb, var(--gp-accent) 10%, transparent), 0 0 22px var(--gp-accent); }
+
+.card { width: 100%; border: 1px solid color-mix(in srgb, var(--gp-border-strong) 78%, transparent); border-radius: 14px; background: linear-gradient(145deg, color-mix(in srgb, var(--gp-surface) 97%, white 3%), var(--gp-panel-deep)); padding: 26px; box-shadow: 0 28px 80px rgb(0 0 0 / 44%), inset 0 1px rgb(255 255 255 / 4%); }
+.brandRow { display: flex; align-items: center; gap: 12px; }
+.logo { display: flex; width: 42px; height: 42px; align-items: center; justify-content: center; border: 1px solid color-mix(in srgb, var(--gp-accent) 30%, transparent); border-radius: 11px; background: color-mix(in srgb, var(--gp-accent) 12%, var(--gp-surface)); color: var(--gp-accent); box-shadow: 0 0 24px color-mix(in srgb, var(--gp-accent) 10%, transparent); }
+.title { margin: 0; color: var(--gp-text); font-size: 21px; font-weight: 600; letter-spacing: -.03em; }
+.subtitle { margin: 7px 0 0; color: var(--gp-text-muted); font-size: 13px; }
+.authorizationNote { display: flex; align-items: center; gap: 8px; margin: 26px 0 14px; border: 1px solid color-mix(in srgb, var(--gp-accent) 15%, transparent); border-radius: 8px; background: color-mix(in srgb, var(--gp-accent) 5%, transparent); padding: 10px 11px; color: var(--gp-text-secondary); font-size: 12px; }
+.authorizationNote svg { flex: 0 0 auto; color: var(--gp-accent); }
+.submit { width: 100%; min-height: 42px; border: 1px solid color-mix(in srgb, var(--gp-accent) 42%, transparent); background: var(--gp-accent); color: #06100e; font-weight: 700; box-shadow: 0 10px 28px color-mix(in srgb, var(--gp-accent) 12%, transparent); }
+.submit:hover { border-color: var(--gp-accent); background: color-mix(in srgb, var(--gp-accent) 88%, white); color: #06100e; }
+
+.polling { margin-top: 26px; border-top: 1px solid var(--gp-border); padding-top: 20px; }
+.pollingDescription { margin: 0 0 16px; color: var(--gp-text-muted); font-size: 13px; line-height: 1.6; }
+.codeBox { margin-bottom: 16px; border: 1px dashed var(--gp-border-strong); border-radius: 10px; background: var(--gp-surface-raised); padding: 16px; text-align: center; }
+.codeLabel { color: var(--gp-text-muted); font-size: 11px; }
+.code { margin-top: 5px; color: var(--gp-accent); font-family: var(--font-mono); font-size: 26px; font-weight: 600; letter-spacing: .18em; }
 .waiting { display: flex; align-items: center; justify-content: center; gap: 8px; color: var(--gp-text-muted); font-size: 12px; }
 .reopen { display: flex; margin: 12px auto 0; }
-.done { display: flex; align-items: center; justify-content: center; gap: 8px; padding: 16px 0; color: var(--gp-status-success); font-size: 14px; }
-.error { display: flex; align-items: flex-start; gap: 8px; margin-top: 16px; border: 1px solid color-mix(in srgb, var(--gp-danger) 40%, transparent); border-radius: 6px; background: var(--gp-code-diff-del); padding: 10px; color: var(--gp-status-error); font-size: 12px; }
+.done { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 26px; border-top: 1px solid var(--gp-border); padding: 22px 0 4px; color: var(--gp-status-success); font-size: 14px; }
+.error { display: flex; align-items: flex-start; gap: 8px; margin-top: 16px; border: 1px solid color-mix(in srgb, var(--gp-danger) 40%, transparent); border-radius: 7px; background: var(--gp-code-diff-del); padding: 10px; color: var(--gp-status-error); font-size: 12px; line-height: 1.5; }
 .errorIcon { flex: 0 0 auto; margin-top: 2px; }
+
+.modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 26px; border-top: 1px solid var(--gp-border); padding-top: 18px; }
+.modes > div { display: grid; grid-template-columns: 16px 1fr; column-gap: 7px; align-items: center; min-width: 0; color: var(--gp-text-secondary); }
+.modes svg { grid-row: span 2; color: var(--gp-accent); }
+.modes span { font-family: var(--font-mono); font-size: 11px; }
+.modes small { overflow: hidden; color: var(--gp-text-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+
+@media (max-width: 760px) {
+	.page { align-items: flex-start; padding: 42px 20px; overflow: auto; }
+	.layout { display: block; width: min(100%, 430px); }
+	.intro { min-height: 120px; justify-content: flex-start; padding: 10px 0 34px; }
+	.brandLockup { font-size: 20px; }
+}

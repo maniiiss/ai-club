@@ -41,6 +41,9 @@ fi
 
 echo "==> 复制资源文件到 resources/（dev 期 sidecar cwd 指向此处；tauri bundle 由此打包）"
 mkdir -p "$RES/theme" "$RES/export-html/vendor"
+# Bun 单文件 sidecar 运行时无法再从源码目录读取 package.json；复制 GitPilot
+# manifest 让配置目录和品牌名在安装态仍保持 .gitpilot/gitpilot，不回退到上游 .pi。
+cp "$CLI/package.json" "$RES/package.json"
 cp "$CLI/src/modes/interactive/theme/"*.json "$RES/theme/"
 cp "$CLI/src/core/export-html/template."* "$RES/export-html/" 2>/dev/null || true
 cp "$CLI/src/core/export-html/vendor/"* "$RES/export-html/vendor/" 2>/dev/null || true

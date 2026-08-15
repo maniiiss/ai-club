@@ -40,25 +40,40 @@ pub fn reveal_path(path: String) -> Result<(), String> {
 	open::that(&path).map_err(|err| format!("打开文件夹失败：{err}"))
 }
 
-/// 返回独立任务的工作目录：安装包使用用户安装的 GitPilot-desktop 目录，开发期使用桌面端源码根目录。
+/// 返回底部“任务”使用的默认工作目录：当前 Windows 用户目录下的 `.gitpilot`。
+///
+/// 业务意图：独立任务不属于任何项目，不能把源码目录、安装目录或上一个项目目录
+/// 当成工作区；它应和 GitPilot CLI 的全局配置/会话根保持一致。
 #[tauri::command]
 pub fn gitpilot_root() -> Result<String, String> {
-	let development_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-		.parent()
+	let home = std::env::var_os("USERPROFILE")
+		.or_else(|| std::env::var_os("HOME"))
 		.map(PathBuf::from)
-		.ok_or("无法解析 GitPilot-desktop 源码目录")?;
-	let root = if development_root.join("package.json").is_file() && development_root.join("src").is_dir() {
-		development_root
-	} else {
-		std::env::current_exe()
-			.map_err(|error| format!("无法解析 GitPilot 应用目录：{error}"))?
-			.parent()
-			.map(PathBuf::from)
-			.ok_or("无法解析 GitPilot 应用目录")?
-	};
+		.ok_or("无法解析当前用户目录")?;
+	let root = home.join(".gitpilot");
+	// 首次使用独立任务时创建全局目录，避免 sidecar 因 cwd 不存在而创建会话失败。
+	std::fs::create_dir_all(&root).map_err(|error| format!("无法创建 GitPilot 用户目录：{error}"))?;
 	std::fs::canonicalize(root)
-		.map(|path| path.to_string_lossy().into_owned())
+		.map(|path| path_to_frontend_string(&path))
 		.map_err(|error| format!("GitPilot 根目录不可用：{error}"))
+}
+
+/// 将 Windows 扩展路径还原为 WebView/RPC 可消费的普通路径。
+///
+/// 业务意图：Rust 的 canonicalize 在 Windows 可能返回 `\\?\\C:\\...`，
+/// 该前缀传入 CLI 后会被错误编码进 session 目录名，造成新建任务 mkdir 失败。
+fn path_to_frontend_string(path: &PathBuf) -> String {
+	let value = path.to_string_lossy();
+	#[cfg(windows)]
+	{
+		if let Some(rest) = value.strip_prefix("\\\\?\\UNC\\") {
+			return format!("\\\\{rest}");
+		}
+		if let Some(rest) = value.strip_prefix("\\\\?\\") {
+			return rest.to_string();
+		}
+	}
+	value.into_owned()
 }
 
 /// 应用内终端会话。命令仅来自用户在终端面板的键盘输入，渲染层不能直接创建进程。

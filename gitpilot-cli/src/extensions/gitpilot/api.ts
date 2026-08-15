@@ -32,6 +32,15 @@ export interface CliCreditAccount {
 	balance: number;
 }
 
+/** Web 端项目摘要，供 Code/Work 的项目绑定对话与桌面端只读展示复用。 */
+export interface CliProjectSummary {
+	id: number;
+	name: string;
+	status?: string;
+	description?: string;
+	owner?: string;
+}
+
 export type CliProvider = "OPENAI" | "ANTHROPIC";
 
 export interface CliModel {
@@ -147,6 +156,15 @@ export const revokeCliToken = (platformUrl: string, token: string) =>
 
 export const listModels = (platformUrl: string, token: string) =>
 	requestJson<CliModel[]>(platformUrl, "/api/cli/models", { token });
+
+/** 查询当前用户可访问的 Web 端项目；只保留绑定对话需要的公开摘要字段。 */
+export const listProjects = async (platformUrl: string, token: string, keyword?: string) => {
+	const projects = await requestJson<CliProjectSummary[]>(platformUrl, "/api/cli/projects", { token });
+	const normalizedKeyword = keyword?.trim().toLocaleLowerCase();
+	return normalizedKeyword
+		? projects.filter((project) => project.name.toLocaleLowerCase().includes(normalizedKeyword))
+		: projects;
+};
 
 export const createModelSession = (platformUrl: string, token: string, modelConfigId: number) =>
 	requestJson<ModelSession>(platformUrl, "/api/cli/model-sessions", {

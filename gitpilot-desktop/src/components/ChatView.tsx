@@ -13,6 +13,7 @@ import { Button } from '@/src/components/ui/button';
 import { MessageBubble } from './MessageBubble';
 import { ExecutionActivity, ExecutionTimer, type TraceItem } from './ExecutionActivity';
 import { ConversationTimeline } from './ConversationTimeline';
+import { getAdditionalScrollTail, getConversationFollowScrollTop, getConversationScrollBehavior, scrollMessageToSafeZone, shouldAnchorNewMessage } from './conversation-scroll';
 import styles from './ChatView.module.css';
 
 // 加载态与标题栏共用 Tauri 应用图标，避免引用不存在的根目录图片。
@@ -165,6 +166,7 @@ export function buildConversationPresentation(messages: UIMessage[], retainedCom
 export function ChatView() {
 	const messages = useSessionStore((s) => s.messages);
 	const isStreaming = useSessionStore((s) => s.isStreaming);
+	const selectedSessionPath = useSessionStore((s) => s.selectedSessionPath);
 	// 尚未交给 GitPilot 的引导只在输入框队列中展示；真正开始执行后回到主对话，避免两处重复。
 	const baseConversationMessages = useMemo(() => getConversationMessages(messages), [messages]);
 	const baseLastUserIndex = useMemo(() => getLastUserMessageIndex(baseConversationMessages), [baseConversationMessages]);
@@ -182,12 +184,27 @@ export function ChatView() {
 	const executionStartedAt = useWorkbenchStore((s) => s.execution.startedAt);
 	const isSessionLoading = useSessionStore((s) => s.isSessionLoading);
 	const containerRef = useRef<HTMLDivElement>(null);
+	const contentRef = useRef<HTMLDivElement>(null);
 	const stickToBottom = useRef(true);
 	const scrollingToBottom = useRef(false);
+	const scrollingToNewMessage = useRef(false);
 	const navigatingTimeline = useRef(false);
+	const scrollMode = useRef<'bottom' | 'positioning' | 'following' | 'manual'>('bottom');
+	const previousSessionPath = useRef<string | null>(selectedSessionPath);
+	const previousSessionLoading = useRef(isSessionLoading);
+	const previousUserId = useRef<string | null>(baseLastUserId);
+	const initializedScrollSession = useRef(false);
+	const newMessageTimer = useRef<number | null>(null);
+	const newMessageExtraSpace = useRef(0);
+	const newMessageAnchorTop = useRef(0);
 	const messageNodes = useRef(new Map<string, HTMLDivElement>());
 	const [activeMessageId, setActiveMessageId] = useState<string | null>(null);
 	const [showScrollToBottom, setShowScrollToBottom] = useState(false);
+	const [newMessageId, setNewMessageId] = useState<string | null>(null);
+	const conversationMessagesRef = useRef(conversationMessages);
+	const streamingStateRef = useRef(isStreaming);
+	conversationMessagesRef.current = conversationMessages;
+	streamingStateRef.current = isStreaming;
 
 	// 完成瞬间先保留本轮中间正文和工具批次 320ms 执行收起动画，再从主正文流移除。
 	useLayoutEffect(() => {
@@ -203,11 +220,127 @@ export function ChatView() {
 		return () => window.clearTimeout(timer);
 	}, [baseLastUserId, isStreaming]);
 
+	/**
+	 * 新用户消息只在当前会话中真正追加时触发定位；恢复会话或切换会话时只同步基线，
+	 * 避免打开历史记录时突然把视口拉到某条旧消息。定位阶段结束后，首段助手输出出现即恢复底部跟随。
+	 */
+	useLayoutEffect(() => {
+		const wasSessionLoading = previousSessionLoading.current;
+		previousSessionLoading.current = isSessionLoading;
+		if (previousSessionPath.current !== selectedSessionPath) {
+			previousSessionPath.current = selectedSessionPath;
+			previousUserId.current = baseLastUserId;
+			initializedScrollSession.current = true;
+			scrollMode.current = 'bottom';
+			stickToBottom.current = true;
+			scrollingToNewMessage.current = false;
+			newMessageExtraSpace.current = 0;
+			newMessageAnchorTop.current = 0;
+			contentRef.current?.style.setProperty('--gp-new-message-extra-space', '0px');
+			setNewMessageId(null);
+			if (newMessageTimer.current != null) window.clearTimeout(newMessageTimer.current);
+			return;
+		}
+		if (!initializedScrollSession.current) {
+			initializedScrollSession.current = true;
+			previousUserId.current = baseLastUserId;
+			return;
+		}
+		const previousId = previousUserId.current;
+		previousUserId.current = baseLastUserId;
+		if (!baseLastUserId || !shouldAnchorNewMessage({ initialized: initializedScrollSession.current, currentUserId: baseLastUserId, previousUserId: previousId, isSessionLoading, wasSessionLoading })) return;
+
+		const container = containerRef.current;
+		const message = messageNodes.current.get(baseLastUserId);
+		if (!container || !message) return;
+		scrollMode.current = 'positioning';
+		stickToBottom.current = false;
+		setShowScrollToBottom(false);
+		// 新一轮发送重新计算尾部空间，避免上一轮的人工留白参与本轮目标计算。
+		newMessageExtraSpace.current = 0;
+		newMessageAnchorTop.current = 0;
+		contentRef.current?.style.setProperty('--gp-new-message-extra-space', '0px');
+		newMessageExtraSpace.current = getAdditionalScrollTail(container, message);
+		contentRef.current?.style.setProperty('--gp-new-message-extra-space', `${newMessageExtraSpace.current}px`);
+		setNewMessageId(baseLastUserId);
+		if (newMessageTimer.current != null) window.clearTimeout(newMessageTimer.current);
+
+		// 等待 data-new-message 的视口级底部留白完成布局，再开始平滑定位。
+		let removeScrollEndListener: (() => void) | undefined;
+		const frame = window.requestAnimationFrame(() => {
+			const currentContainer = containerRef.current;
+			const currentMessage = messageNodes.current.get(baseLastUserId);
+			if (!currentContainer || !currentMessage) return;
+			const reducedMotion = getConversationScrollBehavior() === 'auto';
+			scrollingToNewMessage.current = !reducedMotion;
+			newMessageAnchorTop.current = scrollMessageToSafeZone(currentContainer, currentMessage, { reducedMotion });
+			let finished = false;
+			const finish = () => {
+				if (finished) return;
+				finished = true;
+				scrollingToNewMessage.current = false;
+				const latestMessages = conversationMessagesRef.current;
+				const latestIndex = latestMessages.findIndex((item) => item.id === baseLastUserId);
+				const replyStarted = latestIndex >= 0 && latestMessages.slice(latestIndex + 1).some((item) => item.role === 'assistant');
+				if (replyStarted) {
+					scrollMode.current = 'following';
+					currentContainer.scrollTop = getConversationFollowScrollTop(currentContainer, newMessageExtraSpace.current, newMessageAnchorTop.current);
+					setShowScrollToBottom(false);
+				} else if (streamingStateRef.current) {
+					// 助手尚未输出正文时继续保持定位态，首段 execution/text 到达后再跟随底部。
+					scrollMode.current = 'positioning';
+					setShowScrollToBottom(false);
+				} else {
+					scrollMode.current = 'manual';
+					setShowScrollToBottom(true);
+				}
+			};
+			if (reducedMotion) {
+				finish();
+				return;
+			}
+			currentContainer.addEventListener('scrollend', finish, { once: true });
+			removeScrollEndListener = () => currentContainer.removeEventListener('scrollend', finish);
+			newMessageTimer.current = window.setTimeout(finish, 520);
+		});
+
+		return () => {
+			window.cancelAnimationFrame(frame);
+			removeScrollEndListener?.();
+			scrollingToNewMessage.current = false;
+			if (newMessageTimer.current != null) window.clearTimeout(newMessageTimer.current);
+		};
+	}, [baseLastUserId, isSessionLoading, selectedSessionPath]);
+
+	// 平滑定位期间如果首段助手正文已经出现，直接切换为“跟随最新输出”，避免等待动画计时器。
+	useLayoutEffect(() => {
+		if (!newMessageId || scrollMode.current !== 'positioning' || scrollingToNewMessage.current) return;
+		const container = containerRef.current;
+		const latestIndex = conversationMessages.findIndex((item) => item.id === newMessageId);
+		const replyStarted = latestIndex >= 0 && conversationMessages.slice(latestIndex + 1).some((item) => item.role === 'assistant');
+		if (!container) return;
+		if (!isStreaming && !replyStarted) {
+			scrollMode.current = 'manual';
+			setShowScrollToBottom(true);
+			return;
+		}
+		if (!replyStarted) return;
+		scrollMode.current = 'following';
+		container.scrollTop = getConversationFollowScrollTop(container, newMessageExtraSpace.current, newMessageAnchorTop.current);
+		setShowScrollToBottom(false);
+	}, [conversationMessages, isStreaming, newMessageId]);
+
 	/** 根据滚动视口上三分之一处的消息更新当前时间轴节点。 */
 	const updateTimelineFocus = useCallback(() => {
 		const container = containerRef.current;
 		if (!container || conversationMessages.length === 0) return;
-		if (isChatScrollAtBottom(container.scrollHeight, container.scrollTop, container.clientHeight)) {
+		const latestScrollTop = newMessageExtraSpace.current > 0
+			? getConversationFollowScrollTop(container, newMessageExtraSpace.current, newMessageAnchorTop.current)
+			: container.scrollHeight - container.clientHeight;
+		const atLatest = newMessageExtraSpace.current > 0
+			? Math.abs(container.scrollTop - latestScrollTop) <= 24
+			: isChatScrollAtBottom(container.scrollHeight, container.scrollTop, container.clientHeight);
+		if (atLatest) {
 			const lastMessageId = conversationMessages.at(-1)!.id;
 			setActiveMessageId((current) => current === lastMessageId ? current : lastMessageId);
 			return;
@@ -229,8 +362,20 @@ export function ChatView() {
 		const el = containerRef.current;
 		if (!el) return;
 		if (navigatingTimeline.current) return;
-		const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+		if (scrollingToNewMessage.current) return;
+		const latestScrollTop = newMessageExtraSpace.current > 0
+			? getConversationFollowScrollTop(el, newMessageExtraSpace.current, newMessageAnchorTop.current)
+			: el.scrollHeight - el.clientHeight;
+		if (newMessageExtraSpace.current > 0 && el.scrollTop > latestScrollTop + 1) {
+			// 人工尾部留白只服务于发送后的定位，用户手动下滚不能把正文继续顶出视口。
+			el.scrollTop = latestScrollTop;
+			return;
+		}
+		const atBottom = newMessageExtraSpace.current > 0
+			? Math.abs(el.scrollTop - latestScrollTop) < 80
+			: el.scrollHeight - el.scrollTop - el.clientHeight < 80;
 		stickToBottom.current = atBottom;
+		if (!atBottom && (scrollMode.current === 'following' || scrollMode.current === 'positioning')) scrollMode.current = 'manual';
 		if (!scrollingToBottom.current) setShowScrollToBottom(!atBottom);
 		updateTimelineFocus();
 	};
@@ -239,6 +384,7 @@ export function ChatView() {
 		const target = messageNodes.current.get(id);
 		if (!target) return;
 		stickToBottom.current = false;
+		scrollMode.current = 'manual';
 		navigatingTimeline.current = true;
 		target.scrollIntoView({ block: 'center' });
 		setActiveMessageId(id);
@@ -252,16 +398,22 @@ export function ChatView() {
 		const container = containerRef.current;
 		if (!container) return;
 		stickToBottom.current = true;
+		scrollMode.current = newMessageExtraSpace.current > 0 ? 'following' : 'bottom';
 		setShowScrollToBottom(false);
 		const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 		if (reducedMotion) {
-			container.scrollTop = container.scrollHeight;
+			container.scrollTop = newMessageExtraSpace.current > 0
+				? getConversationFollowScrollTop(container, newMessageExtraSpace.current, newMessageAnchorTop.current)
+				: container.scrollHeight;
 			updateTimelineFocus();
 			return;
 		}
 		// 平滑滚动期间屏蔽 onScroll 对按钮显隐的控制，避免中途闪现
 		scrollingToBottom.current = true;
-		container.scrollTo({ top: container.scrollHeight, behavior: 'smooth' });
+		const latestTop = newMessageExtraSpace.current > 0
+			? getConversationFollowScrollTop(container, newMessageExtraSpace.current, newMessageAnchorTop.current)
+			: container.scrollHeight;
+		container.scrollTo({ top: latestTop, behavior: 'smooth' });
 		let done = false;
 		const restore = () => {
 			if (done) return;
@@ -269,7 +421,12 @@ export function ChatView() {
 			scrollingToBottom.current = false;
 			const el = containerRef.current;
 			if (!el) return;
-			const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+			const latestScrollTop = newMessageExtraSpace.current > 0
+				? getConversationFollowScrollTop(el, newMessageExtraSpace.current, newMessageAnchorTop.current)
+				: el.scrollHeight - el.clientHeight;
+			const atBottom = newMessageExtraSpace.current > 0
+				? Math.abs(el.scrollTop - latestScrollTop) < 80
+				: el.scrollHeight - el.scrollTop - el.clientHeight < 80;
 			stickToBottom.current = atBottom;
 			setShowScrollToBottom(!atBottom);
 		};
@@ -279,19 +436,23 @@ export function ChatView() {
 
 	useLayoutEffect(() => {
 		const container = containerRef.current;
-		if (container && stickToBottom.current) container.scrollTop = container.scrollHeight;
+		if (container && scrollMode.current === 'bottom' && stickToBottom.current) {
+			container.scrollTop = container.scrollHeight;
+		} else if (container && scrollMode.current === 'following' && isStreaming) {
+			container.scrollTop = getConversationFollowScrollTop(container, newMessageExtraSpace.current, newMessageAnchorTop.current);
+		}
 		if (!navigatingTimeline.current) updateTimelineFocus();
 	}, [conversationMessages, isStreaming, updateTimelineFocus]);
 
 	return (
-		<div className={styles.surface}>
+		<div className={styles.surface} data-new-message={newMessageId ? 'true' : undefined}>
 			{/* 业务意图：时间轴属于视口导航，不随正文滚动；点击节点仍通过 scrollIntoView 定位正文。 */}
 			<div className={styles.timelineRail} aria-hidden={conversationMessages.length < 2}>
 				<ConversationTimeline messages={conversationMessages} activeMessageId={activeMessageId} onSelect={selectTimelineEntry} />
 			</div>
 			<div ref={containerRef} onScroll={onScroll} className={styles.scroll}>
 				<div className={styles.frame}>
-					<div className={styles.content}>
+					<div ref={contentRef} className={styles.content}>
 					{isSessionLoading ? (
 						<div className={styles.loadingState} role="status" aria-live="polite">
 							<span className={styles.logoLoader} aria-hidden="true">
@@ -317,7 +478,7 @@ export function ChatView() {
 									const isCollapsingMessage = retainedCompletedUserId != null
 										&& presentation.processMessageIdsByUserId.get(retainedCompletedUserId)?.has(m.id) === true;
 									return <Fragment key={m.id}>
-										<div className={`${styles.messageSlot} ${isCollapsingMessage ? styles.collapsingMessage : ''}`} ref={(node) => {
+										<div className={`${styles.messageSlot} ${isCollapsingMessage ? styles.collapsingMessage : ''} ${newMessageId === m.id ? styles.newMessageSlot : ''}`} ref={(node) => {
 											if (node) messageNodes.current.set(m.id, node);
 											else messageNodes.current.delete(m.id);
 										}}>

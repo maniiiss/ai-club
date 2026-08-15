@@ -1,0 +1,40 @@
+import { describe, expect, it, vi } from "vitest";
+import { createDesignToolDefinitions, isDesignPatchOperation } from "../src/modes/rpc/design-tools.ts";
+import type { DesignRpcSnapshot } from "../src/modes/rpc/rpc-types.ts";
+
+const snapshot: DesignRpcSnapshot = {
+	document: { id: "design-test", version: 1, pages: [{ id: "home", entryFileId: "home-index", fileIds: ["home-index", "home-styles", "home-main"] }], revisions: [{ id: "rev-1" }] },
+	files: [
+		{ path: "index.html", language: "html", content: "<main>old</main>" },
+		{ path: "styles.css", language: "css", content: ".old{color:black}" },
+		{ path: "main.js", language: "javascript", content: "console.log('old')" },
+	],
+};
+
+describe("Design 结构化工具", () => {
+	it("只接受白名单文件和完整的操作参数", () => {
+		expect(isDesignPatchOperation({ op: "replace_file", path: "index.html", content: "<main />" })).toBe(true);
+		expect(isDesignPatchOperation({ op: "replace_text", path: "styles.css", search: ".old", replacement: ".new" })).toBe(true);
+		expect(isDesignPatchOperation({ op: "replace_file", path: "../../secret", content: "x" })).toBe(false);
+		expect(isDesignPatchOperation({ op: "replace_file", path: "main.js" })).toBe(false);
+		expect(isDesignPatchOperation({ op: "write_file", path: "main.js", content: "x" })).toBe(false);
+	});
+
+	it("高风险 patch 先等待审批，审批后才调用 sidecar apply", async () => {
+		const applyPatch = vi.fn().mockResolvedValue({ operationId: "op-1", revisionId: "rev-2", summary: "更新", files: snapshot.files, snapshot });
+		const requestApproval = vi.fn().mockResolvedValue(true);
+		const tool = createDesignToolDefinitions({ getPageId: () => "home", getSnapshot: () => snapshot, applyPatch, requestApproval })[0];
+		const result = await tool.execute("call-1", { baseRevisionId: "rev-1", risk: "high", operations: [{ op: "replace_text", path: "styles.css", search: ".old", replacement: ".new" }] }, undefined, undefined, {} as never);
+		const payload = JSON.parse(String(result.content[0].text)) as { operationId: string; pageId: string };
+		expect(requestApproval).toHaveBeenCalledOnce();
+		expect(applyPatch).toHaveBeenCalledOnce();
+		expect(payload).toMatchObject({ operationId: "op-1", pageId: "home" });
+	});
+
+	it("用户拒绝高风险 patch 时不落盘", async () => {
+		const applyPatch = vi.fn();
+		const tool = createDesignToolDefinitions({ getPageId: () => "home", getSnapshot: () => snapshot, applyPatch, requestApproval: vi.fn().mockResolvedValue(false) })[0];
+		await expect(tool.execute("call-2", { baseRevisionId: "rev-1", risk: "high", operations: [{ op: "replace_file", path: "index.html", content: "<main />" }] }, undefined, undefined, {} as never)).rejects.toThrow("用户拒绝");
+		expect(applyPatch).not.toHaveBeenCalled();
+	});
+});

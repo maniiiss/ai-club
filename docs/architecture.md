@@ -4,7 +4,10 @@
 
 > GitPilot Desktop 现包含隔离的 `gitpilot-code` 与 `gitpilot-work` 模式：Code 保持项目编码 Agent 链路；Work 的任务、对话与成果只在 Desktop IndexedDB 保存。Work 的联网研究经 sidecar 调用受认证的 `/api/cli/work/research`，由后端托管搜索密钥、限流与结果裁剪，Desktop 不获得任意网络、Shell、Git 或项目文件权限。详见 `docs/design-docs/gitpilot-work-technical-design-v1.md`。
 
-> GitPilot Desktop Design Mode 复用同一 Tauri + React + sidecar 生命周期，以独立 Design RPC 管理 `.gitpilot/design/` 下的 HTML/CSS/JS 原型、修订和导出；React 只负责对话、设备预览与只读代码展示，预览 iframe 使用 sandbox 约束。详细设计见 `docs/design-docs/gitpilot-desktop-design-mode-technical-design-v1.md`。
+> GitPilot Desktop Design Mode 复用同一 Tauri + React + sidecar 生命周期，以独立 Design RPC 管理 `.gitpilot/design/` 下的 HTML/CSS/JS 原型、修订、项目级设计规范和导出；React 只负责对话、设备预览与只读代码展示，预览 iframe 使用 sandbox 约束。详细设计见 `docs/design-docs/gitpilot-desktop-design-mode-technical-design-v1.md`、`docs/design-docs/gitpilot-desktop-design-mode-multi-project-multi-file-technical-design-v1.md` 和 `docs/design-docs/gitpilot-desktop-design-mode-project-guidelines-technical-design-v1.md`。
+
+> GitPilot Desktop 的 Code、Work、Design 三种模式分别拥有工作目录边界：Code 由 Code session 管理项目 cwd，Work 由任务 ID 管理 `~/.gitpilot/agent/workspaces/<taskId>`，Design 由 Design store 管理用户选择的项目路径并写入项目内 `.gitpilot/design/`（页面产物位于 `<designId>/`，项目级规范位于根目录）。通用工作台布局只接收当前模式显式传入的目录，不再隐式读取 Code 的 `currentProjectPath`；三种模式仅共享认证和模型运行时。
+> Code/Work 的 Web 项目绑定由 sidecar 内置 `gitpilot-project-binding-{mode}` extension 承担：`/project` 通过平台 CLI 令牌查询受 `cli:project:read` scope 保护的 `/api/cli/projects`，把项目清单作为对话上下文交给智能体；用户确认后，智能体调用 `gitpilot_project_bind` 将权威项目摘要与工作区用途写入当前 cwd 的 `.gitpilot/project-binding.json`。每轮请求前 extension 读取该 JSON 并追加到 system prompt，使项目 ID、项目说明和本地工作区职责持续可见。平台令牌只留在 sidecar，React 不直接请求平台。
 
 ## 1. 项目定位
 
@@ -234,6 +237,8 @@ AI Club 是一个面向 AI 代理协作与工程管理的多服务平台，目�
 - `task_attachment`：保存工作项到 `document_asset` 的受控附件绑定。
 
 统一接口由 `TaskController` 暴露在 `/api/tasks/{id}/links` 及其子资源下，读取使用 `task:view`，新增、删除、上传使用 `task:manage`。测试用例选择由 `IterationController` 暴露 `GET /api/projects/{projectId}/test-cases`，返回用例标题、测试计划、模块和优先级等选择器字段。
+
+为加速公众端详情页角标（子工作项/关联项/测试用例/附件）的即时展示，另提供轻量计数端点 `GET /api/tasks/{id}/links/counts`（`task:view`），由 `WorkItemLinkService.getLinksCount` 用若干条索引化 `COUNT` 直接返回各关联类型数量，避免为显示角标而加载完整关联列表并触发逐项 `getTask` 的 N+1 汇总。完整关联列表 `GET /api/tasks/{id}/links` 改为前端在打开对应 Tab 时懒加载，计数与列表在变更后（增删子项/关联/用例/附件、上传附件）同步刷新。
 
 兼容策略是保留旧 `task_info.requirement_task_id` 字段和旧编辑入口，并在迁移中把同项目历史数据初始化为 `RELATED` 关系。新的普通关联允许一个工作项关联多个需求、任务或缺陷，但不会反向覆盖旧单值字段。
 
