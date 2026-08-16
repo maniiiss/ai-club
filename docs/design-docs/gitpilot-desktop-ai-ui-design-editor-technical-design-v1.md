@@ -170,7 +170,7 @@ AI 不直接返回 PNG、任意 CSS 或磁盘写入请求，而走“意图 -> �
 
 1. 用户在 Design 输入需求，例如“为 B2B 项目管理产品生成深色仪表盘”。
 2. Desktop 发送 `design_prompt`，携带文档 ID、当前 revision、选中节点、受限组件目录、token 摘要和用户文本。
-3. sidecar 调用模型，要求输出 `DesignIntent` 和 JSON Schema 合法的 `DesignPatch`；模型不得申请任意文件、网络或 Shell 工具。
+3. sidecar 调用模型，要求输出 `DesignIntent` 和 JSON Schema 合法的 `DesignPatch`；模型不得申请任意文件或 Shell 工具，可按需调用受授权的 Web/MCP 工具进行只读研究。
 4. `DesignPatchValidator` 校验 schema、节点引用、组件白名单、最大操作数、文本/图片大小和 `baseRevision`。
 5. Desktop 在临时 preview document 上渲染 diff，展示“新增页面/修改组件/删除节点”摘要。
 6. 只有用户点击“应用”才发送 `design_apply_patch`。sidecar 原子保存，回传新 revision；拒绝或关闭时不落盘。
@@ -189,7 +189,7 @@ AI 不直接返回 PNG、任意 CSS 或磁盘写入请求，而走“意图 -> �
 | `design_undo` / `design_redo` | 对当前文档已确认 transaction 操作。 |
 | `design_import_asset` | 受大小、MIME 与项目根限制的资源导入。 |
 | `design_prompt` | 发起 AI 生成/修改，返回待确认 patch，不自动写入。 |
-| `design_export` | 未来输出受限 React/Tailwind 产物；必须显式 `outputPath` 且校验在项目根内。 |
+| `design_export` | 输出保留 `pages/`、`shared/`、`assets/` 目录的 ZIP 设计包；必须显式 `outputPath`。 |
 
 事件使用 `design_patch_progress`、`design_patch_ready`、`design_document_changed`。所有事件携带 `documentId`、`revision` 和单调 `sequence`，避免以后多窗口或协作场景下的旧事件覆盖。
 

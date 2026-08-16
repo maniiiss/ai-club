@@ -8,15 +8,21 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
+import { initializeDesktopPreferences } from './store/settings';
 import { initializeTheme } from './store/theme';
+import { NativeHintBridge, TooltipProvider } from './components/ui/tooltip';
 
 // 在首帧渲染前恢复主题，避免从默认主题闪到用户上次选择的主题。
 initializeTheme();
+initializeDesktopPreferences();
 
 createRoot(document.getElementById('root')!).render(
 	<StrictMode>
 		<ErrorBoundary>
-			<App />
+			<TooltipProvider delayDuration={280} skipDelayDuration={100}>
+				<NativeHintBridge />
+				<App />
+			</TooltipProvider>
 		</ErrorBoundary>
 	</StrictMode>,
 );

@@ -10,6 +10,7 @@ import { CircleAlert, Check, CornerDownLeft, X } from 'lucide-react';
 import { useSessionStore, useActiveExtensionUI } from '@/src/store/session';
 import type { RpcExtensionUIRequest } from '@/src/rpc/types';
 import { Button } from '@/src/components/ui/button';
+import { Hint } from '@/src/components/ui/tooltip';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/src/components/ui/dialog';
 import { Input } from '@/src/components/ui/input';
 import { Textarea } from '@/src/components/ui/textarea';
@@ -96,12 +97,12 @@ export function ExtensionUIModal() {
 								{req.options.map((opt) => {
 									const parsed = parseRequirementOption(opt);
 									return (
-										<Button key={opt} type="button" variant="unstyled" size="default" className={`${styles.option} h-auto`} onClick={() => close({ value: opt })} title={opt}>
+										<Hint key={opt} content={opt}><Button type="button" variant="unstyled" size="default" className={`${styles.option} h-auto`} onClick={() => close({ value: opt })}>
 											{parsed ? <>
 												<span className={styles.optionCode}>{parsed.code}</span>
 												<span className={styles.optionCopy}><span className={styles.optionName}>{parsed.name}</span><span className={styles.optionMeta}>{parsed.meta}</span></span>
 											</> : <span className={styles.optionName}>{opt}</span>}
-										</Button>
+										</Button></Hint>
 									);
 								})}
 							</div>

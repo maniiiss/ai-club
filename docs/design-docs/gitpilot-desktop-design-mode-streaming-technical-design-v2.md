@@ -6,7 +6,7 @@ Design Mode 采用与 Code Mode 一致的流式执行体验，但仍保留独立
 
 本版本的正式设计产物是项目目录下 `.gitpilot/design/<designId>/` 的 snapshot。渲染层的 `localStorage` 只用于非阻塞缓存和首屏占位；它不是跨项目恢复和并发修改的事实来源。
 
-Design Agent 只能使用 `design_apply_patch` 和 `design_check`。修改必须经过 sidecar 的结构化 patch 校验，不能通过 Shell、Git、任意文件工具或网络请求直接写入设计文件。
+Design Agent 的设计修改只能使用 `design_apply_patch` 和 `design_check`，也可按需使用 Web/MCP 工具进行只读研究。修改必须经过 sidecar 的结构化 patch 校验，不能通过 Shell、Git 或任意文件工具直接写入设计文件。
 
 三种 Desktop 模式的工作目录由各自的宿主状态管理，不能把 Code 的 `currentProjectPath` 作为全局当前目录：Code 使用 Code session 的项目 cwd；Work 使用任务专属的 `workspaces/<taskId>`；Design 使用用户在 Design 工作区选择的项目路径，并将正式产物写入该项目的 `.gitpilot/design/<designId>/`。共享的只有认证和模型运行时，不共享目录、消息历史、运行状态或队列。
 

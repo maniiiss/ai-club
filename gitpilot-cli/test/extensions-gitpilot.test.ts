@@ -4,7 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizePlatformUrl } from "../src/extensions/gitpilot/config.ts";
-import { listProjects } from "../src/extensions/gitpilot/api.ts";
+import { listProjects, uploadDesignVersion } from "../src/extensions/gitpilot/api.ts";
 import { clearModelSessions, ensureModelSession } from "../src/extensions/gitpilot/session-cache.ts";
 
 const PLATFORM_URL = "http://localhost:8080";
@@ -86,5 +86,31 @@ describe("listProjects", () => {
 			expect.objectContaining({ headers: expect.objectContaining({ authorization: "Bearer gpt_test" }) }),
 		);
 		expect(projects).toEqual([{ id: 1, name: "订单中心", status: "进行中", description: "订单域" }]);
+	});
+});
+
+describe("uploadDesignVersion", () => {
+	it("将指定本地修订作为草稿上传到 CLI 版本接口", async () => {
+		mockFetch.mockReset();
+		mockFetch.mockResolvedValueOnce(platformOk({
+			versionId: 42, versionNumber: 3, status: "DRAFT", projectId: 9,
+			designId: "design-1", revisionId: "rev-3", createdAt: "2026-08-16T12:00:00Z",
+		}));
+
+		const result = await uploadDesignVersion(PLATFORM_URL, "gpt_test", {
+			projectId: 9,
+			designId: "design-1",
+			revisionId: "rev-3",
+			name: "登录页设计",
+			summary: "调整登录流程",
+			snapshot: { files: [{ path: "pages/login/index.html", content: "<main />" }] },
+			previewHtml: "<main>登录</main>",
+		});
+
+		const [url, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+		expect(url).toBe(`${PLATFORM_URL}/api/cli/projects/9/design-versions`);
+		expect(options).toEqual(expect.objectContaining({ method: "POST", headers: expect.objectContaining({ authorization: "Bearer gpt_test", "content-type": "application/json" }) }));
+		expect(JSON.parse(String(options.body))).toMatchObject({ designId: "design-1", revisionId: "rev-3", previewHtml: "<main>登录</main>" });
+		expect(result).toMatchObject({ versionId: 42, versionNumber: 3, status: "DRAFT", revisionId: "rev-3" });
 	});
 });

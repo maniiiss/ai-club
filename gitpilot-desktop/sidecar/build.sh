@@ -5,6 +5,7 @@
 #   src-tauri/binaries/gitpilot-rpc-<target>.exe   （Tauri externalBin 命名约定）
 #   src-tauri/resources/theme/*.json               （sidecar 运行时 fs.readFileSync 读取）
 #   src-tauri/resources/export-html/**             （export_html 命令用）
+#   src-tauri/resources/skills/**                  （平台内置 Skill 首次安装用）
 #
 # 对应设计文档第 13.1 节 spike 结论：bun --compile 可行，资源需外部分发。
 set -euo pipefail
@@ -40,13 +41,15 @@ if [ -d "$DEBUG_BIN" ]; then
 fi
 
 echo "==> 复制资源文件到 resources/（dev 期 sidecar cwd 指向此处；tauri bundle 由此打包）"
-mkdir -p "$RES/theme" "$RES/export-html/vendor"
+mkdir -p "$RES/theme" "$RES/export-html/vendor" "$RES/skills"
 # Bun 单文件 sidecar 运行时无法再从源码目录读取 package.json；复制 GitPilot
 # manifest 让配置目录和品牌名在安装态仍保持 .gitpilot/gitpilot，不回退到上游 .pi。
 cp "$CLI/package.json" "$RES/package.json"
 cp "$CLI/src/modes/interactive/theme/"*.json "$RES/theme/"
 cp "$CLI/src/core/export-html/template."* "$RES/export-html/" 2>/dev/null || true
 cp "$CLI/src/core/export-html/vendor/"* "$RES/export-html/vendor/" 2>/dev/null || true
+cp -R "$CLI/src/bundled-skills/cross-agent-harness" "$RES/skills/"
+cp -R "$CLI/src/bundled-skills/kuaikai-platform" "$RES/skills/"
 
 echo "✓ sidecar 构建完成："
 echo "    二进制: $BIN/gitpilot-rpc-$TARGET.exe"

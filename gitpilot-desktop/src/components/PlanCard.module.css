@@ -34,7 +34,7 @@
 	align-items: center;
 	gap: 8px;
 	color: var(--gp-text-secondary);
-	font-size: 13px;
+	font-size: calc(13px * var(--desktop-font-scale));
 	font-weight: 600;
 }
 
@@ -65,7 +65,7 @@
 
 .markdown {
 	color: var(--gp-text-secondary);
-	font-size: 13px;
+	font-size: calc(13px * var(--desktop-font-scale));
 	line-height: 1.7;
 }
 
@@ -78,13 +78,13 @@
 	line-height: 1.35;
 }
 
-.markdown :global(h1) { margin-top: 0; font-size: 20px; }
-.markdown :global(h2) { font-size: 16px; }
-.markdown :global(h3) { font-size: 14px; }
+.markdown :global(h1) { margin-top: 0; font-size: calc(20px * var(--desktop-font-scale)); }
+.markdown :global(h2) { font-size: calc(16px * var(--desktop-font-scale)); }
+.markdown :global(h3) { font-size: calc(14px * var(--desktop-font-scale)); }
 .markdown :global(p) { margin: .7em 0; }
 .markdown :global(ul),
 .markdown :global(ol) { padding-left: 1.45em; }
-.markdown :global(code) { border-radius: 4px; background: var(--gp-code-surface); padding: 2px 4px; font-family: var(--font-mono); font-size: .9em; }
+.markdown :global(code) { border-radius: 4px; background: var(--gp-code-surface); padding: 2px 4px; font-family: var(--font-mono); font-size: 11.7px; }
 
 .footer {
 	position: absolute;
@@ -102,7 +102,7 @@
 	background: var(--gp-text);
 	padding: 8px 14px;
 	color: var(--gp-panel-deep);
-	font-size: 12px;
+	font-size: calc(12px * var(--desktop-font-scale));
 	font-weight: 650;
 	box-shadow: 0 8px 24px var(--gp-shadow-color);
 }
@@ -115,4 +115,3 @@
 	.header { padding-right: 12px; padding-left: 12px; }
 	.footer { right: 10px; }
 }
-

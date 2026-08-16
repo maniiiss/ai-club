@@ -69,7 +69,7 @@ sidecar 在写入前规范化路径，拒绝绝对路径、路径穿越、反斜
 
 现有 Design RPC 名称保留，但所有请求增加项目上下文：`design_open`、`design_create`、`design_get_snapshot`、`design_prompt`、`design_follow_up`、`design_abort`、`design_apply_patch`、`design_preview`、`design_check`、`design_export`。
 
-patch 操作白名单为 `create_file`、`replace_file`、`replace_text`、`rename_file`、`delete_file`。每个 patch 携带 page、base revision、operationId 和受影响路径；sidecar 以 operationId 幂等处理重复请求。Design Agent 没有 Shell、Git、任意文件工具或网络资源，只能通过 Design custom tools 修改 workspace。
+patch 操作白名单为 `create_file`、`replace_file`、`replace_text`、`rename_file`、`delete_file`。每个 patch 携带 page、base revision、operationId 和受影响路径；sidecar 以 operationId 幂等处理重复请求。Design Agent 不具备 Shell、Git 或任意本地文件工具，可按需使用 Web/MCP 进行只读研究，所有 workspace 修改只能通过 Design custom tools 完成。
 
 ## 6. 预览链路
 

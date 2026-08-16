@@ -44,7 +44,7 @@ sidecar 对规范做结构化归一化：限制字段类型、Token 名称和单
 
 ## 4. Agent 上下文
 
-每次 `design_prompt` 和兼容的 `design_generate` 都从当前项目 snapshot 读取规范，并以内部 JSON 上下文注入 Design Agent。规范不会要求 Agent 在用户可见正文中复述，也不会开放 Shell、Git、任意文件或网络权限。规范更新不新增 revision，下一次 Design run 即使用最新版本。
+每次 `design_prompt` 和兼容的 `design_generate` 都从当前项目 snapshot 读取规范，并以内部 JSON 上下文注入 Design Agent。规范不会要求 Agent 在用户可见正文中复述，也不会开放 Shell、Git 或任意本地文件工具；`design_prompt` 可按需使用受授权的 Web/MCP 工具进行只读研究，兼容的 `design_generate` 继续使用纯 JSON 协议且不调用工具。规范更新不新增 revision，下一次 Design run 即使用最新版本。
 
 ## 5. Desktop 交互
 

@@ -1,6 +1,6 @@
 /**
- * 深色主题设计令牌（CSS 变量）。
- * MVP 单一深色主题，后续可扩展为复用 pi-tui 的 theme JSON（见设计文档第 14 节）。
+ * 桌面端主题设计令牌（CSS 变量）。
+ * 所有主题复用同一套语义令牌，业务组件不感知具体配色。
  * 命名与 frontend-public 的 tokens 保持同一套语义，便于团队复用心智模型。
  */
 
@@ -41,6 +41,7 @@
 	--gp-panel-deep: #0b1118;
 	--gp-panel-surface: #111a23;
 	--gp-panel-raised: #16232d;
+	--gp-login-background: #050807;
 	--gp-status-success: #72e0ad;
 	--gp-status-warning: #f0be6c;
 	--gp-status-error: #ff7e7b;
@@ -84,6 +85,7 @@
 	--font-mono: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
 
 	/* 字号与行高 */
+	--desktop-font-scale: 1;
 	--text-xs: 12px;
 	--text-sm: 13px;
 	--text-base: 14px;
@@ -135,6 +137,7 @@
 	--gp-panel-deep: #000;
 	--gp-panel-surface: #0b0b0b;
 	--gp-panel-raised: #111;
+	--gp-login-background: #000;
 	--gp-status-success: #d6d6d6;
 	--gp-status-warning: #bcbcbc;
 	--gp-status-error: #ff8585;
@@ -184,6 +187,7 @@
 	--gp-panel-deep: #fff;
 	--gp-panel-surface: #f7f8f8;
 	--gp-panel-raised: #fff;
+	--gp-login-background: #f4f8f7;
 	--gp-status-success: #147d54;
 	--gp-status-warning: #9a6700;
 	--gp-status-error: #b42318;
@@ -203,4 +207,160 @@
 	--gp-terminal-selection: #c7e4df;
 	--shadow-md: 0 8px 22px rgba(15, 35, 35, 0.12);
 	--shadow-lg: 0 18px 48px rgba(15, 35, 35, 0.18);
+}
+
+/* 炭火橙：中性炭黑承载长时间编码，琥珀橙只作为操作与焦点强调。 */
+:root[data-theme='ember'] {
+	--background: #171310;
+	--foreground: #f4ece3;
+	--card: #211a16;
+	--card-foreground: #f4ece3;
+	--popover: #2a211b;
+	--popover-foreground: #f7efe7;
+	--primary: #f0a45b;
+	--primary-foreground: #1d130a;
+	--primary-hover: #ffc783;
+	--secondary: #2c211a;
+	--secondary-foreground: #ead9ca;
+	--secondary-hover: #3b2b21;
+	--muted: #241c18;
+	--muted-foreground: #b7a297;
+	--accent: #3a2920;
+	--accent-foreground: #ffead0;
+	--border: #4a382c;
+	--border-strong: #644a38;
+	--input: #30241d;
+	--ring: #ffc783;
+	--destructive: #df7468;
+	--destructive-hover: #f28b7e;
+	--primary-muted: rgba(240, 164, 91, 0.14);
+	--gp-panel-deep: #171310;
+	--gp-panel-surface: #211a16;
+	--gp-panel-raised: #2a211b;
+	--gp-login-background: #171310;
+	--gp-status-success: #78d2a0;
+	--gp-status-warning: #f0be6c;
+	--gp-status-error: #f28b7e;
+	--gp-status-info: #8bbde8;
+	--gp-code-surface: #1b1512;
+	--gp-execution-line: rgba(240, 164, 91, 0.36);
+	--gp-accent: #f0a45b;
+	--gp-accent-soft: rgba(240, 164, 91, 0.12);
+	--gp-warm: #f0be6c;
+	--gp-grid-line: rgba(240, 164, 91, 0.05);
+	--gp-shadow-color: rgba(10, 4, 0, 0.42);
+	--gp-overlay: rgba(20, 8, 0, 0.16);
+	--gp-code-text: #eadfd6;
+	--gp-terminal-background: #110d0b;
+	--gp-terminal-foreground: #e9ddd4;
+	--gp-terminal-cursor: #ffc783;
+	--gp-terminal-selection: #5b3d2b;
+	--gp-code-diff-add: rgba(120, 210, 160, 0.16);
+	--gp-code-diff-del: rgba(242, 139, 126, 0.16);
+	--shadow-md: 0 8px 22px rgba(10, 4, 0, 0.42);
+	--shadow-lg: 0 18px 48px rgba(10, 4, 0, 0.58);
+}
+
+/* 纸张暖白：低刺激的暖白画布配陶土红操作色，适合文档与 Design 工作流。 */
+:root[data-theme='paper'] {
+	--background: #f8f5ee;
+	--foreground: #242522;
+	--card: #fffdf8;
+	--card-foreground: #242522;
+	--popover: #ffffff;
+	--popover-foreground: #242522;
+	--primary: #b0523a;
+	--primary-foreground: #ffffff;
+	--primary-hover: #8f3f2d;
+	--secondary: #ece7dd;
+	--secondary-foreground: #3e403b;
+	--secondary-hover: #e2dbcf;
+	--muted: #f0ece4;
+	--muted-foreground: #6b706b;
+	--accent: #f0e5d7;
+	--accent-foreground: #693728;
+	--border: #d9d1c4;
+	--border-strong: #b7aa9b;
+	--input: #fcfaf5;
+	--ring: #b0523a;
+	--destructive: #b43d34;
+	--destructive-hover: #922e28;
+	--primary-muted: rgba(176, 82, 58, 0.12);
+	--gp-panel-deep: #f8f5ee;
+	--gp-panel-surface: #fffdf8;
+	--gp-panel-raised: #ffffff;
+	--gp-login-background: #f8f5ee;
+	--gp-status-success: #287a5a;
+	--gp-status-warning: #9b6a16;
+	--gp-status-error: #b43d34;
+	--gp-status-info: #2f6f9f;
+	--gp-code-surface: #f0ede6;
+	--gp-execution-line: rgba(176, 82, 58, 0.3);
+	--gp-accent: #b0523a;
+	--gp-accent-soft: rgba(176, 82, 58, 0.1);
+	--gp-warm: #9b6a16;
+	--gp-grid-line: rgba(176, 82, 58, 0.06);
+	--gp-shadow-color: rgba(38, 32, 26, 0.12);
+	--gp-overlay: rgba(38, 32, 26, 0.06);
+	--gp-code-text: #29302c;
+	--gp-terminal-background: #f5f3ee;
+	--gp-terminal-foreground: #26312e;
+	--gp-terminal-cursor: #b0523a;
+	--gp-terminal-selection: #e4c2b6;
+	--gp-code-diff-add: rgba(40, 122, 90, 0.14);
+	--gp-code-diff-del: rgba(180, 61, 52, 0.14);
+	--shadow-md: 0 8px 22px rgba(38, 32, 26, 0.12);
+	--shadow-lg: 0 18px 48px rgba(38, 32, 26, 0.18);
+}
+
+/* 冰川灰蓝：冷灰底色降低面板噪音，深蓝强调保持长列表和执行面板的可读性。 */
+:root[data-theme='glacier'] {
+	--background: #eef3f7;
+	--foreground: #17212b;
+	--card: #f8fbfd;
+	--card-foreground: #17212b;
+	--popover: #ffffff;
+	--popover-foreground: #17212b;
+	--primary: #2d789f;
+	--primary-foreground: #ffffff;
+	--primary-hover: #235d7c;
+	--secondary: #e3ebef;
+	--secondary-foreground: #2d3b43;
+	--secondary-hover: #d5e2e8;
+	--muted: #e7eef2;
+	--muted-foreground: #62727c;
+	--accent: #d7ebf2;
+	--accent-foreground: #174e68;
+	--border: #c5d5dc;
+	--border-strong: #98afb9;
+	--input: #f8fbfd;
+	--ring: #2d789f;
+	--destructive: #b84b48;
+	--destructive-hover: #983b39;
+	--primary-muted: rgba(45, 120, 159, 0.12);
+	--gp-panel-deep: #eef3f7;
+	--gp-panel-surface: #f8fbfd;
+	--gp-panel-raised: #ffffff;
+	--gp-login-background: #eef3f7;
+	--gp-status-success: #287a5a;
+	--gp-status-warning: #9b6a16;
+	--gp-status-error: #b84b48;
+	--gp-status-info: #2f6f9f;
+	--gp-code-surface: #f0f5f7;
+	--gp-execution-line: rgba(45, 120, 159, 0.3);
+	--gp-accent: #2d789f;
+	--gp-accent-soft: rgba(45, 120, 159, 0.1);
+	--gp-warm: #9b6a16;
+	--gp-grid-line: rgba(45, 120, 159, 0.06);
+	--gp-shadow-color: rgba(20, 50, 65, 0.12);
+	--gp-overlay: rgba(20, 50, 65, 0.06);
+	--gp-code-text: #27353d;
+	--gp-terminal-background: #f5f9fb;
+	--gp-terminal-foreground: #22313a;
+	--gp-terminal-cursor: #2d789f;
+	--gp-terminal-selection: #c7dce6;
+	--gp-code-diff-add: rgba(40, 122, 90, 0.14);
+	--gp-code-diff-del: rgba(184, 75, 72, 0.14);
+	--shadow-md: 0 8px 22px rgba(20, 50, 65, 0.12);
+	--shadow-lg: 0 18px 48px rgba(20, 50, 65, 0.18);
 }

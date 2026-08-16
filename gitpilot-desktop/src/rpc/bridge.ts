@@ -189,6 +189,7 @@ export const rpc = {
 	designSaveGuidelines: (projectPath: string, designId: string, guidelines: DesignProjectGuidelines) => send({ type: 'design_save_guidelines', projectPath, designId, guidelines }),
 	designCreate: (projectPath: string, name?: string) => send({ type: 'design_create', projectPath, name }),
 	designGetSnapshot: (projectPath: string, designId: string) => send({ type: 'design_get_snapshot', projectPath, designId }),
+	designGetRevision: (projectPath: string, designId: string, revisionId: string) => send({ type: 'design_get_revision', projectPath, designId, revisionId }),
 	designPrompt: (payload: { projectPath: string; designId: string; pageId: string; prompt: string; baseRevisionId?: string; targetProfiles: Array<'mobile' | 'tablet' | 'desktop'> }) => send({ type: 'design_prompt', ...payload }),
 	designFollowUp: (projectPath: string, designId: string, message: string) => send({ type: 'design_follow_up', projectPath, designId, message }),
 	designAbort: (projectPath: string, designId: string) => send({ type: 'design_abort', projectPath, designId }),
@@ -199,6 +200,7 @@ export const rpc = {
 	designPreview: (projectPath: string, designId: string, pageId: string, revisionId?: string) => send({ type: 'design_preview', projectPath, designId, pageId, revisionId }),
 	designCheck: (projectPath: string, designId: string, pageId: string, revisionId?: string) => send({ type: 'design_check', projectPath, designId, pageId, revisionId }),
 	designRevert: (projectPath: string, designId: string, revisionId: string) => send({ type: 'design_revert', projectPath, designId, revisionId }),
+	designUpload: (payload: { projectPath: string; designId: string; revisionId: string; platformProjectId: number; title?: string; summary?: string }) => send({ type: 'design_upload', ...payload }, 90_000),
 	designExport: (projectPath: string, designId: string, outputPath?: string) => send({ type: 'design_export', projectPath, designId, outputPath }),
 	mcpList: () => send({ type: 'mcp_list' }),
 	mcpSaveServer: (name: string, definition: Record<string, unknown>, modes: Array<'code' | 'work' | 'design'>) => send({ type: 'mcp_save_server', name, definition, modes }),
@@ -299,6 +301,24 @@ function mockResponseFor(cmd: RpcCommand & { id: string }): RpcResponse {
 		}
 		case 'design_get_snapshot':
 			return { id, type: 'response', command: 'design_get_snapshot', success: true, data: { snapshot: mockDesignSnapshot?.document.id === cmd.designId ? mockDesignSnapshot : createMockDesignSnapshot(cmd.designId) } };
+		case 'design_get_revision': {
+			const snapshot = mockDesignSnapshot?.document.id === cmd.designId ? mockDesignSnapshot : createMockDesignSnapshot(cmd.designId);
+			const revisions = Array.isArray(snapshot.document.revisions) ? snapshot.document.revisions as Array<{ id: string }> : [];
+			if (!revisions.some((revision) => revision.id === cmd.revisionId)) return { id, type: 'response', command: 'design_get_revision', success: false, error: 'Design 历史修订不存在' };
+			return { id, type: 'response', command: 'design_get_revision', success: true, data: { snapshot } };
+		}
+		case 'design_revert': {
+			const snapshot = mockDesignSnapshot?.document.id === cmd.designId ? mockDesignSnapshot : createMockDesignSnapshot(cmd.designId);
+			const revisions = Array.isArray(snapshot.document.revisions) ? snapshot.document.revisions as Array<{ id: string; prompt: string; summary: string; createdAt: string }> : [];
+			if (!revisions.some((revision) => revision.id === cmd.revisionId)) return { id, type: 'response', command: 'design_revert', success: false, error: 'Design 历史修订不存在' };
+			const revisionId = `rev-mock-${Date.now()}`;
+			const version = typeof snapshot.document.version === 'number' ? snapshot.document.version : 1;
+			const next = { ...snapshot, document: { ...snapshot.document, version: version + 1, revisions: [...revisions, { id: revisionId, prompt: `恢复 ${cmd.revisionId}`, summary: `已从历史修订 ${cmd.revisionId} 创建当前版本。`, createdAt: new Date().toISOString(), parentRevisionId: revisions.at(-1)?.id, sourceRevisionId: cmd.revisionId, kind: 'rollback' as const }] } };
+			mockDesignSnapshot = next;
+			return { id, type: 'response', command: 'design_revert', success: true, data: { snapshot: next } };
+		}
+		case 'design_upload':
+			return { id, type: 'response', command: 'design_upload', success: true, data: { upload: { versionId: Date.now(), versionNumber: 1, status: 'DRAFT', projectId: cmd.platformProjectId, designId: cmd.designId, revisionId: cmd.revisionId, createdAt: new Date().toISOString() } } };
 		case 'design_prompt': {
 			const requestId = id;
 			const runId = `design-run-mock-${Date.now()}`;

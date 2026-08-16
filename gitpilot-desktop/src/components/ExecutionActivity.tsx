@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { Brain, CheckCircle2, ChevronRight, FileDiff, FilePen, FileText, ListChecks, Terminal, Wrench } from 'lucide-react';
 import { formatDuration, getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionRun, type ExecutionStep } from '@/src/store/workbench';
 import { Button } from '@/src/components/ui/button';
+import { Hint } from '@/src/components/ui/tooltip';
 import type { ChangedFile } from '@/src/store/changed-files';
 import styles from './ExecutionActivity.module.css';
 
@@ -254,7 +255,7 @@ export function ExecutionActivity({ isStreaming }: { isStreaming: boolean }) {
 
 	const isPending = label === '正在整理工具结果…' || label === '正在准备…';
 	const activityLabel = (
-		<span className={`${styles.label} ${styles.running}`} role={isPending ? 'status' : undefined} title={label ?? ''}>{label}</span>
+		<Hint content={label}><span className={`${styles.label} ${styles.running}`} role={isPending ? 'status' : undefined}>{label}</span></Hint>
 	);
 
 	return (

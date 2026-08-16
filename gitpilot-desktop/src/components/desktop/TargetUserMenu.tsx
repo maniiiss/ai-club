@@ -1,14 +1,13 @@
 /** 目标标题栏账户入口：沿用平台账户 action，独立收口头像与菜单视觉。 */
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { ChevronDown, Coins, ExternalLink, LogOut, Plug, RefreshCw, UserRound, Wrench } from 'lucide-react';
+import { ChevronDown, Coins, ExternalLink, LogOut, RefreshCw, Settings2, UserRound } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
 import { DEPLOYMENT } from '@/src/lib/config';
 import { Button } from '@/src/components/ui/button';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/src/components/ui/dropdown-menu';
-import { THEME_OPTIONS, isThemeMode, useThemeStore } from '@/src/store/theme';
-import { useRtkStore } from '@/src/store/rtk';
-import { useMcpDialogStore } from '@/src/store/mcp';
+import { Hint } from '@/src/components/ui/tooltip';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/src/components/ui/dropdown-menu';
+import { useSettingsDialogStore } from '@/src/store/settings';
 import styles from './TargetUserMenu.module.css';
 
 function displayName(account: ReturnType<typeof useSessionStore.getState>['platformAccount']): string { return account?.user.nickname?.trim() || account?.user.username || 'GitPilot 用户'; }
@@ -21,8 +20,6 @@ export function TargetUserMenu() {
 	const sidecarConnection = useSessionStore((s) => s.connection);
 	const platformConnection = useSessionStore((s) => s.platformConnection);
 	const retryPlatformConnection = useSessionStore((s) => s.retryPlatformConnection);
-	const theme = useThemeStore((s) => s.theme);
-	const setTheme = useThemeStore((s) => s.setTheme);
 	const [avatarFailed, setAvatarFailed] = useState(false);
 	const name = displayName(account);
 	const avatarUrl = avatarFailed ? null : resolveAvatarUrl(account);
@@ -31,17 +28,12 @@ export function TargetUserMenu() {
 	useEffect(() => setAvatarFailed(false), [account?.platformUrl, account?.user.avatarUrl]);
 	const avatar = (large = false) => <span className={`${styles.avatar} ${large ? styles.large : ''}`}>{avatarUrl ? <img src={avatarUrl} alt={`${name}的头像`} onError={() => setAvatarFailed(true)} /> : initials(name)}</span>;
 	const openWeb = async () => { if (DEPLOYMENT.webBaseUrl) await invoke('open_platform_web', { platformUrl: DEPLOYMENT.webBaseUrl }); };
-	return <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className={styles.trigger} title={`账户菜单，平台${connectionLabel}`} aria-label={`账户菜单，平台${connectionLabel}`}><span className={styles.avatarWithStatus}>{account ? avatar() : <span className={styles.avatar}><UserRound size={14} /></span>}<span className={`${styles.statusDot} ${isConnected ? styles.statusReady : styles.statusOffline}`} title={`平台${connectionLabel}`} aria-label={`平台${connectionLabel}`} /></span><ChevronDown size={12} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className={styles.content}>
-		<div className={styles.identityHeader}><div className={styles.identity}>{avatar(true)}<span><b>{name}</b><small>{account?.user.username ?? '正在读取账户信息…'}</small></span></div><Button variant="ghost" size="icon-sm" className={styles.refreshButton} onClick={() => void retryPlatformConnection()} disabled={platformConnection === 'checking'} title="重新检查连接" aria-label="重新检查连接"><RefreshCw className={platformConnection === 'checking' ? 'animate-spin' : undefined} /></Button></div>
+	return <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className={styles.trigger} aria-label={`账户菜单，平台${connectionLabel}`}><span className={styles.avatarWithStatus}>{account ? avatar() : <span className={styles.avatar}><UserRound size={14} /></span>}<Hint content={`平台 · ${connectionLabel}`}><span className={`${styles.statusDot} ${isConnected ? styles.statusReady : styles.statusOffline}`} aria-label={`平台${connectionLabel}`} /></Hint></span><ChevronDown size={12} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className={styles.content}>
+		<div className={styles.identityHeader}><div className={styles.identity}>{avatar(true)}<span><b>{name}</b><small>{account?.user.username ?? '正在读取账户信息…'}</small></span></div><Hint content="重新检查连接"><Button variant="ghost" size="icon-sm" className={styles.refreshButton} onClick={() => void retryPlatformConnection()} disabled={platformConnection === 'checking'} aria-label="重新检查连接"><RefreshCw className={platformConnection === 'checking' ? 'animate-spin' : undefined} /></Button></Hint></div>
 		<div className={styles.credits}><Coins size={14} /><span>积分</span><b>{account?.creditBalance ?? '—'}</b></div>
 		<DropdownMenuSeparator />
-		<DropdownMenuLabel>界面主题</DropdownMenuLabel>
-		<DropdownMenuRadioGroup className={styles.themeChoices} value={theme} onValueChange={(value) => { if (isThemeMode(value)) setTheme(value); }}>
-			{THEME_OPTIONS.map((option) => <DropdownMenuRadioItem key={option.value} value={option.value} className={styles.themeRadioItem} aria-label={`${option.label}：${option.description}`} title={`${option.label}：${option.description}`}><span className={`${styles.themeSwatch} ${option.value === 'current' ? styles.themeCurrent : option.value === 'mono-dark' ? styles.themeMonoDark : styles.themeLight}`} aria-hidden="true" /></DropdownMenuRadioItem>)}
-		</DropdownMenuRadioGroup>
+		<DropdownMenuItem onSelect={() => useSettingsDialogStore.getState().show('basic')}><Settings2 />设置</DropdownMenuItem>
 		<DropdownMenuSeparator />
-		<DropdownMenuItem onSelect={() => useRtkStore.getState().openSettings()}><Wrench />RTK 优化设置</DropdownMenuItem>
 		<DropdownMenuItem onSelect={() => void openWeb()} disabled={!DEPLOYMENT.webBaseUrl}><ExternalLink />前往 GitPilot Web</DropdownMenuItem><DropdownMenuItem onSelect={() => void logout()}><LogOut />退出登录</DropdownMenuItem>
-		<DropdownMenuItem onSelect={() => useMcpDialogStore.getState().show()}><Plug />MCP 管理</DropdownMenuItem>
 	</DropdownMenuContent></DropdownMenu>;
 }

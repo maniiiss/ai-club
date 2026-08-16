@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { Check, Clipboard, Code2, FileText, GitCompare } from 'lucide-react';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/src/components/ui/sheet';
+import { Hint } from '@/src/components/ui/tooltip';
 import { useWorkbenchStore, type ContentDrawerContent, type ContentDrawerKind } from '@/src/store/workbench';
 import { copyText } from '@/src/lib/clipboard';
 import styles from './ContentDrawer.module.css';
@@ -58,9 +59,9 @@ export function ContentDrawer() {
 							<SheetDescription id="content-drawer-description" className={styles.description}>{content?.description ?? '完整内容'}</SheetDescription>
 						</div>
 					</div>
-					<button type="button" className={styles.copyButton} onClick={() => void copy()} aria-label={copied ? '已复制' : '复制内容'} title={copied ? '已复制' : '复制内容'}>
+					<Hint content={copied ? '已复制' : '复制内容'}><button type="button" className={styles.copyButton} onClick={() => void copy()} aria-label={copied ? '已复制' : '复制内容'}>
 						{copied ? <Check size={15} /> : <Clipboard size={15} />}
-					</button>
+					</button></Hint>
 				</SheetHeader>
 				<div className={styles.body}>{content && <DrawerBody content={content} />}</div>
 			</SheetContent>

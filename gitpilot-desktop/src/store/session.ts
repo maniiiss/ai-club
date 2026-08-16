@@ -37,6 +37,7 @@ import type {
 } from '@/src/rpc/types';
 import { getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionStep } from '@/src/store/workbench';
 import { aggregateChangedFiles, parseExecutionStepsFromMessages, parseOpsFromMessages, parseOpsFromSteps, type ChangedFile, type EditOperation } from '@/src/store/changed-files';
+import { loadDesktopPreferences, resolveStandaloneTaskDirectory } from '@/src/store/settings';
 import { isProjectPathWithin, isSameProjectPath, isTemporaryWorkspacePath } from '@/src/utils/project-path';
 
 // ============================================================================
@@ -1593,8 +1594,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		try {
 			sessionSwitchRequestVersion += 1;
 			sessionRefreshRequestVersion += 1;
-			// 独立任务固定从 GitPilot 根目录启动，不能继承上一次项目任务的 cwd。
-			const rootPath = await getGitPilotRoot();
+			// 独立任务优先使用用户设置的默认目录；未设置时才回退 GitPilot 根目录。
+			const configuredDirectory = loadDesktopPreferences().defaultDirectory;
+			const rootPath = configuredDirectory ?? resolveStandaloneTaskDirectory(null, await getGitPilotRoot());
 			if (!rootPath) throw new Error('无法获取 GitPilot 根目录');
 			saveCurrentProject(rootPath);
 			// 空任务没有历史记录可选中，创建时立即取消旧任务高亮。

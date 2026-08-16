@@ -1,0 +1,4 @@
+interface:
+  display_name: "Cross-Agent Harness"
+  short_description: "用于创建或完善跨智能体协作规范"
+  default_prompt: "使用 $cross-agent-harness 为仓库创建或完善跨智能体协作规范、文档结构和校验脚本。"

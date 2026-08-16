@@ -12,6 +12,7 @@ import { useSessionStore } from '@/src/store/session';
 import { useWorkbenchStore } from '@/src/store/workbench';
 import type { ThinkingLevel } from '@/src/rpc/types';
 import { Button } from '@/src/components/ui/button';
+import { Hint } from '@/src/components/ui/tooltip';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from '@/src/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/src/components/ui/popover';
 import { Command as CommandRoot, CommandEmpty, CommandInput, CommandItem, CommandList } from '@/src/components/ui/command';
@@ -42,7 +43,8 @@ export function getThinkingLevelLabel(level: ThinkingLevel, levels: readonly Thi
 	return isBinaryThinkingMode(levels) && level !== 'off' ? 'on' : level;
 }
 
-export function ModelPicker() {
+/** Design 入口空间有限时只保留模型选择，其他工作区继续显示思考级别。 */
+export function ModelPicker({ showThinkingLevel = true }: { showThinkingLevel?: boolean }) {
 	const sessionState = useSessionStore((s) => s.sessionState);
 	const loggedIn = useSessionStore((s) => s.loggedIn);
 	const models = useSessionStore((s) => s.models);
@@ -93,15 +95,14 @@ export function ModelPicker() {
 				</PopoverContent>
 			</Popover>
 
-			{/* 思维级别 */}
-			<DropdownMenu open={openThinking} onOpenChange={(value) => { setOpenThinking(value); if (value) setOpenModel(false); }}>
-				<DropdownMenuTrigger asChild><Button type="button" variant="outline" size="sm" disabled={!thinkingSupported} title={thinkingSupported ? undefined : '当前模型不支持思考'}><Brain /><span>{getThinkingLevelLabel(currentThinkingLevel, thinkingLevels)}</span>{thinkingSupported && <ChevronDown />}</Button></DropdownMenuTrigger>
+			{showThinkingLevel && <DropdownMenu open={openThinking} onOpenChange={(value) => { setOpenThinking(value); if (value) setOpenModel(false); }}>
+				<Hint content={thinkingSupported ? undefined : '当前模型不支持思考'}><DropdownMenuTrigger asChild><Button type="button" variant="outline" size="sm" disabled={!thinkingSupported}><Brain /><span>{getThinkingLevelLabel(currentThinkingLevel, thinkingLevels)}</span>{thinkingSupported && <ChevronDown />}</Button></DropdownMenuTrigger></Hint>
 				<DropdownMenuContent side="top" align="end" className="w-32">
 					<DropdownMenuLabel>思维级别</DropdownMenuLabel>
 					<DropdownMenuSeparator />
 					{thinkingOptions.map((option) => <DropdownMenuItem key={option.value} onSelect={() => setThinkingLevel(option.value)} className={option.value === currentThinkingLevel ? 'bg-[var(--primary-muted)] text-[var(--primary)]' : ''}>{option.label}</DropdownMenuItem>)}
 				</DropdownMenuContent>
-			</DropdownMenu>
+			</DropdownMenu>}
 		</div>
 	);
 }

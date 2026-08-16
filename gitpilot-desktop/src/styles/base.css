@@ -31,6 +31,15 @@ textarea,
 	-webkit-user-select: text;
 }
 
+/* 代码内容与 xterm 终端保持固定阅读密度，不受界面字号设置影响。 */
+pre,
+code,
+.xterm,
+.xterm *,
+[class*='codeContent'] {
+	--desktop-font-scale: 1;
+}
+
 button:focus-visible,
 input:focus-visible,
 textarea:focus-visible,

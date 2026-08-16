@@ -28,7 +28,7 @@ GitPilot CLI 当前是基于 `@earendil-works/pi-coding-agent` v0.81.1 二开的
 
 - **不做内置文件树与 Monaco 编辑器**：桌面版保持"对话为主"的轻量形态，不是 IDE 工作台。extension 的 `editor` 回调用轻量多行编辑模态满足协议，不引入完整编辑器
 - **不做云端接力 / 云端 Codex Runtime**：桌面版只承载本地 agent，云端接力是独立设计（见 `gitpilot-cli-cloud-coding-handoff-technical-design-v1.md`）
-- **不做多主题切换**：MVP 只做单一深色主题，后续再考虑复用 pi-tui 的 theme JSON
+- **主题切换保持在渲染层**：当前支持午夜石墨、单色暗夜、纯净浅色、炭火橙、纸张暖白、冰川灰蓝六套本地 CSS 令牌主题；主题切换不改变 sidecar、会话与权限边界，也不引入远端主题配置
 - **不做 macOS / Linux 分发**：MVP 先发 Windows，macOS / Linux 列入后续迭代
 - **不重写 agent 循环、工具、平台对接**：全部复用 gitpilot-cli 既有实现
 
@@ -76,7 +76,7 @@ Tauri sidecar 架构让 agent 跑在独立 Node/bun 进程，native 模块用其
 │  - pi-agent-core 循环   │   │  - 代码交互卡片 (diff/bash)  │
 │  - read/write/edit/bash  │   │  - 模型选择 / 思维级别 / 登录│
 │  - 平台对接 extension    │   │  - Zustand 状态              │
-│  - @napi-rs/keyring 凭据 │   │  - 单一深色主题              │
+│  - @napi-rs/keyring 凭据 │   │  - 六套本地 CSS 令牌主题    │
 │  stdout -> JSONL 事件流   │   └──────────────────────────────┘
 └──────────────────────────┘
            │ HTTPS
@@ -278,7 +278,7 @@ bun `--compile` 按目标三元组生成单文件，随 Tauri `resources` 打入
 MVP 之后的迭代方向（不在本次实施范围）：
 
 - 内置文件树与 Monaco 编辑器（若用户反馈需要 IDE 工作台形态）
-- 复用 pi-tui 的 theme JSON 支持深浅主题切换（纸白 / 碳黑等）
+- 扩展主题令牌与高对比度模式，并按用户反馈继续调整现有六套主题
 - macOS / Linux 分发
 - 云端接力（与 `gitpilot-cli-cloud-coding-handoff-technical-design-v1.md` 联动）
 - 全局快捷键唤起、托盘常驻、系统通知

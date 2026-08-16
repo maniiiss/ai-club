@@ -8,6 +8,7 @@ import { useState } from 'react';
 import { Folder } from 'lucide-react';
 import type { ChangedFile, ChangeStatus } from '@/src/store/changed-files';
 import { Button } from '@/src/components/ui/button';
+import { Hint } from '@/src/components/ui/tooltip';
 import { DiffView } from './CodeCard';
 import styles from './ChangedFilesCard.module.css';
 
@@ -30,7 +31,7 @@ export function ChangedFileItem({ file }: { file: ChangedFile }) {
 				onClick={() => file.editable && setExpanded((v) => !v)}
 			>
 				<span className={`${styles.status} ${STATUS_CLASS[file.status]}`}>{STATUS_LABEL[file.status]}</span>
-				<span className={styles.path} title={file.path}>{file.path}</span>
+				<Hint content={file.path}><span className={styles.path}>{file.path}</span></Hint>
 				<span className={styles.stats}>
 					{file.added > 0 && <span className={styles.statsAdd}>+{file.added}</span>}
 					{file.removed > 0 && <span className={styles.statsDel}> -{file.removed}</span>}

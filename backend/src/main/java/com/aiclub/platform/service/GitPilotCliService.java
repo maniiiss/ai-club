@@ -45,6 +45,8 @@ public class GitPilotCliService {
     /** /requirement 命令读取负责人是自己的需求列表所需权限范围。 */
     public static final String SCOPE_TASK_READ = "cli:task:read";
     public static final String SCOPE_WORK_RESEARCH = "cli:work:research";
+    /** 上传 Desktop Design 历史修订为 Web 项目草稿所需的最小写权限。 */
+    public static final String SCOPE_DESIGN_WRITE = "cli:design:write";
     private static final List<String> DEFAULT_TOKEN_SCOPES = List.of(
             SCOPE_MODEL_READ,
             SCOPE_MODEL_INVOKE,
@@ -54,7 +56,8 @@ public class GitPilotCliService {
             SCOPE_CLOUD_CODING_READ,
             SCOPE_CLOUD_CODING_CANCEL,
             SCOPE_TASK_READ,
-            SCOPE_WORK_RESEARCH
+            SCOPE_WORK_RESEARCH,
+            SCOPE_DESIGN_WRITE
     );
     private static final String CLI_TOKEN_PREFIX = "gpt_";
     private static final String MODEL_SESSION_PREFIX = "gms_";
@@ -156,7 +159,12 @@ public class GitPilotCliService {
                 .orElseThrow(() -> new UnauthorizedException("CLI Token 无效"));
         if (entity.getRevokedAt() != null || entity.getExpiresAt().isBefore(LocalDateTime.now())) throw new UnauthorizedException("CLI Token 已过期或已撤销");
         List<String> scopes = readJson(entity.getScopesJson(), new TypeReference<>() {});
-        if (!scopes.contains(scope)) throw new com.aiclub.platform.exception.ForbiddenException("CLI Token 缺少 scope: " + scope);
+        if (!scopes.contains(scope)) {
+            if (SCOPE_DESIGN_WRITE.equals(scope)) {
+                throw new com.aiclub.platform.exception.ForbiddenException("当前 CLI Token 不支持 Design 上传，请重新进行设备授权");
+            }
+            throw new com.aiclub.platform.exception.ForbiddenException("CLI Token 缺少 scope: " + scope);
+        }
     }
 
     /** Cloud Coding REST 尚未在 P0 开放；未来入口必须先通过统一功能开关。 */

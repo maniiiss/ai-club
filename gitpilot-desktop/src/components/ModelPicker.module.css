@@ -4,11 +4,11 @@
 .modelName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .modelPopover { width: min(232px, calc(100vw - 32px)); padding: 0; }
 .search { height: 30px; padding: 0 8px; }
-.searchInput { font-size: 11px; }
+.searchInput { font-size: calc(11px * var(--desktop-font-scale)); }
 .modelList { max-height: 224px; padding: 4px; }
 .modelItem { min-height: 36px; gap: 7px; padding: 6px 8px; }
 .modelItem:hover, .selected { background: var(--gp-selection); color: var(--gp-action); }
 .modelCopy { display: block; min-width: 0; overflow: hidden; }
 .modelCopy > span, .modelCopy > small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.modelCopy > span { color: var(--gp-text); font-size: 11px; }
-.modelCopy > small { margin-top: 2px; color: var(--gp-text-muted); font-size: 10px; }
+.modelCopy > span { color: var(--gp-text); font-size: calc(11px * var(--desktop-font-scale)); }
+.modelCopy > small { margin-top: 2px; color: var(--gp-text-muted); font-size: calc(10px * var(--desktop-font-scale)); }

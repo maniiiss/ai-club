@@ -1,4 +1,4 @@
-.root { margin: 2px 0; color: var(--gp-text-muted); font-family: var(--font-mono); font-size: 12px; font-weight: 400; line-height: 1.5; }
+.root { margin: 2px 0; color: var(--gp-text-muted); font-family: var(--font-mono); font-size: calc(12px * var(--desktop-font-scale)); font-weight: 400; line-height: 1.5; }
 .summary { display: inline-flex; max-width: 100%; min-width: 0; height: auto; align-items: center; gap: 5px; border: 0; border-radius: 0; background: transparent; padding: 4px 0; color: var(--gp-text-muted); font: inherit; }
 .summary:hover, .summary:focus-visible { color: var(--gp-action-hover); }
 .static { cursor: default; }
@@ -12,14 +12,14 @@
 .expandedOpen { grid-template-rows: 1fr; opacity: 1; transform: translateY(0); }
 .expandedInner { min-height: 0; overflow: hidden; }
 .steps { max-height: 165px; overflow-y: auto; }
-.step { display: block; width: 100%; border: 0; background: transparent; padding: 3px 0; color: var(--gp-text-secondary); text-align: left; font: inherit; font-size: 11px; }
+.step { display: block; width: 100%; border: 0; background: transparent; padding: 3px 0; color: var(--gp-text-secondary); text-align: left; font: inherit; font-size: calc(11px * var(--desktop-font-scale)); }
 .step:hover, .selected { color: var(--gp-action-hover); }
 .detail { max-width: 100%; overflow: hidden; margin: 6px 0; border: 1px solid var(--gp-border); border-radius: var(--radius-md); background: var(--gp-code-surface); }
-.detailTitle { display: block; border-bottom: 1px solid var(--gp-border); padding: 7px 11px; color: var(--gp-text-muted); font-size: 11px; }
-.detail pre { max-height: 150px; overflow: auto; margin: 0; padding: 10px 12px; color: var(--gp-text-secondary); font-size: 10px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.detailTitle { display: block; border-bottom: 1px solid var(--gp-border); padding: 7px 11px; color: var(--gp-text-muted); font-size: calc(11px * var(--desktop-font-scale)); }
+.detail pre { max-height: 150px; overflow: auto; margin: 0; padding: 10px 12px; color: var(--gp-text-secondary); font-size: calc(10px * var(--desktop-font-scale)); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .thinking { display: flex; width: 420px; max-width: 100%; height: 144px; flex-direction: column; overflow: hidden; margin: 6px 0; border: 1px solid var(--gp-border); border-radius: var(--radius-md); background: var(--gp-code-surface); }
-.thinkingTitle { border-bottom: 1px solid var(--gp-border); padding: 7px 11px; color: var(--gp-text-muted); font-size: 11px; }
-.thinking pre { min-height: 0; flex: 1; overflow: auto; margin: 0; padding: 10px 12px; color: var(--gp-text-secondary); font-size: 10px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.thinkingTitle { border-bottom: 1px solid var(--gp-border); padding: 7px 11px; color: var(--gp-text-muted); font-size: calc(11px * var(--desktop-font-scale)); }
+.thinking pre { min-height: 0; flex: 1; overflow: auto; margin: 0; padding: 10px 12px; color: var(--gp-text-secondary); font-size: calc(10px * var(--desktop-font-scale)); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 @keyframes shimmer { from { background-position: 100% 0; } to { background-position: -160% 0; } }
 
 /* 执行批次：无边框普通文字 + 展开后执行过程日志流（思考/步骤/改动文件统一普通文字） */
@@ -27,13 +27,13 @@
 .timer { display: inline-flex; align-items: center; gap: 4px; }
 .trace { padding: 0 12px 8px; max-height: 320px; overflow: auto; }
 .traceStep { margin: 14px 0; }
-.traceStepTitle { display: flex; align-items: center; gap: 5px; font-size: 12px; color: var(--gp-text-muted); font-family: var(--font-mono); cursor: default; min-width: 0; }
+.traceStepTitle { display: flex; align-items: center; gap: 5px; font-size: calc(12px * var(--desktop-font-scale)); color: var(--gp-text-muted); font-family: var(--font-mono); cursor: default; min-width: 0; }
 .traceStepText { flex: 1 1 auto; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .traceStepIcon { flex: 0 0 auto; color: var(--gp-text-muted); }
 .traceStepTitle[role="button"] { cursor: pointer; }
 .traceStepTitle[role="button"]:hover { color: var(--gp-action-hover); }
-.traceStepOutput { margin: 2px 0 0 12px; padding: 6px 8px; background: var(--gp-code-surface); color: var(--gp-text-secondary); font-size: 11px; line-height: 1.55; max-height: 200px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
-.progressText { margin: 10px 0; color: var(--gp-text-muted); font-family: var(--font-sans); font-size: 13px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.traceStepOutput { margin: 2px 0 0 12px; padding: 6px 8px; background: var(--gp-code-surface); color: var(--gp-text-secondary); font-size: calc(11px * var(--desktop-font-scale)); line-height: 1.55; max-height: 200px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.progressText { margin: 10px 0; color: var(--gp-text-muted); font-family: var(--font-sans); font-size: calc(13px * var(--desktop-font-scale)); line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
 .settling { animation: statusSettle 320ms cubic-bezier(.22,.8,.25,1); transform-origin: top left; }
 @keyframes statusSettle { 0% { opacity: .55; transform: translateY(8px) scaleY(.94); } 100% { opacity: 1; transform: translateY(0) scaleY(1); } }
 @media (prefers-reduced-motion: reduce) { .summary, .chevron, .expanded { transition: none; } .running, .settling { animation: none; } }

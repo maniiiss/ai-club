@@ -47,14 +47,14 @@
 .brand {
 	color: var(--gp-text);
 	font-family: var(--font-mono);
-	font-size: 11px;
+	font-size: calc(11px * var(--desktop-font-scale));
 	font-weight: 700;
 	letter-spacing: 0.14em;
 }
 
 .modeSwitcher { display: flex; height: 100%; align-items: center; gap: 2px; border-left: 1px solid var(--gp-border); padding-left: 7px; }
 .mode,
-.modeActive { height: 24px; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; padding: 0 7px; color: var(--gp-text-muted); font-family: var(--font-mono); font-size: 9px; letter-spacing: .12em; cursor: pointer; transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, transform 160ms ease; }
+.modeActive { height: 24px; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; padding: 0 7px; color: var(--gp-text-muted); font-family: var(--font-mono); font-size: calc(9px * var(--desktop-font-scale)); letter-spacing: .12em; cursor: pointer; transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, transform 160ms ease; }
 .mode:hover { color: var(--gp-text); background: var(--gp-accent-soft); }
 .modeActive { border-color: var(--gp-border-strong); background: var(--gp-accent-soft); color: var(--gp-accent); }
 
@@ -74,7 +74,7 @@
 @media (max-width: 760px) {
 	.identity { padding-left: 10px; }
 	.mode,
-	.modeActive { padding: 0 5px; font-size: 8px; }
+	.modeActive { padding: 0 5px; font-size: calc(8px * var(--desktop-font-scale)); }
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -12,7 +12,7 @@
 
 .title {
 	margin: 0;
-	font-size: 18px;
+	font-size: calc(18px * var(--desktop-font-scale));
 	font-weight: 600;
 }
 
@@ -23,7 +23,7 @@
 	border-radius: 8px;
 	background: color-mix(in srgb, var(--gp-danger, #ef4444) 8%, transparent);
 	color: var(--gp-text, #e6e8ee);
-	font: 13px/1.5 var(--font-sans, ui-sans-serif);
+	font: calc(13px * var(--desktop-font-scale))/1.5 var(--font-sans, ui-sans-serif);
 	white-space: pre-wrap;
 	word-break: break-all;
 	max-width: 100%;
@@ -35,7 +35,7 @@
 	border-radius: 8px;
 	background: rgba(0, 0, 0, 0.35);
 	color: var(--gp-text-muted, #9aa1b0);
-	font: 12px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+	font: calc(12px * var(--desktop-font-scale))/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
 	white-space: pre-wrap;
 	word-break: break-all;
 	max-height: 50vh;

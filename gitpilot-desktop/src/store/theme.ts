@@ -1,18 +1,28 @@
 import { create } from 'zustand';
 
-/** 工作台支持的三套视觉主题。current 保留当前午夜石墨与青绿色强调色。 */
-export type ThemeMode = 'current' | 'mono-dark' | 'light';
+/** 工作台支持的六套视觉主题；主题只改变渲染层令牌，不改变 sidecar 会话与权限边界。 */
+export type ThemeMode = 'current' | 'mono-dark' | 'light' | 'ember' | 'paper' | 'glacier';
 
 export const THEME_OPTIONS: ReadonlyArray<{ value: ThemeMode; label: string; description: string }> = [
-	{ value: 'current', label: '当前主题', description: '午夜石墨与青绿色强调' },
-	{ value: 'mono-dark', label: '黑底白字', description: '纯黑背景，灰色辅助信息' },
-	{ value: 'light', label: '白底黑字', description: '白色背景，黑色正文' },
+	{ value: 'current', label: '午夜石墨', description: '深石墨背景，青绿色强调' },
+	{ value: 'mono-dark', label: '单色暗夜', description: '纯黑背景，灰色辅助信息' },
+	{ value: 'light', label: '纯净浅色', description: '白色背景，深色正文' },
+	{ value: 'ember', label: '炭火橙', description: '炭黑背景，琥珀橙强调' },
+	{ value: 'paper', label: '纸张暖白', description: '暖白背景，陶土红强调' },
+	{ value: 'glacier', label: '冰川灰蓝', description: '冷灰蓝背景，深蓝强调' },
 ];
+
+const LIGHT_THEME_MODES: ReadonlySet<ThemeMode> = new Set(['light', 'paper', 'glacier']);
+
+/** 浏览器原生控件和滚动条需要跟随主题选择正确的明暗配色。 */
+export function isLightTheme(theme: ThemeMode): boolean {
+	return LIGHT_THEME_MODES.has(theme);
+}
 
 const THEME_STORAGE_KEY = 'gitpilot-desktop.theme';
 
 export function isThemeMode(value: unknown): value is ThemeMode {
-	return value === 'current' || value === 'mono-dark' || value === 'light';
+	return value === 'current' || value === 'mono-dark' || value === 'light' || value === 'ember' || value === 'paper' || value === 'glacier';
 }
 
 export function normalizeTheme(value: unknown): ThemeMode {
@@ -33,7 +43,7 @@ export function applyTheme(theme: ThemeMode): void {
 	if (typeof document === 'undefined') return;
 	const root = document.documentElement;
 	root.dataset.theme = theme;
-	root.style.colorScheme = theme === 'light' ? 'light' : 'dark';
+	root.style.colorScheme = isLightTheme(theme) ? 'light' : 'dark';
 }
 
 export function initializeTheme(): ThemeMode {
@@ -44,11 +54,17 @@ export function initializeTheme(): ThemeMode {
 
 interface ThemeStore {
 	theme: ThemeMode;
+	/** 预览不写入 localStorage，设置弹窗取消时可恢复到已保存主题。 */
+	previewTheme: (theme: ThemeMode) => void;
 	setTheme: (theme: ThemeMode) => void;
 }
 
 export const useThemeStore = create<ThemeStore>()((set) => ({
 	theme: readStoredTheme(),
+	previewTheme: (theme) => {
+		applyTheme(theme);
+		set({ theme });
+	},
 	setTheme: (theme) => {
 		applyTheme(theme);
 		try {

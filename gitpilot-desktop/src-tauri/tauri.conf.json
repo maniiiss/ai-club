@@ -39,6 +39,6 @@
 		"targets": ["msi", "nsis"],
 		"icon": ["icons/icon.png", "icons/icon.ico"],
 		"externalBin": ["binaries/gitpilot-rpc"],
-		"resources": ["resources/theme/*", "resources/export-html/**/*"]
+		"resources": ["resources/theme/*", "resources/export-html/**/*", "resources/skills/**/*"]
 	}
 }

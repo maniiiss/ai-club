@@ -3,6 +3,7 @@ import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
+import { installBundledSkills } from "./bundled-skills.ts";
 import type { SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
 import { ModelRuntime } from "./model-runtime.ts";
 import {
@@ -136,6 +137,15 @@ export async function createAgentSessionServices(
 ): Promise<AgentSessionServices> {
 	const cwd = resolvePath(options.cwd);
 	const agentDir = options.agentDir ? resolvePath(options.agentDir) : getAgentDir();
+	const diagnostics: AgentSessionRuntimeDiagnostic[] = [];
+	try {
+		installBundledSkills(agentDir);
+	} catch (error) {
+		diagnostics.push({
+			type: "warning",
+			message: `安装 GitPilot 内置 Skill 失败：${error instanceof Error ? error.message : String(error)}`,
+		});
+	}
 	const modelRuntime =
 		options.modelRuntime ??
 		(await ModelRuntime.create({
@@ -151,7 +161,6 @@ export async function createAgentSessionServices(
 	});
 	await resourceLoader.reload(options.resourceLoaderReloadOptions);
 
-	const diagnostics: AgentSessionRuntimeDiagnostic[] = [];
 	const extensionsResult = resourceLoader.getExtensions();
 	for (const { name, config, extensionPath } of extensionsResult.runtime.pendingProviderRegistrations) {
 		try {

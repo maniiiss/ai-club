@@ -10,7 +10,7 @@
  */
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { AlertCircle, BriefcaseBusiness, Code2, ExternalLink, Loader2, LogIn, Palette, ShieldCheck } from 'lucide-react';
+import { AlertCircle, BriefcaseBusiness, Code2, ExternalLink, Loader2, LogIn, Palette } from 'lucide-react';
 import { useSessionStore } from '@/src/store/session';
 import { rpc, isTauriEnv } from '@/src/rpc/bridge';
 import { DEPLOYMENT } from '@/src/lib/config';
@@ -139,12 +139,11 @@ export function LoginPage() {
 				<section className={styles.card} aria-labelledby="login-title">
 					<div className={styles.brandRow}>
 						<div className={styles.logo}><LogIn size={18} /></div>
-						<div><h1 id="login-title" className={styles.title}>登录 GitPilot</h1><p className={styles.subtitle}>使用设备授权安全登录</p></div>
+						<h1 id="login-title" className={styles.title}>GitPilot</h1>
 					</div>
 
 				{phase !== 'polling' && phase !== 'done' && (
 					<>
-						<div className={styles.authorizationNote}><ShieldCheck size={15} /><span>无需输入密码，授权后自动返回</span></div>
 						<Button
 							type="button"
 							variant="default"
@@ -197,6 +196,7 @@ export function LoginPage() {
 					<div className={styles.modes} aria-label="工作模式"><div><Code2 size={15} /><span>Code</span><small>编写与执行</small></div><div><Palette size={15} /><span>Design</span><small>设计与预览</small></div><div><BriefcaseBusiness size={15} /><span>Work</span><small>任务与协作</small></div></div>
 				</section>
 			</main>
+			<footer className={styles.copyright}>© 2026 GitPilot · 保留所有权利。</footer>
 		</div>
 	);
 }

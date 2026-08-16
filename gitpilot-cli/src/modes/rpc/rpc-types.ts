@@ -65,6 +65,16 @@ export interface DesignProjectGuidelines {
 	updatedAt: string;
 }
 export interface DesignRpcSnapshot { document: Record<string, unknown>; files: DesignRpcFile[]; context?: DesignProjectContext; guidelines?: DesignProjectGuidelines }
+/** 上传 Design 修订到 Web 后返回的远端版本摘要。 */
+export interface DesignUploadResult {
+	versionId: number;
+	versionNumber: number;
+	status: "DRAFT" | "CURRENT" | "ARCHIVED";
+	projectId: number;
+	designId: string;
+	revisionId: string;
+	createdAt: string;
+}
 /** sidecar 构建的受控预览载荷；Desktop 只把 html 放进 sandbox iframe，不接触项目文件系统。 */
 export interface DesignPreviewHandle {
 	id: string;
@@ -176,6 +186,7 @@ export type RpcCommand =
 	| { id?: string; type: "design_save_guidelines"; projectPath: string; designId: string; guidelines: DesignProjectGuidelines }
 	| { id?: string; type: "design_create"; projectPath: string; name?: string }
 	| { id?: string; type: "design_get_snapshot"; projectPath: string; designId: string }
+	| { id?: string; type: "design_get_revision"; projectPath: string; designId: string; revisionId: string }
 	| { id?: string; type: "design_prompt"; projectPath: string; designId: string; pageId: string; prompt: string; baseRevisionId?: string; targetProfiles: Array<"mobile" | "tablet" | "desktop"> }
 	| { id?: string; type: "design_follow_up"; projectPath: string; designId: string; message: string }
 	| { id?: string; type: "design_abort"; projectPath: string; designId: string }
@@ -185,6 +196,7 @@ export type RpcCommand =
 	| { id?: string; type: "design_preview"; projectPath: string; designId: string; pageId: string; revisionId?: string }
 	| { id?: string; type: "design_check"; projectPath: string; designId: string; pageId: string; revisionId?: string }
 	| { id?: string; type: "design_revert"; projectPath: string; designId: string; revisionId: string }
+	| { id?: string; type: "design_upload"; projectPath: string; designId: string; revisionId: string; platformProjectId: number; title?: string; summary?: string }
 	| { id?: string; type: "design_export"; projectPath: string; designId: string; outputPath?: string }
 	// MCP 管理仅传输写入所需的服务定义；查询响应不会返回 env、headers 或 OAuth 凭据。
 	| { id?: string; type: "mcp_list" }
@@ -329,7 +341,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "work_file_rename"; success: true; data: { taskId: string; file: WorkFileSnapshot } }
 	| { id?: string; type: "response"; command: "work_prepare_attachments"; success: true; data: { attachments: PreparedAttachment[] } }
 	| { id?: string; type: "response"; command: "design_open" | "design_create" | "design_save_guidelines"; success: true; data: { designId: string; snapshot: DesignRpcSnapshot } }
-	| { id?: string; type: "response"; command: "design_get_snapshot" | "design_check"; success: true; data: { snapshot?: DesignRpcSnapshot; checks?: Array<{ level: "error" | "warning" | "info"; message: string }> } }
+	| { id?: string; type: "response"; command: "design_get_snapshot" | "design_get_revision" | "design_check"; success: true; data: { snapshot?: DesignRpcSnapshot; checks?: Array<{ level: "error" | "warning" | "info"; message: string }> } }
 	| { id?: string; type: "response"; command: "design_preview"; success: true; data: { snapshot?: DesignRpcSnapshot; previewHandle: DesignPreviewHandle; checks?: Array<{ level: "error" | "warning" | "info"; message: string }> } }
 	| { id?: string; type: "response"; command: "design_prompt"; success: true; data: { requestId: string; runId: string } }
 	| { id?: string; type: "response"; command: "design_follow_up"; success: true; data: { queued: true } }
@@ -337,6 +349,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "design_approval_response"; success: true }
 	| { id?: string; type: "response"; command: "design_generate"; success: true; data: { requestId: string; snapshot?: DesignRpcSnapshot; summary?: string } }
 	| { id?: string; type: "response"; command: "design_apply_patch" | "design_revert"; success: true; data: { snapshot: DesignRpcSnapshot } }
+	| { id?: string; type: "response"; command: "design_upload"; success: true; data: { upload: DesignUploadResult } }
 	| { id?: string; type: "response"; command: "design_export"; success: true; data: { path: string } }
 	| { id?: string; type: "response"; command: "mcp_list"; success: true; data: { servers: Array<{ name: string; source: "global" | "project" | "project-override"; enabled: boolean; modes: Array<"code" | "work" | "design">; transport: "stdio" | "http" | "unknown" }> } }
 	| { id?: string; type: "response"; command: "mcp_save_server" | "mcp_delete_server" | "mcp_set_modes" | "mcp_set_enabled" | "mcp_reload"; success: true }

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, typ
 import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, SquareTerminal, X } from 'lucide-react';
 import { useWorkbenchStore, WORKBENCH_BOTTOM_HEIGHT_LIMITS, WORKBENCH_WIDTH_LIMITS } from '@/src/store/workbench';
 import { Button } from '@/src/components/ui/button';
+import { Hint } from '@/src/components/ui/tooltip';
 import { Separator } from '@/src/components/ui/separator';
 import { Tabs, TabsList, TabsTrigger } from '@/src/components/ui/tabs';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/src/components/ui/sheet';
@@ -142,16 +143,16 @@ export function TargetWorkbenchLayout({
 		{isCompact && right && <Sheet open={mobileRightOpen} onOpenChange={setMobileRightOpen}><SheetContent side="right" className={styles.mobileSheet}><SheetHeader><SheetTitle>{rightPanelTitle}</SheetTitle><SheetDescription>{rightPanelDescription}</SheetDescription></SheetHeader><div className={styles.mobileBody}>{right}</div></SheetContent></Sheet>}
 		{showBottom && <section className={`${styles.bottom} ${layout.bottomOpen ? styles.bottomOpen : ''} ${bottomResizing ? styles.bottomResizing : ''}`} style={layout.bottomOpen ? { height: layout.bottomHeight } : undefined} aria-hidden={!layout.bottomOpen} inert={!layout.bottomOpen}>
 			{layout.bottomOpen && <BottomResizeHandle onResizeStart={() => setBottomResizing(true)} onResizeEnd={() => setBottomResizing(false)} />}
-			<div className={styles.bottomHeader}><Tabs value={bottomView} onValueChange={(value) => setBottomView(value as 'terminal' | 'output')}><TabsList aria-label="底部面板"><TabsTrigger value="terminal">终端</TabsTrigger></TabsList></Tabs><Separator orientation="vertical" className="mx-2 h-4" /><Button type="button" variant="ghost" size="icon-sm" onClick={() => updateLayout({ bottomOpen: false })} aria-label="关闭底部面板" title="关闭底部面板"><X /></Button></div>
+			<div className={styles.bottomHeader}><Tabs value={bottomView} onValueChange={(value) => setBottomView(value as 'terminal' | 'output')}><TabsList aria-label="底部面板"><TabsTrigger value="terminal">终端</TabsTrigger></TabsList></Tabs><Separator orientation="vertical" className="mx-2 h-4" /><Hint content="关闭底部面板"><Button type="button" variant="ghost" size="icon-sm" onClick={() => updateLayout({ bottomOpen: false })} aria-label="关闭底部面板"><X /></Button></Hint></div>
 			<div className={styles.bottomContent}>{layout.bottomOpen && (bottomView === 'terminal' && terminal ? terminal : bottom)}</div>
 		</section>}
 		<footer className={styles.statusbar}>
-			<Button type="button" variant="ghost" size="icon-sm" className={styles.leftPanelToggle} onClick={() => updateLayout({ leftCollapsed: !layout.leftCollapsed })} aria-label={leftPanelLabel} title={leftPanelLabel}>{layout.leftCollapsed ? <PanelLeftOpen /> : <PanelLeftClose />}</Button>
+			<Hint content={leftPanelLabel}><Button type="button" variant="ghost" size="icon-sm" className={styles.leftPanelToggle} onClick={() => updateLayout({ leftCollapsed: !layout.leftCollapsed })} aria-label={leftPanelLabel}>{layout.leftCollapsed ? <PanelLeftOpen /> : <PanelLeftClose />}</Button></Hint>
 			<Button type="button" variant="ghost" size="sm" className={styles.mobileToggle} onClick={() => setMobileLeftOpen(true)} aria-label={`打开${leftPanelTitle}`}>{leftPanelTitle}</Button>
 			{right && <Button type="button" variant="ghost" size="sm" className={styles.mobileToggle} onClick={() => setMobileRightOpen(true)} aria-label={`打开${rightPanelTitle}`}>{rightPanelTitle}</Button>}
-			{showBottom && <Button type="button" variant="ghost" size="icon-sm" className={terminalOpen ? styles.active : ''} disabled={!terminalAvailable} onClick={() => { if (!terminalAvailable) return; if (terminalOpen) updateLayout({ bottomOpen: false }); else { setBottomView('terminal'); updateLayout({ bottomOpen: true }); } }} title={terminalAvailable ? '在应用内打开当前项目终端' : '请先选择当前模式的工作目录'} aria-label="在应用内打开当前模式终端"><SquareTerminal /></Button>}
-			<span className={styles.path} title={displayedStatus}>{displayedStatus}</span><span className={styles.grow} />
-			<Button type="button" variant="ghost" size="icon-sm" className={styles.rightPanelToggle} onClick={() => updateLayout({ rightCollapsed: !layout.rightCollapsed })} aria-label={rightPanelLabel} title={rightPanelLabel}>{layout.rightCollapsed ? <PanelRightOpen /> : <PanelRightClose />}</Button>
+			{showBottom && <Hint content={terminalAvailable ? '在应用内打开当前项目终端' : '请先选择当前模式的工作目录'}><Button type="button" variant="ghost" size="icon-sm" className={terminalOpen ? styles.active : ''} disabled={!terminalAvailable} onClick={() => { if (!terminalAvailable) return; if (terminalOpen) updateLayout({ bottomOpen: false }); else { setBottomView('terminal'); updateLayout({ bottomOpen: true }); } }} aria-label="在应用内打开当前模式终端"><SquareTerminal /></Button></Hint>}
+			<Hint content={displayedStatus}><span className={styles.path}>{displayedStatus}</span></Hint><span className={styles.grow} />
+			<Hint content={rightPanelLabel}><Button type="button" variant="ghost" size="icon-sm" className={styles.rightPanelToggle} onClick={() => updateLayout({ rightCollapsed: !layout.rightCollapsed })} aria-label={rightPanelLabel}>{layout.rightCollapsed ? <PanelRightOpen /> : <PanelRightClose />}</Button></Hint>
 		</footer>
 	</div>;
 }

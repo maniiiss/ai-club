@@ -1,0 +1,50 @@
+.content {
+	position: relative;
+	z-index: var(--z-tooltip);
+	max-width: min(300px, calc(100vw - 24px));
+	overflow-wrap: anywhere;
+	border: 1px solid color-mix(in srgb, var(--gp-accent) 30%, var(--border-strong));
+	border-radius: 6px;
+	background: var(--popover);
+	padding: 6px 10px;
+	color: var(--popover-foreground);
+	font-family: var(--font-sans);
+	font-size: calc(11px * var(--desktop-font-scale));
+	font-weight: 500;
+	line-height: 1.45;
+	letter-spacing: .01em;
+	white-space: pre-line;
+	box-shadow: 0 8px 24px var(--gp-shadow-color), 0 0 0 1px color-mix(in srgb, var(--gp-accent) 8%, transparent);
+	animation: hintIn 140ms ease-out;
+}
+
+.content::before {
+	position: absolute;
+	top: -1px;
+	left: 10px;
+	right: 10px;
+	height: 1px;
+	background: var(--gp-accent);
+	content: '';
+	opacity: .8;
+}
+
+.legacy {
+	position: fixed;
+	width: max-content;
+	transform: translate(-50%, calc(-100% - 10px));
+	pointer-events: none;
+}
+
+.legacyBelow {
+	transform: translate(-50%, 10px);
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.content { animation: none; }
+}
+
+@keyframes hintIn {
+	from { opacity: 0; transform: translateY(2px) scale(.98); }
+	to { opacity: 1; transform: translateY(0) scale(1); }
+}

@@ -49,7 +49,7 @@
 	padding: 3px 6px;
 	color: var(--muted-foreground);
 	font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
-	font-size: 12px;
+	font-size: calc(12px * var(--desktop-font-scale));
 }
 
 .optionCopy {
@@ -69,13 +69,13 @@
 }
 
 .optionName {
-	font-size: 14px;
+	font-size: calc(14px * var(--desktop-font-scale));
 	font-weight: 500;
 }
 
 .optionMeta {
 	color: var(--muted-foreground);
-	font-size: 12px;
+	font-size: calc(12px * var(--desktop-font-scale));
 }
 
 .confirmCard {
@@ -100,7 +100,7 @@
 	align-items: center;
 	gap: 7px;
 	color: var(--gp-text);
-	font-size: 13px;
+	font-size: calc(13px * var(--desktop-font-scale));
 }
 
 .confirmHeader svg {
@@ -110,7 +110,7 @@
 .confirmMessage {
 	margin: 0;
 	color: var(--gp-text-secondary);
-	font-size: 12px;
+	font-size: calc(12px * var(--desktop-font-scale));
 	line-height: 1.5;
 	white-space: pre-wrap;
 	word-break: break-word;
@@ -149,7 +149,7 @@
 	border-bottom: 1px solid var(--gp-border);
 	padding: 8px 12px;
 	color: var(--gp-text-muted);
-	font-size: 11px;
+	font-size: calc(11px * var(--desktop-font-scale));
 }
 
 .selectList {
@@ -170,7 +170,7 @@
 	padding: 8px 12px;
 	background: transparent;
 	color: var(--gp-text-secondary);
-	font-size: 13px;
+	font-size: calc(13px * var(--desktop-font-scale));
 	text-align: left;
 	cursor: pointer;
 	transition: background-color 120ms ease, color 120ms ease;
@@ -194,7 +194,7 @@
 	background: var(--background);
 	padding: 6px 10px;
 	color: var(--gp-text);
-	font-size: 13px;
+	font-size: calc(13px * var(--desktop-font-scale));
 	outline: none;
 	transition: border-color 120ms ease;
 }
@@ -214,5 +214,5 @@
 	border-top: 1px solid var(--gp-border);
 	padding: 6px 12px;
 	color: var(--gp-text-muted);
-	font-size: 10px;
+	font-size: calc(10px * var(--desktop-font-scale));
 }

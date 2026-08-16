@@ -158,6 +158,19 @@ describe('桌面会话生命周期契约', () => {
 		expect(localStorage.getItem('gitpilot-desktop.currentProject')).toBe(rootPath);
 	});
 
+	it('从底部任务入口优先使用设置的独立任务默认目录', async () => {
+		const defaultDirectory = 'C:\\workspace\\independent';
+		localStorage.setItem('gitpilot-desktop.preferences.v1', JSON.stringify({ font: 'default', fontSize: 14, defaultDirectory }));
+		getGitPilotRoot.mockResolvedValue('C:\\workspace\\gitpilot');
+		rpcMocks.newSession.mockResolvedValue({ success: true, command: 'new_session', data: { cancelled: false } } as never);
+
+		await useSessionStore.getState().newStandaloneSession();
+
+		expect(getGitPilotRoot).not.toHaveBeenCalled();
+		expect(rpcMocks.newSession).toHaveBeenCalledWith(defaultDirectory);
+		expect(useSessionStore.getState().currentProjectPath).toBe(defaultDirectory);
+	});
+
 	it('卸载时撤销全部订阅并销毁桥接，不遗留轮询定时器', async () => {
 		await useSessionStore.getState().connect();
 		expect(bridgeLifecycle.ready.size).toBe(1);

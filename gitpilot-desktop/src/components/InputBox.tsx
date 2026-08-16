@@ -22,13 +22,13 @@ import { useSessionStore, useActiveExtensionUI, type GuidanceMode, type Guidance
 import { CommandPalette } from './CommandPalette';
 import { ExtensionUIConfirmCard, ExtensionUISelectCard, isActionSelect } from './ExtensionUIModal';
 import { isHostActionCommand } from './host-actions';
-import { RtkSettingsDialog } from './RtkSettingsDialog';
 import { ModelPicker } from './ModelPicker';
 import { useWorkbenchStore } from '@/src/store/workbench';
-import { useRtkStore } from '@/src/store/rtk';
+import { useSettingsDialogStore } from '@/src/store/settings';
 import { isTauriEnv, rpc } from '@/src/rpc/bridge';
 import type { AttachmentInput, PreparedAttachment, RpcSlashCommand } from '@/src/rpc/types';
 import { Button } from '@/src/components/ui/button';
+import { Hint } from '@/src/components/ui/tooltip';
 import styles from './InputBox.module.css';
 
 export { formatCommandLabel, getCommandIconKey } from './CommandTokenNode';
@@ -132,7 +132,7 @@ export function InputBox() {
 		if (cmd.name === 'requirement') {
 			void executeCommand('requirement');
 		} else if (cmd.hostAction === 'open_rtk_settings') {
-			useRtkStore.getState().openSettings();
+			useSettingsDialogStore.getState().show('rtk');
 		}
 	};
 	const sendGuidance = useSessionStore((s) => s.sendGuidance);
@@ -414,9 +414,9 @@ export function InputBox() {
 	const pickCommand = (name: string) => {
 		setShowPalette(false);
 		const cmd = commands.find((c) => c.name === name);
-		// hostAction 路由：/rtk 打开原生设置 Dialog，不调 ctx.ui.custom()
+		// hostAction 路由：/rtk 打开统一设置的 RTK 分区，不调 ctx.ui.custom()
 		if (cmd?.hostAction === 'open_rtk_settings') {
-			useRtkStore.getState().openSettings();
+			useSettingsDialogStore.getState().show('rtk');
 			return;
 		}
 		// 需求命令本身就是选择器：选中命令后立即打开需求列表，不再要求用户额外发送一次。
@@ -481,7 +481,6 @@ export function InputBox() {
 
 	return (
 		<div ref={rootRef} className={`${styles.root} ${isDragOver ? styles.dragOver : ''}`}>
-			<RtkSettingsDialog />
 			<ExtensionUIConfirmCard />
 			<ExtensionUISelectCard />
 			{showPalette && !hasPendingConfirm && !hasPendingActionSelect && <CommandPalette commands={commands} query={text.slice(1)} onPick={pickCommand} onDismiss={() => setShowPalette(false)} />}
@@ -495,19 +494,19 @@ export function InputBox() {
 							<div key={item.id} className={styles.guidanceItem}>
 								<div className={styles.guidanceItemBody}>
 									<span className={styles.guidanceGrip} aria-hidden="true">⋮⋮</span>
-									<span className={styles.guidanceItemText} title={item.displayText}>{item.displayText}</span>
+									<Hint content={item.displayText}><span className={styles.guidanceItemText}>{item.displayText}</span></Hint>
 									<span className={styles.guidanceItemStatus}>{guidanceStatusLabel(item.status)}</span>
 								</div>
 								<div className={styles.guidanceItemActions}>
-									<Button type="button" variant="secondary" size="sm" className={styles.guidanceAction} onClick={() => void replayGuidance(item, 'steer')} disabled={!isStreaming || submitting || isStopping || isFlushingGuidance} title="再次引导">
+									<Hint content="再次引导"><Button type="button" variant="secondary" size="sm" className={styles.guidanceAction} onClick={() => void replayGuidance(item, 'steer')} disabled={!isStreaming || submitting || isStopping || isFlushingGuidance}>
 										<CornerUpRight size={13} /> 引导
-									</Button>
-									<Button type="button" variant="ghost" size="icon-sm" className={styles.guidanceIconAction} onClick={() => editGuidance(item)} title="编辑后发送" aria-label="编辑后发送">
+									</Button></Hint>
+									<Hint content="编辑后发送"><Button type="button" variant="ghost" size="icon-sm" className={styles.guidanceIconAction} onClick={() => editGuidance(item)} aria-label="编辑后发送">
 										<Pencil size={14} />
-									</Button>
-									<Button type="button" variant="ghost" size="icon-sm" className={styles.guidanceIconAction} onClick={() => removeGuidance(item.id)} title="删除记录" aria-label="删除记录">
+									</Button></Hint>
+									<Hint content="删除记录"><Button type="button" variant="ghost" size="icon-sm" className={styles.guidanceIconAction} onClick={() => removeGuidance(item.id)} aria-label="删除记录">
 										<Trash2 size={14} />
-									</Button>
+									</Button></Hint>
 								</div>
 							</div>
 						))}
@@ -516,21 +515,20 @@ export function InputBox() {
 				{(attachments.length > 0 || preparing || prepareError) && (
 					<div className={styles.attachments}>
 						{attachments.map((a, idx) => (
-							<div key={`${a.name}-${idx}`} className={styles.attachment} title={a.warnings?.join('\n') || a.name}>
+							<Hint key={`${a.name}-${idx}`} content={a.warnings?.join('\n') || a.name}><div className={styles.attachment}>
 								{a.kind === 'image' ? <ImageIcon size={13} /> : <FileText size={13} />}
 								<span className={styles.attachmentName}>{a.name}</span>
 								<span className={styles.attachmentSize}>{formatSize(a.sizeBytes)}</span>
-								<Button
+								<Hint content="移除"><Button
 									type="button"
 									variant="ghost"
 									size="icon-sm"
 									className={styles.attachmentRemove}
 									onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))}
-									title="移除"
 								>
 									<X size={12} />
-								</Button>
-							</div>
+								</Button></Hint>
+							</div></Hint>
 						))}
 						{preparing && (
 							<div className={`${styles.attachment} ${styles.loading}`}>
@@ -539,12 +537,12 @@ export function InputBox() {
 							</div>
 						)}
 						{prepareError && (
-							<div className={`${styles.attachment} ${styles.error}`} title={prepareError}>
+							<Hint content={prepareError}><div className={`${styles.attachment} ${styles.error}`}>
 								<span>附件解析失败：{prepareError}</span>
 								<Button type="button" variant="ghost" size="icon-sm" className={styles.attachmentRemove} onClick={() => setPrepareError(null)}>
 									<X size={12} />
 								</Button>
-							</div>
+							</div></Hint>
 						)}
 					</div>
 				)}
@@ -554,56 +552,52 @@ export function InputBox() {
 				</div>
 				<div className={styles.toolbar}>
 					<div className={styles.actions}>
-						<Button
+						<Hint content="附加文件"><Button
 							type="button"
 							variant="ghost"
 							size="icon-sm"
 							onClick={pickFiles}
 							className={styles.attach}
-							title="附加文件"
 							disabled={preparing || isSessionLoading}
 						>
 							<Paperclip size={16} />
-						</Button>
+						</Button></Hint>
 						<ModelPicker />
 						{(isStreaming && hasComposerContent) ? (
-							<Button
+							<Hint content="发送引导"><Button
 								type="button"
 								variant="default"
 								size="icon"
 								onClick={() => void send()}
 								disabled={!canSend}
 								className={styles.send}
-								title="发送引导"
 								aria-label="发送引导"
 							>
 								<Send size={15} />
-							</Button>
+							</Button></Hint>
 						) : isStreaming || isStopping ? (
-							<Button
+							<Hint content="停止当前任务并取消未执行引导"><Button
 								type="button"
 								variant="ghost"
 								size="icon"
 								onClick={() => void abort()}
 								disabled={isStopping}
 								className={`${styles.send} ${styles.stop}`}
-								title="停止当前任务并取消未执行引导"
 								aria-label="停止当前任务并取消未执行引导"
 							>
 								<Square size={15} />
-							</Button>
+							</Button></Hint>
 						) : (
-							<Button
+							<Hint content="发送"><Button
 								type="button"
 								variant="default"
 								size="icon"
 								onClick={() => void send()}
 								disabled={!canSend || isSessionLoading}
 								className={styles.send}
-								title="发送"
 							>
 								<ArrowUp size={16} />
-							</Button>
+							</Button></Hint>
 						)}
 					</div>
 				</div>

@@ -6,6 +6,7 @@ import remarkGfm from 'remark-gfm';
 import type { UIMessage } from '@/src/store/session';
 import { useWorkbenchStore } from '@/src/store/workbench';
 import { Button } from '@/src/components/ui/button';
+import { Hint } from '@/src/components/ui/tooltip';
 import { useSessionStore } from '@/src/store/session';
 import { copyText } from '@/src/lib/clipboard';
 import { parsePlanContent } from './plan-content';
@@ -31,9 +32,9 @@ export function PlanCard({ message }: { message: UIMessage }) {
 			<div className={styles.topLine} aria-hidden="true" />
 			<header className={styles.header}>
 				<span className={styles.label}><ListChecks size={16} aria-hidden="true" />计划</span>
-				<Button type="button" variant="ghost" size="icon-sm" className={styles.copyButton} onClick={() => void copy()} aria-label={copied ? '已复制计划' : '复制计划'} title={copied ? '已复制' : '复制完整计划'}>
+				<Hint content={copied ? '已复制' : '复制完整计划'}><Button type="button" variant="ghost" size="icon-sm" className={styles.copyButton} onClick={() => void copy()} aria-label={copied ? '已复制计划' : '复制计划'}>
 					{copied ? <Check size={15} /> : <Clipboard size={15} />}
-				</Button>
+				</Button></Hint>
 			</header>
 			<div className={styles.preview}>
 				<div className={styles.markdown}><ReactMarkdown remarkPlugins={[remarkGfm]}>{plan.previewMarkdown}</ReactMarkdown></div>

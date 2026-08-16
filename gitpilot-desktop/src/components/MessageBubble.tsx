@@ -15,6 +15,7 @@ import { PlanCard } from './PlanCard';
 import { CommandIcon, formatCommandLabel } from './CommandTokenNode';
 import type { UIMessage } from '@/src/store/session';
 import { cn } from '@/src/lib/utils';
+import { Hint } from '@/src/components/ui/tooltip';
 import styles from './MessageBubble.module.css';
 
 const ROLE_ALIGN: Record<UIMessage['role'], string> = {
@@ -30,18 +31,12 @@ function AttachmentRow({ attachments }: { attachments: NonNullable<UIMessage['at
 		<div className={styles.attachments}>
 			{attachments.map((a, idx) =>
 				a.kind === 'image' && a.previewUrl ? (
-					<img
-						key={`${a.name}-${idx}`}
-						src={a.previewUrl}
-						alt={a.name}
-						className={styles.attachmentThumb}
-						title={a.name}
-					/>
+					<Hint key={`${a.name}-${idx}`} content={a.name}><img src={a.previewUrl} alt={a.name} className={styles.attachmentThumb} /></Hint>
 				) : (
-					<span key={`${a.name}-${idx}`} className={styles.attachmentChip} title={a.name}>
+					<Hint key={`${a.name}-${idx}`} content={a.name}><span className={styles.attachmentChip}>
 						{a.kind === 'image' ? <ImageIcon size={12} /> : <FileText size={12} />}
 						{a.name}
-					</span>
+					</span></Hint>
 				),
 			)}
 		</div>
@@ -119,7 +114,7 @@ export const MessageBubble = memo(function MessageBubble({ message }: { message:
 				)}
 				{isUser && message.skills && message.skills.length > 0 && (
 					<div className={styles.attachments} aria-label="已使用技能">
-						{message.skills.map((skill) => <span key={skill} className={styles.attachmentChip} title={`Skill: ${skill}`}>✣ Skill:{skill}</span>)}
+						{message.skills.map((skill) => <Hint key={skill} content={`技能 · ${skill}`}><span className={styles.attachmentChip}>✣ Skill:{skill}</span></Hint>)}
 					</div>
 				)}
 				{isUser ? (

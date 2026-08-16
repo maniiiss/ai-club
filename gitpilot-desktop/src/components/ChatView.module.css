@@ -9,9 +9,9 @@
 .surface[data-new-message='true'] .content { /* 发送后追加必要的尾部空间，保证最新用户消息可移动到上方安全区。 */ padding-bottom: calc(var(--gp-composer-bottom-space, 190px) + 16px + var(--gp-new-message-extra-space, 0px)); }
 .empty { display: flex; margin-top: 96px; flex-direction: column; align-items: center; gap: 16px; color: var(--gp-text); text-align: center; }
 .emptyIcon { display: flex; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: var(--gp-selection); color: var(--gp-action); }
-.empty h2 { margin: 0; color: var(--gp-text); font-size: 18px; font-weight: 500; }
-.empty p { margin: 4px 0 0; color: var(--gp-text-muted); font-size: 13px; }
-.loadingState { display: flex; min-height: 260px; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--gp-text-muted); font-size: 12px; }
+.empty h2 { margin: 0; color: var(--gp-text); font-size: calc(18px * var(--desktop-font-scale)); font-weight: 500; }
+.empty p { margin: 4px 0 0; color: var(--gp-text-muted); font-size: calc(13px * var(--desktop-font-scale)); }
+.loadingState { display: flex; min-height: 260px; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--gp-text-muted); font-size: calc(12px * var(--desktop-font-scale)); }
 .logoLoader { position: relative; display: grid; width: 46px; height: 46px; place-items: center; }
 .loadingLogo { position: relative; z-index: 1; width: 28px; height: 28px; border: 1px solid var(--gp-border-strong); border-radius: 50%; box-shadow: 0 5px 18px var(--gp-shadow-color); object-fit: cover; }
 .loadingHalo { position: absolute; inset: 2px; border: 1px solid color-mix(in srgb, var(--gp-action) 28%, transparent); border-top-color: var(--gp-action); border-right-color: var(--gp-accent); border-radius: 50%; animation: chatHaloSpin 1.15s linear infinite; }

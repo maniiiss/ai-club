@@ -14,7 +14,7 @@ import { Button } from '@/src/components/ui/button';
 import { TargetDesktopShell } from '@/src/components/desktop/TargetDesktopShell';
 import { TargetWorkShell } from '@/src/components/work/TargetWorkShell';
 import { DesignShell } from '@/src/components/design/DesignShell';
-import { McpManagerDialog } from '@/src/components/desktop/McpManagerDialog';
+import { SettingsDialog } from '@/src/components/desktop/SettingsDialog';
 import { resolveWorkbenchShortcut } from '@/src/workbench/shortcuts';
 import { useAppModeStore } from '@/src/store/app-mode';
 import styles from './App.module.css';
@@ -75,5 +75,5 @@ export default function App() {
 		</div>;
 	}
 
-	return <TargetContextMenu>{content}<McpManagerDialog /></TargetContextMenu>;
+	return <TargetContextMenu>{content}<SettingsDialog /></TargetContextMenu>;
 }

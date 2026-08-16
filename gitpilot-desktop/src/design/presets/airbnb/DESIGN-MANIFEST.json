@@ -1,0 +1,31 @@
+{
+  "schema": "open-design.design-manifest.v1",
+  "title": "爱彼迎旅行",
+  "description": "来自 Open Design 的爱彼迎旅行设计系统。",
+  "entryFile": "index.html",
+  "license": "unknown",
+  "metadata": {
+    "source": "Open Design",
+    "attribution": "Open Design curated bundled fixture"
+  },
+  "responsiveViewports": [
+    {
+      "name": "手机",
+      "width": 390,
+      "height": 844,
+      "category": "mobile"
+    },
+    {
+      "name": "平板",
+      "width": 768,
+      "height": 1024,
+      "category": "tablet"
+    },
+    {
+      "name": "桌面",
+      "width": 1440,
+      "height": 900,
+      "category": "desktop"
+    }
+  ]
+}

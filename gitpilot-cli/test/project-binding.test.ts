@@ -3,6 +3,7 @@ import {
 	formatProjectListPrompt,
 	formatProjectSelectionMessage,
 	projectBindingFilePath,
+	validateTechnologyStack,
 	validateWorkspacePurpose,
 } from "../src/extensions/gitpilot/project-binding.ts";
 
@@ -16,6 +17,8 @@ describe("Code/Work 项目绑定扩展", () => {
 		expect(prompt).toContain("项目说明：承载订单创建与履约流程");
 		expect(prompt).toContain("gitpilot_project_bind");
 		expect(prompt).toContain("先读取当前工作区的实际代码、README、构建配置或入口文件");
+		expect(prompt).toContain("technologyStack");
+		expect(prompt).toContain("pom.xml、build.gradle、package.json、requirements.txt");
 		expect(prompt).toContain("严禁根据目录名、工作区路径、GitPilot Web 项目的名称、状态或说明推断");
 	});
 
@@ -27,6 +30,12 @@ describe("Code/Work 项目绑定扩展", () => {
 	it("保留基于已读取代码的一句话工作区用途", () => {
 		expect(validateWorkspacePurpose("提供订单创建、支付与履约流程的 Spring Boot 后端服务")).toBe("提供订单创建、支付与履约流程的 Spring Boot 后端服务");
 		expect(validateWorkspacePurpose("   ")).toBeUndefined();
+	});
+
+	it("保留有配置依据的技术栈并拒绝推测性表述", () => {
+		expect(validateTechnologyStack("Java、Spring Boot、MyBatis")).toBe("Java、Spring Boot、MyBatis");
+		expect(validateTechnologyStack("   ")).toBeUndefined();
+		expect(() => validateTechnologyStack("可能是 Java、Spring Boot 项目")).toThrow("必须基于已读取的工作区配置或源码");
 	});
 
 	it("绑定文件位于当前工作区自己的 .gitpilot 目录", () => {

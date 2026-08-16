@@ -37,6 +37,20 @@ export interface DesignRevision {
 	prompt: string;
 	summary: string;
 	createdAt: string;
+	/** 该修订基于哪个当前修订生成，便于时间线解释分支和回滚。 */
+	parentRevisionId?: string;
+	/** 回滚修订指向被恢复的历史修订；普通 patch 不设置。 */
+	sourceRevisionId?: string;
+	kind?: 'initial' | 'patch' | 'rollback';
+}
+
+export interface DesignUploadRecord {
+	projectId: number;
+	revisionId: string;
+	versionId: number;
+	versionNumber: number;
+	status: 'DRAFT' | 'CURRENT' | 'ARCHIVED';
+	uploadedAt: string;
 }
 
 export interface DesignDocument {
@@ -66,11 +80,66 @@ export interface DesignProjectGuidelines {
 	updatedAt: string;
 }
 
+/** 内置 Design 预设声明的视口，用于预览和后续实现验收，不替换工作台本身的画布预设。 */
+export interface DesignPresetViewport extends DesignViewport {
+	id: string;
+	label: string;
+	category?: string;
+}
+
+export interface DesignPresetHandoff {
+	brandDescription: string;
+	componentRules: string[];
+	layoutRules: string[];
+	responsiveRules: string[];
+	agentPromptGuide: string[];
+}
+
+/** 平台随 Desktop 构建发布的只读预设；HTML 只允许进入受限预览，不能成为项目文件。 */
+export interface DesignPreset {
+	id: string;
+	title: string;
+	description: string;
+	entryFile: 'index.html';
+	viewports: DesignPresetViewport[];
+	tokens: DesignProjectGuidelines['tokens'];
+	handoff: DesignPresetHandoff;
+	/** 保留原始交接 Markdown，供预设详情按文档层级阅读。 */
+	handoffMarkdown: string;
+	guidelines: DesignProjectGuidelines;
+	previewHtml: string;
+	source?: string;
+	license: string;
+	attribution?: string;
+	warnings: string[];
+}
+
 export interface DesignPlan {
 	title: string;
 	summary: string;
 	files: DesignFileName[];
 	risks: string[];
+}
+
+/** 首轮生成前收集的最小设计意图，避免把一次性的追问混入后续设计 revision。 */
+export interface DesignIntake {
+	sourcePrompt: string;
+	step: number;
+	status: 'pending' | 'confirmed' | 'skipped';
+	answers: {
+		productType?: string;
+		visualTone?: string;
+		layout?: string;
+		notes?: string;
+	};
+	confirmedAt?: number;
+}
+
+/** 待办只表达当前 Design 工作区的执行进度，不参与页面文件或 revision 的事实源。 */
+export interface DesignTodoItem {
+	id: string;
+	text: string;
+	state: 'pending' | 'active' | 'done';
 }
 
 export type DesignExecutionStatus = 'idle' | 'starting' | 'running' | 'awaiting_approval' | 'completed' | 'stopped' | 'failed';

@@ -1,6 +1,7 @@
 /** 当前项目目录的应用内 Windows PowerShell 终端。 */
 import { useEffect, useRef, useState } from 'react';
 import { TerminalSquare } from 'lucide-react';
+import { Hint } from '@/src/components/ui/tooltip';
 import '@xterm/xterm/css/xterm.css';
 import { closeTerminal, listenTerminalData, startTerminal, writeTerminal } from '@/src/desktop/terminal';
 import { useSessionStore } from '@/src/store/session';
@@ -94,7 +95,7 @@ export function TerminalPanel() {
 
 	return (
 		<div className={styles.root}>
-			<div className={styles.header}><TerminalSquare size={15} className={styles.icon} /><span>Windows PowerShell</span><small title={currentProjectPath ?? undefined}>{currentProjectPath ?? '未选择工作目录'}</small></div>
+			<div className={styles.header}><TerminalSquare size={15} className={styles.icon} /><span>Windows PowerShell</span><Hint content={currentProjectPath}><small>{currentProjectPath ?? '未选择工作目录'}</small></Hint></div>
 			{error ? <div className={styles.error}>终端启动失败：{error}</div> : <div ref={hostRef} className={styles.viewport} />}
 		</div>
 	);

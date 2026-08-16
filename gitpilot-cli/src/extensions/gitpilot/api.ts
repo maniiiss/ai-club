@@ -41,6 +41,27 @@ export interface CliProjectSummary {
 	owner?: string;
 }
 
+/** Design 版本上传结果；快照由 CLI 端受控读取后一次性提交到平台。 */
+export interface CliDesignVersionUpload {
+	projectId: number;
+	designId: string;
+	revisionId: string;
+	name: string;
+	summary: string;
+	snapshot: unknown;
+	previewHtml: string;
+}
+
+export interface CliDesignVersionUploadResult {
+	versionId: number;
+	versionNumber: number;
+	status: "DRAFT" | "CURRENT" | "ARCHIVED";
+	projectId: number;
+	designId: string;
+	revisionId: string;
+	createdAt: string;
+}
+
 export type CliProvider = "OPENAI" | "ANTHROPIC";
 
 export interface CliModel {
@@ -165,6 +186,22 @@ export const listProjects = async (platformUrl: string, token: string, keyword?:
 		? projects.filter((project) => project.name.toLocaleLowerCase().includes(normalizedKeyword))
 		: projects;
 };
+
+/** 将指定 Design 修订保存为 Web 项目草稿版本；调用方必须显式传入项目和修订。 */
+export const uploadDesignVersion = (platformUrl: string, token: string, payload: CliDesignVersionUpload) =>
+	requestJson<CliDesignVersionUploadResult>(platformUrl, `/api/cli/projects/${payload.projectId}/design-versions`, {
+		method: "POST",
+		body: {
+			designId: payload.designId,
+			revisionId: payload.revisionId,
+			name: payload.name,
+			summary: payload.summary,
+			snapshot: payload.snapshot,
+			previewHtml: payload.previewHtml,
+		},
+		token,
+		timeoutMs: 60_000,
+	});
 
 export const createModelSession = (platformUrl: string, token: string, modelConfigId: number) =>
 	requestJson<ModelSession>(platformUrl, "/api/cli/model-sessions", {

@@ -27,11 +27,16 @@ import { ExecutionTaskDetailPage } from '@/src/pages/execution/ExecutionTaskDeta
 import { ReleasePage } from '@/src/pages/release/ReleasePage'
 import { ChatPage } from '@/src/pages/chat/ChatPage'
 import { GitPilotCliPage } from '@/src/pages/cli/GitPilotCliPage'
+import { DesignVersionsPage } from '@/src/pages/design/DesignVersionsPage'
+import { GitPilotLandingPage } from '@/src/pages/landing/GitPilotLandingPage'
 
 
 /* ── 路由定义 ── */
 
 export const router = createBrowserRouter([
+  // 独立的产品介绍页，仅通过固定链接访问，不进入产品导航。
+  { path: '/gitpilot', element: <GitPilotLandingPage /> },
+
   // 公开路由
   {
     element: <AuthLayout />,
@@ -81,6 +86,7 @@ export const router = createBrowserRouter([
           { path: 'planning/work-items/:workItemId', element: <PlanningPage /> },
           { path: 'knowledge', element: <KnowledgePage /> },
           { path: 'development', element: <DevelopmentPage /> },
+          { path: 'design', element: <DesignVersionsPage /> },
           { path: 'testing', element: <TestPlansPage /> },
           { path: 'execution', element: <ExecutionCenterPage /> },
           { path: 'release', element: <ReleasePage /> },

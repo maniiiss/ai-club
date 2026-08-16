@@ -6,6 +6,7 @@ import { useSessionStore } from '@/src/store/session';
 import { useAppModeStore, type AppMode } from '@/src/store/app-mode';
 import { TargetUserMenu } from './TargetUserMenu';
 import { Button } from '@/src/components/ui/button';
+import { Hint } from '@/src/components/ui/tooltip';
 import styles from './TargetTitleBar.module.css';
 
 // 复用 Tauri 统一应用图标，确保开发态和打包态都能解析到同一份资源。
@@ -39,9 +40,9 @@ export function TargetTitleBar() {
 			<div className={styles.actions} onMouseDown={(event) => event.stopPropagation()}>
 				<TargetUserMenu />
 				<span className={styles.divider} />
-				<Button variant="ghost" size="icon-sm" onClick={() => runWindowAction('最小化', minimizeWindow)} title="最小化" aria-label="最小化"><Minus /></Button>
-				<Button variant="ghost" size="icon-sm" onClick={() => runWindowAction('最大化', toggleMaximizeWindow)} title="最大化" aria-label="最大化"><Square /></Button>
-				<Button variant="ghost" size="icon-sm" className={styles.close} onClick={() => runWindowAction('关闭', closeWindow)} title="关闭" aria-label="关闭"><X /></Button>
+				<Hint content="最小化"><Button variant="ghost" size="icon-sm" onClick={() => runWindowAction('最小化', minimizeWindow)} aria-label="最小化"><Minus /></Button></Hint>
+				<Hint content="最大化"><Button variant="ghost" size="icon-sm" onClick={() => runWindowAction('最大化', toggleMaximizeWindow)} aria-label="最大化"><Square /></Button></Hint>
+				<Hint content="关闭"><Button variant="ghost" size="icon-sm" className={styles.close} onClick={() => runWindowAction('关闭', closeWindow)} aria-label="关闭"><X /></Button></Hint>
 			</div>
 		</header>
 	);

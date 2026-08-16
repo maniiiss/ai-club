@@ -29,7 +29,7 @@ v1 不是 Figma 替代品，也不是完整 IDE。它优先验证“描述界面
 - 同一设计文档可以切换手机、平板、桌面三类视口，不需要重复生成。
 - 每次 AI 修改都有可读的变更摘要，并支持撤销/恢复。
 - 导出的 HTML 在无 GitPilot 环境下可以本地打开或通过静态服务器运行。
-- 生成过程不直接获得渲染层的文件系统、Shell 或网络权限。
+- 渲染层不直接获得文件系统、Shell 或网络权限；Design Agent 的受控 Web/MCP 研究由 sidecar 承担。
 
 ## 3. 功能设计
 
@@ -162,7 +162,7 @@ React Design Workbench
 | `design_preview` | 构建预览包并返回受控预览句柄 |
 | `design_check` | 执行结构、响应式和可访问性检查 |
 | `design_revert` | 回滚到指定修订 |
-| `design_export` | 导出 HTML 包或设计快照 |
+| `design_export` | 导出保留多页面目录结构的 ZIP 设计包 |
 
 事件沿用现有 JSONL 事件流，并增加 `design_plan`、`design_patch_ready`、`design_preview_ready`、`design_check_result`、`design_error`。每个事件附带 `designId`、`pageId`、`revisionId`、`sessionFile` 和单调递增 `sequence`，遵守现有会话隔离和恢复规则。
 
@@ -271,4 +271,3 @@ gitpilot-desktop/src/design/
 4. 在 sidecar 增加 `design_create/get_snapshot/generate/preview/check/export` 命令骨架。
 5. 实现 `.gitpilot/design/` 文件格式、修订记录和补丁回滚。
 6. 接入一个固定模板和一个真实自然语言生成示例，完成端到端验收。
-

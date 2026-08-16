@@ -418,6 +418,20 @@ export function getExportTemplateDir(): string {
 	return join(packageDir, srcOrDist, "core", "export-html");
 }
 
+/**
+ * 获取随 GitPilot 发布的 Skill 资源目录。
+ * Bun sidecar 的资源根目录由 Desktop 通过 PI_PACKAGE_DIR 指向 Tauri resources，
+ * Node/源码模式则分别从 dist/src 读取同一份资源。
+ */
+export function getBundledSkillsDir(): string {
+	if (isBunBinary) {
+		return join(getPackageDir(), "skills");
+	}
+	const packageDir = getPackageDir();
+	const srcOrDist = existsSync(join(packageDir, "src")) ? "src" : "dist";
+	return join(packageDir, srcOrDist, "bundled-skills");
+}
+
 /** Get path to package.json */
 export function getPackageJsonPath(): string {
 	return join(getPackageDir(), "package.json");
