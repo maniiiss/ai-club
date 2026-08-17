@@ -37,10 +37,10 @@ public class PlatformToolAuditEntity {
     private String toolName = "";
 
     /**
-     * 触发来源，例如 HERMES、PAGE。
+     * 触发来源，例如 ASSISTANT、PAGE。
      */
     @Column(name = "trigger_source", nullable = false, length = 40)
-    private String triggerSource = "HERMES";
+    private String triggerSource = "ASSISTANT";
 
     /**
      * 调用用户。

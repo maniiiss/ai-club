@@ -90,7 +90,9 @@ export default function planMode(
 	let workflowGeneration = 0;
 	let menuController = new AbortController();
 
-	pi.registerFlag("plan", {
+	// Plannotator 保留上游的 --plan 入口；本地 Plan Mode 使用独立标志避免
+	// 两个扩展在启动时注册同名 CLI flag，/plan 命令仍是 Plan Mode 的主入口。
+	pi.registerFlag("plan-mode", {
 		description: "Start in Codex-like Plan mode",
 		type: "boolean",
 		default: false,
@@ -250,7 +252,7 @@ export default function planMode(
 			ctx.ui.notify(`pi-plan-mode settings ignored: ${loadedSettings.reason}`, "warning");
 		}
 		if (loadedSettings.notice) ctx.ui.notify(loadedSettings.notice, "warning");
-		const persistFlagActivation = pi.getFlag("plan") === true && !state.enabled;
+		const persistFlagActivation = pi.getFlag("plan-mode") === true && !state.enabled;
 		if (persistFlagActivation) {
 			state = state.savedPlan
 				? {

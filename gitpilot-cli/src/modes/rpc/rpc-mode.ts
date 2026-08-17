@@ -25,6 +25,7 @@ import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
+	ExtensionToolExecutionAdapter,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.ts";
 import {
@@ -50,7 +51,7 @@ import {
 } from "./rpc-types.ts";
 import { getPlatformUrl, setPlatformUrl } from "../../extensions/gitpilot/config.ts";
 import { deleteCliToken, loadCliToken, saveCliToken } from "../../extensions/gitpilot/credentials.ts";
-import { getCurrentCreditAccount, getCurrentUser, listProjects, revokeCliToken, uploadDesignVersion } from "../../extensions/gitpilot/api.ts";
+import { getCurrentCreditAccount, getCurrentUser, listMyTasks, listProjects, revokeCliToken, uploadDesignVersion } from "../../extensions/gitpilot/api.ts";
 import { createGitPilotWorkToolDefinitions } from "../../extensions/gitpilot/work-tools.ts";
 import { createModeExtensions } from "../../extensions/gitpilot/mode-extensions.ts";
 import { isDesktopCommandVisible } from "../../extensions/gitpilot/desktop-command-visibility.ts";
@@ -932,6 +933,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				method: "setStatus",
 				statusKey: key,
 				statusText: text,
+				sessionFile: extensionSessionFile,
 			} as RpcExtensionUIRequest);
 		},
 
@@ -961,6 +963,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					widgetKey: key,
 					widgetLines: content as string[] | undefined,
 					widgetPlacement: options?.placement,
+					sessionFile: extensionSessionFile,
 				} as RpcExtensionUIRequest);
 			}
 			// Component factories are not supported in RPC mode - would need TUI access
@@ -1071,6 +1074,58 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		};
 	};
 
+	/**
+	 * Desktop/RPC 的 Plannotator 原生审核适配。
+	 *
+	 * 上游扩展在 `ctx.hasUI === true` 时会启动浏览器；RPC 通过一次原生确认
+	 * 请求完成审核，批准后以 `hasUI=false` 执行上游工具，让其继续维护 phase、
+	 * `[DONE:n]` 和 setStatus/setWidget 语义，但不会再启动浏览器服务器。
+	 */
+	const plannotatorToolExecutionAdapter: ExtensionToolExecutionAdapter = async ({ toolName, params, signal, execute }) => {
+		if (toolName !== "plannotator_submit_plan") return execute();
+		if (signal?.aborted) {
+			return {
+				content: [{ type: "text", text: "计划审核已取消。" }],
+				details: { approved: false, cancelled: true },
+			} as Awaited<ReturnType<typeof execute>>;
+		}
+		const inputPath = typeof (params as { filePath?: unknown })?.filePath === "string"
+			? (params as { filePath: string }).filePath.trim()
+			: "";
+		if (!inputPath) return execute({ hasUI: false });
+		const fullPath = resolve(runtimeHost.cwd, inputPath);
+		const relativePath = relative(resolve(runtimeHost.cwd), fullPath);
+		if (!relativePath || relativePath.startsWith("..") || relativePath.includes("..\\") || relativePath.includes("../")) return execute();
+		let planContent: string;
+		try {
+			planContent = readFileSync(fullPath, "utf8");
+		} catch {
+			return execute({ hasUI: false });
+		}
+		const items = planContent
+			.split(/\r?\n/)
+			.map((line) => line.match(/^\s*[-*]\s+\[[ xX]\]\s+(.+?)\s*$/)?.[1]?.trim())
+			.filter((item): item is string => Boolean(item));
+		const planSummary = items.length > 0
+			? items.map((item, index) => `${index + 1}. ${item}`).join("\n")
+			: planContent.trim().slice(0, 6_000);
+		const message = `请审核执行计划：${relativePath}\n\n${planSummary}\n\n批准后将按步骤执行；拒绝后 Agent 会回到计划阶段。`;
+		const approved = await createDialogPromise(
+			{ signal } as ExtensionUIDialogOptions,
+			false,
+			{ method: "confirm", title: "审核执行计划", message, timeout: 15 * 60 * 1000 },
+			(response) => "cancelled" in response && response.cancelled ? false : "confirmed" in response ? response.confirmed : false,
+			session.sessionFile,
+		);
+		if (!approved) {
+			return {
+				content: [{ type: "text", text: "计划未获批准。请根据用户反馈修改计划后重新提交。" }],
+				details: { approved: false },
+			} as Awaited<ReturnType<typeof execute>>;
+		}
+		return execute({ hasUI: false });
+	};
+
 	runtimeHost.setRebindSession(async () => {
 		await rebindSession();
 	});
@@ -1080,6 +1135,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		await session.bindExtensions({
 			uiContext: createExtensionUIContext(),
 			mode: "rpc",
+			toolExecutionAdapter: plannotatorToolExecutionAdapter,
 			commandContextActions: {
 				waitForIdle: () => session.waitForIdle(),
 				newSession: async (options) => runtimeHost.newSession(options),
@@ -1811,6 +1867,16 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (!token) return error(id, "get_platform_projects", "未登录 GitPilot 平台");
 				const projects = await listProjects(platformUrl, token, command.keyword);
 				return success(id, "get_platform_projects", { projects });
+			}
+
+			// 输入框“工作项”页签只取当前账号负责的轻量摘要，令牌和平台请求始终留在 sidecar 内。
+			case "get_platform_work_items": {
+				const platformUrl = getPlatformUrl();
+				if (!platformUrl) return error(id, "get_platform_work_items", "未配置 GitPilot 平台地址");
+				const token = await loadCliToken(platformUrl);
+				if (!token) return error(id, "get_platform_work_items", "未登录 GitPilot 平台");
+				const page = await listMyTasks(platformUrl, token, { page: 1, size: 100 }, { timeoutMs: 10_000 });
+				return success(id, "get_platform_work_items", { items: page.records });
 			}
 
 			// 菜单登出需撤销平台会话并删除系统凭据，避免本地 Agent 继续持有可用 token。

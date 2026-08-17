@@ -63,12 +63,12 @@ class AssistantFileLibraryServiceTests {
         MockMultipartFile file = new MockMultipartFile("file", "需求说明.pdf", "application/pdf", "hello".getBytes());
 
         when(authService.currentUser()).thenReturn(currentUser);
-        when(documentAssetService.uploadAsset(file, "hermes-file-library"))
+        when(documentAssetService.uploadAsset(file, "assistant-file-library"))
                 .thenReturn(new DocumentAssetSummary(101L, "需求说明.pdf", "application/pdf", 5L, "PDF", "TEMP", "/api/common/files/101"));
         when(documentAssetService.requireAccessibleAsset(101L)).thenReturn(asset);
-        when(documentMarkdownService.convert(101L, DocumentMarkdownService.SCENE_HERMES_FILE_LIBRARY, null))
+        when(documentMarkdownService.convert(101L, DocumentMarkdownService.SCENE_ASSISTANT_FILE_LIBRARY, null))
                 .thenReturn(new DocumentMarkdownResult(101L, "需求说明.pdf", "需求说明", "PDF", "# 需求说明\n\n登录要支持短信验证码。", false, List.of("图片已跳过")));
-        when(documentAssetService.bindAsset(eq(asset), eq(DocumentAssetService.BIZ_TYPE_HERMES_FILE_LIBRARY), any()))
+        when(documentAssetService.bindAsset(eq(asset), eq(DocumentAssetService.BIZ_TYPE_ASSISTANT_FILE_LIBRARY), any()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         when(assistantFileLibraryItemRepository.save(any(AssistantFileLibraryItemEntity.class)))
                 .thenAnswer(invocation -> {
@@ -86,9 +86,9 @@ class AssistantFileLibraryServiceTests {
         AssistantFileLibraryItemSummary summary = service.upload(file);
 
         ArgumentCaptor<List<QdrantClientService.QdrantPoint>> pointsCaptor = ArgumentCaptor.forClass(List.class);
-        verify(documentAssetService).bindAsset(asset, DocumentAssetService.BIZ_TYPE_HERMES_FILE_LIBRARY, 77L);
-        verify(qdrantClientService).deletePointsByFilter("hermes_file_library_chunks", Map.of("ownerUserId", 5L, "itemId", 77L));
-        verify(qdrantClientService).upsertPoints(eq("hermes_file_library_chunks"), pointsCaptor.capture());
+        verify(documentAssetService).bindAsset(asset, DocumentAssetService.BIZ_TYPE_ASSISTANT_FILE_LIBRARY, 77L);
+        verify(qdrantClientService).deletePointsByFilter("assistant_file_library_chunks", Map.of("ownerUserId", 5L, "itemId", 77L));
+        verify(qdrantClientService).upsertPoints(eq("assistant_file_library_chunks"), pointsCaptor.capture());
         assertThat(summary.id()).isEqualTo(77L);
         assertThat(summary.title()).isEqualTo("需求说明");
         assertThat(summary.enabled()).isTrue();
@@ -124,7 +124,7 @@ class AssistantFileLibraryServiceTests {
 
         service.delete(77L);
 
-        verify(qdrantClientService).deletePointsByFilter("hermes_file_library_chunks", Map.of("ownerUserId", 5L, "itemId", 77L));
+        verify(qdrantClientService).deletePointsByFilter("assistant_file_library_chunks", Map.of("ownerUserId", 5L, "itemId", 77L));
         verify(assistantFileLibraryItemRepository).delete(any(AssistantFileLibraryItemEntity.class));
     }
 
@@ -148,7 +148,7 @@ class AssistantFileLibraryServiceTests {
                 .thenReturn(List.of(fileItem(77L, ownerUser(5L), true, "INDEXED")));
         when(modelConfigService.generateEmbedding(9L, "登录验证码")).thenReturn(List.of(0.1d, 0.2d, 0.3d));
         when(qdrantClientService.search(
-                "hermes_file_library_chunks",
+                "assistant_file_library_chunks",
                 List.of(0.1d, 0.2d, 0.3d),
                 Map.of("ownerUserId", 5L, "enabled", true),
                 5
@@ -168,7 +168,7 @@ class AssistantFileLibraryServiceTests {
         assertThat(markdown).contains("需求说明");
         assertThat(markdown).contains("短信验证码");
         verify(qdrantClientService).search(
-                "hermes_file_library_chunks",
+                "assistant_file_library_chunks",
                 List.of(0.1d, 0.2d, 0.3d),
                 Map.of("ownerUserId", 5L, "enabled", true),
                 5
@@ -185,7 +185,7 @@ class AssistantFileLibraryServiceTests {
                 .thenReturn(List.of(item));
         when(modelConfigService.generateEmbedding(9L, "我的个人资料里写了什么")).thenReturn(List.of(0.1d, 0.2d, 0.3d));
         when(qdrantClientService.search(
-                "hermes_file_library_chunks",
+                "assistant_file_library_chunks",
                 List.of(0.1d, 0.2d, 0.3d),
                 Map.of("ownerUserId", 5L, "enabled", true),
                 5
@@ -209,7 +209,7 @@ class AssistantFileLibraryServiceTests {
                 .thenReturn(List.of(item));
         when(modelConfigService.generateEmbedding(9L, "某候选人是谁")).thenReturn(List.of(0.1d, 0.2d, 0.3d));
         when(qdrantClientService.search(
-                "hermes_file_library_chunks",
+                "assistant_file_library_chunks",
                 List.of(0.1d, 0.2d, 0.3d),
                 Map.of("ownerUserId", 5L, "enabled", true),
                 5
@@ -252,7 +252,7 @@ class AssistantFileLibraryServiceTests {
                 .thenReturn(List.of(failedItem, indexedItem));
         when(modelConfigService.generateEmbedding(9L, "我的年终述职报告有哪些内容")).thenReturn(List.of(0.1d, 0.2d, 0.3d));
         when(qdrantClientService.search(
-                "hermes_file_library_chunks",
+                "assistant_file_library_chunks",
                 List.of(0.1d, 0.2d, 0.3d),
                 Map.of("ownerUserId", 5L, "enabled", true),
                 5
@@ -281,12 +281,12 @@ class AssistantFileLibraryServiceTests {
         MockMultipartFile file = new MockMultipartFile("file", "空文档.pdf", "application/pdf", "hello".getBytes());
 
         when(authService.currentUser()).thenReturn(currentUser);
-        when(documentAssetService.uploadAsset(file, "hermes-file-library"))
+        when(documentAssetService.uploadAsset(file, "assistant-file-library"))
                 .thenReturn(new DocumentAssetSummary(101L, "空文档.pdf", "application/pdf", 5L, "PDF", "TEMP", "/api/common/files/101"));
         when(documentAssetService.requireAccessibleAsset(101L)).thenReturn(asset);
-        when(documentMarkdownService.convert(101L, DocumentMarkdownService.SCENE_HERMES_FILE_LIBRARY, null))
+        when(documentMarkdownService.convert(101L, DocumentMarkdownService.SCENE_ASSISTANT_FILE_LIBRARY, null))
                 .thenReturn(new DocumentMarkdownResult(101L, "空文档.pdf", "空文档", "PDF", "# 空文档", false, List.of()));
-        when(documentAssetService.bindAsset(eq(asset), eq(DocumentAssetService.BIZ_TYPE_HERMES_FILE_LIBRARY), any()))
+        when(documentAssetService.bindAsset(eq(asset), eq(DocumentAssetService.BIZ_TYPE_ASSISTANT_FILE_LIBRARY), any()))
                 .thenAnswer(invocation -> invocation.getArgument(0));
         when(assistantFileLibraryItemRepository.save(any(AssistantFileLibraryItemEntity.class)))
                 .thenAnswer(invocation -> {
@@ -314,7 +314,7 @@ class AssistantFileLibraryServiceTests {
         AssistantFileLibraryItemEntity item = fileItem(77L, ownerUser(5L), true, "FAILED");
         when(authService.currentUser()).thenReturn(currentUser);
         when(assistantFileLibraryItemRepository.findByIdAndOwnerUser_Id(77L, 5L)).thenReturn(Optional.of(item));
-        when(documentMarkdownService.convert(101L, DocumentMarkdownService.SCENE_HERMES_FILE_LIBRARY, null))
+        when(documentMarkdownService.convert(101L, DocumentMarkdownService.SCENE_ASSISTANT_FILE_LIBRARY, null))
                 .thenThrow(new IllegalStateException("转换服务不可用"));
         when(assistantFileLibraryItemRepository.save(any(AssistantFileLibraryItemEntity.class)))
                 .thenAnswer(invocation -> invocation.getArgument(0));
@@ -347,7 +347,7 @@ class AssistantFileLibraryServiceTests {
                 20,
                 "wiki_project_chunks",
                 "wiki_space_chunks",
-                "hermes_file_library_chunks",
+                "assistant_file_library_chunks",
                 9L,
                 "",
                 "",
@@ -379,7 +379,7 @@ class AssistantFileLibraryServiceTests {
                 true,
                 List.of("PM"),
                 List.of("项目经理"),
-                List.of("hermes:chat"),
+                List.of("assistant:chat"),
                 List.of()
         );
     }

@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
  * Assistant 用户消息关联的文档附件，保存原始文档资产与本次转换后的 Markdown。
  */
 @Entity
-@Table(name = "hermes_conversation_attachment")
+@Table(name = "assistant_conversation_attachment")
 public class AssistantConversationAttachmentEntity {
 
     /** 附件主键ID。 */

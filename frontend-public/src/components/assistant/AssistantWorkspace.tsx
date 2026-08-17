@@ -829,7 +829,7 @@ export const AssistantWorkspace = ({ mode, projectId, compact = false }: Assista
           open
           workItem={developmentExecutionDialog.workItem}
           initialInputText={developmentExecutionDialog.initialInputText}
-          triggerSource="HERMES"
+          triggerSource="ASSISTANT"
           onClose={() => setDevelopmentExecutionDialog(null)}
           onCreated={() => void completeDevelopmentExecutionAction()}
         />

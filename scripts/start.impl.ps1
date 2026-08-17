@@ -15,9 +15,11 @@ $ports = Get-PortConfiguration
 
 if (-not $SkipInfrastructure) {
     Assert-Command -Name 'docker' -Hint 'Docker Desktop'
+    Stop-ObsoleteHybridPiRuntimeContainer
 
-    $codeProcessingHost = Set-HybridDockerRuntimeEnvironment
-    $infrastructureArguments = @('up', '-d', 'postgres', 'redis', 'rabbitmq', 'minio', 'qdrant', 'neo4j', 'hindsight', 'gitnexus-web', 'hermes')
+    Set-HybridDockerRuntimeEnvironment | Out-Null
+    # 源码模式的 Pi Runtime 必须由本地 pi-runtime/ Node 进程承载；这里只启动中间件容器。
+    $infrastructureArguments = @('up', '-d', 'postgres', 'redis', 'rabbitmq', 'minio', 'qdrant', 'neo4j', 'hindsight', 'gitnexus-web')
     if (Test-WoodpeckerEnabled) {
         $infrastructureArguments += @('woodpecker-server', 'woodpecker-agent')
     }
@@ -35,11 +37,10 @@ if (-not $SkipInfrastructure) {
     Wait-Port -Port $ports.Neo4j -TimeoutSeconds 120 -ServiceName 'Neo4j'
     Wait-Port -Port $ports.Hindsight -TimeoutSeconds 120 -ServiceName 'Hindsight'
     Wait-Port -Port $ports.GitNexusUi -TimeoutSeconds 120 -ServiceName 'GitNexus Web UI'
-    Wait-Port -Port $ports.Hermes -TimeoutSeconds 120 -ServiceName 'Hermes'
     if (Test-WoodpeckerEnabled) {
         Wait-Port -Port $ports.Woodpecker -TimeoutSeconds 120 -ServiceName 'Woodpecker'
     }
-    Write-Success "Hermes 将通过 $codeProcessingHost 访问宿主机 code-processing"
+    Write-Success '源码模式依赖容器已就绪，Pi Runtime 将由本地源码进程启动'
 }
 
 Start-LocalApplicationServices -PortConfiguration $ports `

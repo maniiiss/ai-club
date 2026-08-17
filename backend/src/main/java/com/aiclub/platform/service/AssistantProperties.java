@@ -20,13 +20,13 @@ public class AssistantProperties {
     private final PlatformEnvVarResolver platformEnvVarResolver;
 
     @Autowired
-    public AssistantProperties(@Value("${platform.hermes.base-url}") String baseUrl,
-                            @Value("${platform.hermes.api-key:}") String apiKey,
-                            @Value("${platform.hermes.model:hermes-agent}") String model,
-                            @Value("${platform.hermes.timeout-seconds:180}") String timeoutSeconds,
-                            @Value("${platform.hermes.session-prefix:ai-club:hermes}") String sessionPrefix,
-                            @Value("${platform.hermes.max-context-messages:6}") int maxContextMessages,
-                            @Value("${platform.hermes.grounding-ttl-seconds:86400}") int groundingTtlSeconds,
+    public AssistantProperties(@Value("${platform.assistant-runtime.base-url:http://localhost:9010}") String baseUrl,
+                            @Value("${platform.assistant-runtime.api-key:}") String apiKey,
+                            @Value("${platform.assistant-runtime.model:PI_RUNTIME}") String model,
+                            @Value("${platform.assistant-runtime.timeout-seconds:180}") String timeoutSeconds,
+                            @Value("${platform.assistant-runtime.session-prefix:ai-club:assistant}") String sessionPrefix,
+                            @Value("${platform.assistant-runtime.max-context-messages:6}") int maxContextMessages,
+                            @Value("${platform.assistant-runtime.grounding-ttl-seconds:86400}") int groundingTtlSeconds,
                             PlatformEnvVarResolver platformEnvVarResolver) {
         this(baseUrl, apiKey, model, timeoutSeconds, sessionPrefix, maxContextMessages, groundingTtlSeconds, platformEnvVarResolver, true);
     }
@@ -50,11 +50,11 @@ public class AssistantProperties {
                              int groundingTtlSeconds,
                              PlatformEnvVarResolver platformEnvVarResolver,
                              boolean normalizedConstructor) {
-        this.baseUrl = trimTrailingSlash(hasText(baseUrl) ? baseUrl : "http://localhost:18080/v1");
+        this.baseUrl = trimTrailingSlash(hasText(baseUrl) ? baseUrl : "http://localhost:9010");
         this.apiKey = apiKey == null ? "" : apiKey.trim();
-        this.model = model == null || model.trim().isEmpty() ? "hermes-agent" : model.trim();
+        this.model = model == null || model.trim().isEmpty() ? "PI_RUNTIME" : model.trim();
         this.timeoutSeconds = normalizeTimeoutSeconds(timeoutSeconds);
-        this.sessionPrefix = sessionPrefix == null || sessionPrefix.trim().isEmpty() ? "ai-club:hermes" : sessionPrefix.trim();
+        this.sessionPrefix = sessionPrefix == null || sessionPrefix.trim().isEmpty() ? "ai-club:assistant" : sessionPrefix.trim();
         this.maxContextMessages = Math.max(1, Math.min(maxContextMessages, 20));
         this.groundingTtlSeconds = Math.max(300, Math.min(groundingTtlSeconds, 604800));
         this.platformEnvVarResolver = platformEnvVarResolver;
@@ -71,11 +71,11 @@ public class AssistantProperties {
     }
 
     public String getModel() {
-        return resolveOrDefault(PlatformEnvVarRegistry.KEY_HERMES_MODEL, model);
+        return resolveOrDefault(PlatformEnvVarRegistry.KEY_ASSISTANT_MODEL, model);
     }
 
     public int getTimeoutSeconds() {
-        String resolved = resolveOrDefault(PlatformEnvVarRegistry.KEY_HERMES_TIMEOUT_SECONDS, String.valueOf(timeoutSeconds));
+        String resolved = resolveOrDefault(PlatformEnvVarRegistry.KEY_ASSISTANT_TIMEOUT_SECONDS, String.valueOf(timeoutSeconds));
         return normalizeTimeoutSeconds(resolved);
     }
 

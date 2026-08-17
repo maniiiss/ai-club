@@ -562,25 +562,25 @@ a:hover {
   background: color-mix(in srgb, var(--color-bg-hover) 84%, var(--color-bg-card));
 }
 
-.chat-composer-surface.is-hermes {
+.chat-composer-surface.is-assistant {
   border-color: color-mix(in srgb, var(--color-warning) 58%, var(--color-border-strong));
 }
 
-.chat-hermes-button.is-active {
+.chat-assistant-button.is-active {
   color: var(--color-warning);
   background: color-mix(in srgb, var(--color-warning) 18%, var(--color-bg-card));
 }
 
-.chat-hermes-button.is-inactive {
+.chat-assistant-button.is-inactive {
   color: var(--color-text-secondary);
 }
 
-.chat-hermes-button.is-inactive:hover {
+.chat-assistant-button.is-inactive:hover {
   color: var(--color-warning);
   background: color-mix(in srgb, var(--color-warning) 10%, var(--color-bg-card));
 }
 
-.chat-hermes-hint {
+.chat-assistant-hint {
   color: var(--color-warning);
 }
 

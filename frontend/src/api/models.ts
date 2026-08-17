@@ -1,5 +1,5 @@
 import { http } from './http'
-import type { AiModelConfigItem, AiModelType, ApiResponse, ModelTestResult, OpenAiApiMode, PageResponse } from '@/types/platform'
+import type { AiModelConfigItem, AiModelInputModality, AiModelType, ApiResponse, ModelTestResult, OpenAiApiMode, PageResponse } from '@/types/platform'
 
 export interface AiModelConfigPayload {
   name: string
@@ -11,6 +11,8 @@ export interface AiModelConfigPayload {
   apiKey: string
   description: string
   enabled: boolean
+  /** 模型可接收的输入模态；未勾选图片时平台仅向下游声明 text。 */
+  inputModalities: AiModelInputModality[]
   contextLength?: number
   maxOutputTokens?: number
   /** 是否启用 token 计费（灰度开关）。 */

@@ -135,10 +135,10 @@ class AssistantChatServiceTests {
         when(authService.currentUser()).thenReturn(currentUser);
         when(userRepository.findById(5L)).thenReturn(Optional.of(userEntity));
         when(assistantContextAssembler.assemble(any(), eq(currentUser))).thenReturn(context);
-        when(assistantConversationStateStore.load(eq("test:hermes:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
+        when(assistantConversationStateStore.load(eq("test:assistant:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
                 .thenReturn(Optional.empty());
         when(assistantToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(AssistantGroundingState.empty());
-        when(assistantMcpSessionTokenService.issueToken(eq(currentUser), eq("test:hermes:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
+        when(assistantMcpSessionTokenService.issueToken(eq(currentUser), eq("test:assistant:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
                 .thenReturn("session-token");
         when(assistantPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), any(), any()))
                 .thenReturn(prompt);
@@ -160,14 +160,14 @@ class AssistantChatServiceTests {
         verify(assistantPromptBuilder).buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), currentTurnContentCaptor.capture(), eq("### Hindsight 记忆\n- 项目记忆命中\n\n### Wiki 知识证据\n- Wiki 证据命中"));
         AssistantConversationState finalState = stateCaptor.getAllValues().get(stateCaptor.getAllValues().size() - 1);
 
-        assertThat(finalState.scopeKey()).isEqualTo("test:hermes:project:12:user:5:conversation:conversation-1");
+        assertThat(finalState.scopeKey()).isEqualTo("test:assistant:project:12:user:5:conversation:conversation-1");
         assertThat(finalState.mcpSessionToken()).isEqualTo("session-token");
         assertThat(finalState.transcript()).extracting(AssistantConversationTurn::role).containsExactly("user", "assistant");
         assertThat(finalState.transcript().get(0).content()).isEqualTo("这个项目当前最大的阻塞是什么");
         assertThat(finalState.transcript().get(1).content()).isEqualTo("完整回答内容");
         assertThat(outboundTranscriptCaptor.getValue()).isEmpty();
         assertThat(currentTurnContentCaptor.getValue()).isEqualTo("这个项目当前最大的阻塞是什么");
-        assertThat(response.scopeKey()).isEqualTo("test:hermes:project:12:user:5:conversation:conversation-1");
+        assertThat(response.scopeKey()).isEqualTo("test:assistant:project:12:user:5:conversation:conversation-1");
         assertThat(response.content()).isEqualTo("完整回答内容");
         verify(assistantConversationSessionService).recordSuccess(eq(session), any(AssistantChatRequest.class), eq(finalState), eq("完整回答内容"), any(), eq(List.of()));
         verify(assistantHindsightMemoryService).retainConversationTurnAsync(eq(currentUser), eq(session), eq(context), any(AssistantChatRequest.class), eq("完整回答内容"), eq(finalState));
@@ -197,7 +197,7 @@ class AssistantChatServiceTests {
         );
         AssistantPromptBuilder.AssistantPrompt prompt = new AssistantPromptBuilder.AssistantPrompt("system", "user");
         AssistantConversationState existingState = new AssistantConversationState(
-                "test:hermes:project:12:user:5:conversation:conversation-1",
+                "test:assistant:project:12:user:5:conversation:conversation-1",
                 "conversation-1",
                 currentUser,
                 AssistantConversationContextSnapshot.fromContext(context),
@@ -230,9 +230,9 @@ class AssistantChatServiceTests {
         when(authService.currentUser()).thenReturn(currentUser);
         when(userRepository.findById(5L)).thenReturn(Optional.of(userEntity));
         when(assistantContextAssembler.assemble(any(), eq(currentUser))).thenReturn(context);
-        when(assistantConversationStateStore.load(eq("test:hermes:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
+        when(assistantConversationStateStore.load(eq("test:assistant:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
                 .thenReturn(Optional.of(existingState));
-        when(assistantMcpSessionTokenService.issueToken(eq(currentUser), eq("test:hermes:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
+        when(assistantMcpSessionTokenService.issueToken(eq(currentUser), eq("test:assistant:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
                 .thenReturn("session-token");
         when(assistantToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(selectedGrounding);
         when(assistantPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), eq(selectedGrounding), eq("session-token"), any(), any()))
@@ -295,7 +295,7 @@ class AssistantChatServiceTests {
                 List.of(new AssistantSelectionOption("project", "PROJECT", 12L, "支付项目", "状态：进行中", "/projects/12/iterations", 80D, List.of("旧候选")))
         );
         AssistantConversationState existingState = new AssistantConversationState(
-                "test:hermes:project:12:user:5:conversation:conversation-1",
+                "test:assistant:project:12:user:5:conversation:conversation-1",
                 "conversation-1",
                 currentUser,
                 AssistantConversationContextSnapshot.fromContext(context),
@@ -317,14 +317,14 @@ class AssistantChatServiceTests {
         when(authService.currentUser()).thenReturn(currentUser);
         when(userRepository.findById(5L)).thenReturn(Optional.of(userEntity));
         when(assistantContextAssembler.assemble(any(), eq(currentUser))).thenReturn(context);
-        when(assistantConversationStateStore.load(eq("test:hermes:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
+        when(assistantConversationStateStore.load(eq("test:assistant:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
                 .thenAnswer(invocation -> Optional.of(redisState.get()));
         doAnswer(invocation -> {
             redisState.set(invocation.getArgument(0));
             return null;
         }).when(assistantConversationStateStore).save(any(AssistantConversationState.class));
         when(assistantToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(AssistantGroundingState.empty());
-        when(assistantMcpSessionTokenService.issueToken(eq(currentUser), eq("test:hermes:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
+        when(assistantMcpSessionTokenService.issueToken(eq(currentUser), eq("test:assistant:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
                 .thenReturn("session-token");
         when(assistantPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), any(), any()))
                 .thenReturn(prompt);
@@ -367,7 +367,7 @@ class AssistantChatServiceTests {
                 "项目上下文"
         );
         AssistantConversationState existingState = new AssistantConversationState(
-                "test:hermes:project:12:user:5:conversation:conversation-1",
+                "test:assistant:project:12:user:5:conversation:conversation-1",
                 "conversation-1",
                 currentUser,
                 AssistantConversationContextSnapshot.fromContext(context),
@@ -389,14 +389,14 @@ class AssistantChatServiceTests {
         when(authService.currentUser()).thenReturn(currentUser);
         when(userRepository.findById(5L)).thenReturn(Optional.of(userEntity));
         when(assistantContextAssembler.assemble(any(), eq(currentUser))).thenReturn(context);
-        when(assistantConversationStateStore.load(eq("test:hermes:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
+        when(assistantConversationStateStore.load(eq("test:assistant:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
                 .thenAnswer(invocation -> Optional.of(redisState.get()));
         doAnswer(invocation -> {
             redisState.set(invocation.getArgument(0));
             return null;
         }).when(assistantConversationStateStore).save(any(AssistantConversationState.class));
         when(assistantToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(AssistantGroundingState.empty());
-        when(assistantMcpSessionTokenService.issueToken(eq(currentUser), eq("test:hermes:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
+        when(assistantMcpSessionTokenService.issueToken(eq(currentUser), eq("test:assistant:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
                 .thenReturn("session-token");
         when(assistantPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), any(), any()))
                 .thenReturn(prompt);
@@ -446,7 +446,7 @@ class AssistantChatServiceTests {
                 List.of(new AssistantSelectionOption("iteration", "ITERATION", 31L, "一期迭代", "进行中", "/projects/12/iterations/31", 80D, List.of("名称相近")))
         );
         AssistantConversationState inFlightState = new AssistantConversationState(
-                "test:hermes:project:12:user:5:conversation:conversation-1",
+                "test:assistant:project:12:user:5:conversation:conversation-1",
                 "conversation-1",
                 currentUser,
                 AssistantConversationContextSnapshot.fromContext(context),
@@ -474,7 +474,7 @@ class AssistantChatServiceTests {
             return null;
         }).when(assistantConversationStateStore).save(any(AssistantConversationState.class));
         when(assistantToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(AssistantGroundingState.empty());
-        when(assistantMcpSessionTokenService.issueToken(eq(currentUser), eq("test:hermes:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
+        when(assistantMcpSessionTokenService.issueToken(eq(currentUser), eq("test:assistant:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
                 .thenReturn("session-token");
         when(assistantPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), any(), any()))
                 .thenReturn(prompt);
@@ -534,7 +534,7 @@ class AssistantChatServiceTests {
                 List.of(new AssistantSelectionOption("iteration", "ITERATION", 31L, "一期迭代", "进行中", "/projects/12/iterations/31", 80D, List.of("名称相近")))
         );
         AssistantConversationState inFlightState = new AssistantConversationState(
-                "test:hermes:project:12:user:5:conversation:conversation-1",
+                "test:assistant:project:12:user:5:conversation:conversation-1",
                 "conversation-1",
                 currentUser,
                 AssistantConversationContextSnapshot.fromContext(context),
@@ -563,7 +563,7 @@ class AssistantChatServiceTests {
             return null;
         }).when(assistantConversationStateStore).save(any(AssistantConversationState.class));
         when(assistantToolOrchestrator.seedGroundingState(eq(context), any(), any())).thenReturn(AssistantGroundingState.empty());
-        when(assistantMcpSessionTokenService.issueToken(eq(currentUser), eq("test:hermes:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
+        when(assistantMcpSessionTokenService.issueToken(eq(currentUser), eq("test:assistant:project:12:user:5:conversation:conversation-1"), eq("conversation-1")))
                 .thenReturn("session-token");
         when(assistantPromptBuilder.buildConversationPrompt(eq(currentUser), eq(context), any(), any(), eq("session-token"), any(), any()))
                 .thenReturn(prompt);
@@ -1079,7 +1079,7 @@ class AssistantChatServiceTests {
                 Map.of("projectId", 12L, "workItemId", 101L)
         );
         AssistantConversationState preparedActionState = new AssistantConversationState(
-                "test:hermes:project:12:user:5:conversation:conversation-1",
+                "test:assistant:project:12:user:5:conversation:conversation-1",
                 "conversation-1",
                 currentUser,
                 AssistantConversationContextSnapshot.fromContext(context),
@@ -1150,9 +1150,9 @@ class AssistantChatServiceTests {
                 new AssistantProperties(
                         "http://localhost:18080/v1",
                         "",
-                        "hermes-agent",
+                        "assistant-agent",
                         60,
-                        "test:hermes",
+                        "test:assistant",
                         4,
                         86400
                 ),
@@ -1244,7 +1244,7 @@ class AssistantChatServiceTests {
                 true,
                 List.of("PM"),
                 List.of("项目经理"),
-                List.of("hermes:chat", "project:view", "task:view", "task:manage"),
+                List.of("assistant:chat", "project:view", "task:view", "task:manage"),
                 List.of()
         );
     }

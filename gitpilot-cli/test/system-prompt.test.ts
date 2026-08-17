@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { buildSystemPrompt } from "../src/core/system-prompt.ts";
+import { buildSystemPrompt, DESKTOP_CHINESE_OUTPUT_PROMPT } from "../src/core/system-prompt.ts";
 
 describe("buildSystemPrompt", () => {
 	describe("empty tools", () => {
@@ -145,6 +145,35 @@ describe("buildSystemPrompt", () => {
 			});
 
 			expect(prompt.match(/- Use dynamic_tool for summaries\./g)).toHaveLength(1);
+		});
+	});
+
+	describe("desktop output language", () => {
+		test("keeps the desktop Chinese output contract when appended to the prompt", () => {
+			const prompt = buildSystemPrompt({
+				appendSystemPrompt: DESKTOP_CHINESE_OUTPUT_PROMPT,
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("<gitpilot_output_language>");
+			expect(prompt).toContain("默认使用简体中文回答。");
+			expect(prompt).toContain("用户明确要求其他语言时，遵循用户要求。");
+			expect(prompt).toContain("代码、文件路径、命令、日志、异常原文、标识符和协议字段保持原样");
+		});
+
+		test("keeps the desktop Chinese output contract with a custom system prompt", () => {
+			const prompt = buildSystemPrompt({
+				customPrompt: "You are a project-specific coding assistant.",
+				appendSystemPrompt: DESKTOP_CHINESE_OUTPUT_PROMPT,
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("You are a project-specific coding assistant.");
+			expect(prompt).toContain("默认使用简体中文回答。");
 		});
 	});
 });

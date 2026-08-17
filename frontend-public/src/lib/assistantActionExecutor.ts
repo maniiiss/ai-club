@@ -30,7 +30,7 @@ export const executeAssistantAction = async (action: AssistantActionItem): Promi
       projectId: Number(params.projectId),
       workItemId: params.workItemId == null ? null : Number(params.workItemId),
       title: params.title == null ? undefined : String(params.title),
-      triggerSource: String(params.triggerSource || 'HERMES'),
+      triggerSource: String(params.triggerSource || 'ASSISTANT'),
       inputPayload: (params.inputPayload || {}) as Record<string, unknown>,
     })
     return

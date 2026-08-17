@@ -12,7 +12,7 @@ KPI、调用量排行、Token 分布、调用趋势与模型明细。看板没�
 哪些业务模块（智能体类型）消耗了模型调用量不可见，也无法按来源收窄分析。
 
 `agent_invocation_log` 表已有 `agent_type` 字段（如 `CODE_REVIEW`、`REPOSITORY_SCAN`、
-`HERMES_CHAT`），由 `AgentInvocationRecorder` 统一埋点，数据完整。姊妹模块「智能体调用统计」
+`ASSISTANT_CHAT`），由 `AgentInvocationRecorder` 统一埋点，数据完整。姊妹模块「智能体调用统计」
 （`AgentUsageStatsService`）已按 `agent_type` 聚合并复用 `AgentType` 枚举的中文 displayName，
 本次为模型调用量统计补齐同一维度。
 

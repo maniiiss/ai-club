@@ -79,7 +79,7 @@ def convert_document_to_markdown(
         markdown = _rewrite_markdown_data_uri_images(markdown, normalized_image_directory, warnings)
         if extension == "pdf":
             markdown = _insert_pdf_images_by_page(markdown, content, normalized_image_directory, warnings)
-    elif normalized_scene == "HERMES_FILE_LIBRARY":
+    elif normalized_scene == "ASSISTANT_FILE_LIBRARY":
         markdown = _strip_markdown_data_uri_images(markdown, warnings)
 
     truncated = False
@@ -146,7 +146,7 @@ def _strip_markdown_data_uri_images(markdown: str, warnings: list[str]) -> str:
 
     cleaned = IMAGE_DATA_URI_PATTERN.sub(replace, markdown)
     if removed_count > 0:
-        warnings.append(f"HERMES_FILE_LIBRARY 场景有 {removed_count} 张内嵌图片已从索引 Markdown 中移除")
+        warnings.append(f"ASSISTANT_FILE_LIBRARY 场景有 {removed_count} 张内嵌图片已从索引 Markdown 中移除")
     return cleaned
 
 

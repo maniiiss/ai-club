@@ -61,7 +61,7 @@ public class ChatMessageEntity {
     private String status = "DONE";
 
     /** 是否在原文中提及 Assistant。 */
-    @Column(name = "mentions_hermes", nullable = false)
+    @Column(name = "mentions_assistant", nullable = false)
     private boolean mentionsAssistant = false;
 
     /** 关联的 Agent 任务；普通成员消息为空，Assistant 占位/回复消息可回指后台任务。 */

@@ -1,11 +1,41 @@
 /** GitPilot 三种产品模式共用 Web 能力，并按模式筛选 MCP 服务。 */
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import webAccessExtension from "pi-web-access";
 import { createMcpAdapter } from "pi-mcp-adapter";
+import { getAgentDir } from "../../config.ts";
 import type { InlineExtension } from "../../core/extensions/types.ts";
+import { createAutoPlanExtension } from "./auto-plan.ts";
 import { loadMcpConfigurationForMode, type GitPilotAgentMode } from "./mcp-manager.ts";
 import { createProjectBindingExtension } from "./project-binding.ts";
 
+/**
+ * 为安装包提供安全的 Web 默认值；只补齐缺失字段，不覆盖用户的显式选择。
+ * 业务意图：联网搜索可以工作，但首次使用不应因 Curator 默认值弹出浏览器窗口。
+ */
+export function ensureDefaultWebSearchConfig(agentDir = getAgentDir()): void {
+	const configPath = join(agentDir, "web-search.json");
+	let config: Record<string, unknown> = {};
+	if (existsSync(configPath)) {
+		try {
+			const parsed: unknown = JSON.parse(readFileSync(configPath, "utf8"));
+			if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return;
+			config = parsed as Record<string, unknown>;
+		} catch {
+			// 保留损坏文件交由 pi-web-access 报出诊断，避免启动时覆盖用户配置。
+			return;
+		}
+	}
+	let changed = false;
+	if (!Object.hasOwn(config, "workflow")) { config.workflow = "none"; changed = true; }
+	if (!Object.hasOwn(config, "autoOpenBrowser")) { config.autoOpenBrowser = false; changed = true; }
+	if (!changed) return;
+	mkdirSync(dirname(configPath), { recursive: true });
+	writeFileSync(configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+}
+
 export function createModeExtensions(mode: GitPilotAgentMode, cwd: string): InlineExtension[] {
+	ensureDefaultWebSearchConfig();
 	const extensions: InlineExtension[] = [
 		{ name: "gitpilot-web-access", factory: webAccessExtension },
 		{
@@ -14,6 +44,8 @@ export function createModeExtensions(mode: GitPilotAgentMode, cwd: string): Inli
 			factory: createMcpAdapter({ config: loadMcpConfigurationForMode(mode, cwd) }),
 		},
 	];
+	// CODE 模式默认启用自动计划；Work/Design 保持各自的任务编排语义，避免跨模式串状态。
+	if (mode === "code") extensions.unshift(createAutoPlanExtension());
 	// 项目绑定是 Code/Work 的工作区上下文能力，Design 使用自己的项目级设计规范与产物目录。
 	if (mode === "code" || mode === "work") extensions.unshift(createProjectBindingExtension(mode, cwd));
 	return extensions;

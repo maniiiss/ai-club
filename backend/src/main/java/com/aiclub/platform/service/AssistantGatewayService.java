@@ -20,10 +20,13 @@ import java.time.Duration;
 import java.util.List;
 
 /**
- * 负责把平台内部的会话请求代理到 Assistant API Server。
- * 新版仅使用 Chat Completions，并把工具调用完全交给 Assistant 自己的 MCP 运行时。
+ * Assistant Chat Completions 的历史兼容客户端。
+ *
+ * <p>业务链路已统一由 {@link RuntimeChatService} 调用 {@code PI_RUNTIME}；本类仅为离线
+ * 构造器和旧版单元测试保留，禁止新生产代码注入或直接调用，后续可在测试迁移完成后删除。</p>
  */
 @Service
+@Deprecated(forRemoval = true)
 public class AssistantGatewayService {
 
     private final AssistantProperties assistantProperties;

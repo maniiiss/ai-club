@@ -38,7 +38,7 @@ public class AssistantFileLibraryService {
     public static final String INDEX_STATUS_FAILED = "FAILED";
 
     private static final Logger log = LoggerFactory.getLogger(AssistantFileLibraryService.class);
-    private static final String UPLOAD_DIRECTORY = "hermes-file-library";
+    private static final String UPLOAD_DIRECTORY = "assistant-file-library";
     private static final int RECALL_LIMIT = 5;
     private static final int MAX_EVIDENCE_SNIPPET_LENGTH = 500;
     private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE_TIME;
@@ -81,7 +81,7 @@ public class AssistantFileLibraryService {
         CurrentUserInfo currentUser = authService.currentUser();
         DocumentAssetSummary assetSummary = documentAssetService.uploadAsset(file, UPLOAD_DIRECTORY);
         DocumentAssetEntity asset = documentAssetService.requireAccessibleAsset(assetSummary.id());
-        DocumentMarkdownResult converted = documentMarkdownService.convert(asset.getId(), DocumentMarkdownService.SCENE_HERMES_FILE_LIBRARY, null);
+        DocumentMarkdownResult converted = documentMarkdownService.convert(asset.getId(), DocumentMarkdownService.SCENE_ASSISTANT_FILE_LIBRARY, null);
 
         AssistantFileLibraryItemEntity item = new AssistantFileLibraryItemEntity();
         item.setOwnerUser(asset.getOwnerUser());
@@ -97,7 +97,7 @@ public class AssistantFileLibraryService {
         item.setLastError("");
 
         AssistantFileLibraryItemEntity saved = assistantFileLibraryItemRepository.save(item);
-        documentAssetService.bindAsset(asset, DocumentAssetService.BIZ_TYPE_HERMES_FILE_LIBRARY, saved.getId());
+        documentAssetService.bindAsset(asset, DocumentAssetService.BIZ_TYPE_ASSISTANT_FILE_LIBRARY, saved.getId());
         indexItem(currentUser, saved);
         return toSummary(saved);
     }
@@ -156,7 +156,7 @@ public class AssistantFileLibraryService {
         try {
             DocumentMarkdownResult converted = documentMarkdownService.convert(
                     item.getDocumentAsset().getId(),
-                    DocumentMarkdownService.SCENE_HERMES_FILE_LIBRARY,
+                    DocumentMarkdownService.SCENE_ASSISTANT_FILE_LIBRARY,
                     null
             );
             item.setTitle(firstNonBlank(converted.suggestedTitle(), item.getTitle(), item.getDocumentAsset().getFileName()));
@@ -236,7 +236,7 @@ public class AssistantFileLibraryService {
         }
         deleteVectorIndex(userId, item.getId());
         List<WikiChunkingService.WikiChunk> chunks = wikiChunkingService.chunkMarkdown(
-                "hermes-file-library",
+                "assistant-file-library",
                 item.getId(),
                 1,
                 item.getTitle(),
@@ -255,7 +255,7 @@ public class AssistantFileLibraryService {
         for (int index = 0; index < chunks.size() && index < vectors.size(); index++) {
             WikiChunkingService.WikiChunk chunk = chunks.get(index);
             LinkedHashMap<String, Object> payload = new LinkedHashMap<>();
-            payload.put("sourceType", "HERMES_FILE_LIBRARY");
+            payload.put("sourceType", "ASSISTANT_FILE_LIBRARY");
             payload.put("ownerUserId", userId);
             payload.put("itemId", item.getId());
             payload.put("assetId", item.getDocumentAsset() == null ? null : item.getDocumentAsset().getId());

@@ -1,5 +1,4 @@
-import type { AssistantActionItem, AssistantSelectionCardItem } from './hermes'
-import type { AssistantSelectionPayload } from './hermes'
+import type { AssistantActionItem, AssistantSelectionCardItem, AssistantSelectionPayload } from './assistant'
 
 /**
  * 多人聊天室类型定义。
@@ -186,9 +185,9 @@ export type ChatSocketEvent =
   | { type: 'ROOM_LEFT' }
   | { type: 'PONG' }
   | { type: 'ROOM_MESSAGE_CREATED'; message: ChatMessageItem }
-  | { type: 'HERMES_STREAM_DELTA'; messageId: number; delta: string }
-  | { type: 'HERMES_MESSAGE_DONE'; message: ChatMessageItem }
-  | { type: 'HERMES_MESSAGE_ERROR'; message: ChatMessageItem }
+  | { type: 'ASSISTANT_STREAM_DELTA'; messageId: number; delta: string }
+  | { type: 'ASSISTANT_MESSAGE_DONE'; message: ChatMessageItem }
+  | { type: 'ASSISTANT_MESSAGE_ERROR'; message: ChatMessageItem }
   | { type: 'ROOM_UPDATED'; room: ChatRoomItem }
   | { type: 'AGENT_CONFIG_UPDATED'; config: ChatRoomAgentConfig }
   | { type: 'AGENT_TOOLS_UPDATED'; tools: ChatRoomAgentToolPolicy[] }

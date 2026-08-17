@@ -155,7 +155,7 @@
         <div v-if="!isMobileViewport" class="workspace-topbar-actions">
           <button
             v-if="canUseAssistant"
-            class="workspace-hermes-button"
+            class="workspace-assistant-button"
             type="button"
             @click="handleOpenAssistantDrawer"
           >
@@ -1519,7 +1519,7 @@ const canManageWorkItem = computed(() => authStore.hasPermission('task:manage'))
 const canExecuteWorkItem = computed(() => authStore.hasPermission('task:execution:create'))
 const canManageGiteeBinding = computed(() => authStore.hasPermission('gitee:binding:manage'))
 const canSyncGiteeWorkItems = computed(() => authStore.hasPermission('gitee:work-item:sync'))
-const canUseAssistant = computed(() => authStore.hasPermission('hermes:chat'))
+const canUseAssistant = computed(() => authStore.hasPermission('assistant:chat'))
 const userInitial = computed(() => (authStore.user?.nickname || authStore.user?.username || 'U').slice(0, 1).toUpperCase())
 const userAvatarUrl = computed(() => resolveAssetUrl(authStore.user?.avatarUrl))
 
@@ -3505,7 +3505,7 @@ onMounted(async () => {
 .workspace-iteration-card,
 .workspace-sidebar-action,
 .workspace-back-link,
-.workspace-hermes-button,
+.workspace-assistant-button,
 .workspace-icon-button,
 .workspace-filter-button,
 .workspace-new-button,
@@ -3704,7 +3704,7 @@ onMounted(async () => {
   gap: 14px;
 }
 
-.workspace-hermes-button {
+.workspace-assistant-button {
   min-height: 34px;
   display: inline-flex;
   align-items: center;
@@ -3718,7 +3718,7 @@ onMounted(async () => {
   transition: background-color 0.18s ease, color 0.18s ease;
 }
 
-.workspace-hermes-button:hover {
+.workspace-assistant-button:hover {
   background: rgba(var(--app-outline-rgb), 0.12);
   color: var(--app-primary);
 }

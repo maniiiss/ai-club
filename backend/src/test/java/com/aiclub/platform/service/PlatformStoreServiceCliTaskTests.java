@@ -150,6 +150,7 @@ class PlatformStoreServiceCliTaskTests {
         assertThat(summary.id()).isEqualTo(101L);
         assertThat(summary.workItemCode()).isEqualTo("#ABC123");
         assertThat(summary.name()).isEqualTo("登录支持验证码");
+        assertThat(summary.workItemType()).isEqualTo("需求");
         assertThat(summary.status()).isEqualTo("进行中");
         assertThat(summary.priority()).isEqualTo("高");
         assertThat(summary.assignee()).isEqualTo("张三");

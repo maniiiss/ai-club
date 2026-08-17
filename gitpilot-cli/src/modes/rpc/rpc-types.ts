@@ -266,6 +266,8 @@ export type RpcCommand =
 	| { id?: string; type: "get_platform_connection" }
 	/** Design 入口绑定 Web 端项目时使用的只读项目查询。 */
 	| { id?: string; type: "get_platform_projects"; keyword?: string }
+	/** 输入框工作项入口查询当前用户负责的需求、任务和缺陷。 */
+	| { id?: string; type: "get_platform_work_items" }
 	| { id?: string; type: "logout" };
 
 // ============================================================================
@@ -286,6 +288,25 @@ export interface RpcSlashCommand {
 	hostAction?: "prompt" | "open_local_review" | "open_rtk_settings";
 	/** UI 能力：rpc-standard 走标准 RPC 事件、tui-custom 需原生 GUI 适配、none 无 UI */
 	uiCapability?: "rpc-standard" | "tui-custom" | "none";
+}
+
+/** 桌面端工作项入口使用的轻量摘要，避免把完整需求文档加载到弹层。 */
+export interface RpcWorkItemSummary {
+	id: number;
+	workItemCode: string;
+	name: string;
+	workItemType: string;
+	status: string;
+	priority: string | null;
+	assignee: string | null;
+	taskType: string | null;
+	projectId: number | null;
+	projectName: string | null;
+	iterationId: number | null;
+	iterationName: string | null;
+	planStartDate: string | null;
+	planEndDate: string | null;
+	requirementMarkdown: string | null;
 }
 
 // ============================================================================
@@ -482,6 +503,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "get_platform_account"; success: true; data: RpcPlatformAccount }
 	| { id?: string; type: "response"; command: "get_platform_connection"; success: true; data: RpcPlatformConnection }
 	| { id?: string; type: "response"; command: "get_platform_projects"; success: true; data: { projects: Array<{ id: number; name: string; status?: string; description?: string; owner?: string }> } }
+	| { id?: string; type: "response"; command: "get_platform_work_items"; success: true; data: { items: RpcWorkItemSummary[] } }
 	| { id?: string; type: "response"; command: "logout"; success: true }
 
 	// Error response (any command can fail)

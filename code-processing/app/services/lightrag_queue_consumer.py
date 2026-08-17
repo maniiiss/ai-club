@@ -2,7 +2,7 @@
 
 业务意图：轮询 backend 的 /internal/lightrag/queue/poll 抢占待处理记录，
 调用 lightrag_service 摄入或删除，再回 ack/nack。
-保持 code-processing 不直连业务 PG，通过 backend 内部 HTTP 接口读写队列（与 hermes_internal_client 一致）。
+保持 code-processing 不直连业务 PG，通过 backend 内部 HTTP 接口读写队列（与 assistant_internal_client 一致）。
 """
 
 import asyncio

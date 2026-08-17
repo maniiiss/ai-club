@@ -5,7 +5,7 @@
 平台目前存在两套独立的「知识图谱」实现，都是中间过程，不是最终方向：
 
 1. **项目业务图谱**（`KnowledgeGraphService`）：从 PG 业务外键派生 PROJECT / ITERATION / TASK / BUG / REQUIREMENT / TEST_PLAN / USER / AGENT / WIKI_SPACE / WIKI_DIRECTORY / WIKI_PAGE 节点与 HAS_ITERATION / ASSIGNED_TO / RELATES_TO_REQUIREMENT 等结构边，落到 `knowledge_graph_nodes` / `knowledge_graph_edges` 表。
-2. **Wiki 向量图谱**（`WikiKnowledgeSearchService`）：Wiki 页面切 chunk 写 Qdrant，页面质心余弦相似度派生 `SEMANTIC_SIMILAR` 边，同时承担 Hermes 证据召回（向量 + rerank）。
+2. **Wiki 向量图谱**（`WikiKnowledgeSearchService`）：Wiki 页面切 chunk 写 Qdrant，页面质心余弦相似度派生 `SEMANTIC_SIMILAR` 边，同时承担 Assistant 证据召回（向量 + rerank）。
 
 本设计用 **LightRAG** 替代这两套，并且**业务实体不再单独注入图谱**。理由：
 
@@ -32,7 +32,7 @@
 | `KnowledgeGraphController` | **直接删除**，业务图谱入口一并下线，路由 `projects/:projectId/knowledge-graph` 移除（目前该路由已是 redirect 到迭代页，删除无功能损失）。`/api/projects/{id}/knowledge-graph` 与 `/rebuild` 接口同步删除 |
 | `KnowledgeGraphView.vue`（前端） | **直接删除，不重做此视图**。知识图谱可视化统一收敛到 `WikiKnowledgeGraphView`，展示 Wiki/PRD 语义实体关系 |
 | `WikiSpaceController` 空间图谱接口 | 改调 `LightRagClientService.getGraph(namespace="space:{id}")` |
-| Hermes 证据 `buildWikiEvidenceMarkdown` | 改调 `LightRagClientService.query` |
+| Assistant 证据 `buildWikiEvidenceMarkdown` | 改调 `LightRagClientService.query` |
 
 ### 2.2 不在范围
 
@@ -46,14 +46,14 @@
 ```
 ┌─ frontend ─────────────────────────────────────────────┐
 │  WikiKnowledgeGraphView（唯一知识图谱入口）            │
-│  Hermes 证据展示                                        │
+│  Assistant 证据展示                                        │
 └────────────────────┬───────────────────────────────────┘
                      │ HTTP
 ┌─ backend (Java) ───┴───────────────────────────────────┐
 │  LightRagClientService   ← 新增，仿 RepositoryScanClientService │
 │  LightRagProperties      ← 新增配置                     │
 │  WikiPage 保存 → 同事务写 outbox 队列表                  │
-│  Hermes 证据拼装 → LightRagClientService.query()       │
+│  Assistant 证据拼装 → LightRagClientService.query()       │
 │  定时扫描未索引页面 → 入队                              │
 └────────────────────┬───────────────────────────────────┘
                      │ HTTP (内部 Bearer token)
@@ -204,20 +204,20 @@ LightRAG 的 `query(query, QueryParam(mode=...))` 支持多种模式，按场景
 
 | 场景 | mode | 说明 |
 |---|---|---|
-| Hermes 证据召回（局部查找） | `local` | 实体邻域召回，替代现有向量 + rerank |
+| Assistant 证据召回（局部查找） | `local` | 实体邻域召回，替代现有向量 + rerank |
 | 全局主题问题（"这个空间主要讲什么"） | `global` | 社区摘要召回 |
 | 多跳推理（答案需串联多个页面） | `hybrid` | local + global 合并 |
 | 兜底 naive 向量召回 | `naive` | 纯向量，用于对比基线 |
 
-Hermes 证据默认走 `local`。后续可加 query 分类器自动选 mode，本期不做。
+Assistant 证据默认走 `local`。后续可加 query 分类器自动选 mode，本期不做。
 
-### 7.2 Hermes 证据拼装
+### 7.2 Assistant 证据拼装
 
 `WikiKnowledgeSearchService.buildWikiEvidenceMarkdown` 替换为 `LightRagClientService.query`：
 
 - backend 按 `wikiSpaceId` / `projectId` 决定 namespace，调 `LightRagClientService.query(namespace, query, mode="local", topK=3)`。
 - 返回结果按 LightRAG 的 context 格式解析，渲染成 Markdown 证据（复用现有 `renderEvidenceMarkdown` 的渲染逻辑，只换数据源）。
-- 对 Hermes 透明：`buildWikiEvidenceMarkdown` 的签名不变，只换内部实现。
+- 对 Assistant 透明：`buildWikiEvidenceMarkdown` 的签名不变，只换内部实现。
 
 ## 8. 可视化图谱接口
 
@@ -300,7 +300,7 @@ Hermes 证据默认走 `local`。后续可加 query 分类器自动选 mode，�
 - `POST /lightrag/query`：body `{namespace, query, mode, topK}` → `rag.aquery_data(query, QueryParam(mode=mode, top_k=topK))`，取结构化 entities / relationships / chunks 拼成证据上下文（不做 LLM 生成，证据召回成本更低）。
 - `GET /lightrag/graph`：query `{namespace, nodeLimit}` → `rag.get_knowledge_graph("*", max_nodes=nodeLimit)`，用官方图查询 API（自动按 workspace 隔离），返回的 `KnowledgeGraphNode/Edge` 适配成可视化 DTO。
 - `GET /lightrag/health`：探测 Qdrant / PG / Neo4j 连通性。
-- 全部走现有 `Authorization: Bearer ${PLATFORM_INTERNAL_SERVICE_TOKEN}` 鉴权，与 `hermes_internal_client` 一致。
+- 全部走现有 `Authorization: Bearer ${PLATFORM_INTERNAL_SERVICE_TOKEN}` 鉴权，与 `assistant_internal_client` 一致。
 
 namespace → workspace 映射：`project:123` → workspace `lightrag_project_123`，`space:456` → `lightrag_space_456`。LightRAG 按 workspace 隔离 KV / vector / graph 命名空间。相比双路径方案，删除了 `/lightrag/ingest/business` 接口。
 
@@ -413,7 +413,7 @@ CREATE INDEX idx_wiki_lightrag_state_status ON wiki_lightrag_index_state (status
 - `KnowledgeGraphView.vue`：**直接删除**，不重做此视图。路由 `projects/:projectId/knowledge-graph` 一并移除。知识图谱可视化入口统一收敛到 `WikiKnowledgeGraphView`。
 - `WikiKnowledgeGraphView.vue`：作为唯一知识图谱入口，API 从 `/api/wiki/spaces/{id}/knowledge-graph` 改到 `/api/lightrag/graph?namespace=space:{id}`，DTO 结构兼容（后端适配层保持 `KnowledgeGraphNodeSummary` / `KnowledgeGraphEdgeSummary` 形状）。文案与标题同步调整（如"Wiki 知识图谱"保留，但图例与边类型说明按 LightRAG 真实边类型重写）。
 - `KnowledgeGraphCanvas.vue`：无需改，边类型从单一 `SEMANTIC_SIMILAR` 扩展为多种语义边，画布按 `edgeType` 着色即可。
-- Hermes 证据展示：无改动（后端 `buildWikiEvidenceMarkdown` 签名不变）。
+- Assistant 证据展示：无改动（后端 `buildWikiEvidenceMarkdown` 签名不变）。
 - `frontend-public` 的 `KnowledgePage.tsx` 同步改 API。
 
 ## 14. 配置项汇总
@@ -463,13 +463,13 @@ PLATFORM_LIGHTRAG_CONCURRENCY=1
 
 **阶段二：双写并行**
 - Wiki 保存时既写 Qdrant（旧）又入 `lightrag_ingest_queue`（新）。消费者跑起来索引到 LightRAG。
-- Hermes 证据仍走旧 `WikiKnowledgeSearchService`。
+- Assistant 证据仍走旧 `WikiKnowledgeSearchService`。
 - 业务图谱（`KnowledgeGraphService`）此阶段仍保留可用，直到阶段四统一删除。
 - 验证 LightRAG 索引覆盖率（状态表 `INDEXED` 比例）、Neo4j 数据量、LLM 抽取成本。
 - 回滚：停消费者，删队列数据，旧链路不受影响。
 
 **阶段三：切流量**
-- Hermes 证据切 `LightRagClientService.query`，灰度按 space 开关（`LightRagProperties` 加 `hermesEvidenceEnabledSpaces` 白名单）。
+- Assistant 证据切 `LightRagClientService.query`，灰度按 space 开关（`LightRagProperties` 加 `assistantEvidenceEnabledSpaces` 白名单）。
 - Wiki 空间图谱可视化切 `LightRagClientService.getGraph`。
 - 对比切流前后的检索质量（人工评测 + naive mode 基线）。
 - 回滚：白名单清空，回旧链路。
@@ -487,7 +487,7 @@ PLATFORM_LIGHTRAG_CONCURRENCY=1
 |---|---|---|
 | LightRAG `delete` API 在目标版本不稳定 | Wiki 删除时实体残留 | 阶段一 PoC 必须验证 delete（见 §18），失败则降级直写 Neo4j Cypher + Qdrant payload 删 |
 | LLM 抽取成本随 Wiki 高频更新暴涨 | 账单失控 | 抽取用便宜模型；队列限并发；定时扫描只补落后版本不重抽全量 |
-| Neo4j 单点故障 | 图查询与可视化不可用 | `/lightrag/health` 探活；Hermes 证据失败时降级 naive 向量（保留 Qdrant 旧 collection 直到阶段四） |
+| Neo4j 单点故障 | 图查询与可视化不可用 | `/lightrag/health` 探活；Assistant 证据失败时降级 naive 向量（保留 Qdrant 旧 collection 直到阶段四） |
 | LightRAG 多 workspace 实例管理复杂 | 内存 / 连接泄漏 | 单例 + 按 namespace 切 workspace，不持有多实例；连接池复用 |
 | 业务结构图入口消失，用户预期落差 | `KnowledgeGraphView` 直接删除，用户无法再看到项目结构图 | `WikiKnowledgeGraphView` 改读 LightRAG 后展示更丰富的 Wiki/PRD 语义关系图；阶段三切流前 `WikiKnowledgeGraphView` 仍走旧接口可用，结构图入口在阶段四才真正下线，给用户观察期 |
 | 灰度期双写数据不一致 | 切流后结果偏差 | 状态表 + 定时扫描兜底；切流前做全量一致性校验脚本 |
@@ -498,7 +498,7 @@ PLATFORM_LIGHTRAG_CONCURRENCY=1
 - GitNexus 代码知识图谱（独立索引）。
 - 业务实体的结构化关系图谱（已确认废弃）。
 - 跨 project / space 的全局图谱合并。
-- query 自动分类器选 mode（本期 Hermes 固定 `local`）。
+- query 自动分类器选 mode（本期 Assistant 固定 `local`）。
 - LightRAG 的增量社区检测调优（用默认参数）。
 
 ## 18. PoC 验证清单（阶段一前置项）

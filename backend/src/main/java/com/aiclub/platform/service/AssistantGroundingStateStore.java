@@ -15,7 +15,7 @@ import java.time.Duration;
 @Service
 public class AssistantGroundingStateStore {
 
-    private static final String GROUNDING_KEY_PREFIX = "ai-club:hermes:grounding:";
+    private static final String GROUNDING_KEY_PREFIX = "ai-club:assistant:grounding:";
 
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;

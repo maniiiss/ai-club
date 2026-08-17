@@ -779,7 +779,7 @@ data: { ... ExecutionStreamEvent ... }
 
 ### 8.3 SSE 实现方式
 
-前端没有使用 `EventSource`，而是复用了 Hermes 的 fetch-SSE 解析思路，原因是：
+前端没有使用 `EventSource`，而是复用了 Assistant 的 fetch-SSE 解析思路，原因是：
 
 - 需要复用统一 Bearer Token
 - 需要手动控制重连与 `afterId`

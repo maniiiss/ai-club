@@ -31,13 +31,13 @@ public class DocumentAssetService {
     public static final String BIZ_TYPE_WIKI_PAGE = "WIKI_PAGE";
 
     /** 业务类型：Assistant 会话附件。 */
-    public static final String BIZ_TYPE_HERMES_ATTACHMENT = "HERMES_ATTACHMENT";
+    public static final String BIZ_TYPE_ASSISTANT_ATTACHMENT = "ASSISTANT_ATTACHMENT";
 
     /** 业务类型：工作项附件。 */
     public static final String BIZ_TYPE_TASK_ATTACHMENT = "TASK_ATTACHMENT";
 
     /** 业务类型：Assistant 个人文件库。 */
-    public static final String BIZ_TYPE_HERMES_FILE_LIBRARY = "HERMES_FILE_LIBRARY";
+    public static final String BIZ_TYPE_ASSISTANT_FILE_LIBRARY = "ASSISTANT_FILE_LIBRARY";
 
     private final AuthService authService;
     private final UserRepository userRepository;

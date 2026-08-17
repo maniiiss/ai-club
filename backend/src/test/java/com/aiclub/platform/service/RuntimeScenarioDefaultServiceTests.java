@@ -37,7 +37,7 @@ class RuntimeScenarioDefaultServiceTests {
                         RuntimeScenarioDefaultService.SCENARIO_DEVELOPMENT_IMPLEMENTATION,
                         RuntimeScenarioDefaultService.SCENARIO_TECHNICAL_DESIGN_AUTHORING
                 );
-        assertThat(service.resolve(RuntimeScenarioDefaultService.SCENARIO_ASSISTANT)).isEqualTo("HERMES_LEGACY");
+        assertThat(service.resolve(RuntimeScenarioDefaultService.SCENARIO_ASSISTANT)).isEqualTo("PI_RUNTIME");
     }
 
     @Test

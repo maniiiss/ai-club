@@ -18,7 +18,7 @@ import { useGuide } from '@/src/components/guide'
 export const ProjectLayout = () => {
   const { projectId } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
-  const canUseAssistant = useAuthStore((s) => s.hasPermission('hermes:chat'))
+  const canUseAssistant = useAuthStore((s) => s.hasPermission('assistant:chat'))
   const [project, setProject] = useState<ProjectItem | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)

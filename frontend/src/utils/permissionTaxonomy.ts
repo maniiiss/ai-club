@@ -71,7 +71,7 @@ const PLATFORM_PERMISSION_SET = new Set<string>([
 ])
 
 const INTEGRATION_PERMISSION_PREFIXES = ['gitlab:', 'cicd:', 'server:', 'observability:']
-const BUSINESS_PERMISSION_PREFIXES = ['dashboard:', 'project:', 'api:', 'wiki:', 'agent:', 'task:', 'test:', 'self-upgrade:', 'chat:', 'hermes:']
+const BUSINESS_PERMISSION_PREFIXES = ['dashboard:', 'project:', 'api:', 'wiki:', 'agent:', 'task:', 'test:', 'self-upgrade:', 'chat:', 'assistant:']
 
 const GROUP_BY_KEY = new Map(PERMISSION_TAXONOMY_GROUPS.map((group) => [group.key, group]))
 

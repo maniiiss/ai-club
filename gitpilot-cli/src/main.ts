@@ -30,6 +30,7 @@ import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/mod
 import type { ModelRuntime } from "./core/model-runtime.ts";
 import { restoreStdout, takeOverStdout } from "./core/output-guard.ts";
 import { type AppMode, resolveProjectTrusted } from "./core/project-trust.ts";
+import { DESKTOP_CHINESE_OUTPUT_PROMPT } from "./core/system-prompt.ts";
 import type { CreateAgentSessionOptions } from "./core/sdk.ts";
 import {
 	formatMissingSessionCwdPrompt,
@@ -678,7 +679,12 @@ export async function main(args: string[], options?: MainOptions) {
 				noThemes: parsed.noThemes,
 				noContextFiles: parsed.noContextFiles,
 				systemPrompt: parsed.systemPrompt,
-				appendSystemPrompt: parsed.appendSystemPrompt,
+				// 桌面端使用 RPC 模式；语言约束放在 sidecar 的系统提示词中，
+				// 确保 Code 会话也默认用中文输出，同时不改变 CLI 交互模式的既有行为。
+				appendSystemPrompt:
+					appMode === "rpc"
+						? [...(parsed.appendSystemPrompt ?? []), DESKTOP_CHINESE_OUTPUT_PROMPT]
+						: parsed.appendSystemPrompt,
 				extensionFactories: [...extensionFactories, ...createModeExtensions("code", cwd)],
 			},
 		});

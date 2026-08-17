@@ -92,7 +92,7 @@ class AssistantHindsightMemoryServiceTests {
                 false
         );
 
-        when(hindsightClientService.recallMemories(eq("git-ai-club:hermes:user:5"), eq("巴黎和柏林最近在项目知识里有什么联系"), eq(List.of("project:12")), eq(3)))
+        when(hindsightClientService.recallMemories(eq("git-ai-club:assistant:user:5"), eq("巴黎和柏林最近在项目知识里有什么联系"), eq(List.of("project:12")), eq(3)))
                 .thenReturn(List.of(new HindsightClientService.MemoryRecallHit(
                         "fact-user-1",
                         "Assistant 会话记忆：发布时间",
@@ -121,7 +121,7 @@ class AssistantHindsightMemoryServiceTests {
                 .contains("来源：用户会话记忆")
                 .contains("来源：共享记忆")
                 .doesNotContain("来源：项目 Wiki");
-        verify(hindsightClientService).recallMemories("git-ai-club:hermes:user:5", "巴黎和柏林最近在项目知识里有什么联系", List.of("project:12"), 3);
+        verify(hindsightClientService).recallMemories("git-ai-club:assistant:user:5", "巴黎和柏林最近在项目知识里有什么联系", List.of("project:12"), 3);
         verify(hindsightClientService).recallWorldFacts("git-ai-club:memory:shared", "巴黎和柏林最近在项目知识里有什么联系", List.of("project:12"), 3);
     }
 
@@ -199,8 +199,8 @@ class AssistantHindsightMemoryServiceTests {
                 tagsCaptor.capture(),
                 metadataCaptor.capture()
         );
-        assertThat(documentIdCaptor.getValue()).isEqualTo("hermes-conversation:conversation-1:turn:1");
-        assertThat(tagsCaptor.getValue()).contains("hermes", "source:hermes", "user:5", "project:12", "route:project-iterations");
+        assertThat(documentIdCaptor.getValue()).isEqualTo("assistant-conversation:conversation-1:turn:1");
+        assertThat(tagsCaptor.getValue()).contains("assistant", "source:assistant", "user:5", "project:12", "route:project-iterations");
         assertThat(metadataCaptor.getValue()).containsEntry("userId", 5L);
         assertThat(metadataCaptor.getValue()).containsEntry("memoryType", "conversation_turn");
     }
@@ -216,9 +216,9 @@ class AssistantHindsightMemoryServiceTests {
         CurrentUserInfo currentUser = currentUser();
 
         when(hindsightMemoryFallbackService.isEnabled()).thenReturn(false);
-        when(hindsightClientService.recallMemories(eq("git-ai-club:hermes:user:5"), eq("test"), eq(List.of()), eq(50)))
+        when(hindsightClientService.recallMemories(eq("git-ai-club:assistant:user:5"), eq("test"), eq(List.of()), eq(50)))
                 .thenReturn(List.of(new HindsightClientService.MemoryRecallHit(
-                        "hermes-conversation:c1:turn:1",
+                        "assistant-conversation:c1:turn:1",
                         "Assistant 会话记忆：测试",
                         "这是测试记忆内容",
                         0.95d
@@ -227,7 +227,7 @@ class AssistantHindsightMemoryServiceTests {
         List<AssistantUserMemoryItem> items = service.listUserMemories(currentUser, "test", 50);
 
         assertThat(items).hasSize(1);
-        assertThat(items.get(0).documentId()).isEqualTo("hermes-conversation:c1:turn:1");
+        assertThat(items.get(0).documentId()).isEqualTo("assistant-conversation:c1:turn:1");
         assertThat(items.get(0).snippet()).isEqualTo("这是测试记忆内容");
     }
 
@@ -241,9 +241,9 @@ class AssistantHindsightMemoryServiceTests {
         );
         CurrentUserInfo currentUser = currentUser();
 
-        service.deleteUserMemory(currentUser, "hermes-conversation:c1:turn:1");
+        service.deleteUserMemory(currentUser, "assistant-conversation:c1:turn:1");
 
-        verify(hindsightClientService).deleteDocument("git-ai-club:hermes:user:5", "hermes-conversation:c1:turn:1");
+        verify(hindsightClientService).deleteDocument("git-ai-club:assistant:user:5", "assistant-conversation:c1:turn:1");
     }
 
     @Test
@@ -273,17 +273,17 @@ class AssistantHindsightMemoryServiceTests {
         CurrentUserInfo currentUser = currentUser();
 
         when(hindsightMemoryFallbackService.isEnabled()).thenReturn(false);
-        when(hindsightClientService.recallMemories(eq("git-ai-club:hermes:user:5"), eq(""), eq(List.of()), eq(200)))
+        when(hindsightClientService.recallMemories(eq("git-ai-club:assistant:user:5"), eq(""), eq(List.of()), eq(200)))
                 .thenReturn(List.of(
-                        new HindsightClientService.MemoryRecallHit("hermes-conversation:c1:turn:1", "title1", "snippet1", 0.9d),
-                        new HindsightClientService.MemoryRecallHit("hermes-conversation:c1:turn:2", "title2", "snippet2", 0.8d)
+                        new HindsightClientService.MemoryRecallHit("assistant-conversation:c1:turn:1", "title1", "snippet1", 0.9d),
+                        new HindsightClientService.MemoryRecallHit("assistant-conversation:c1:turn:2", "title2", "snippet2", 0.8d)
                 ));
 
         int deleted = service.clearUserMemories(currentUser);
 
         assertThat(deleted).isEqualTo(2);
-        verify(hindsightClientService).deleteDocument("git-ai-club:hermes:user:5", "hermes-conversation:c1:turn:1");
-        verify(hindsightClientService).deleteDocument("git-ai-club:hermes:user:5", "hermes-conversation:c1:turn:2");
+        verify(hindsightClientService).deleteDocument("git-ai-club:assistant:user:5", "assistant-conversation:c1:turn:1");
+        verify(hindsightClientService).deleteDocument("git-ai-club:assistant:user:5", "assistant-conversation:c1:turn:2");
     }
 
     @Test
@@ -295,7 +295,7 @@ class AssistantHindsightMemoryServiceTests {
                 wikiSpaceService
         );
 
-        when(hindsightClientService.startBankConsolidation("git-ai-club:hermes:user:5"))
+        when(hindsightClientService.startBankConsolidation("git-ai-club:assistant:user:5"))
                 .thenReturn(new HindsightClientService.MemoryConsolidationTask("operation-123", false));
 
         AssistantMemoryConsolidationTask task = service.startUserMemoryConsolidation(currentUser());
@@ -313,7 +313,7 @@ class AssistantHindsightMemoryServiceTests {
                 wikiSpaceService
         );
 
-        when(hindsightClientService.getBankOperationStatus("git-ai-club:hermes:user:5", "operation-123"))
+        when(hindsightClientService.getBankOperationStatus("git-ai-club:assistant:user:5", "operation-123"))
                 .thenReturn(new HindsightClientService.AsyncOperationStatus(
                         "operation-123",
                         "consolidate_memories",
@@ -343,14 +343,14 @@ class AssistantHindsightMemoryServiceTests {
         );
 
         when(hindsightMemoryFallbackService.isEnabled()).thenReturn(false);
-        when(hindsightClientService.recallMemories(eq("git-ai-club:hermes:user:5"), eq(""), eq(List.of()), eq(50)))
+        when(hindsightClientService.recallMemories(eq("git-ai-club:assistant:user:5"), eq(""), eq(List.of()), eq(50)))
                 .thenReturn(List.of(new HindsightClientService.MemoryRecallHit(
-                        "hermes-conversation:c1:turn:1",
+                        "assistant-conversation:c1:turn:1",
                         "Assistant 会话记忆：测试",
                         "用户：项目经理\n场景：项目 #12\n路由：project-iterations\n\n用户问题：\n发布时间是什么\n\n助手回答：\n下周二发布",
                         0.95d
                 )));
-        when(hindsightClientService.recallWorldFacts(eq("git-ai-club:hermes:user:5"), eq(""), eq(List.of()), eq(50)))
+        when(hindsightClientService.recallWorldFacts(eq("git-ai-club:assistant:user:5"), eq(""), eq(List.of()), eq(50)))
                 .thenReturn(List.of(
                         new HindsightClientService.MemoryWorldFact(
                                 "fact-1",
@@ -376,7 +376,7 @@ class AssistantHindsightMemoryServiceTests {
                                 "HINDSIGHT_RECALL",
                                 "2026-05-31T08:00:00Z",
                                 List.of("project:12"),
-                                Map.of("documentId", "hermes-conversation:c1:turn:1")
+                                Map.of("documentId", "assistant-conversation:c1:turn:1")
                         )
                 ));
 
@@ -397,10 +397,10 @@ class AssistantHindsightMemoryServiceTests {
         );
 
         when(hindsightMemoryFallbackService.isEnabled()).thenReturn(true);
-        when(hindsightMemoryFallbackService.searchFacts(eq(List.of("git-ai-club:hermes:user:5")), eq(""), eq(50)))
+        when(hindsightMemoryFallbackService.searchFacts(eq(List.of("git-ai-club:assistant:user:5")), eq(""), eq(50)))
                 .thenReturn(List.of(
                         new HindsightClientService.MemoryWorldFact(
-                                "hermes-conversation:c1:turn:1",
+                                "assistant-conversation:c1:turn:1",
                                 "world",
                                 "",
                                 "",
@@ -410,7 +410,7 @@ class AssistantHindsightMemoryServiceTests {
                                 "HINDSIGHT_RECALL",
                                 "2026-05-31T08:00:00Z",
                                 List.of("project:12"),
-                                Map.of("documentId", "hermes-conversation:c1:turn:1")
+                                Map.of("documentId", "assistant-conversation:c1:turn:1")
                         ),
                         new HindsightClientService.MemoryWorldFact(
                                 "fact-1",
@@ -430,7 +430,7 @@ class AssistantHindsightMemoryServiceTests {
         List<AssistantUserMemoryItem> items = service.listUserMemories(currentUser(), "", 50);
 
         assertThat(items).hasSize(1);
-        assertThat(items.get(0).documentId()).isEqualTo("hermes-conversation:c1:turn:1");
+        assertThat(items.get(0).documentId()).isEqualTo("assistant-conversation:c1:turn:1");
     }
 
     @Test
@@ -443,7 +443,7 @@ class AssistantHindsightMemoryServiceTests {
         );
 
         when(hindsightMemoryFallbackService.isEnabled()).thenReturn(true);
-        when(hindsightMemoryFallbackService.searchFacts(eq(List.of("git-ai-club:hermes:user:5")), eq(""), eq(50)))
+        when(hindsightMemoryFallbackService.searchFacts(eq(List.of("git-ai-club:assistant:user:5")), eq(""), eq(50)))
                 .thenReturn(List.of(
                         new HindsightClientService.MemoryWorldFact(
                                 "memory-unit-uuid-1",
@@ -457,7 +457,7 @@ class AssistantHindsightMemoryServiceTests {
                                 "2026-05-31T08:00:00Z",
                                 List.of("project:12"),
                                 Map.of(
-                                        "documentId", "hermes-conversation:c1:turn:3",
+                                        "documentId", "assistant-conversation:c1:turn:3",
                                         "question", "发布时间是什么",
                                         "assistantSummary", "下周二发布"
                                 )
@@ -467,7 +467,7 @@ class AssistantHindsightMemoryServiceTests {
         List<AssistantUserMemoryItem> items = service.listUserMemories(currentUser(), "", 50);
 
         assertThat(items).hasSize(1);
-        assertThat(items.get(0).documentId()).isEqualTo("hermes-conversation:c1:turn:3");
+        assertThat(items.get(0).documentId()).isEqualTo("assistant-conversation:c1:turn:3");
         assertThat(items.get(0).question()).isEqualTo("发布时间是什么");
         assertThat(items.get(0).answer()).isEqualTo("下周二发布");
     }
@@ -484,7 +484,7 @@ class AssistantHindsightMemoryServiceTests {
                 true,
                 List.of("PM"),
                 List.of("项目经理"),
-                List.of("hermes:chat"),
+                List.of("assistant:chat"),
                 List.of()
         );
     }

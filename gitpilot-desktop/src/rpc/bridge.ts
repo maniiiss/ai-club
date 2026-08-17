@@ -230,6 +230,8 @@ export const rpc = {
 	getPlatformConnection: () => send({ type: 'get_platform_connection' }),
 	/** 查询当前账号可访问的 Web 端项目，供 Design 入口建立请求上下文。 */
 	getPlatformProjects: (keyword?: string) => send({ type: 'get_platform_projects', keyword }),
+	/** 查询当前账号负责的工作项，供输入框“工作项”页签展示。 */
+	getPlatformWorkItems: () => send({ type: 'get_platform_work_items' }),
 	logout: () => send({ type: 'logout' }),
 	respondValue: (id: string, value: string) => send({ type: 'extension_ui_response', id, value }),
 	respondConfirmed: (id: string, confirmed: boolean) => send({ type: 'extension_ui_response', id, confirmed }),
@@ -394,6 +396,21 @@ function mockResponseFor(cmd: RpcCommand & { id: string }): RpcResponse {
 		case 'get_platform_projects':
 			// 浏览器预览用固定项目联调选择器的加载、选择和绑定上下文。
 			return { id, type: 'response', command: 'get_platform_projects', success: true, data: { projects: [{ id: 1, name: '星河营销站', status: '进行中' }, { id: 2, name: 'GitPilot 控制台', status: '进行中' }] } };
+		case 'get_platform_work_items':
+			// 浏览器预览用固定工作项联调分组、展开和选中带入输入框的交互。
+			return {
+				id,
+				type: 'response',
+				command: 'get_platform_work_items',
+				success: true,
+				data: {
+					items: [
+						{ id: 101, workItemCode: '#REQ-101', name: '支持工作项上下文带入', workItemType: '需求', status: '进行中', priority: '高', assignee: '当前用户', taskType: null, projectId: 1, projectName: 'GitPilot 控制台', iterationId: null, iterationName: null, planStartDate: null, planEndDate: null, requirementMarkdown: null },
+						{ id: 102, workItemCode: '#TASK-102', name: '补充工作项入口验收测试', workItemType: '任务', status: '待处理', priority: '中', assignee: '当前用户', taskType: '开发', projectId: 1, projectName: 'GitPilot 控制台', iterationId: null, iterationName: null, planStartDate: null, planEndDate: null, requirementMarkdown: null },
+						{ id: 103, workItemCode: '#BUG-103', name: '工作项菜单在窄屏下被遮挡', workItemType: '缺陷', status: '待修复', priority: '高', assignee: '当前用户', taskType: null, projectId: 2, projectName: '星河营销站', iterationId: null, iterationName: null, planStartDate: null, planEndDate: null, requirementMarkdown: null },
+					],
+				},
+			};
 		case 'get_tree':
 			return { id, type: 'response', command: 'get_tree', success: true, data: { tree: [], leafId: null } };
 		case 'prepare_attachments': {

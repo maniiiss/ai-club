@@ -204,7 +204,7 @@ class AssistantConversationSessionServiceTests {
         globalSession.setPlanId(null);
         globalSession.setWikiSpaceId(null);
         globalSession.setWikiPageId(null);
-        globalSession.setRouteName("public-hermes-chat");
+        globalSession.setRouteName("public-assistant-chat");
 
         when(authService.currentUser()).thenReturn(currentUser);
         when(assistantConversationSessionRepository.findGlobalSessions(eq(5L), eq(false), any(PageRequest.class)))
@@ -214,7 +214,7 @@ class AssistantConversationSessionServiceTests {
                 service.pageSessions(1, 20, false, "GLOBAL", null);
 
         assertThat(pageResponse.records()).hasSize(1);
-        assertThat(pageResponse.records().get(0).routeName()).isEqualTo("public-hermes-chat");
+        assertThat(pageResponse.records().get(0).routeName()).isEqualTo("public-assistant-chat");
         assertThat(pageResponse.records().get(0).projectId()).isNull();
         verify(assistantConversationSessionRepository).findGlobalSessions(eq(5L), eq(false), any(PageRequest.class));
     }
@@ -432,7 +432,7 @@ class AssistantConversationSessionServiceTests {
                 "项目上下文"
         );
         AssistantConversationState conversationState = new AssistantConversationState(
-                "test:hermes:project:12:user:5:conversation:conversation-1",
+                "test:assistant:project:12:user:5:conversation:conversation-1",
                 "conversation-1",
                 buildCurrentUser(),
                 AssistantConversationContextSnapshot.fromContext(context),
@@ -448,7 +448,7 @@ class AssistantConversationSessionServiceTests {
                 ""
         );
         AssistantDebugInfo debugInfo = new AssistantDebugInfo(
-                "hermes-agent",
+                "assistant-agent",
                 "API_SERVER",
                 0,
                 List.of(),
@@ -583,7 +583,7 @@ class AssistantConversationSessionServiceTests {
                 true,
                 List.of("PM"),
                 List.of("项目经理"),
-                List.of("hermes:chat"),
+                List.of("assistant:chat"),
                 List.of()
         );
     }

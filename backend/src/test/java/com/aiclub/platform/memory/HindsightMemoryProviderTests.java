@@ -32,9 +32,9 @@ class HindsightMemoryProviderTests {
     void shouldMapHindsightRecallToGenericMemoryRecord() {
         HindsightMemoryProvider provider = provider();
         when(hindsightClientService.recallMemories(
-                eq("git-ai-club:hermes:user:5"), eq("发布时间"), eq(List.of()), eq(3)))
+                eq("git-ai-club:assistant:user:5"), eq("发布时间"), eq(List.of()), eq(3)))
                 .thenReturn(List.of(new HindsightClientService.MemoryRecallHit(
-                        "hermes-conversation:c1:turn:1", "标题", "记忆正文", 0.9d
+                        "assistant-conversation:c1:turn:1", "标题", "记忆正文", 0.9d
                 )));
 
         List<MemoryProvider.MemoryRecord> records = provider.recall(new MemoryProvider.MemoryQuery(
@@ -46,7 +46,7 @@ class HindsightMemoryProviderTests {
         ));
 
         assertThat(records).singleElement().satisfies(record -> {
-            assertThat(record.id()).isEqualTo("hermes-conversation:c1:turn:1");
+            assertThat(record.id()).isEqualTo("assistant-conversation:c1:turn:1");
             assertThat(record.summary()).isEqualTo("记忆正文");
             assertThat(record.sourceType()).isEqualTo("ASSISTANT_USER_MEMORY");
         });
@@ -57,7 +57,7 @@ class HindsightMemoryProviderTests {
         HindsightMemoryProvider provider = provider();
         MemoryProvider.MemoryScope scope = provider.assistantUserScope(5L);
         MemoryProvider.MemoryDocument document = new MemoryProvider.MemoryDocument(
-                "hermes-conversation:c1:turn:1",
+                "assistant-conversation:c1:turn:1",
                 "标题",
                 "正文",
                 List.of("user:5"),
@@ -70,7 +70,7 @@ class HindsightMemoryProviderTests {
 
         verify(hindsightClientService).retainAssistantConversationMemory(
                 5L,
-                "hermes-conversation:c1:turn:1",
+                "assistant-conversation:c1:turn:1",
                 "标题",
                 "正文",
                 List.of("user:5"),

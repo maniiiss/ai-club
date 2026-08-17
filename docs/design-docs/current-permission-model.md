@@ -92,7 +92,7 @@
 
 - `管理端治理`：用户、角色、功能、环境变量、操作日志等后台治理能力。
 - `公众平台运营`：积分、快捷入口、模型、工具、扫描规则集、PR 评审统计、智能体调用统计等面向平台运营的能力。
-- `业务协作`：首页、项目、API、Wiki、智能体、执行、测试、自升级、Hermes 等业务协作能力。
+- `业务协作`：首页、项目、API、Wiki、智能体、执行、测试、自升级、Assistant 等业务协作能力。
 - `集成能力`：GitLab、CI/CD、服务器、可观测性等外部系统或基础设施集成能力。
 
 这层目录只影响前端展示和管理员配置体验，不重命名现有权限码，不迁移已有 URL。`PUBLIC_DEFAULT` 是否能进入管理端首页完全由角色权限决定，系统不自动补 `dashboard:view`。
@@ -257,7 +257,7 @@
 | 自升级中心 | `self-upgrade:suggestion:manage` | 接受 / 拒绝优化建议 |
 | 自升级中心 | `self-upgrade:work-item:manage` | 管理整改工作项 |
 | 自升级中心 | `self-upgrade:execution:start` | 发起巡检或整改执行 |
-| Hermes | `hermes:chat` | 使用 Hermes 对话能力 |
+| Assistant | `assistant:chat` | 使用 Assistant 对话能力 |
 
 ## 6. 当前维护约定
 

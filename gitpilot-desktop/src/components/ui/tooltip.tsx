@@ -29,21 +29,63 @@ export function Hint({ content, children, side = 'top' }: HintProps) {
 
 interface NativeHintState {
 	text: string;
-	left: number;
-	top: number;
-	below: boolean;
+	anchor: { left: number; top: number; width: number; bottom: number };
+	pointerOnly: boolean;
 }
 
-/** 兼容尚未迁移的 title 属性，让旧版桌面控件也使用统一的提示视觉。 */
+interface NativeHintPosition {
+	left: number;
+	top: number;
+}
+
+/** 兼容尚未迁移的 title 属性，也为不能嵌套多个 Radix 触发器的桌面按钮提供统一提示视觉。 */
 export function NativeHintBridge() {
 	const [hint, setHint] = React.useState<NativeHintState | null>(null);
+	const [position, setPosition] = React.useState<NativeHintPosition | null>(null);
+	const hintRef = React.useRef<HTMLDivElement | null>(null);
 	const activeElement = React.useRef<HTMLElement | null>(null);
+	const activePointerOnly = React.useRef(false);
+
+	const reposition = React.useCallback(() => {
+		const currentHint = hint;
+		const content = hintRef.current;
+		if (!currentHint || !content) return;
+		const contentRect = content.getBoundingClientRect();
+		const margin = 12;
+		const maxLeft = Math.max(margin, window.innerWidth - contentRect.width - margin);
+		const preferredLeft = currentHint.anchor.left + currentHint.anchor.width / 2 - contentRect.width / 2;
+		const preferredTop = currentHint.pointerOnly && currentHint.anchor.top < 66
+			? currentHint.anchor.bottom + 10
+			: currentHint.anchor.top - contentRect.height - 10;
+		const maxTop = Math.max(margin, window.innerHeight - contentRect.height - margin);
+		const nextPosition = {
+			left: Math.min(maxLeft, Math.max(margin, preferredLeft)),
+			top: Math.min(maxTop, Math.max(margin, preferredTop)),
+		};
+		setPosition((previous) => previous && previous.left === nextPosition.left && previous.top === nextPosition.top ? previous : nextPosition);
+	}, [hint]);
+
+	React.useLayoutEffect(() => {
+		if (!hint) {
+			setPosition(null);
+			return;
+		}
+		reposition();
+	}, [hint, reposition]);
+
+	React.useEffect(() => {
+		if (!hint) return undefined;
+		window.addEventListener('resize', reposition);
+		return () => window.removeEventListener('resize', reposition);
+	}, [hint, reposition]);
 
 	React.useEffect(() => {
 		const findTarget = (target: EventTarget | null): HTMLElement | null => target instanceof Element ? target.closest<HTMLElement>('[title], [data-gp-hint]') : null;
 		const show = (event: Event) => {
 			const element = findTarget(event.target);
 			if (!element) return;
+			// data-gp-hint 用于菜单触发器，只响应鼠标悬停，避免点击后的焦点事件重复显示提示。
+			if (event.type === 'focusin' && !element.hasAttribute('title')) return;
 			const text = element.getAttribute('title') || element.getAttribute('data-gp-hint');
 			if (!text) return;
 			if (element.hasAttribute('title')) {
@@ -52,16 +94,18 @@ export function NativeHintBridge() {
 			}
 			if (element.tagName === 'IFRAME') return;
 			activeElement.current = element;
+			activePointerOnly.current = event.type === 'pointerover';
 			const rect = element.getBoundingClientRect();
-			const below = rect.top < 66;
-			setHint({ text, left: Math.min(window.innerWidth - 12, Math.max(12, rect.left + rect.width / 2)), top: below ? rect.bottom : rect.top, below });
+			setHint({ text, anchor: { left: rect.left, top: rect.top, width: rect.width, bottom: rect.bottom }, pointerOnly: activePointerOnly.current });
 		};
 		const hide = (event: Event) => {
 			const active = activeElement.current;
 			if (!active) return;
+			if (event.type === 'focusout' && activePointerOnly.current) return;
 			const related = (event as PointerEvent | FocusEvent).relatedTarget;
 			if (related instanceof Node && active.contains(related)) return;
 			activeElement.current = null;
+			activePointerOnly.current = false;
 			setHint(null);
 		};
 		document.addEventListener('pointerover', show, true);
@@ -77,5 +121,5 @@ export function NativeHintBridge() {
 	}, []);
 
 	if (!hint) return null;
-	return <div className={cn(styles.content, styles.legacy, hint.below && styles.legacyBelow)} style={{ left: hint.left, top: hint.top }} role="tooltip">{hint.text}</div>;
+	return <div ref={hintRef} className={cn(styles.content, styles.legacy)} style={{ left: position?.left ?? 0, top: position?.top ?? 0, visibility: position ? 'visible' : 'hidden' }} role="tooltip">{hint.text}</div>;
 }

@@ -29,7 +29,7 @@ public class AssistantSpeechController {
      * 把当前用户在 Assistant 抽屉中录制的短语音转成文本，供前端回填到输入框。
      */
     @PostMapping("/transcriptions")
-    @RequirePermission("hermes:chat")
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantSpeechTranscriptionResponse> transcribe(@RequestParam("file") MultipartFile file) {
         return ApiResponse.success(new AssistantSpeechTranscriptionResponse(
                 assistantSpeechTranscriptionService.transcribe(file)

@@ -402,7 +402,7 @@ public class ExecutionOrchestrationService {
                     RuntimeCapability.REPOSITORY_WRITE, RuntimeCapability.PLAN, RuntimeCapability.TECHNICAL_DESIGN,
                     RuntimeCapability.IMPLEMENT, RuntimeCapability.TEST, RuntimeCapability.CHAT);
         }
-        if (AgentExecutionService.RUNTIME_OPENCLAW.equals(runtime) || "HERMES_LEGACY".equals(runtime)) {
+        if (AgentExecutionService.RUNTIME_OPENCLAW.equals(runtime)) {
             return Set.of(RuntimeCapability.CHAT, RuntimeCapability.STREAM_EVENTS,
                     RuntimeCapability.SESSION_RESUME, RuntimeCapability.PLATFORM_TOOLS,
                     RuntimeCapability.REPOSITORY_READ);

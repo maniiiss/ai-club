@@ -40,7 +40,7 @@ public class ToolExecutionAuditService {
         PlatformToolAuditEntity entity = new PlatformToolAuditEntity();
         entity.setToolCode(definition.code());
         entity.setToolName(definition.name());
-        entity.setTriggerSource(request.triggerSource() == null ? "HERMES" : request.triggerSource());
+        entity.setTriggerSource(request.triggerSource() == null ? "ASSISTANT" : request.triggerSource());
         entity.setScopeKey(request.scopeKey());
         entity.setProjectId(request.projectId());
         entity.setBizType(request.bizType());

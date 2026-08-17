@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { getAdditionalScrollTail, getConversationFollowScrollTop, getConversationScrollBehavior, getLatestContentScrollTop, getMessageScrollTop, scrollMessageToSafeZone, shouldAnchorNewMessage } from './conversation-scroll';
+import { clampScrollTopToContainer, getAdditionalScrollTail, getConversationFollowScrollTop, getConversationScrollBehavior, getLatestContentScrollTop, getMessageScrollTop, scrollMessageToSafeZone, shouldAnchorNewMessage } from './conversation-scroll';
 
 function createContainer(overrides: Partial<{ scrollTop: number; clientHeight: number }> = {}) {
 	return {
@@ -42,6 +42,13 @@ describe('对话新消息滚动工具', () => {
 		expect(getLatestContentScrollTop(container, 960)).toBe(40);
 		expect(getConversationFollowScrollTop(container, 420, 640)).toBe(640);
 		expect(getConversationFollowScrollTop(container, 420, 300)).toBe(580);
+	});
+
+	it('清理人工尾部后不会把滚动位置保留在已移除的空白区域', () => {
+		const container = createContainer({ scrollTop: 1400, clientHeight: 800 });
+		container.scrollHeight = 2100;
+
+		expect(clampScrollTopToContainer(container.scrollTop, container.scrollHeight, container.clientHeight)).toBe(1300);
 	});
 
 	it('根据 reduced-motion 选择平滑或即时滚动', () => {

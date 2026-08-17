@@ -165,8 +165,6 @@ function Ensure-FullDockerEnvFile {
         REDIS_DATA_DIR = './.data/redis'
         RABBITMQ_DATA_DIR = './.data/rabbitmq'
         MINIO_DATA_DIR = './.data/minio'
-        HERMES_PORT = '18080'
-        HERMES_DATA_DIR = './.data/hermes'
         HINDSIGHT_PORT = '18888'
         HINDSIGHT_CONSOLE_PORT = '19999'
         PLATFORM_SCAN_HOST_PATH = './.data/scans'
@@ -246,7 +244,6 @@ function Get-PortConfiguration {
         Redis          = [int](Get-EnvOrDefault -Name 'REDIS_PORT' -DefaultValue '6379')
         RabbitMq       = [int](Get-EnvOrDefault -Name 'RABBITMQ_PORT' -DefaultValue '5672')
         Minio          = [int](Get-EnvOrDefault -Name 'MINIO_PORT' -DefaultValue '19000')
-        Hermes         = [int](Get-EnvOrDefault -Name 'HERMES_PORT' -DefaultValue '18080')
         Hindsight      = [int](Get-EnvOrDefault -Name 'HINDSIGHT_PORT' -DefaultValue '18888')
         Qdrant         = [int](Get-EnvOrDefault -Name 'QDRANT_PORT' -DefaultValue '16333')
         Neo4j          = [int](Get-EnvOrDefault -Name 'NEO4J_HTTP_PORT' -DefaultValue '17474')
@@ -256,7 +253,7 @@ function Get-PortConfiguration {
 }
 
 function Set-HybridDockerRuntimeEnvironment {
-    # Hermes 容器访问宿主机源码服务时，Windows 默认应走 host.docker.internal。
+    # 容器访问宿主机源码服务时，Windows 默认应走 host.docker.internal。
     $configuredHost = Get-EnvOrDefault -Name 'CODE_PROCESSING_IP' -DefaultValue ''
     if ([string]::IsNullOrWhiteSpace($configuredHost)) {
         $configuredHost = 'host.docker.internal'
@@ -763,6 +760,14 @@ function Start-LocalApplicationServices(
     $mvnCmd = (Get-Command mvn).Source
     $npmCmd = Get-NpmCommandPath
 
+    # Pi Runtime 是源码模式的本地 Node 服务，必须先于 backend 监听，避免 backend 启动后才发现运行时不可用。
+    Start-BackgroundService -Name 'pi-runtime' `
+        -WorkingDirectory $context.PiRuntimeDir `
+        -FilePath $npmCmd `
+        -Arguments @('run', 'start') `
+        -ExistingProcessPatterns @('node', 'src/server.mjs') `
+        -Port $PortConfiguration.PiRuntime
+
     Start-BackgroundService -Name 'code-processing' `
         -WorkingDirectory $context.CodeDir `
         -FilePath $context.CodeVenvPython `
@@ -776,13 +781,6 @@ function Start-LocalApplicationServices(
         -Arguments @('-s', 'maven-settings-central.xml', 'spring-boot:run') `
         -ExistingProcessPatterns @('AiAgentPlatformApplication') `
         -Port $PortConfiguration.Backend
-
-    Start-BackgroundService -Name 'pi-runtime' `
-        -WorkingDirectory $context.PiRuntimeDir `
-        -FilePath $npmCmd `
-        -Arguments @('run', 'start') `
-        -ExistingProcessPatterns @('node', 'src/server.mjs') `
-        -Port $PortConfiguration.PiRuntime
 
     Start-BackgroundService -Name 'frontend' `
         -WorkingDirectory $context.FrontendDir `
@@ -866,6 +864,26 @@ function Invoke-Compose(
     }
 }
 
+function Stop-ObsoleteHybridPiRuntimeContainer {
+    # 旧版源码编排曾创建 git-ai-club-pi-runtime；源码模式现在由本地 Node 进程承载，启动前只清理这个明确的旧容器。
+    $docker = Get-Command docker -ErrorAction SilentlyContinue
+    if ($null -eq $docker) {
+        return
+    }
+
+    $containerId = (& $docker.Source 'ps' '--filter' 'name=^git-ai-club-pi-runtime$' '--format' '{{.ID}}' 2> $null | Select-Object -First 1)
+    if ([string]::IsNullOrWhiteSpace($containerId)) {
+        return
+    }
+
+    Write-Step '停止旧源码模式 Pi Runtime 容器'
+    & $docker.Source 'stop' $containerId.Trim() | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw '停止旧源码模式 Pi Runtime 容器失败'
+    }
+    Write-Success '旧源码模式 Pi Runtime 容器已停止，本地源码服务将接管端口'
+}
+
 function Invoke-ComposeCapture(
     [string]$ComposeFile,
     [string]$EnvFile,
@@ -923,7 +941,6 @@ function Get-ComposeImages([string]$ComposeFile, [string]$EnvFile) {
         (Get-DotEnvValue -Path $EnvFile -Name 'RABBITMQ_IMAGE' -DefaultValue 'rabbitmq:3.13-management'),
         (Get-DotEnvValue -Path $EnvFile -Name 'MINIO_IMAGE' -DefaultValue 'minio/minio:RELEASE.2025-02-28T09-55-16Z'),
         (Get-DotEnvValue -Path $EnvFile -Name 'QDRANT_IMAGE' -DefaultValue 'qdrant/qdrant:v1.13.4'),
-        (Get-DotEnvValue -Path $EnvFile -Name 'HERMES_IMAGE' -DefaultValue 'ghcr.io/nousresearch/hermes-agent:latest'),
         (Get-DotEnvValue -Path $EnvFile -Name 'HINDSIGHT_IMAGE' -DefaultValue 'ghcr.io/vectorize-io/hindsight:latest'),
         (Get-DotEnvValue -Path $EnvFile -Name 'GITNEXUS_WEB_IMAGE' -DefaultValue 'git-ai-club-gitnexus-web:latest'),
         (Get-DotEnvValue -Path $EnvFile -Name 'WOODPECKER_IMAGE' -DefaultValue 'woodpeckerci/woodpecker-server:v3'),

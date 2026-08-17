@@ -29,6 +29,7 @@ import * as _bundledRtkOptimizer from "pi-rtk-optimizer";
 import * as _bundledGoal from "@narumitw/pi-goal/src/index.ts";
 import * as _bundledMcpAdapter from "pi-mcp-adapter";
 import * as _bundledWebAccess from "pi-web-access";
+import * as _bundledPlannotator from "@plannotator/pi-extension";
 // plan-mode 已本地 fork 到 src/extensions/plan-mode/：plan 确认浮层需支持"其他"自定义反馈，
 // 而 runDialogMenu 的 label 精确匹配会丢弃自定义 choice，故在 fork 内绕过 runMenu 直接调 ctx.ui.select。
 // 上游 @narumitw/pi-plan-mode 升级时需手动合并到本地 fork。
@@ -98,6 +99,7 @@ const VIRTUAL_MODULES: Record<string, unknown> = {
 	// GitPilot 内置的 Web/MCP 扩展也必须以静态依赖进入 Bun sidecar，安装版不能依赖用户机器上的 Node/npm。
 	"pi-mcp-adapter": _bundledMcpAdapter,
 	"pi-web-access": _bundledWebAccess,
+	"@plannotator/pi-extension": _bundledPlannotator,
 };
 
 const require = createRequire(import.meta.url);
@@ -121,6 +123,7 @@ function getAliases(): Record<string, string> {
 	const goalEntry = require.resolve("@narumitw/pi-goal/src/index.ts");
 	const mcpAdapterEntry = require.resolve("pi-mcp-adapter");
 	const webAccessEntry = require.resolve("pi-web-access");
+	const plannotatorEntry = require.resolve("@plannotator/pi-extension");
 	// plan-mode 走本地 fork（见顶部 _bundledPlanMode 注释），不走 node_modules 的 require.resolve。
 	const planModeEntry = path.resolve(__dirname, "../../extensions/plan-mode/index.ts");
 
@@ -172,6 +175,7 @@ function getAliases(): Record<string, string> {
 		"@narumitw/pi-plan-mode/src/index.ts": planModeEntry,
 		"pi-mcp-adapter": mcpAdapterEntry,
 		"pi-web-access": webAccessEntry,
+		"@plannotator/pi-extension": plannotatorEntry,
 	};
 
 	return _aliases;

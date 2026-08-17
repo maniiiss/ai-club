@@ -3,8 +3,8 @@ import type { AssistantActionItem, AssistantSelectionCardItem, AssistantSelectio
 import { resolveAssistantDisplayState } from '@/src/lib/assistantUtils'
 export { normalizeGeneratedMarkdown } from '@/src/lib/markdownUtils'
 
-// GitPilot 使用中性 mention，同时保留 @hermes 作为旧客户端兼容别名。
-const assistantMentionPattern = /(^|\s)@(hermes|gitpilot|assistant)(?=\s|$)/i
+// 聊天室只接受当前助手入口，避免旧协议别名继续进入新链路。
+const assistantMentionPattern = /(^|\s)@(gitpilot|assistant)(?=\s|$)/i
 
 export const containsAssistantMention = (content: string): boolean => assistantMentionPattern.test(content || '')
 

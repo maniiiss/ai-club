@@ -18,6 +18,7 @@ const { bridgeLifecycle, initBridge, destroyBridge, getGitPilotRoot, rpcMocks } 
 		getMessages: vi.fn(async () => ({ success: false })),
 		respondConfirmed: vi.fn(async () => ({ success: true })),
 		executeCommand: vi.fn(async () => ({ success: true })),
+		abort: vi.fn(async () => ({ success: true, command: 'abort', data: { clearedSteering: 0, clearedFollowUp: 0 } })),
 	},
 }));
 
@@ -366,6 +367,66 @@ describe('桌面会话生命周期契约', () => {
 		expect(state.pendingExtensionUI[0]).toMatchObject({ id: 'delayed-plan-confirm', sessionPath: 'C:\\sessions\\A.jsonl' });
 		expect(pickActiveExtensionUI(state.pendingExtensionUI, 'C:\\sessions\\B.jsonl')).toBeNull();
 		expect(pickActiveExtensionUI(state.pendingExtensionUI, 'C:\\sessions\\A.jsonl')?.id).toBe('delayed-plan-confirm');
+	});
+
+	it('计划状态和清单按来源会话过滤，后台任务不会污染当前输入框', async () => {
+		await useSessionStore.getState().connect();
+		useSessionStore.setState({ selectedSessionPath: 'C:\\sessions\\B.jsonl', sessionState: null, extensionStatuses: new Map(), extensionWidgets: new Map() });
+		bridgeLifecycle.extension.forEach((cb) => cb({
+			type: 'extension_ui_request',
+			id: 'background-plan-status',
+			method: 'setStatus',
+			statusKey: 'plannotator',
+			statusText: '📋 2/7',
+			sessionFile: 'C:\\sessions\\A.jsonl',
+		}));
+		bridgeLifecycle.extension.forEach((cb) => cb({
+			type: 'extension_ui_request',
+			id: 'current-plan-status',
+			method: 'setStatus',
+			statusKey: 'plannotator',
+			statusText: '📋 1/3',
+			sessionFile: 'C:\\sessions\\B.jsonl',
+		}));
+
+		const state = useSessionStore.getState();
+		expect(state.extensionStatuses.get('plannotator')).toBe('📋 1/3');
+	});
+
+	it('停止 Agent 立即清理输入框上方计划状态，避免当前步骤继续 loading', async () => {
+		rpcMocks.abort.mockResolvedValue({ success: true, command: 'abort', data: { clearedSteering: 0, clearedFollowUp: 0 } });
+		useSessionStore.setState({
+			isStreaming: true,
+			extensionStatuses: new Map([['code-plan', '📋 1/3']]),
+			extensionWidgets: new Map([['code-plan-progress', { lines: ['☐ 修改接口'], placement: 'aboveEditor' }]]),
+		});
+
+		await useSessionStore.getState().abort();
+
+		expect(rpcMocks.abort).toHaveBeenCalledWith(true);
+		expect(useSessionStore.getState().extensionStatuses).toEqual(new Map());
+		expect(useSessionStore.getState().extensionWidgets).toEqual(new Map());
+		expect(useSessionStore.getState().isStreaming).toBe(false);
+	});
+
+	it('实时 Agent 事件按来源会话过滤，后台任务不会写入当前正文', async () => {
+		await useSessionStore.getState().connect();
+		useWorkbenchStore.getState().resetExecution();
+		useSessionStore.setState({ selectedSessionPath: 'C:\\sessions\\B.jsonl', sessionState: null, messages: [], _streamingAssistantId: null, isStreaming: false });
+
+		bridgeLifecycle.event.forEach((callback) => callback({
+			type: 'message_update',
+			sessionFile: 'C:\\sessions\\A.jsonl',
+			assistantMessageEvent: { type: 'text_delta', delta: '后台会话正文' },
+		}));
+		expect(useSessionStore.getState().messages).toEqual([]);
+
+		bridgeLifecycle.event.forEach((callback) => callback({
+			type: 'message_update',
+			sessionFile: 'C:\\sessions\\B.jsonl',
+			assistantMessageEvent: { type: 'text_delta', delta: '当前会话正文' },
+		}));
+		expect(useSessionStore.getState().messages[0]).toMatchObject({ text: '当前会话正文', streaming: true });
 	});
 
 	it('pickActiveExtensionUI 只命中当前会话的请求，跨会话请求互不干扰', () => {

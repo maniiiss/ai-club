@@ -201,12 +201,6 @@ ensure_full_docker_env_file() {
   if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'MINIO_DATA_DIR' '')" ]]; then
     set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'MINIO_DATA_DIR' './.data/minio'
   fi
-  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HERMES_PORT' '')" ]]; then
-    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HERMES_PORT' '18080'
-  fi
-  if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HERMES_DATA_DIR' '')" ]]; then
-    set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HERMES_DATA_DIR' './.data/hermes'
-  fi
   if [[ -z "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HINDSIGHT_PORT' '')" ]]; then
     set_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HINDSIGHT_PORT' '18888'
   fi
@@ -246,7 +240,6 @@ load_ports() {
   REDIS_PORT="$(get_env_or_default 'REDIS_PORT' '6379')"
   RABBITMQ_PORT="$(get_env_or_default 'RABBITMQ_PORT' '5672')"
   MINIO_PORT="$(get_env_or_default 'MINIO_PORT' '19000')"
-  HERMES_PORT="$(get_env_or_default 'HERMES_PORT' '18080')"
   HINDSIGHT_PORT="$(get_env_or_default 'HINDSIGHT_PORT' '18888')"
   QDRANT_PORT="$(get_env_or_default 'QDRANT_PORT' '16333')"
   NEO4J_PORT="$(get_env_or_default 'NEO4J_HTTP_PORT' '17474')"
@@ -287,6 +280,19 @@ invoke_compose() {
   fi
 
   "${COMPOSE_CMD[@]}" "${args[@]}" "$@"
+}
+
+stop_obsolete_hybrid_pi_runtime_container() {
+  # 旧版源码编排曾创建 git-ai-club-pi-runtime；源码模式现在由本地 Node 进程承载。
+  local container_id
+  container_id="$(docker ps --filter 'name=^git-ai-club-pi-runtime$' --format '{{.ID}}' | head -n 1)"
+  if [[ -z "${container_id}" ]]; then
+    return 0
+  fi
+
+  log '停止旧源码模式 Pi Runtime 容器'
+  docker stop "${container_id}" >/dev/null
+  ok '旧源码模式 Pi Runtime 容器已停止，本地源码服务将接管端口'
 }
 
 capture_compose_output() {
@@ -643,6 +649,12 @@ start_local_application_services() {
   export VITE_API_PORT="${BACKEND_PORT}"
   export VITE_PUBLIC_FRONTEND_PORT="${FRONTEND_PUBLIC_PORT}"
 
+  # Pi Runtime 是源码模式的本地 Node 服务，必须先于 backend 监听。
+  start_service_if_needed \
+    'pi-runtime' "${PI_RUNTIME_PORT}" "${PI_RUNTIME_DIR}" \
+    'node|src/server.mjs' \
+    npm run start
+
   start_service_if_needed \
     'code-processing' "${CODE_PROCESSING_PORT}" "${CODE_DIR}" \
     "uvicorn|app.main:app|--port ${CODE_PROCESSING_PORT}" \
@@ -652,11 +664,6 @@ start_local_application_services() {
     'backend' "${BACKEND_PORT}" "${BACKEND_DIR}" \
     'AiAgentPlatformApplication' \
     mvn -s maven-settings-central.xml spring-boot:run
-
-  start_service_if_needed \
-    'pi-runtime' "${PI_RUNTIME_PORT}" "${PI_RUNTIME_DIR}" \
-    'node|src/server.mjs' \
-    npm run start
 
   start_service_if_needed \
     'frontend' "${FRONTEND_PORT}" "${FRONTEND_DIR}" \
@@ -691,8 +698,10 @@ start_source_stack() {
   require_cmd docker 'Docker Engine / Docker Desktop'
 
   if [[ "${skip_infrastructure}" != 'true' ]]; then
+    stop_obsolete_hybrid_pi_runtime_container
     local profile_args=()
-    local infrastructure_services=(postgres redis rabbitmq minio qdrant neo4j hindsight gitnexus-web hermes)
+    # 源码模式的 Pi Runtime 由本地 Node 进程启动，不再作为依赖容器。
+    local infrastructure_services=(postgres redis rabbitmq minio qdrant neo4j hindsight gitnexus-web)
     if woodpecker_enabled; then
       profile_args+=(--profile woodpecker)
       infrastructure_services+=(woodpecker-server woodpecker-agent)
@@ -705,9 +714,6 @@ start_source_stack() {
     hybrid_code_processing_host="$(get_linux_hybrid_code_processing_host)"
     export CODE_PROCESSING_IP="${hybrid_code_processing_host}"
 
-    invoke_compose "${HYBRID_COMPOSE_FILE}" "${DEFAULT_ENV_FILE}" '启动源码模式 Hermes 容器' \
-      up -d hermes
-
     wait_port "${POSTGRES_PORT}" 120 'PostgreSQL'
     wait_port "${REDIS_PORT}" 120 'Redis'
     wait_port "${RABBITMQ_PORT}" 120 'RabbitMQ'
@@ -716,11 +722,10 @@ start_source_stack() {
     wait_port "${NEO4J_PORT}" 120 'Neo4j'
     wait_port "${HINDSIGHT_PORT}" 120 'Hindsight'
     wait_port "${GITNEXUS_UI_PORT}" 120 'GitNexus Web UI'
-    wait_port "${HERMES_PORT}" 120 'Hermes'
     if woodpecker_enabled; then
       wait_port "${WOODPECKER_PORT}" 120 'Woodpecker'
     fi
-    ok "Hermes 将通过 ${hybrid_code_processing_host} 访问宿主机 code-processing"
+    ok '源码模式依赖容器已就绪，Pi Runtime 将由本地源码进程启动'
   fi
 
   start_local_application_services \
@@ -731,6 +736,7 @@ start_source_stack() {
 stop_source_stack() {
   ensure_log_dir
   stop_local_services
+  stop_obsolete_hybrid_pi_runtime_container
 
   local env_file=''
   if [[ -f "${DEFAULT_ENV_FILE}" ]]; then
@@ -738,7 +744,7 @@ stop_source_stack() {
   fi
 
   invoke_compose "${HYBRID_COMPOSE_FILE}" "${env_file}" '停止源码模式依赖容器' \
-    --profile woodpecker stop postgres redis rabbitmq minio qdrant neo4j hindsight gitnexus-web hermes pi-runtime woodpecker-server woodpecker-agent
+    --profile woodpecker stop postgres redis rabbitmq minio qdrant neo4j hindsight gitnexus-web woodpecker-server woodpecker-agent
 
   printf '\n'
   ok '源码模式项目已停止'
@@ -783,7 +789,6 @@ start_full_docker_stack() {
   wait_port "${QDRANT_PORT}" 180 'Qdrant'
   wait_port "${NEO4J_PORT}" 180 'Neo4j'
   wait_port "${HINDSIGHT_PORT}" 180 'Hindsight'
-  wait_port "${HERMES_PORT}" 180 'Hermes'
   wait_port "${PI_RUNTIME_PORT}" 180 'Pi Runtime'
   wait_port "${GITNEXUS_UI_PORT}" 180 'GitNexus Web UI'
   if woodpecker_enabled; then
@@ -799,7 +804,6 @@ start_full_docker_stack() {
   printf 'Frontend public: http://localhost:%s\n' "${FRONTEND_PUBLIC_PORT}"
   printf 'Backend: http://localhost:%s\n' "${BACKEND_PORT}"
   printf 'Code processing: http://localhost:%s\n' "${CODE_PROCESSING_PORT}"
-  printf 'Hermes: http://localhost:%s\n' "${HERMES_PORT}"
   printf 'Pi Runtime: http://localhost:%s\n' "${PI_RUNTIME_PORT}"
   printf 'RabbitMQ: amqp://localhost:%s\n' "${RABBITMQ_PORT}"
   printf 'Qdrant: http://localhost:%s\n' "${QDRANT_PORT}"
@@ -850,7 +854,7 @@ package_full_docker_stack() {
   invoke_compose "${FULL_DOCKER_COMPOSE_FILE}" "${FULL_DOCKER_ENV_FILE}" '构建全量 Docker 业务镜像' \
     "${compose_profile_args[@]}" build --pull
 
-  local middleware_services=(postgres redis rabbitmq minio qdrant neo4j hindsight hermes)
+  local middleware_services=(postgres redis rabbitmq minio qdrant neo4j hindsight)
   if woodpecker_enabled; then
     middleware_services+=(woodpecker-server woodpecker-agent)
   fi
@@ -883,7 +887,6 @@ package_full_docker_stack() {
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'MINIO_IMAGE' 'minio/minio:RELEASE.2025-02-28T09-55-16Z')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'QDRANT_IMAGE' 'qdrant/qdrant:v1.13.4')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'NEO4J_IMAGE' 'neo4j:5.26-community')"
-      "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HERMES_IMAGE' 'ghcr.io/nousresearch/hermes-agent:latest')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'HINDSIGHT_IMAGE' 'ghcr.io/vectorize-io/hindsight:latest')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'GITNEXUS_WEB_IMAGE' 'git-ai-club-gitnexus-web:latest')"
       "$(get_dotenv_value "${FULL_DOCKER_ENV_FILE}" 'WOODPECKER_IMAGE' 'woodpeckerci/woodpecker-server:v3')"
@@ -917,7 +920,6 @@ AI Club Docker 打包说明
 - Frontend public: http://localhost:${FRONTEND_PUBLIC_PORT}
 - Backend: http://localhost:${BACKEND_PORT}
 - Code processing: http://localhost:${CODE_PROCESSING_PORT}
-- Hermes: http://localhost:${HERMES_PORT}
 - Pi Runtime: http://localhost:${PI_RUNTIME_PORT}
 - Hindsight: http://localhost:${HINDSIGHT_PORT}
 - GitNexus Web UI: http://localhost:${GITNEXUS_UI_PORT}

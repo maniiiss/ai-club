@@ -35,50 +35,50 @@ public class AssistantMcpServerController {
 
     /** 读取当前用户自己的 MCP 服务列表。 */
     @GetMapping
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<List<AssistantMcpServerSummary>> list() { return ApiResponse.success(service.listMine()); }
 
     /** 测试未保存的 MCP 配置并发现工具。 */
     @PostMapping("/test")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantMcpConnectionTestResult> test(@Valid @RequestBody AssistantMcpServerRequest request) {
         return ApiResponse.success(service.test(request));
     }
 
     /** 新增 MCP 服务。 */
     @PostMapping
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantMcpServerSummary> create(@Valid @RequestBody AssistantMcpServerRequest request) {
         return ApiResponse.success(service.create(request));
     }
 
     /** 更新 MCP 服务。 */
     @PutMapping("/{id}")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantMcpServerSummary> update(@PathVariable Long id, @Valid @RequestBody AssistantMcpServerRequest request) {
         return ApiResponse.success(service.update(id, request));
     }
 
     /** 重新测试已保存 MCP 服务。 */
     @PostMapping("/{id}/test")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantMcpServerSummary> retest(@PathVariable Long id) { return ApiResponse.success(service.retest(id)); }
 
     /** 启用或停用 MCP 服务。 */
     @PatchMapping("/{id}/enabled")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantMcpServerSummary> setEnabled(@PathVariable Long id, @RequestBody EnabledRequest request) {
         return ApiResponse.success(service.setEnabled(id, request.enabled()));
     }
 
     /** 删除 MCP 服务。 */
     @DeleteMapping("/{id}")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<Void> delete(@PathVariable Long id) { service.delete(id); return new ApiResponse<>(true, "ok", null); }
 
     /** 执行动作卡片确认后的外部 MCP 工具调用。 */
     @PostMapping("/actions/execute")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<String> executeConfirmedTool(@Valid @RequestBody AssistantMcpToolExecuteRequest request) {
         Long userId = service.currentUserIdForAction();
         service.validateActionConfirmation(userId, request.scopeKey(), request.clientConversationId(),

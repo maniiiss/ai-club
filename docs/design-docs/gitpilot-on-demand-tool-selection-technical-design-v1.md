@@ -16,7 +16,7 @@ GitPilot 项目助手（管理端抽屉、聊天室 @GitPilot）走 Pi runtime�
 | 12         | 51            | 正常完整回复 |
 | **24**     | **0**         | thinking 在第一个词就 `THINKING_END`，不产出正文 |
 
-`hermes_chat_audit` 表显示重启后对话 `status=SUCCESS` 但 `response_summary` 为空，
+`assistant_chat_audit` 表显示重启后对话 `status=SUCCESS` 但 `response_summary` 为空，
 Redis 会话快照中 assistant 消息从 thinking 残缺（"用户"/"The"）到完全空数组 `[]`。
 pi-runtime 的 `#run` 在 `agent.prompt()` 未抛异常时无条件发 `RUN_COMPLETED(SUCCESS)`，
 不检测"模型未产出正文"，导致用户看到空回复而非明确报错。

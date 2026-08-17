@@ -9,7 +9,7 @@
  */
 
 /** 精选扩展唯一标识。v1 四扩展预留，本阶段首批落地 rtk-optimizer。 */
-export type CuratedExtensionId = "slopchop" | "goal" | "plan-mode" | "subagents" | "rtk-optimizer";
+export type CuratedExtensionId = "slopchop" | "goal" | "plan-mode" | "subagents" | "rtk-optimizer" | "plannotator";
 
 /** 内置精选扩展定义。factory 由 loader 在运行时通过 jiti.import(packageName) 加载。 */
 export interface CuratedExtensionDefinition {
@@ -62,6 +62,15 @@ export const curatedExtensions: CuratedExtensionDefinition[] = [
 		displayName: "Plan Mode",
 		entry: "@narumitw/pi-plan-mode/src/index.ts",
 		version: "0.44.0",
+		defaultEnabled: true,
+		surfaces: ["cli-tui", "rpc", "desktop-native"],
+	},
+	{
+		id: "plannotator",
+		packageName: "@plannotator/pi-extension",
+		displayName: "Plannotator",
+		entry: "@plannotator/pi-extension",
+		version: "0.27.3",
 		defaultEnabled: true,
 		surfaces: ["cli-tui", "rpc", "desktop-native"],
 	},

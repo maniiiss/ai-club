@@ -57,6 +57,12 @@ public class AiModelConfigEntity {
     private Integer maxOutputTokens;
 
     /**
+     * 模型支持的输入模态，使用逗号分隔的 text/image 保存；平台配置是桌面端多模态能力的唯一来源。
+     */
+    @Column(name = "input_modalities", nullable = false, length = 32)
+    private String inputModalities = "text";
+
+    /**
      * 每千输入 token 积分单价，启用 token 计费时把输入 token 换算为积分。
      */
     @Column(name = "input_credit_per_1k", precision = 10, scale = 4)
@@ -177,6 +183,14 @@ public class AiModelConfigEntity {
 
     public void setMaxOutputTokens(Integer maxOutputTokens) {
         this.maxOutputTokens = maxOutputTokens;
+    }
+
+    public String getInputModalities() {
+        return inputModalities;
+    }
+
+    public void setInputModalities(String inputModalities) {
+        this.inputModalities = inputModalities;
     }
 
     public BigDecimal getInputCreditPer1k() {

@@ -206,7 +206,7 @@ public class HindsightMemoryProvider implements MemoryProvider {
         }
         Object bankId = metadata.get("bankId");
         String bank = defaultString(bankId == null ? "" : String.valueOf(bankId));
-        if (bank.contains(":hermes:user:")) {
+        if (bank.contains(":assistant:user:")) {
             return "ASSISTANT_USER_MEMORY";
         }
         if (bank.contains(":wiki:space:")) {

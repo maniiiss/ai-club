@@ -199,7 +199,7 @@ public RequirementAiPreparedContext prepare(RequirementAiTaskSnapshot snapshot) 
 - [ ] Implement the same state machine as management without the model selector; preserve current edit/create/import actions and call the unified apply endpoint.
 - [ ] Run `npm run test` and `npm run build`, then commit `feat: add public background requirement ai experience`.
 
-### Task 11: Expose image understanding to Hermes
+### Task 11: Expose image understanding to Assistant
 
 **Files:**
 - Modify: `code-processing/app/mcp_server.py`

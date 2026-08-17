@@ -163,7 +163,7 @@ public class ChatRoomAgentService {
                 null, null, null, null, new ObjectMapper());
     }
 
-    /** 兼容旧测试构造方式，Runtime 路由依赖为空时默认使用 Assistant Legacy。 */
+    /** 兼容旧测试构造方式，Runtime 路由依赖为空时使用平台默认 Runtime。 */
     @Autowired
     public ChatRoomAgentService(AuthService authService,
                                 @Lazy ChatRoomService chatRoomService,
@@ -186,7 +186,7 @@ public class ChatRoomAgentService {
 
     /**
      * 通过属性注入兼容旧版测试/构造器契约；生产环境仍会注入统一 Runtime 路由服务。
-     * 业务意图：保留历史构造器 ABI，避免聊天室 Legacy 测试和旧扩展在新增 Runtime 后失效。
+     * 业务意图：保留历史构造器 ABI，避免聊天室测试和旧扩展在新增 Runtime 后失效。
      */
     @Autowired(required = false)
     public void setRuntimeChatService(RuntimeChatService runtimeChatService) {
@@ -214,7 +214,7 @@ public class ChatRoomAgentService {
                 .orElseThrow(() -> new NoSuchElementException("当前用户不存在"));
         ChatRoomAgentConfigEntity config = resolveConfig(room);
         String runtimeRegistryCode = defaultString(request.runtimeRegistryCode()).isBlank()
-                ? RuntimeChatService.HERMES_LEGACY
+                ? RuntimeChatService.DEFAULT_RUNTIME
                 : request.runtimeRegistryCode();
         if (runtimeChatService != null) {
             runtimeChatService.validateChatRuntime(runtimeRegistryCode);
@@ -276,7 +276,7 @@ public class ChatRoomAgentService {
         task.setAuthorizedByUser(authorizedBy);
         task.setTriggerType(TRIGGER_MENTION);
         task.setStatus(config.isEnabled() ? TASK_PENDING : TASK_ERROR);
-        task.setSource("@hermes");
+        task.setSource("@assistant");
         task.setSourceRef("mention:message:" + triggerMessageId);
         task.setPayloadJson(writePayload(Map.of(
                 "triggerMessageId", triggerMessageId == null ? "" : triggerMessageId,
@@ -494,13 +494,7 @@ public class ChatRoomAgentService {
             if (task.getTriggerMessage() == null) {
                 throw new IllegalStateException("聊天室 Agent 触发消息缺失");
             }
-            assistantResult = RuntimeChatService.HERMES_LEGACY.equals(runtimeRegistryCode)
-                    ? chatAssistantService.startAssistantReply(
-                    task.getRoom().getId(),
-                    task.getAssistantMessage().getId(),
-                    task.getTriggerMessage().getId(),
-                    toolExecutionPolicy)
-                    : chatAssistantService.startAssistantReply(
+            assistantResult = chatAssistantService.startAssistantReply(
                     task.getRoom().getId(),
                     task.getAssistantMessage().getId(),
                     task.getTriggerMessage().getId(),
@@ -510,15 +504,7 @@ public class ChatRoomAgentService {
             AssistantGroundingState groundingState = TRIGGER_SELECTION.equals(task.getTriggerType())
                     ? buildSelectionGroundingState(task)
                     : AssistantGroundingState.empty();
-            assistantResult = RuntimeChatService.HERMES_LEGACY.equals(runtimeRegistryCode)
-                    ? chatAssistantService.startAgentTaskReply(
-                    task.getRoom().getId(),
-                    task.getAssistantMessage().getId(),
-                    buildTaskInstruction(task),
-                    task.getAuthorizedByUser(),
-                    toolExecutionPolicy,
-                    groundingState)
-                    : chatAssistantService.startAgentTaskReply(
+            assistantResult = chatAssistantService.startAgentTaskReply(
                     task.getRoom().getId(),
                     task.getAssistantMessage().getId(),
                     buildTaskInstruction(task),
@@ -1189,7 +1175,7 @@ public class ChatRoomAgentService {
         message.setRoom(room);
         message.setSenderUser(null);
         message.setRole(ChatRoomService.ROLE_ASSISTANT);
-        message.setSenderUsernameSnapshot("hermes");
+        message.setSenderUsernameSnapshot("assistant");
         message.setSenderNameSnapshot("GitPilot");
         message.setSenderAvatarSnapshot("");
         message.setContent("");
@@ -1201,19 +1187,21 @@ public class ChatRoomAgentService {
     /** 从任务快照读取 Runtime，保证排队后修改房间配置不会改变本次任务。 */
     private String resolveTaskRuntimeCode(ChatRoomAgentTaskEntity task) {
         Map<String, Object> payload = readPayload(task == null ? "" : task.getPayloadJson());
-        return defaultString(String.valueOf(payload.getOrDefault("runtimeRegistryCode", RuntimeChatService.HERMES_LEGACY)))
+        return defaultString(String.valueOf(payload.getOrDefault("runtimeRegistryCode", RuntimeChatService.DEFAULT_RUNTIME)))
                 .toUpperCase(Locale.ROOT);
     }
 
-    /** 从房间配置读取当前 Runtime，并为历史配置补齐 Legacy 默认值。 */
+    /** 从房间配置读取当前 Runtime，并为历史配置补齐默认值。 */
     private String resolveRuntimeRegistryCode(ChatRoomAgentConfigEntity config) {
         String code = config == null ? "" : config.getRuntimeRegistryCode();
-        String normalized = defaultString(code).isBlank() ? RuntimeChatService.HERMES_LEGACY : code.trim().toUpperCase(Locale.ROOT);
-        // V128 为历史聊天室统一写入 HERMES_LEGACY；该值表示“未单独覆盖”，应实时跟随平台聊天室默认值。
-        if (RuntimeChatService.HERMES_LEGACY.equals(normalized) && runtimeScenarioDefaultService != null) {
-            return runtimeScenarioDefaultService.resolve(RuntimeScenarioDefaultService.SCENARIO_CHAT_ROOM);
+        String normalized = defaultString(code).isBlank() ? "" : code.trim().toUpperCase(Locale.ROOT);
+        if (!normalized.isBlank()) {
+            return normalized;
         }
-        return normalized;
+        // 空配置才读取聊天室场景默认值；显式选择的 Runtime 必须保持不变。
+        return runtimeScenarioDefaultService == null
+                ? RuntimeChatService.DEFAULT_RUNTIME
+                : runtimeScenarioDefaultService.resolve(RuntimeScenarioDefaultService.SCENARIO_CHAT_ROOM);
     }
 
     private void publishTaskIfPending(ChatRoomAgentTaskEntity task) {

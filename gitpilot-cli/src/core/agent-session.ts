@@ -78,6 +78,7 @@ import {
 	type ExtensionErrorListener,
 	type ExtensionMode,
 	ExtensionRunner,
+	type ExtensionToolExecutionAdapter,
 	type ExtensionUIContext,
 	type InputSource,
 	type MessageEndEvent,
@@ -238,6 +239,8 @@ export interface ExtensionBindings {
 	abortHandler?: () => void;
 	shutdownHandler?: ShutdownHandler;
 	onError?: ExtensionErrorListener;
+	/** 宿主在第三方扩展工具执行前提供的原生审核/协议适配器。 */
+	toolExecutionAdapter?: ExtensionToolExecutionAdapter;
 }
 
 /** Options for AgentSession.prompt() */
@@ -373,6 +376,7 @@ export class AgentSession {
 	private _extensionAbortHandler?: () => void;
 	private _extensionShutdownHandler?: ShutdownHandler;
 	private _extensionErrorListener?: ExtensionErrorListener;
+	private _extensionToolExecutionAdapter?: ExtensionToolExecutionAdapter;
 	private _extensionErrorUnsubscriber?: () => void;
 
 	private _modelRuntime: ModelRuntime;
@@ -2389,6 +2393,9 @@ export class AgentSession {
 		if (bindings.onError !== undefined) {
 			this._extensionErrorListener = bindings.onError;
 		}
+		if (bindings.toolExecutionAdapter !== undefined) {
+			this._extensionToolExecutionAdapter = bindings.toolExecutionAdapter;
+		}
 
 		this._applyExtensionBindings(this._extensionRunner);
 		await this._extensionRunner.emit(this._sessionStartEvent);
@@ -2450,6 +2457,7 @@ export class AgentSession {
 
 	private _applyExtensionBindings(runner: ExtensionRunner): void {
 		runner.setUIContext(this._extensionUIContext, this._extensionMode);
+		runner.setToolExecutionAdapter(this._extensionToolExecutionAdapter);
 		runner.bindCommandContext(this._extensionCommandContextActions);
 
 		this._extensionErrorUnsubscriber?.();

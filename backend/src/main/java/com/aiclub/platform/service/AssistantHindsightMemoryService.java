@@ -217,14 +217,14 @@ public class AssistantHindsightMemoryService {
 
     /**
      * 删除当前用户的一条 Assistant 记忆。
-     * 仅允许删除 hermes-conversation: 前缀的 documentId，防止越权删除其它类型记忆。
+     * 仅允许删除 assistant-conversation: 前缀的 documentId，防止越权删除其它类型记忆。
      */
     public void deleteUserMemory(CurrentUserInfo currentUser, String documentId) {
         if (currentUser == null || currentUser.id() == null) {
             throw new IllegalArgumentException("当前用户信息缺失");
         }
         String safeDocumentId = defaultString(documentId);
-        if (!safeDocumentId.startsWith("hermes-conversation:")) {
+        if (!safeDocumentId.startsWith("assistant-conversation:")) {
             throw new IllegalArgumentException("只能删除 Assistant 会话记忆");
         }
         memoryProvider.delete(memoryProvider.assistantUserScope(currentUser.id()), safeDocumentId);
@@ -367,7 +367,7 @@ public class AssistantHindsightMemoryService {
 
     private String renderSourceType(String sourceType) {
         return switch (defaultString(sourceType).toUpperCase()) {
-            case "HERMES_USER_MEMORY", "ASSISTANT_USER_MEMORY" -> "用户会话记忆";
+            case "ASSISTANT_USER_MEMORY" -> "用户会话记忆";
             case "WIKI_SPACE" -> "Wiki 空间";
             case "WIKI" -> "项目 Wiki";
             case "MEMORY" -> "共享记忆";
@@ -400,7 +400,7 @@ public class AssistantHindsightMemoryService {
      */
     private String buildConversationDocumentId(AssistantConversationSessionEntity session,
                                                AssistantConversationState finalState) {
-        return "hermes-conversation:"
+        return "assistant-conversation:"
                 + defaultString(session.getClientConversationId())
                 + ":turn:"
                 + resolveTurnIndex(finalState);
@@ -430,8 +430,8 @@ public class AssistantHindsightMemoryService {
                                                AssistantContextAssembler.AssistantConversationContext context,
                                                AssistantChatRequest request) {
         LinkedHashSet<String> tags = new LinkedHashSet<>();
-        tags.add("hermes");
-        tags.add("source:hermes");
+        tags.add("assistant");
+        tags.add("source:assistant");
         if (currentUser != null && currentUser.id() != null) {
             tags.add("user:" + currentUser.id());
         }
@@ -612,7 +612,7 @@ public class AssistantHindsightMemoryService {
         }
         Map<String, Object> metadata = fact.metadata() == null ? Map.of() : fact.metadata();
         Object documentId = metadata.get("documentId");
-        if (documentId instanceof String documentIdValue && documentIdValue.startsWith("hermes-conversation:")) {
+        if (documentId instanceof String documentIdValue && documentIdValue.startsWith("assistant-conversation:")) {
             return true;
         }
         return looksLikeConversationContent(fact.summary());
@@ -657,7 +657,7 @@ public class AssistantHindsightMemoryService {
         }
         Map<String, Object> metadata = fact.metadata() == null ? Map.of() : fact.metadata();
         Object documentId = metadata.get("documentId");
-        if (documentId instanceof String documentIdValue && documentIdValue.startsWith("hermes-conversation:")) {
+        if (documentId instanceof String documentIdValue && documentIdValue.startsWith("assistant-conversation:")) {
             return false;
         }
         return true;

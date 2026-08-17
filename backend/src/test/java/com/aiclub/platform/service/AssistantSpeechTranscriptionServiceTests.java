@@ -64,7 +64,7 @@ class AssistantSpeechTranscriptionServiceTests {
             assertThat(contentTypeHeader.get()).contains("boundary=");
             assertThat(requestBody.get()).contains("name=\"model\"");
             assertThat(requestBody.get()).contains("gpt-4o-mini-transcribe");
-            assertThat(requestBody.get()).contains("name=\"file\"; filename=\"hermes-voice.webm\"");
+            assertThat(requestBody.get()).contains("name=\"file\"; filename=\"assistant-voice.webm\"");
         } finally {
             server.stop(0);
         }

@@ -95,10 +95,10 @@ class ReviewResponse(BaseModel):
     unresolvedPreviousIssues: list[str] = Field(default_factory=list)
 
 
-class HermesInternalToolExecuteRequest(BaseModel):
-    sessionToken: str = Field(description="Hermes MCP 会话令牌")
+class AssistantInternalToolExecuteRequest(BaseModel):
+    sessionToken: str = Field(description="Assistant MCP 会话令牌")
     toolCode: str = Field(description="平台工具编码")
-    arguments: dict[str, Any] = Field(default_factory=dict, description="Hermes 传入的工具参数")
+    arguments: dict[str, Any] = Field(default_factory=dict, description="Assistant 传入的工具参数")
 
     @field_validator("sessionToken", "toolCode", mode="before")
     @classmethod
@@ -108,8 +108,8 @@ class HermesInternalToolExecuteRequest(BaseModel):
         return str(value).strip()
 
 
-class HermesInternalToolExecuteResponse(BaseModel):
-    message: str = Field(default="", description="返回给 Hermes 的文本摘要")
+class AssistantInternalToolExecuteResponse(BaseModel):
+    message: str = Field(default="", description="返回给 Assistant 的文本摘要")
 
 
 class DocumentConvertResponse(BaseModel):

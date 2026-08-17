@@ -55,7 +55,7 @@ public class DocumentAssetEntity {
     @Column(name = "binding_status", nullable = false, length = 20)
     private String bindingStatus = "TEMP";
 
-    /** 绑定业务类型，例如 WIKI_PAGE 或 HERMES_ATTACHMENT。 */
+    /** 绑定业务类型，例如 WIKI_PAGE 或 ASSISTANT_ATTACHMENT。 */
     @Column(name = "bound_biz_type", nullable = false, length = 50)
     private String boundBizType = "";
 

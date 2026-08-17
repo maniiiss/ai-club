@@ -37,6 +37,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.NoSuchElementException;
 
 @Service
@@ -51,6 +52,8 @@ public class ModelConfigService {
     public static final String OPENAI_API_MODE_RESPONSES = "RESPONSES";
     public static final String OPENAI_API_MODE_CHAT_COMPLETIONS = "CHAT_COMPLETIONS";
     public static final String OPENAI_API_MODE_CHAT_COMPLETIONS_PLAIN = "CHAT_COMPLETIONS_PLAIN";
+    public static final String MODEL_INPUT_TEXT = "text";
+    public static final String MODEL_INPUT_IMAGE = "image";
 
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final Duration MODEL_REQUEST_TIMEOUT = Duration.ofSeconds(120);
@@ -355,6 +358,7 @@ public class ModelConfigService {
         entity.setOpenaiApiMode(normalizeOpenAiApiMode(provider, request.openaiApiMode()));
         entity.setContextLength(request.contextLength());
         entity.setMaxOutputTokens(request.maxOutputTokens());
+        entity.setInputModalities(serializeInputModalities(normalizeInputModalities(request.inputModalities())));
         entity.setDescription(request.description() == null ? "" : request.description().trim());
         entity.setEnabled(request.enabled() == null || request.enabled());
         applyTokenBilling(entity, request);
@@ -426,7 +430,8 @@ public class ModelConfigService {
                 entity.getTokenBillingEnabled(),
                 entity.getInputCreditPer1k(),
                 entity.getOutputCreditPer1k(),
-                entity.getCachedInputCreditPer1k()
+                entity.getCachedInputCreditPer1k(),
+                parseInputModalities(entity.getInputModalities())
         );
     }
 
@@ -1083,6 +1088,44 @@ public class ModelConfigService {
             throw new IllegalArgumentException("OpenAI 调用模式仅支持 AUTO、RESPONSES、CHAT_COMPLETIONS、CHAT_COMPLETIONS_PLAIN");
         }
         return value;
+    }
+
+    /**
+     * 归一化平台模型输入能力，保证每个模型始终支持文本，并只允许当前已接入的模态。
+     * 业务意图：管理端的明确配置优先于运行时猜测，旧模型或缺失字段安全回退为文本模型。
+     */
+    private List<String> normalizeInputModalities(List<String> inputModalities) {
+        if (inputModalities == null || inputModalities.isEmpty()) {
+            return List.of(MODEL_INPUT_TEXT);
+        }
+        List<String> normalized = new ArrayList<>();
+        for (String modality : inputModalities) {
+            if (!hasText(modality)) {
+                continue;
+            }
+            String value = modality.trim().toLowerCase(Locale.ROOT);
+            if (!MODEL_INPUT_TEXT.equals(value) && !MODEL_INPUT_IMAGE.equals(value)) {
+                throw new IllegalArgumentException("模型输入能力仅支持 text 和 image");
+            }
+            if (!normalized.contains(value)) {
+                normalized.add(value);
+            }
+        }
+        // 固定 text,image 的顺序，让管理端、CLI 缓存和审计结果保持稳定。
+        return normalized.contains(MODEL_INPUT_IMAGE)
+                ? List.of(MODEL_INPUT_TEXT, MODEL_INPUT_IMAGE)
+                : List.of(MODEL_INPUT_TEXT);
+    }
+
+    private String serializeInputModalities(List<String> inputModalities) {
+        return String.join(",", inputModalities);
+    }
+
+    private List<String> parseInputModalities(String inputModalities) {
+        if (!hasText(inputModalities)) {
+            return List.of(MODEL_INPUT_TEXT);
+        }
+        return normalizeInputModalities(List.of(inputModalities.split(",")));
     }
 
     private void validateProviderForModelType(String provider, String modelType) {

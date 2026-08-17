@@ -61,15 +61,17 @@ export type AttachmentInput =
 	| { path: string; name?: string }
 	| { name: string; data: string; mimeType?: string };
 
-/** 预解析后的附件：图片带 image，文档/文本带 text，统一带元数据与 warnings（仅元数据，不含原文以免撑大 UI）。 */
+/** 预解析后的附件：图片带 image，文档/文本带 text，工作项带上下文载荷，统一带元数据与 warnings。 */
 export interface PreparedAttachment {
 	name: string;
 	path?: string;
-	kind: 'image' | 'document' | 'text';
+	kind: 'image' | 'document' | 'text' | 'work-item';
 	mimeType: string;
 	sizeBytes: number;
 	text?: string;
 	image?: ImageContent;
+	/** 工作项标签对应的原始摘要，便于草稿恢复和发送前确认。 */
+	workItem?: RpcWorkItemSummary;
 	truncated?: boolean;
 	warnings?: string[];
 }
@@ -337,6 +339,8 @@ export type RpcCommand =
 	| { id?: string; type: 'get_platform_connection' }
 	/** Design 入口绑定 Web 端项目时使用的只读项目查询。 */
 	| { id?: string; type: 'get_platform_projects'; keyword?: string }
+	/** 输入框工作项入口查询当前用户负责的需求、任务和缺陷。 */
+	| { id?: string; type: 'get_platform_work_items' }
 	| { id?: string; type: 'logout' }
 	// 扩展 UI 响应
 	| { type: 'extension_ui_response'; id: string; value: string }
@@ -426,6 +430,7 @@ export type RpcResponse =
 	| { id?: string; type: 'response'; command: 'get_platform_account'; success: true; data: PlatformAccount }
 	| { id?: string; type: 'response'; command: 'get_platform_connection'; success: true; data: PlatformConnection }
 	| { id?: string; type: 'response'; command: 'get_platform_projects'; success: true; data: { projects: Array<{ id: number; name: string; status?: string; description?: string; owner?: string }> } }
+	| { id?: string; type: 'response'; command: 'get_platform_work_items'; success: true; data: { items: RpcWorkItemSummary[] } }
 	| { id?: string; type: 'response'; command: 'logout'; success: true }
 	| { id?: string; type: 'response'; command: string; success: false; error: string };
 
@@ -442,6 +447,25 @@ export interface RpcSlashCommand {
 	hostAction?: 'prompt' | 'open_local_review' | 'open_rtk_settings';
 	/** UI 能力：rpc-standard 走标准 RPC 事件、tui-custom 需原生 GUI 适配、none 无 UI */
 	uiCapability?: 'rpc-standard' | 'tui-custom' | 'none';
+}
+
+/** 桌面端工作项入口使用的轻量摘要，避免把完整需求文档加载到弹层。 */
+export interface RpcWorkItemSummary {
+	id: number;
+	workItemCode: string;
+	name: string;
+	workItemType: string;
+	status: string;
+	priority: string | null;
+	assignee: string | null;
+	taskType: string | null;
+	projectId: number | null;
+	projectName: string | null;
+	iterationId: number | null;
+	iterationName: string | null;
+	planStartDate: string | null;
+	planEndDate: string | null;
+	requirementMarkdown: string | null;
 }
 
 // ============================================================================

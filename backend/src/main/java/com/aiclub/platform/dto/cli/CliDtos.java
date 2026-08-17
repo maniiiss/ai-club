@@ -37,8 +37,24 @@ public final class CliDtos {
             /** 模型上下文窗口长度（token），未配置时为 null，CLI 回退默认。 */
             Integer contextLength,
             /** 模型最大输出 token 数，未配置时为 null，CLI 回退默认。 */
-            Integer maxOutputTokens
-    ) {}
+            Integer maxOutputTokens,
+            /** 平台配置的输入模态，CLI 将其映射为 PI Model.input。 */
+            List<String> inputModalities
+    ) {
+        /** 兼容未增加输入能力字段前的构造方，旧模型默认仅支持文本。 */
+        public CliModelSummary(
+                Long id,
+                String name,
+                String provider,
+                String modelName,
+                String description,
+                String openaiApiMode,
+                Integer contextLength,
+                Integer maxOutputTokens
+        ) {
+            this(id, name, provider, modelName, description, openaiApiMode, contextLength, maxOutputTokens, List.of("text"));
+        }
+    }
 
     /**
      * CLI 项目绑定所需的最小项目摘要，避免把成员、统计和编辑权限等管理端字段带到本地。
@@ -76,6 +92,8 @@ public final class CliDtos {
             Long id,
             String workItemCode,
             String name,
+            /** 工作项类型：需求、任务或缺陷，供桌面端工作项入口分组展示。 */
+            String workItemType,
             String status,
             String priority,
             String assignee,

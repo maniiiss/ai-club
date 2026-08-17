@@ -7,7 +7,7 @@
  * - system/error：居中提示
  */
 import { Fragment, memo, type ReactNode } from 'react';
-import { FileText, Image as ImageIcon } from 'lucide-react';
+import { Bug, ClipboardList, FileText, Image as ImageIcon } from 'lucide-react';
 import { CodeCard } from './CodeCard';
 import { ExecutionBatch } from './ExecutionActivity';
 import { ChangedFilesCard } from './ChangedFilesCard';
@@ -34,7 +34,7 @@ function AttachmentRow({ attachments }: { attachments: NonNullable<UIMessage['at
 					<Hint key={`${a.name}-${idx}`} content={a.name}><img src={a.previewUrl} alt={a.name} className={styles.attachmentThumb} /></Hint>
 				) : (
 					<Hint key={`${a.name}-${idx}`} content={a.name}><span className={styles.attachmentChip}>
-						{a.kind === 'image' ? <ImageIcon size={12} /> : <FileText size={12} />}
+						{a.kind === 'image' ? <ImageIcon size={12} /> : a.kind === 'work-item' ? (a.workItemType === '缺陷' ? <Bug size={12} /> : <ClipboardList size={12} />) : <FileText size={12} />}
 						{a.name}
 					</span></Hint>
 				),
@@ -122,7 +122,8 @@ export const MessageBubble = memo(function MessageBubble({ message }: { message:
 				) : (
 					<CodeCard message={message} />
 				)}
-				{message.streaming && <span className={styles.streaming} />}
+				{/* 没有可见正文时由执行状态展示“正在思考”，不单独留下孤立光标。 */}
+				{message.streaming && message.text.trim() && <span className={styles.streaming} />}
 			</div>
 		</div>
 	);

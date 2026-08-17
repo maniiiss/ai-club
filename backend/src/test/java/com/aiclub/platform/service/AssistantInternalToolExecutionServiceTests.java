@@ -68,7 +68,7 @@ class AssistantInternalToolExecutionServiceTests {
                 "scope-1",
                 "conversation-1",
                 new CurrentUserInfo(5L, "pm-user", "项目经理", "", "", "", "", true,
-                        List.of("PM"), List.of("项目经理"), List.of("hermes:chat"), List.of()),
+                        List.of("PM"), List.of("项目经理"), List.of("assistant:chat"), List.of()),
                 new AssistantConversationContextSnapshot("projects", null, null, null, null, "项目经理", List.of(), List.of(), "项目上下文"),
                 new AssistantConversationRequestSnapshot("帮我加个需求：用户登录设计", "projects", null, null, null, null),
                 "hcs_0123456789abcdef",

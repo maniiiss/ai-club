@@ -52,9 +52,11 @@ export type GuidanceStatus = 'submitting' | 'queued' | 'applying' | 'applied' | 
 /** 用户消息附件的 UI 展示元数据（不含文档原文，避免撑大 UI；图片带 previewUrl 缩略图）。 */
 export interface UIAttachment {
 	name: string;
-	kind: 'image' | 'document' | 'text';
+	kind: 'image' | 'document' | 'text' | 'work-item';
 	mimeType: string;
 	sizeBytes: number;
+	/** 工作项标签恢复时保留类型，以便需求和缺陷使用不同图标。 */
+	workItemType?: string;
 	/** 图片预览 data URL（base64），仅图片有值。 */
 	previewUrl?: string;
 }
@@ -121,7 +123,12 @@ export function buildAttachmentPayload(attachments: PreparedAttachment[] | undef
 	const fileBlocks: string[] = [];
 	const uiAttachments: UIAttachment[] = [];
 	for (const a of attachments) {
-		if (a.kind === 'image' && a.image) {
+		if (a.kind === 'work-item') {
+			// 工作项详情只作为隐藏上下文发送，用户消息本身只展示固定指令和工作项标签。
+			if (a.text?.trim()) fileBlocks.push(`\n<platform-work-item>\n${a.text.trim()}\n</platform-work-item>`);
+			const workItemType = a.workItem?.workItemType ?? a.text?.match(/^- 类型：(.+)$/m)?.[1]?.trim().split('/')[0];
+			uiAttachments.push({ name: a.name, kind: 'work-item', mimeType: a.mimeType, sizeBytes: 0, workItemType });
+		} else if (a.kind === 'image' && a.image) {
 			images.push(a.image);
 			uiAttachments.push({
 				name: a.name,
@@ -478,6 +485,17 @@ interface SessionStore {
  * 非早期假设的 message.delta/message.end 点分命名。 */
 type SessionSetter = (partial: Partial<SessionStore> | ((s: SessionStore) => Partial<SessionStore>)) => void;
 
+/**
+ * 清理本次 Agent 运行产生的瞬时扩展 UI。
+ *
+ * 业务意图：计划状态只服务于当前执行；用户停止任务后，输入框上方不能继续保留
+ * 旧计划并把未完成步骤误报为 loading。扩展自身也会在 agent_end 收尾，这里作为
+ * Desktop 侧的同步兜底，覆盖 RPC abort 返回和连接异常先于扩展事件到达的时序。
+ */
+function clearTransientExtensionUi(set: SessionSetter): void {
+	set({ extensionStatuses: new Map(), extensionWidgets: new Map() });
+}
+
 function messageTextFromEvent(message: unknown): string {
 	if (!message || typeof message !== 'object') return '';
 	const content = (message as { content?: unknown }).content;
@@ -733,6 +751,9 @@ export function applyEvent(set: SessionSetter, e: AgentSessionEvent): void {
 		flushExecutionBoundaryBeforeText(set);
 		set((s) => {
 			let id = s._streamingAssistantId;
+			// 会话切回后首个增量可能只有换行或空格；没有正文时不能创建空 assistant 气泡，
+			// 否则 MessageBubble 会在对话中间绘制一个孤立的流式光标。
+			if (!id && !chunk.trim()) return {};
 			const messages = [...s.messages];
 			if (!id) {
 				id = newId();
@@ -860,7 +881,7 @@ export function getRunningExecutionSeed(messages: unknown[], now = Date.now()): 
  * 但 Desktop 只能展示用户任务文本和轻量元数据，绝不回显内部说明正文。
  *
  * 历史回放与实时 message_start 必须共用此函数，防止任一链路泄露 SKILL.md、文件正文等上下文。
- * 文档附件会以 <file> 块注入 prompt，图片会作为 image content 持久化；
+ * 文档附件会以 <file> 块注入 prompt，工作项会以 <platform-work-item> 块注入，图片会作为 image content 持久化；
  * 两者都不能只靠 text 回放，否则切换会话后文件/图片 chip 会消失。
  */
 function parseUserMessagePresentation(content: unknown): { text: string; attachments?: UIAttachment[]; skills?: string[] } {
@@ -884,6 +905,12 @@ function parseUserMessagePresentation(content: unknown): { text: string; attachm
 		const dot = name.lastIndexOf('.');
 		const mimeType = dot > 0 ? `application/${name.slice(dot + 1).toLowerCase()}` : 'application/octet-stream';
 		attachments.push({ name, kind: 'document', mimeType, sizeBytes: 0 });
+		return '';
+	});
+	text = text.replace(/\n?<platform-work-item>\n([\s\S]*?)\n<\/platform-work-item>/g, (_block, body: string) => {
+		const name = body.match(/^名称：(.+)$/m)?.[1]?.trim() || '工作项';
+		const workItemType = body.match(/^- 类型：(.+)$/m)?.[1]?.trim().split('/')[0];
+		attachments.push({ name, kind: 'work-item', mimeType: 'application/vnd.gitpilot.work-item', sizeBytes: 0, workItemType });
 		return '';
 	});
 	const displayText = displayUserMessageText(text).trim() || (attachments.length > 0 ? '（仅附件）' : '');
@@ -1077,16 +1104,22 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		unsubs.push(
 			onDisconnect(() => {
 				platformConnectionRequestVersion += 1;
-			set({ connection: 'disconnected', platformConnection: 'disconnected', isSessionLoading: false, isStreaming: false, _streamingAssistantId: null, guidanceQueue: [], isFlushingGuidance: false, isStopping: false });
+			set({ connection: 'disconnected', platformConnection: 'disconnected', isSessionLoading: false, isStreaming: false, _streamingAssistantId: null, guidanceQueue: [], isFlushingGuidance: false, isStopping: false, extensionStatuses: new Map(), extensionWidgets: new Map() });
 			}),
 		);
 		unsubs.push(onError((msg) => {
 			// sidecar JSONL 损坏或协议异常后，继续保留流式态会让下一次输入被误发为 steer，用户将无法启动新任务。
 			const wasStreaming = get().isStreaming;
 			set({ error: msg, isStreaming: false, _streamingAssistantId: null, isStopping: false });
+			clearTransientExtensionUi(set);
 			if (wasStreaming) useWorkbenchStore.getState().markExecutionStopped();
 		}));
 		unsubs.push(onEvent((e) => {
+			const currentSession = get().selectedSessionPath ?? get().sessionState?.sessionFile ?? null;
+			const eventSessionFile = typeof e.sessionFile === 'string' ? e.sessionFile : null;
+			// 切换会话期间后台任务仍会继续发事件；来源明确且不属于当前会话时，
+			// 不能让它污染当前正文、执行面板或侧栏刷新状态。
+			if (eventSessionFile && currentSession && eventSessionFile !== currentSession) return;
 			useWorkbenchStore.getState().applyExecutionEvent(e);
 			// 先归并工具事件，再由 assistant 正文把此刻未归档的步骤封装成一个聊天批次。
 			applyEvent(set, e);
@@ -1125,6 +1158,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 					// setStatus：按 key 更新或清除会话状态条
 					if (req.method === 'setStatus') {
 						set((s) => {
+							const currentSession = s.selectedSessionPath ?? s.sessionState?.sessionFile ?? null;
+							// 后台会话仍可能继续执行；带来源会话的状态不能污染当前输入框。
+							if (req.sessionFile && currentSession && req.sessionFile !== currentSession) return {};
 							const statuses = new Map(s.extensionStatuses);
 							if (req.statusText === undefined) {
 								statuses.delete(req.statusKey);
@@ -1138,6 +1174,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 					// setWidget：按 key 更新或清除输入框上方/下方只读扩展状态区
 					if (req.method === 'setWidget') {
 						set((s) => {
+							const currentSession = s.selectedSessionPath ?? s.sessionState?.sessionFile ?? null;
+							// 后台会话仍可能继续执行；带来源会话的清单不能污染当前输入框。
+							if (req.sessionFile && currentSession && req.sessionFile !== currentSession) return {};
 							const widgets = new Map(s.extensionWidgets);
 							if (req.widgetLines === undefined) {
 								widgets.delete(req.widgetKey);
@@ -1231,7 +1270,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		get()._unsubs.forEach((u) => u());
 		set({ _unsubs: [] });
 		await destroyBridge();
-		set({ connection: 'idle', isSessionLoading: false });
+		set({ connection: 'idle', isSessionLoading: false, extensionStatuses: new Map(), extensionWidgets: new Map() });
 	},
 
 	refreshAll: async () => {
@@ -1527,6 +1566,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	abort: async () => {
 		if (get().isStopping) return;
 		set({ isStopping: true });
+		// 停止按钮按下即关闭输入框上方的瞬时计划 UI，不等待 sidecar 返回，
+		// 避免 abort 请求本身耗时期间 loading 继续旋转造成“停止未生效”的错觉。
+		clearTransientExtensionUi(set);
 		try {
 			const response = await rpc.abort(true);
 			if (!response.success) throw new Error(response.error || '停止失败');
@@ -1555,6 +1597,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 					isStreaming: false,
 					_streamingAssistantId: null,
 					isStopping: false,
+					extensionStatuses: new Map(),
+					extensionWidgets: new Map(),
 				};
 			});
 		} catch (err) {
@@ -1576,7 +1620,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 				set({ currentProjectPath: cwd });
 			}
 			// 空任务没有历史记录可选中，创建时立即取消旧任务高亮。
-			set({ sessionState: null, selectedSessionPath: null, isSessionLoading: false, messages: [], _streamingAssistantId: null, isStreaming: false, guidanceQueue: [], isFlushingGuidance: false, isStopping: false });
+			set({ sessionState: null, selectedSessionPath: null, isSessionLoading: false, messages: [], _streamingAssistantId: null, isStreaming: false, guidanceQueue: [], isFlushingGuidance: false, isStopping: false, extensionStatuses: new Map(), extensionWidgets: new Map() });
 			// 切换会话清空执行状态，避免上一会话步骤残留导致跨会话实时归档错位。
 			useWorkbenchStore.getState().resetExecution();
 			const response = await rpc.newSession(taskCwd);
@@ -1600,7 +1644,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			if (!rootPath) throw new Error('无法获取 GitPilot 根目录');
 			saveCurrentProject(rootPath);
 			// 空任务没有历史记录可选中，创建时立即取消旧任务高亮。
-			set({ currentProjectPath: rootPath, sessionState: null, selectedSessionPath: null, isSessionLoading: false, messages: [], _streamingAssistantId: null, isStreaming: false, guidanceQueue: [], isFlushingGuidance: false, isStopping: false });
+			set({ currentProjectPath: rootPath, sessionState: null, selectedSessionPath: null, isSessionLoading: false, messages: [], _streamingAssistantId: null, isStreaming: false, guidanceQueue: [], isFlushingGuidance: false, isStopping: false, extensionStatuses: new Map(), extensionWidgets: new Map() });
 			// 切换会话清空执行状态，避免上一会话步骤残留导致跨会话实时归档错位。
 			useWorkbenchStore.getState().resetExecution();
 			const response = await rpc.newSession(rootPath);
@@ -1696,7 +1740,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 				set({ currentProjectPath: activePath });
 			}
 			// 先更新侧栏选中态并清空旧正文，给用户明确反馈；RPC 与历史回显在后台继续完成。
-			set({ selectedSessionPath: sessionPath, isSessionLoading: true, sessionState: null, messages: [], _streamingAssistantId: null, isStreaming: false, guidanceQueue: [], isFlushingGuidance: false, isStopping: false });
+			set({ selectedSessionPath: sessionPath, isSessionLoading: true, sessionState: null, messages: [], _streamingAssistantId: null, isStreaming: false, guidanceQueue: [], isFlushingGuidance: false, isStopping: false, extensionStatuses: new Map(), extensionWidgets: new Map() });
 			// 切换会话清空执行状态，避免上一会话步骤残留导致跨会话实时归档错位（挂起会话切回时改由快照/历史回放兜底）。
 			useWorkbenchStore.getState().resetExecution();
 			const switchRes = await rpc.switchSession(sessionPath);
@@ -1838,7 +1882,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			sessionSwitchRequestVersion += 1;
 			await rpc.logout();
 			try { localStorage.removeItem(MODEL_KEY); } catch {}
-			set({ loggedIn: false, platformAccount: null, models: [], sessionState: null, selectedSessionPath: null, isSessionLoading: false });
+			set({ loggedIn: false, platformAccount: null, models: [], sessionState: null, selectedSessionPath: null, isSessionLoading: false, extensionStatuses: new Map(), extensionWidgets: new Map() });
 		} catch (err) {
 			set({ error: err instanceof Error ? err.message : String(err) });
 		}

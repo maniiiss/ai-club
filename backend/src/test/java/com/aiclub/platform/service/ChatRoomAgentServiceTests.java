@@ -371,7 +371,7 @@ class ChatRoomAgentServiceTests {
         when(taskEventRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         org.mockito.Mockito.doThrow(new IllegalStateException("Assistant 暂不可用"))
                 .when(chatAssistantService)
-                .startAssistantReply(eq(room.getId()), eq(assistant.getId()), eq(trigger.getId()), any(AssistantToolExecutionPolicy.class));
+                .startAssistantReply(eq(room.getId()), eq(assistant.getId()), eq(trigger.getId()), any(AssistantToolExecutionPolicy.class), anyString());
 
         assertThatThrownBy(() -> service.runTask(603L))
                 .isInstanceOf(IllegalStateException.class)
@@ -424,13 +424,14 @@ class ChatRoomAgentServiceTests {
                 eq(room.getId()),
                 eq(assistant.getId()),
                 eq(trigger.getId()),
-                any(AssistantToolExecutionPolicy.class)
+                any(AssistantToolExecutionPolicy.class),
+                anyString()
         )).thenReturn(new AssistantChatRoomAgentTaskResult("需要确认后执行。", List.of(action), List.of(), List.of()));
 
         service.runTask(603L);
 
         org.mockito.ArgumentCaptor<AssistantToolExecutionPolicy> policyCaptor = org.mockito.ArgumentCaptor.forClass(AssistantToolExecutionPolicy.class);
-        verify(chatAssistantService).startAssistantReply(eq(room.getId()), eq(assistant.getId()), eq(trigger.getId()), policyCaptor.capture());
+        verify(chatAssistantService).startAssistantReply(eq(room.getId()), eq(assistant.getId()), eq(trigger.getId()), policyCaptor.capture(), anyString());
         assertThat(policyCaptor.getValue().taskId()).isEqualTo(603L);
         assertThat(policyCaptor.getValue().enabledToolCodes()).containsExactlyInAnyOrder(
                 PlatformToolRegistry.TOOL_WORK_ITEM_SEARCH,
@@ -520,7 +521,7 @@ class ChatRoomAgentServiceTests {
         when(toolPolicyRepository.findByRoom_IdOrderByToolCodeAsc(41L)).thenReturn(List.of());
         when(taskEventRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
         when(taskRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
-        when(chatAssistantService.startAssistantReply(eq(41L), eq(601L), eq(602L), any(AssistantToolExecutionPolicy.class)))
+        when(chatAssistantService.startAssistantReply(eq(41L), eq(601L), eq(602L), any(AssistantToolExecutionPolicy.class), anyString()))
                 .thenReturn(new AssistantChatRoomAgentTaskResult("请选择需求。", List.of(action), List.of(selectionCard), List.of()));
 
         service.runTask(603L);
@@ -669,7 +670,7 @@ class ChatRoomAgentServiceTests {
     }
 
     private CurrentUserInfo currentUser(Long id) {
-        return new CurrentUserInfo(id, "user-" + id, "用户" + id, "", "", "", "", true, List.of(), List.of(), List.of("chat:view", "chat:manage", "hermes:chat"), List.of());
+        return new CurrentUserInfo(id, "user-" + id, "用户" + id, "", "", "", "", true, List.of(), List.of(), List.of("chat:view", "chat:manage", "assistant:chat"), List.of());
     }
 
     private UserEntity user(Long id) {

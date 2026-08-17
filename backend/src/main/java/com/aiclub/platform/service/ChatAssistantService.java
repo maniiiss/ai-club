@@ -103,7 +103,7 @@ public class ChatAssistantService {
         this.platformToolSelector = platformToolSelector;
     }
 
-    /** 兼容旧测试构造方式，默认所有聊天室任务走 Assistant Legacy。 */
+    /** 兼容旧测试构造方式，默认所有聊天室任务走 PI Runtime。 */
     public ChatAssistantService(ChatRoomRepository chatRoomRepository,
                              ChatMessageRepository chatMessageRepository,
                              AssistantGatewayService assistantGatewayService,
@@ -127,7 +127,7 @@ public class ChatAssistantService {
 
     @Transactional
     public void startAssistantReply(Long roomId, Long assistantMessageId, Long triggerMessageId) {
-        startAssistantReply(roomId, assistantMessageId, triggerMessageId, AssistantToolExecutionPolicy.empty(), RuntimeChatService.HERMES_LEGACY);
+        startAssistantReply(roomId, assistantMessageId, triggerMessageId, AssistantToolExecutionPolicy.empty(), RuntimeChatService.DEFAULT_RUNTIME);
     }
 
     /**
@@ -138,10 +138,10 @@ public class ChatAssistantService {
                                                           Long assistantMessageId,
                                                           Long triggerMessageId,
                                                           AssistantToolExecutionPolicy toolExecutionPolicy) {
-        return startAssistantReply(roomId, assistantMessageId, triggerMessageId, toolExecutionPolicy, RuntimeChatService.HERMES_LEGACY);
+        return startAssistantReply(roomId, assistantMessageId, triggerMessageId, toolExecutionPolicy, RuntimeChatService.DEFAULT_RUNTIME);
     }
 
-    /** 执行指定 Runtime 的聊天室 @mention 回复，Legacy 之外走 Runtime Registry 适配器。 */
+    /** 执行指定 Runtime 的聊天室 @mention 回复，统一走 Runtime Registry 适配器。 */
     @Transactional
     public AssistantChatRoomAgentTaskResult startAssistantReply(Long roomId,
                                                           Long assistantMessageId,
@@ -192,13 +192,13 @@ public class ChatAssistantService {
 
     /**
      * 执行聊天室主动 Agent 任务。
-     * 业务意图：主动总结、关键字监听和任务状态回写没有用户 @hermes 触发消息，
+     * 业务意图：主动总结、关键字监听和任务状态回写没有用户 mention 触发消息，
      * 但仍需要复用同一套房间上下文、MCP 会话令牌和流式消息收口。
      */
     @Transactional
     public void startAgentTaskReply(Long roomId, Long assistantMessageId, String taskInstruction, UserEntity authorizedByUser) {
         startAgentTaskReply(roomId, assistantMessageId, taskInstruction, authorizedByUser,
-                AssistantToolExecutionPolicy.empty(), AssistantGroundingState.empty(), RuntimeChatService.HERMES_LEGACY);
+                AssistantToolExecutionPolicy.empty(), AssistantGroundingState.empty(), RuntimeChatService.DEFAULT_RUNTIME);
     }
 
     /**
@@ -210,7 +210,7 @@ public class ChatAssistantService {
                                                              String taskInstruction,
                                                              UserEntity authorizedByUser,
                                                              AssistantToolExecutionPolicy toolExecutionPolicy) {
-        return startAgentTaskReply(roomId, assistantMessageId, taskInstruction, authorizedByUser, toolExecutionPolicy, AssistantGroundingState.empty(), RuntimeChatService.HERMES_LEGACY);
+        return startAgentTaskReply(roomId, assistantMessageId, taskInstruction, authorizedByUser, toolExecutionPolicy, AssistantGroundingState.empty(), RuntimeChatService.DEFAULT_RUNTIME);
     }
 
     @Transactional
@@ -220,7 +220,7 @@ public class ChatAssistantService {
                                                              UserEntity authorizedByUser,
                                                              AssistantToolExecutionPolicy toolExecutionPolicy,
                                                              AssistantGroundingState groundingState) {
-        return startAgentTaskReply(roomId, assistantMessageId, taskInstruction, authorizedByUser, toolExecutionPolicy, groundingState, RuntimeChatService.HERMES_LEGACY);
+        return startAgentTaskReply(roomId, assistantMessageId, taskInstruction, authorizedByUser, toolExecutionPolicy, groundingState, RuntimeChatService.DEFAULT_RUNTIME);
     }
 
     /** 执行指定 Runtime 的聊天室主动任务。 */
@@ -520,17 +520,13 @@ public class ChatAssistantService {
                 你是 AI Club 聊天室中的 GitPilot 助手。
                 你需要像团队成员一样基于房间历史、项目上下文和附件摘录进行回复。
                 输出必须简洁、可执行；如果是在总结或汇总，请保留关键结论、风险和下一步。
-                当前轮唯一有效的 `system_session_token` 是：`%s`
-                每次调用平台 MCP 工具必须原样传入 `system_session_token` = "%s"。
-                这个令牌是系统内部值，禁止从用户问题中提取或猜测，禁止在自然语言回答中输出。
-                如果工具报 token 相关错误，直接用这个值重试同一个工具调用，不要向用户解释 token。
                 查询“多少、总数、统计、分布”时，数量必须使用 `metadata.totalCount`，状态分布使用 `metadata.statusCounts`；
                 `candidates` 只是用于展示的候选列表，`metadata.truncated=true` 时绝不能把候选条数当成总数。
                 聊天室默认只绑定项目，不自动代表某个迭代。用户未明确迭代时按项目范围回答并说明范围；
                 用户明确询问“当前迭代”但上下文没有 iterationId 时，先查询项目迭代，存在多个合理候选时等待用户选择，禁止自行把项目数据说成迭代数据。
                 """;
         String userPrompt = "当前聊天室：" + defaultString(room.getTitle());
-        return new AssistantPromptBuilder.AssistantPrompt(systemPrompt.formatted(defaultString(sessionToken), defaultString(sessionToken)).trim(), userPrompt);
+        return new AssistantPromptBuilder.AssistantPrompt(systemPrompt.trim(), userPrompt);
     }
 
     /**
@@ -543,35 +539,17 @@ public class ChatAssistantService {
                                              List<AssistantConversationTurn> transcript,
                                              Consumer<String> deltaConsumer) {
         String normalizedRuntime = defaultString(runtimeRegistryCode).isBlank()
-                ? RuntimeChatService.HERMES_LEGACY
+                ? RuntimeChatService.DEFAULT_RUNTIME
                 : runtimeRegistryCode.trim().toUpperCase(Locale.ROOT);
         AssistantPromptBuilder.AssistantPrompt prompt = buildPrompt(room, preparedSession.sessionToken());
-        if (runtimeChatService == null || runtimeChatService.isLegacy(normalizedRuntime)) {
-            // Hermes 流式对话埋点：默认 runtime，平台最大模型消耗来源。
-            // Pi Runtime 路径的 usage 落账见后续 follow-up（独立 AgentType）。
-            AgentInvocationRecorder.ManualHandle usageHandle = beginHermesChatTracking(preparedSession, room, prompt);
-            try {
-                AssistantGatewayService.AssistantGatewayResult result = assistantGatewayService.streamChatCompletion(
-                        prompt,
-                        transcript,
-                        delta -> deltaConsumer.accept(delta)
-                );
-                if (usageHandle != null) {
-                    UsageSink sink = usageHandle.sink();
-                    sink.setUsage(result.promptTokens(), result.completionTokens(), result.totalTokens(), result.cachedTokens());
-                    sink.setOutputChars(result.content() == null ? 0 : result.content().length());
-                    sink.setCorrelationId(result.responseId());
-                    usageHandle.commit();
-                }
-                return new ChatExecutionResult(result.content());
-            } catch (RuntimeException ex) {
-                if (usageHandle != null) {
-                    usageHandle.fail(ex);
-                }
-                throw ex;
-            }
+        // 仅保留测试和离线构造场景的 HTTP fallback；生产 Spring 容器始终注入 RuntimeChatService。
+        if (runtimeChatService == null && assistantGatewayService != null) {
+            AssistantGatewayService.AssistantGatewayResult result = assistantGatewayService.streamChatCompletion(
+                    prompt,
+                    transcript,
+                    delta -> deltaConsumer.accept(delta));
+            return new ChatExecutionResult(result.content());
         }
-
         Map<String, Object> requestBody = new LinkedHashMap<>();
         requestBody.put("runId", "gitpilot-chat-room-" + room.getId() + "-" + System.nanoTime());
         requestBody.put("sessionId", preparedSession.clientConversationId());
@@ -596,17 +574,41 @@ public class ChatAssistantService {
                 selectedToolCodes,
                 toolExecutionPolicy == null ? null : toolExecutionPolicy.autoExecutableToolCodes()
         );
-        if (deltaConsumer == null) {
-            RuntimeChatResult result = runtimeChatService.chat(normalizedRuntime, context);
-            return new ChatExecutionResult(result.content());
-        }
-        RuntimeChatResult result = runtimeChatService.streamChat(normalizedRuntime, context, event -> {
-            String delta = event.textDelta();
-            if (hasText(delta)) {
-                deltaConsumer.accept(delta);
+        AgentInvocationRecorder.ManualHandle usageHandle = beginAssistantChatTracking(preparedSession, room, prompt);
+        try {
+            if (deltaConsumer == null) {
+                RuntimeChatResult result = runtimeChatService.chat(normalizedRuntime, context);
+                completeAssistantChatTracking(usageHandle, result);
+                return new ChatExecutionResult(result.content());
             }
-        });
-        return new ChatExecutionResult(result.content());
+            RuntimeChatResult result = runtimeChatService.streamChat(normalizedRuntime, context, event -> {
+                String delta = event.textDelta();
+                if (hasText(delta)) {
+                    deltaConsumer.accept(delta);
+                }
+            });
+            completeAssistantChatTracking(usageHandle, result);
+            return new ChatExecutionResult(result.content());
+        } catch (RuntimeException exception) {
+            if (usageHandle != null) {
+                usageHandle.fail(exception);
+            }
+            throw exception;
+        }
+    }
+
+    /** 统一回写 PI Runtime 调用的输出量和关联 runId，确保运行时切换后统计链路不丢失。 */
+    private void completeAssistantChatTracking(AgentInvocationRecorder.ManualHandle usageHandle,
+                                               RuntimeChatResult result) {
+        if (usageHandle == null) {
+            return;
+        }
+        String content = result == null ? "" : result.content();
+        usageHandle.sink().setOutputChars(content.length());
+        if (result != null && hasText(result.runId())) {
+            usageHandle.sink().setCorrelationId(result.runId());
+        }
+        usageHandle.commit();
     }
 
     /**
@@ -634,12 +636,12 @@ public class ChatAssistantService {
     }
 
     /**
-     * 为 Hermes 流式对话构造埋点上下文并启动手动生命周期句柄。
+     * 为 Assistant 流式对话构造埋点上下文并启动手动生命周期句柄。
      * 业务意图：把 GitPilot 对话（平台最大模型消耗来源）纳入 agent_invocation_log 统计。
      * 显式抓取用户快照（captureAuthContext），避免流式消费跨线程时 ThreadLocal 失效。
      * 返回 null 表示 Recorder 未注入（单元测试场景），调用方应跳过落账。
      */
-    private AgentInvocationRecorder.ManualHandle beginHermesChatTracking(PreparedChatAssistantSession preparedSession,
+    private AgentInvocationRecorder.ManualHandle beginAssistantChatTracking(PreparedChatAssistantSession preparedSession,
                                                                           ChatRoomEntity room,
                                                                           AssistantPromptBuilder.AssistantPrompt prompt) {
         if (agentInvocationRecorder == null) {
@@ -654,10 +656,10 @@ public class ChatAssistantService {
                 Set.of(),
                 Set.of()
         );
-        AgentInvocationContext ctx = AgentInvocationContext.builder(AgentType.HERMES_CHAT)
+        AgentInvocationContext ctx = AgentInvocationContext.builder(AgentType.ASSISTANT_CHAT)
                 .action("CHAT")
                 .triggerSource(TriggerSource.USER_DIRECT)
-                .provider("HERMES")
+                .provider("ASSISTANT")
                 .modelName(assistantProperties == null ? null : assistantProperties.getModel())
                 .projectId(room.getProject() == null ? null : room.getProject().getId())
                 .bizId(room.getId())
@@ -719,7 +721,7 @@ public class ChatAssistantService {
                 message.getRoom() == null ? null : message.getRoom().getId(),
                 ChatRoomService.ROLE_ASSISTANT,
                 null,
-                "hermes",
+                "assistant",
                 "GitPilot",
                 "",
                 defaultString(message.getContent()),

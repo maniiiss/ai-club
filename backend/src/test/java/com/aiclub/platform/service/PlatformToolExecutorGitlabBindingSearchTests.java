@@ -158,7 +158,7 @@ class PlatformToolExecutorGitlabBindingSearchTests {
 
         PlatformToolResult result = platformToolExecutor.execute(new PlatformToolRequest(
                 PlatformToolRegistry.TOOL_GITLAB_BINDING_SEARCH,
-                "HERMES",
+                "ASSISTANT",
                 "scope-test",
                 null,
                 null,
@@ -202,7 +202,7 @@ class PlatformToolExecutorGitlabBindingSearchTests {
 
         PlatformToolResult result = platformToolExecutor.execute(new PlatformToolRequest(
                 PlatformToolRegistry.TOOL_GITLAB_BINDING_SEARCH,
-                "HERMES",
+                "ASSISTANT",
                 "scope-total",
                 project.getId(),
                 null,

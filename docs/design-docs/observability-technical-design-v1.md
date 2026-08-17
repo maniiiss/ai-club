@@ -111,7 +111,7 @@
 - 落库：写 `project_runtime_log`，按项目 + 时间索引。
 - 配额与清理：单项目按行数/天数配额，超限丢弃最旧并记一条系统告警；定时清理超保留期数据。
 - 错误处理：SSH 失败不阻塞其他项目，记录采集失败状态供大盘展示「日志采集异常」。
-- **可选增强**：开放 `POST /internal/observability/logs`（密钥鉴权，仿 `InternalHermesController` 模式），允许项目主动批量上报，命中则跳过该项目的拉取。
+- **可选增强**：开放 `POST /internal/observability/logs`（密钥鉴权，仿 `InternalAssistantController` 模式），允许项目主动批量上报，命中则跳过该项目的拉取。
 
 **② 入驻项目健康度**
 - 入口：定时任务 `ProjectHealthScheduler`。

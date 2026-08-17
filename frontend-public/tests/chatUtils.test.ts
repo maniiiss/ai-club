@@ -25,9 +25,9 @@ import type { ChatMessageItem } from '../src/types/chat'
 
 describe('chat utilities', () => {
   it('detects Assistant mentions without matching plain words', () => {
-    assert.equal(containsAssistantMention('@hermes 帮我汇总'), true)
+    assert.equal(containsAssistantMention('@gitpilot 帮我汇总'), true)
     assert.equal(containsAssistantMention('@Assistant summarize'), true)
-    assert.equal(containsAssistantMention('这个 hermes 配置是什么'), false)
+    assert.equal(containsAssistantMention('这个 legacy 配置是什么'), false)
   })
 
   it('parses websocket event payloads defensively', () => {
@@ -389,15 +389,15 @@ describe('chat utilities', () => {
   })
 
   it('replaces the active mention query and returns the next caret position', () => {
-    assert.deepEqual(replaceMentionAtCaret('请 @he 汇总', 5, '@hermes '), {
-      text: '请 @hermes 汇总',
-      caret: 10,
+    assert.deepEqual(replaceMentionAtCaret('请 @he 汇总', 5, '@assistant '), {
+      text: '请 @assistant 汇总',
+      caret: 13,
     })
     assert.deepEqual(replaceMentionAtCaret('@张', 2, '@张三 '), {
       text: '@张三 ',
       caret: 4,
     })
-    assert.deepEqual(replaceMentionAtCaret('没有 mention', 3, '@hermes '), {
+    assert.deepEqual(replaceMentionAtCaret('没有 mention', 3, '@assistant '), {
       text: '没有 mention',
       caret: 3,
     })
@@ -455,9 +455,9 @@ const message = (
   status,
   senderUserId: role === 'user' ? 5 : null,
   senderName: role === 'user' ? '我' : 'Assistant',
-  senderUsername: role === 'user' ? 'me' : 'hermes',
+  senderUsername: role === 'user' ? 'me' : 'assistant',
   senderAvatarUrl: null,
-  mentionsAssistant: content.includes('@hermes'),
+  mentionsAssistant: content.includes('@assistant'),
   attachments: [],
   createdAt: '2026-06-28 10:00:00',
   updatedAt: '2026-06-28 10:00:00',

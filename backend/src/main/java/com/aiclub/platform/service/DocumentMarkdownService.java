@@ -16,10 +16,10 @@ public class DocumentMarkdownService {
     public static final String SCENE_WIKI_IMPORT = "WIKI_IMPORT";
 
     /** 转换场景：Assistant 附件。 */
-    public static final String SCENE_HERMES_ATTACHMENT = "HERMES_ATTACHMENT";
+    public static final String SCENE_ASSISTANT_ATTACHMENT = "ASSISTANT_ATTACHMENT";
 
     /** 转换场景：Assistant 个人文件库。 */
-    public static final String SCENE_HERMES_FILE_LIBRARY = "HERMES_FILE_LIBRARY";
+    public static final String SCENE_ASSISTANT_FILE_LIBRARY = "ASSISTANT_FILE_LIBRARY";
 
     private final DocumentAssetService documentAssetService;
     private final DocumentMarkdownClientService documentMarkdownClientService;

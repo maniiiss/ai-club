@@ -6,6 +6,7 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 public record AiModelConfigRequest(
         @NotBlank(message = "模型名称不能为空")
@@ -62,6 +63,32 @@ public record AiModelConfigRequest(
          * 每千缓存命中输入 token 单价（可选）；为空时后端按输入单价 ×0.5 兜底。
          */
         @DecimalMin(value = "0", message = "缓存命中 token 单价不能为负")
-        BigDecimal cachedInputCreditPer1k
+        BigDecimal cachedInputCreditPer1k,
+        /**
+         * 模型可接收的输入模态；当前支持 text 和 image，缺失时按仅文本处理。
+         */
+        List<String> inputModalities
 ) {
+    /** 兼容新增能力字段前的调用方，未传能力时由服务层回退为仅文本。 */
+    public AiModelConfigRequest(
+            String name,
+            String modelType,
+            String provider,
+            String apiBaseUrl,
+            String modelName,
+            String openaiApiMode,
+            String apiKey,
+            String description,
+            Boolean enabled,
+            Integer contextLength,
+            Integer maxOutputTokens,
+            Boolean tokenBillingEnabled,
+            BigDecimal inputCreditPer1k,
+            BigDecimal outputCreditPer1k,
+            BigDecimal cachedInputCreditPer1k
+    ) {
+        this(name, modelType, provider, apiBaseUrl, modelName, openaiApiMode, apiKey, description, enabled,
+                contextLength, maxOutputTokens, tokenBillingEnabled, inputCreditPer1k, outputCreditPer1k,
+                cachedInputCreditPer1k, null);
+    }
 }

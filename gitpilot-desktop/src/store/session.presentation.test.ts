@@ -41,6 +41,20 @@ describe('对话展示压力场景', () => {
 		expect(result.images).toHaveLength(0);
 	});
 
+	it('工作项只展示为上下文标签，但发送时保留完整工作项载荷', () => {
+		const result = buildAttachmentPayload([{
+			name: '测试图片理解',
+			kind: 'work-item',
+			mimeType: 'application/vnd.gitpilot.work-item',
+			sizeBytes: 0,
+			text: '编号：#REQ-1\n名称：测试图片理解\n- 类型：需求\n## 需求内容\n用户故事',
+		}]);
+
+		expect(result.uiAttachments).toEqual([expect.objectContaining({ name: '测试图片理解', kind: 'work-item', workItemType: '需求' })]);
+		expect(result.messageSuffix).toContain('<platform-work-item>');
+		expect(result.messageSuffix).toContain('用户故事');
+	});
+
 	it('连续无正文工具回合合并为一个批次，但每个工具步骤仍可展开审阅', () => {
 		for (let index = 0; index < 12; index += 1) {
 			useWorkbenchStore.getState().applyExecutionEvent(toolEnd(`tool-${index}`, index));

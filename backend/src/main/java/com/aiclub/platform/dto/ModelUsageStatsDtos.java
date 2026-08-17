@@ -7,7 +7,7 @@ import java.util.List;
  *
  * <p>以「模型」为中心聚合 {@code agent_invocation_log}，与 {@link AgentUsageStatsDtos}
  * 的「按智能体/用户」维度互补。聚合键为 {@code (model_name, provider)}，覆盖
- * {@code ai_model_config} 表内模型、env 配置的 Hermes 模型与 code-processing 回传模型。
+ * {@code ai_model_config} 表内模型、env 配置的 Assistant 模型与 code-processing 回传模型。
  */
 public final class ModelUsageStatsDtos {
 
@@ -20,7 +20,7 @@ public final class ModelUsageStatsDtos {
      * @param startTime  开始时间（yyyy-MM-dd HH:mm:ss 或 ISO-8601），空则取结束前 7 天
      * @param endTime    结束时间，空则取当前
      * @param modelNames 模型名过滤（按 model_name）
-     * @param providers  供应商过滤（OPENAI/ANTHROPIC/HERMES 等）
+     * @param providers  供应商过滤（OPENAI/ANTHROPIC/ASSISTANT 等）
      * @param agentTypes 调用来源过滤（按 agent_type，AgentType 枚举名）
      * @param granularity 趋势粒度 day/week/month
      * @param limit      排行榜返回条数，默认 20

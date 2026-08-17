@@ -84,7 +84,7 @@ public class AssistantController {
      * 创建一条绑定当前页面上下文的 Assistant 会话。
      */
     @PostMapping("/sessions")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantConversationSessionSummary> createSession(
             @Valid @RequestBody CreateAssistantConversationSessionRequest request) {
         return ApiResponse.success(assistantConversationSessionService.createSession(request));
@@ -94,7 +94,7 @@ public class AssistantController {
      * 分页读取当前用户的 Assistant 会话列表。
      */
     @GetMapping("/sessions")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<PageResponse<AssistantConversationSessionSummary>> pageSessions(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size,
@@ -108,7 +108,7 @@ public class AssistantController {
      * 搜索当前项目下当前用户的 Assistant 历史消息，包含活跃与已归档会话。
      */
     @GetMapping("/sessions/search")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<PageResponse<AssistantConversationSearchResult>> searchSessions(
             @RequestParam(defaultValue = "") String query,
             @RequestParam(defaultValue = "1") int page,
@@ -128,7 +128,7 @@ public class AssistantController {
      * 读取指定会话的详情和历史消息。
      */
     @GetMapping("/sessions/{sessionId}")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantConversationDetail> getSessionDetail(@PathVariable Long sessionId) {
         return ApiResponse.success(assistantConversationSessionService.getSessionDetail(sessionId));
     }
@@ -137,7 +137,7 @@ public class AssistantController {
      * 重命名指定会话。
      */
     @PatchMapping("/sessions/{sessionId}")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantConversationSessionSummary> renameSession(@PathVariable Long sessionId,
                                                                        @Valid @RequestBody RenameAssistantConversationSessionRequest request) {
         return ApiResponse.success(assistantConversationSessionService.renameSession(sessionId, request));
@@ -147,7 +147,7 @@ public class AssistantController {
      * 为兼容部分代理或环境不支持 PATCH 的情况，额外开放 PUT 重命名入口。
      */
     @PutMapping("/sessions/{sessionId}")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantConversationSessionSummary> renameSessionByPut(@PathVariable Long sessionId,
                                                                             @Valid @RequestBody RenameAssistantConversationSessionRequest request) {
         return ApiResponse.success(assistantConversationSessionService.renameSession(sessionId, request));
@@ -157,7 +157,7 @@ public class AssistantController {
      * 归档指定会话。
      */
     @PostMapping("/sessions/{sessionId}/archive")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantConversationSessionSummary> archiveSession(@PathVariable Long sessionId) {
         return ApiResponse.success(assistantConversationSessionService.archiveSession(sessionId));
     }
@@ -166,7 +166,7 @@ public class AssistantController {
      * 恢复指定会话。
      */
     @PostMapping("/sessions/{sessionId}/restore")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantConversationSessionSummary> restoreSession(@PathVariable Long sessionId) {
         return ApiResponse.success(assistantConversationSessionService.restoreSession(sessionId));
     }
@@ -175,7 +175,7 @@ public class AssistantController {
      * 删除指定会话及其历史消息。
      */
     @DeleteMapping("/sessions/{sessionId}")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<Void> deleteSession(@PathVariable Long sessionId) {
         assistantConversationSessionService.deleteSession(sessionId);
         return new ApiResponse<>(true, "ok", null);
@@ -186,7 +186,7 @@ public class AssistantController {
      * 后端会按会话累积保存动作 key，刷新或换设备后仍能恢复"已执行"状态。
      */
     @PostMapping("/sessions/{sessionId}/actions/executed")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantConversationDetail> markActionExecuted(@PathVariable Long sessionId,
                                                                     @Valid @RequestBody AssistantActionExecutedRequest request) {
         return ApiResponse.success(assistantConversationSessionService.markActionExecuted(sessionId, request.actionKey()));
@@ -196,7 +196,7 @@ public class AssistantController {
      * 指定会话的稳定非流式问答入口。
      */
     @PostMapping("/sessions/{sessionId}/chat")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantChatResponse> chat(@PathVariable Long sessionId,
                                                 @Valid @RequestBody AssistantSessionChatRequest request) {
         return ApiResponse.success(assistantChatService.chat(sessionId, request));
@@ -206,7 +206,7 @@ public class AssistantController {
      * 指定会话的带附件非流式问答入口。
      */
     @PostMapping(value = "/sessions/{sessionId}/chat", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantChatResponse> chatWithFiles(@PathVariable Long sessionId,
                                                          @RequestParam("question") String question,
                                                          @RequestParam(value = "selectionJson", required = false) String selectionJson,
@@ -220,7 +220,7 @@ public class AssistantController {
      * 指定会话的统一流式问答入口。
      */
     @PostMapping(value = "/sessions/{sessionId}/chat/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ResponseEntity<StreamingResponseBody> streamChat(@PathVariable Long sessionId,
                                                             @Valid @RequestBody AssistantSessionChatRequest request) {
         return ResponseEntity.ok()
@@ -234,7 +234,7 @@ public class AssistantController {
      * 指定会话的带附件流式问答入口。
      */
     @PostMapping(value = "/sessions/{sessionId}/chat/stream", consumes = MediaType.MULTIPART_FORM_DATA_VALUE, produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ResponseEntity<StreamingResponseBody> streamChatWithFiles(@PathVariable Long sessionId,
                                                                      @RequestParam("question") String question,
                                                                      @RequestParam(value = "selectionJson", required = false) String selectionJson,
@@ -286,7 +286,7 @@ public class AssistantController {
      * 列出当前用户的 Assistant 记忆。
      */
     @GetMapping("/memories")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantMemoryOverview> listMemories(
             @RequestParam(required = false) String query,
             @RequestParam(defaultValue = "50") int limit) {
@@ -298,7 +298,7 @@ public class AssistantController {
      * 删除当前用户的一条 Assistant 记忆。
      */
     @DeleteMapping("/memories/{documentId}")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<Void> deleteMemory(@PathVariable String documentId) {
         CurrentUserInfo currentUser = authService.currentUser();
         assistantHindsightMemoryService.deleteUserMemory(currentUser, documentId);
@@ -309,7 +309,7 @@ public class AssistantController {
      * 清空当前用户的全部 Assistant 记忆。
      */
     @DeleteMapping("/memories")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<Integer> clearMemories() {
         CurrentUserInfo currentUser = authService.currentUser();
         int deletedCount = assistantHindsightMemoryService.clearUserMemories(currentUser);
@@ -321,7 +321,7 @@ public class AssistantController {
      * Hindsight 这里会返回异步 operation，前端需继续轮询状态而不是直接视为已完成。
      */
     @PostMapping("/memories/consolidate")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantMemoryConsolidationTask> consolidateMemories() {
         CurrentUserInfo currentUser = authService.currentUser();
         return ApiResponse.success(assistantHindsightMemoryService.startUserMemoryConsolidation(currentUser));
@@ -331,7 +331,7 @@ public class AssistantController {
      * 查询当前用户某次 Assistant 记忆整理任务的执行状态。
      */
     @GetMapping("/memories/consolidate/{operationId}")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantMemoryConsolidationStatus> getMemoryConsolidationStatus(@PathVariable String operationId) {
         CurrentUserInfo currentUser = authService.currentUser();
         return ApiResponse.success(assistantHindsightMemoryService.getUserMemoryConsolidationStatus(currentUser, operationId));

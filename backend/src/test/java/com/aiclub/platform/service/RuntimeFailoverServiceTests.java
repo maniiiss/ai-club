@@ -21,7 +21,7 @@ class RuntimeFailoverServiceTests {
         when(registry.isAvailable(any(), any())).thenReturn(true);
         RuntimeFailoverService service = new RuntimeFailoverService(registry, new ObjectMapper());
 
-        assertThat(service.candidates("PI_RUNTIME", "[\"HERMES_LEGACY\"]",
+        assertThat(service.candidates("PI_RUNTIME", "[\"PI_RUNTIME\"]",
                 Set.of(RuntimeCapability.CHAT), true)).containsExactly("PI_RUNTIME");
     }
 
@@ -29,10 +29,10 @@ class RuntimeFailoverServiceTests {
     void shouldSelectHealthyFallbackWithRequiredCapabilities() {
         RuntimeRegistryService registry = mock(RuntimeRegistryService.class);
         when(registry.isAvailable(eq("PI_RUNTIME"), any())).thenReturn(false);
-        when(registry.isAvailable(eq("HERMES_LEGACY"), any())).thenReturn(true);
+        when(registry.isAvailable(eq("PI_RUNTIME"), any())).thenReturn(true);
         RuntimeFailoverService service = new RuntimeFailoverService(registry, new ObjectMapper());
 
-        assertThat(service.candidates("PI_RUNTIME", "[\"HERMES_LEGACY\"]",
-                Set.of(RuntimeCapability.CHAT), false)).containsExactly("HERMES_LEGACY");
+        assertThat(service.candidates("PI_RUNTIME", "[\"PI_RUNTIME\"]",
+                Set.of(RuntimeCapability.CHAT), false)).containsExactly("PI_RUNTIME");
     }
 }

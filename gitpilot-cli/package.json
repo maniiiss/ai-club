@@ -23,6 +23,8 @@
 	},
 	"scripts": {
 		"clean": "shx rm -rf dist",
+		"prepare:plannotator": "node ./scripts/prepare-plannotator-package.mjs",
+		"prebuild": "npm run prepare:plannotator",
 		"build": "tsc -p tsconfig.build.json && shx chmod +x dist/cli.js dist/rpc-entry.js && npm run copy-assets",
 		"copy-assets": "shx mkdir -p dist/modes/interactive/theme && shx cp src/modes/interactive/theme/*.json dist/modes/interactive/theme/ && shx mkdir -p dist/core/export-html/vendor && shx cp src/core/export-html/template.html src/core/export-html/template.css src/core/export-html/template.js dist/core/export-html/ && shx cp src/core/export-html/vendor/*.js dist/core/export-html/vendor/ && shx mkdir -p dist/bundled-skills && shx cp -r src/bundled-skills/cross-agent-harness dist/bundled-skills/ && shx cp -r src/bundled-skills/kuaikai-platform dist/bundled-skills/",
 		"start": "node dist/cli.js",
@@ -35,6 +37,7 @@
 		"@napi-rs/keyring": "^1.3.0",
 		"@narumitw/pi-goal": "0.43.0",
 		"@narumitw/pi-plan-mode": "0.44.0",
+		"@plannotator/pi-extension": "0.27.3",
 		"@silvia-odwyer/photon-node": "0.3.4",
 		"chalk": "5.6.2",
 		"cross-spawn": "7.0.6",

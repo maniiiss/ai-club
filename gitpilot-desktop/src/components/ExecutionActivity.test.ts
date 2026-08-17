@@ -17,9 +17,16 @@ describe('聊天内执行摘要', () => {
 		expect(getExecutionActivityLabel(run([{ id: 'tool-1', kind: 'read', status: 'succeeded', title: 'read_file', startedAt: 1 }], 'completed'), false)).toBeNull();
 	});
 
-	it('正文已经在输出时不再展示状态；工具结束后明确提示正在整理结果', () => {
-		// 收到正文增量（text_delta）即表示进入回答阶段，状态指示必须隐藏，避免与正文气泡重复。
+	it('正文已经在输出时仍保留尚未归档的执行痕迹', () => {
+		// 没有思考或工具痕迹的纯正文回答仍隐藏状态指示，避免增加无信息的占位文案。
 		expect(getExecutionActivityLabel({ ...run([]), lastDeltaKind: 'text' }, true)).toBeNull();
+		// 工具刚结束但还未归档到聊天时间线时，正文阶段仍保留可展开的执行过程。
+		expect(getExecutionActivityLabel({
+			...run([{ id: 'tool-1', kind: 'command', status: 'succeeded', title: 'bash', startedAt: 1 }]),
+			lastDeltaKind: 'text',
+		}, true)).toBe('执行过程');
+		// 思考文本属于当前执行的未归档痕迹，不能因为正文开始就丢失。
+		expect(getExecutionActivityLabel({ ...run([]), thinking: '分析', lastDeltaKind: 'text' }, true)).toBe('执行过程');
 		// 有真实思考增量时显示“正在思考”；空的初始阶段显示准备提示。
 		expect(getExecutionActivityLabel({ ...run([]), lastDeltaKind: 'thinking', thinking: '分析' }, true)).toBe('正在思考');
 		// 工具运行中即便已收到正文，仍优先展示工具，避免掩盖实时执行动作。

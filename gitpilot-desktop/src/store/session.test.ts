@@ -260,6 +260,15 @@ describe('最终 assistant 正文兜底', () => {
 });
 
 describe('流式正文与工具批次边界', () => {
+	it('会话切回后的空白首个增量不会创建空 assistant 气泡', () => {
+		const state = { messages: [] as UIMessage[], _streamingAssistantId: null as string | null, isStreaming: false };
+
+		applyToStreamingState(state, { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '\n  ' } });
+
+		expect(state.messages).toEqual([]);
+		expect(state._streamingAssistantId).toBeNull();
+	});
+
 	it('工具回合结束时立即归档步骤，不把它们留到下一轮思考或正文中', () => {
 		useWorkbenchStore.setState({ execution: { id: 'run-1', status: 'running', lastPrompt: '检查代码', steps: [] } });
 		const state = { messages: [] as UIMessage[], _streamingAssistantId: null as string | null, isStreaming: true };

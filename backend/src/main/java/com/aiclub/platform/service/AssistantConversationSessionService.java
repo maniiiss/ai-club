@@ -49,7 +49,7 @@ import java.util.UUID;
 public class AssistantConversationSessionService {
 
     /** GitPilot 新会话默认 Runtime；现有 Assistant 会话仍按历史快照执行。 */
-    @Value("${platform.assistant.default-runtime-code:HERMES_LEGACY}")
+    @Value("${platform.assistant.default-runtime-code:PI_RUNTIME}")
     private String defaultRuntimeCode;
 
     /** Runtime 管理页的助手场景默认值；为空时保留环境变量兼容回退。 */
@@ -213,7 +213,7 @@ public class AssistantConversationSessionService {
             return runtimeScenarioDefaultService.resolve(RuntimeScenarioDefaultService.SCENARIO_ASSISTANT);
         }
         return defaultRuntimeCode == null || defaultRuntimeCode.isBlank()
-                ? "HERMES_LEGACY" : defaultRuntimeCode.trim().toUpperCase(java.util.Locale.ROOT);
+                ? RuntimeChatService.DEFAULT_RUNTIME : defaultRuntimeCode.trim().toUpperCase(java.util.Locale.ROOT);
     }
 
     /** 读取会话创建时的上下文预算快照；旧会话没有快照时回退到当前 Registry 配置。 */
@@ -556,7 +556,7 @@ public class AssistantConversationSessionService {
                 defaultString(entity.getTitle()),
                 entity.isTitleCustomized(),
                 defaultString(entity.getRouteName()),
-                defaultString(entity.getRuntimeRegistryCode()).isBlank() ? "HERMES_LEGACY" : entity.getRuntimeRegistryCode(),
+                defaultString(entity.getRuntimeRegistryCode()).isBlank() ? RuntimeChatService.DEFAULT_RUNTIME : entity.getRuntimeRegistryCode(),
                 entity.getRuntimeProfileVersion() == null ? 1L : entity.getRuntimeProfileVersion(),
                 entity.getProjectId(),
                 entity.getTaskId(),
@@ -606,7 +606,7 @@ public class AssistantConversationSessionService {
                 defaultString(entity.getTitle()),
                 entity.isTitleCustomized(),
                 defaultString(entity.getRouteName()),
-                defaultString(entity.getRuntimeRegistryCode()).isBlank() ? "HERMES_LEGACY" : entity.getRuntimeRegistryCode(),
+                defaultString(entity.getRuntimeRegistryCode()).isBlank() ? RuntimeChatService.DEFAULT_RUNTIME : entity.getRuntimeRegistryCode(),
                 entity.getRuntimeProfileVersion() == null ? 1L : entity.getRuntimeProfileVersion(),
                 entity.getProjectId(),
                 entity.getTaskId(),

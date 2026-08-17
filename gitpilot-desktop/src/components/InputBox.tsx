@@ -5,11 +5,11 @@
  * - 输入 / 触发命令面板（见 CommandPalette）
  * - 流式中输入为 steer（不打断当前回合）；有输入时主按钮发送，没有输入时才显示停止按钮
  * - 模型与思维级别选择器置于悬浮编辑器底部操作栏，发送指令前可就近调整
- * - 附件：回形针按钮选文件 / 拖拽放入 / 粘贴图片，经 sidecar 解析后随消息注入
+ * - 附件：右侧加号菜单选文件 / 拖拽放入 / 粘贴图片，经 sidecar 解析后随消息注入
  *   （图片走 prompt.images，文档文本以 <file> 块追加；UI 仅展示 chip 与缩略图）
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowUp, CornerUpRight, FileText, Image as ImageIcon, Loader2, Paperclip, Pencil, Send, Square, Trash2, X } from 'lucide-react';
+import { ArrowUp, Bug, ClipboardList, CornerUpRight, FileText, Image as ImageIcon, Loader2, Pencil, Plus, Send, Square, Trash2, X } from 'lucide-react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import Document from '@tiptap/extension-document';
 import HardBreak from '@tiptap/extension-hard-break';
@@ -20,16 +20,18 @@ import Text from '@tiptap/extension-text';
 import { CommandTokenNode, createCommandDocument, findCommandToken, serializeCommandContent } from './CommandTokenNode';
 import { useSessionStore, useActiveExtensionUI, type GuidanceMode, type GuidanceQueueItem } from '@/src/store/session';
 import { CommandPalette } from './CommandPalette';
+import { buildWorkItemPrompt, ComposerAddMenu, createWorkItemAttachment, type ComposerAddTab } from './ComposerAddMenu';
 import { ExtensionUIConfirmCard, ExtensionUISelectCard, isActionSelect } from './ExtensionUIModal';
 import { isHostActionCommand } from './host-actions';
 import { ModelPicker } from './ModelPicker';
 import { useWorkbenchStore } from '@/src/store/workbench';
 import { useSettingsDialogStore } from '@/src/store/settings';
 import { isTauriEnv, rpc } from '@/src/rpc/bridge';
-import type { AttachmentInput, PreparedAttachment, RpcSlashCommand } from '@/src/rpc/types';
+import type { AttachmentInput, PreparedAttachment, RpcSlashCommand, RpcWorkItemSummary } from '@/src/rpc/types';
 import { Button } from '@/src/components/ui/button';
 import { Hint } from '@/src/components/ui/tooltip';
 import styles from './InputBox.module.css';
+import { PlanProgressStatus } from './PlanProgressStatus';
 
 export { formatCommandLabel, getCommandIconKey } from './CommandTokenNode';
 
@@ -149,6 +151,8 @@ export function InputBox() {
 	/** 从命令面板选中的命令名（输入框不显示 / 前缀，发送时自动补上） */
 	const [selectedCommand, setSelectedCommand] = useState<string | null>(null);
 	const [showPalette, setShowPalette] = useState(false);
+	const [addMenuOpen, setAddMenuOpen] = useState(false);
+	const [addMenuTab, setAddMenuTab] = useState<ComposerAddTab>('attachments');
 	const [attachments, setAttachments] = useState<PreparedAttachment[]>([]);
 	const [preparing, setPreparing] = useState(false);
 	const [prepareError, setPrepareError] = useState<string | null>(null);
@@ -310,12 +314,24 @@ export function InputBox() {
 
 	/** 文件选择器：点击回形针按钮触发原生多选。 */
 	const pickFiles = async () => {
+		setAddMenuOpen(false);
 		if (!isTauriEnv()) return;
 		const { open } = await import('@tauri-apps/plugin-dialog');
 		const selected = await open({ multiple: true, directory: false });
 		if (!selected) return;
 		const paths = Array.isArray(selected) ? selected : [selected];
 		await addInputs(paths.map((p) => ({ path: p })));
+	};
+
+	/** 工作项像附件一样进入上下文标签；编辑器只写入对应的分析指令，不自动调用 prompt。 */
+	const selectWorkItem = (item: RpcWorkItemSummary) => {
+		if (!editor) return;
+		const workItemPrompt = buildWorkItemPrompt(item);
+		editor.commands.setContent({ type: 'doc', content: [{ type: 'paragraph', content: [{ type: 'text', text: workItemPrompt }] }] });
+		setSelectedCommand(null);
+		setAttachments((previous) => [...previous.filter((attachment) => attachment.kind !== 'work-item'), createWorkItemAttachment(item)]);
+		setAddMenuOpen(false);
+		requestAnimationFrame(() => editor.commands.focus('end'));
 	};
 
 	/** 粘贴：剪贴板图片 blob -> base64 -> 内联附件。 */
@@ -484,10 +500,19 @@ export function InputBox() {
 			<ExtensionUIConfirmCard />
 			<ExtensionUISelectCard />
 			{showPalette && !hasPendingConfirm && !hasPendingActionSelect && <CommandPalette commands={commands} query={text.slice(1)} onPick={pickCommand} onDismiss={() => setShowPalette(false)} />}
+			<ComposerAddMenu
+				open={addMenuOpen && !hasPendingConfirm && !hasPendingActionSelect}
+				tab={addMenuTab}
+				onTabChange={setAddMenuTab}
+				onPickFiles={pickFiles}
+				onSelectWorkItem={selectWorkItem}
+				onDismiss={() => setAddMenuOpen(false)}
+			/>
 			{isDragOver && (
 				<div className={styles.dropHint}>松开以附加文件</div>
 			)}
 			<div className={styles.surface}>
+				<PlanProgressStatus />
 				{visibleGuidance.length > 0 && (
 					<div className={styles.guidanceList} aria-label="已发送引导">
 						{visibleGuidance.map((item) => (
@@ -515,20 +540,24 @@ export function InputBox() {
 				{(attachments.length > 0 || preparing || prepareError) && (
 					<div className={styles.attachments}>
 						{attachments.map((a, idx) => (
-							<Hint key={`${a.name}-${idx}`} content={a.warnings?.join('\n') || a.name}><div className={styles.attachment}>
-								{a.kind === 'image' ? <ImageIcon size={13} /> : <FileText size={13} />}
-								<span className={styles.attachmentName}>{a.name}</span>
-								<span className={styles.attachmentSize}>{formatSize(a.sizeBytes)}</span>
-								<Hint content="移除"><Button
-									type="button"
-									variant="ghost"
-									size="icon-sm"
-									className={styles.attachmentRemove}
-									onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))}
-								>
-									<X size={12} />
-								</Button></Hint>
-							</div></Hint>
+							a.kind === 'work-item' ? (
+								<Hint key={`${a.name}-${idx}`} content={a.workItem ? `${a.workItem.workItemCode} · ${a.name}` : a.name}><div className={`${styles.attachment} ${styles.workItemAttachment} ${a.workItem?.workItemType === '缺陷' ? styles.workItemAttachmentDefect : ''}`}>
+									{a.workItem?.workItemType === '缺陷' ? <Bug size={13} /> : <ClipboardList size={13} />}
+									<span className={styles.attachmentName}>{a.name}</span>
+									<Hint content="移除"><Button type="button" variant="ghost" size="icon-sm" className={styles.attachmentRemove} onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))} aria-label="移除工作项">
+										<X size={12} />
+									</Button></Hint>
+								</div></Hint>
+							) : (
+								<Hint key={`${a.name}-${idx}`} content={a.warnings?.join('\n') || a.name}><div className={styles.attachment}>
+									{a.kind === 'image' ? <ImageIcon size={13} /> : <FileText size={13} />}
+									<span className={styles.attachmentName}>{a.name}</span>
+									<span className={styles.attachmentSize}>{formatSize(a.sizeBytes)}</span>
+									<Hint content="移除"><Button type="button" variant="ghost" size="icon-sm" className={styles.attachmentRemove} onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))} aria-label={`移除附件 ${a.name}`}>
+										<X size={12} />
+									</Button></Hint>
+								</div></Hint>
+							)
 						))}
 						{preparing && (
 							<div className={`${styles.attachment} ${styles.loading}`}>
@@ -552,15 +581,18 @@ export function InputBox() {
 				</div>
 				<div className={styles.toolbar}>
 					<div className={styles.actions}>
-						<Hint content="附加文件"><Button
+						<Hint content="添加附件或工作项"><Button
 							type="button"
 							variant="ghost"
 							size="icon-sm"
-							onClick={pickFiles}
+							onClick={() => setAddMenuOpen((current) => !current)}
 							className={styles.attach}
-							disabled={preparing || isSessionLoading}
+							data-add-menu-trigger="true"
+							aria-label="添加附件或工作项"
+							aria-expanded={addMenuOpen}
+							disabled={isSessionLoading}
 						>
-							<Paperclip size={16} />
+							<Plus size={17} />
 						</Button></Hint>
 						<ModelPicker />
 						{(isStreaming && hasComposerContent) ? (

@@ -98,7 +98,7 @@ import { ref, computed } from 'vue'
 
 主要公共组件位于 `src/components/`:
 
-- `HermesDrawer.vue` - 智能助手抽屉
+- `AssistantDrawer.vue` - 智能助手抽屉
 - `MarkdownEditor.vue` - Markdown 编辑器
 - `PlatformDialogHeader.vue` - 平台对话框头部
 - `ListUserDisplay.vue` - 用户列表展示
@@ -229,7 +229,7 @@ src/api/
 ├── cicd.ts           # CI/CD 流水线
 ├── models.ts         # 模型管理
 ├── servers.ts        # 服务器管理
-├── hermes.ts         # 智能助手
+├── assistant.ts         # 智能助手
 └── notifications.ts  # 消息通知
 ```
 

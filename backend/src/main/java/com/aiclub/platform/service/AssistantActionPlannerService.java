@@ -84,7 +84,7 @@ public class AssistantActionPlannerService {
         params.put("scenarioCode", defaultString(arguments.get("scenarioCode"), ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION));
         params.put("projectId", projectId);
         params.put("workItemId", workItemId);
-        params.put("triggerSource", "HERMES");
+        params.put("triggerSource", "ASSISTANT");
 
         Map<String, Object> inputPayload = new LinkedHashMap<>();
         inputPayload.put("userQuestion", defaultString(userQuestion, ""));

@@ -8,9 +8,11 @@ const escapeHtml = (value: string) =>
 
 const renderInline = (value: string) => {
   const placeholders: string[] = []
-  let text = escapeHtml(normalizeInlineMarkdown(value))
+  // 先转义并抽取代码/链接占位符，再做兼容性归一化；避免修复规则误改代码或 URL 中的星号。
+  let text = escapeHtml(value)
   const pushPlaceholder = (html: string) => {
-    const token = `@@INLINE_PLACEHOLDER_${placeholders.length}@@`
+    // 占位符不能包含 Markdown 的 `_` 标记，否则后续强调解析会把占位符本身拆开。
+    const token = `@@INLINEPLACEHOLDER${placeholders.length}@@`
     placeholders.push(html)
     return token
   }
@@ -28,24 +30,28 @@ const renderInline = (value: string) => {
     /(^|[\s(])((?:https?:\/\/|mailto:|tel:)[^\s<]+[^<.,:;"')\]\s])/g,
     (_, prefix: string, url: string) => `${prefix}${pushPlaceholder(`<a href="${url}" target="_blank" rel="noopener noreferrer">${url}</a>`)}`
   )
+  text = normalizeInlineMarkdown(text)
   text = text.replace(/\*\*\*([^*\n]+?)\*\*\*/g, '<strong><em>$1</em></strong>')
   text = text.replace(/(\*{2}|__)(?=\S)([\s\S]*?\S)\1/g, '<strong>$2</strong>')
   text = text.replace(/(?<!\*)\*(?!\*)(?=\S)([\s\S]*?\S)(?<!\*)\*(?!\*)|(?<!_)_(?!_)(?=\S)([\s\S]*?\S)(?<!_)_(?!_)/g, (_match, a: string, b: string) => `<em>${a ?? b}</em>`)
   text = text.replace(/~~(?=\S)([\s\S]*?\S)~~/g, '<s>$1</s>')
 
   placeholders.forEach((placeholder, index) => {
-    text = text.replace(`@@INLINE_PLACEHOLDER_${index}@@`, placeholder)
+    text = text.replace(`@@INLINEPLACEHOLDER${index}@@`, placeholder)
   })
 
   return text.replace(/\n/g, '<br />')
 }
 
 /**
- * 只修复工单号周围明确缺失的一个强调结束符。
- * 业务意图：普通正文的 `*`/`**` 不再由展示层猜测，避免清洗规则改变用户实际看到的内容。
+ * 对模型常见的两类明确格式错误做最小归一化：工单号少一个强调结束符，以及短标签结束标记前多余空格。
+ * 业务意图：修复截图中可判定的 Markdown 契约违例，同时保留普通正文的孤立 `*`/`**`，避免展示层继续猜测语义。
  */
-const normalizeInlineMarkdown = (value: string) =>
-  value.replace(/(\*\*)((?:\\#)?\s*[A-Z0-9]{4,})\*(?=\s*(?:\n|$))/g, '$1$2**')
+const normalizeInlineMarkdown = (value: string) => value
+  .replace(/(\*\*)((?:\\#)?\s*[A-Z0-9]{4,})\*(?=\s*(?:\n|$))/g, '$1$2**')
+  // 模型偶尔将短标签写成 `**标签： **值`，标准 Markdown 会把标记当普通文本。
+  // 仅修复“标签 + 冒号 + 多余空格 + 成对结束标记”这一明确形态，不猜测普通正文的孤立星号。
+  .replace(/(\*{2}|__)([^*_\n]+?[：:])\s+\1\s*(?=\S)/gu, '$1$2$1 ')
 
 /**
  * 去掉 HTML 标签并回收常见实体，供 Assistant 思考区兼容 HTML 回退渲染时复用。

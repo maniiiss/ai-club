@@ -55,13 +55,14 @@ class AssistantPromptBuilderTests {
         );
 
         assertThat(prompt.systemPrompt())
-                .contains("当前轮唯一有效的 `system_session_token` 是：`hcs_test_token`")
                 .contains("## 当前已启用 Skills")
                 .contains("### Skill: wiki-qa")
-                .contains("不要直接声称平台不支持访问 Wiki");
+                .contains("不要直接声称平台不支持访问 Wiki")
+                .doesNotContain("system_session_token");
         assertThat(prompt.userPrompt())
                 .contains("当前路由：wiki-space-page")
-                .contains("Wiki 页面上下文");
+                .contains("Wiki 页面上下文")
+                .doesNotContain("system_session_token");
     }
 
     /**
@@ -467,7 +468,7 @@ class AssistantPromptBuilderTests {
                 true,
                 List.of("SUPER_ADMIN"),
                 List.of("超级管理员"),
-                List.of("hermes:chat", "wiki:view", "project:view", "task:view", "task:manage"),
+                List.of("assistant:chat", "wiki:view", "project:view", "task:view", "task:manage"),
                 List.of()
         );
     }

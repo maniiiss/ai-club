@@ -1,7 +1,7 @@
 """LightRAG 路由。
 
 业务意图：暴露 LightRAG 摄入、检索、图谱读取与健康探测接口给 backend 调用，
-统一走 Authorization: Bearer 内部 token 鉴权（与 hermes_internal_client 一致）。
+统一走 Authorization: Bearer 内部 token 鉴权（与 assistant_internal_client 一致）。
 """
 
 import logging

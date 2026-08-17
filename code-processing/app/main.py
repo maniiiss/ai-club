@@ -26,14 +26,14 @@ app.mount("/mcp", mcp_http_app)
 @app.middleware("http")
 async def authenticate_mcp_bridge(request: Request, call_next):
     """
-    只对 `/mcp` 开头的请求校验 Hermes 与 bridge 之间的共享 Bearer Token。
+    只对 `/mcp` 开头的请求校验 Assistant 与 bridge 之间的共享 Bearer Token。
     普通代码处理接口仍保持现有行为，不受 MCP 专用鉴权影响。
     """
     if request.url.path.startswith("/mcp"):
-        expected_header = f"Bearer {settings.hermes_mcp_shared_token}"
+        expected_header = f"Bearer {settings.assistant_mcp_shared_token}"
         actual_header = request.headers.get("Authorization", "").strip()
         if actual_header != expected_header:
-            return JSONResponse(status_code=401, content={"detail": "Hermes MCP 鉴权失败"})
+            return JSONResponse(status_code=401, content={"detail": "Assistant MCP 鉴权失败"})
         if request.scope.get("path") == "/mcp":
             request.scope["path"] = "/mcp/"
             request.scope["raw_path"] = b"/mcp/"

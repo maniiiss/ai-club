@@ -19,7 +19,7 @@ public record UpdateChatRoomAgentConfigRequest(
         Integer keywordWatchCooldownMinutes,
         List<String> taskStatusCallbackStatuses
 ) {
-    /** 兼容旧测试和旧客户端构造方式，未传 Runtime 时默认使用 Legacy。 */
+    /** 兼容旧测试和旧客户端构造方式，未传 Runtime 时默认使用 PI_RUNTIME。 */
     public UpdateChatRoomAgentConfigRequest(Boolean enabled,
                                             String displayName,
                                             String systemInstruction,
@@ -31,7 +31,7 @@ public record UpdateChatRoomAgentConfigRequest(
                                             List<String> keywordWatchTerms,
                                             Integer keywordWatchCooldownMinutes,
                                             List<String> taskStatusCallbackStatuses) {
-        this(enabled, displayName, "HERMES_LEGACY", systemInstruction, proactiveSummaryEnabled,
+        this(enabled, displayName, "PI_RUNTIME", systemInstruction, proactiveSummaryEnabled,
                 keywordWatchEnabled, taskStatusCallbackEnabled, proactiveSummaryMessageThreshold,
                 proactiveSummaryMinIntervalMinutes, keywordWatchTerms, keywordWatchCooldownMinutes,
                 taskStatusCallbackStatuses);

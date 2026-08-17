@@ -22,7 +22,7 @@ Runtime Adapter
   原生压缩优先 / backend fallback
         |
         v
-Hermes / Pi / OpenClaw / CLI Runtime
+Assistant / Pi / OpenClaw / CLI Runtime
 ```
 
 可用输入预算由 Runtime 上下文窗口减去最大输出、系统提示词、工具契约和安全余量计算。达到配置阈值时，优先调用 Runtime 原生压缩；不可用时保留最近完整消息并使用 backend 摘要。
@@ -35,8 +35,8 @@ Hermes / Pi / OpenClaw / CLI Runtime
 
 数据库保存全部原始消息、摘要、事实和 Runtime 配置快照；Redis 保存同一份热状态。旧会话缺少快照时回退当前 Runtime 默认配置，旧消息不迁移、不删除。
 
-Pi Runtime 使用 `pi-agent-core` 的 `transformContext` 和真实消息角色；Hermes/OpenClaw 通过 Gateway 适配器接收统一预算；CLI 保留自身执行会话，不改造成 GitPilot CHAT Runtime。
+Pi Runtime 使用 `pi-agent-core` 的 `transformContext` 和真实消息角色；PI_RUNTIME/OpenClaw 通过 Runtime Adapter 接收统一预算；CLI 保留自身执行会话，不改造成 GitPilot CHAT Runtime。
 
 ## 观测与灰度
 
-backend 和 Runtime 记录上下文估算 token、压缩次数、原生压缩次数、fallback 次数和溢出风险指标。Context V2 可通过 Runtime 场景配置逐步启用；旧 transcript、Redis 状态和 Hermes Legacy 链路继续保留，压缩不会删除任何原始消息。
+backend 和 Runtime 记录上下文估算 token、压缩次数、原生压缩次数、fallback 次数和溢出风险指标。Context V2 可通过 Runtime 场景配置逐步启用；旧 transcript、Redis 状态和统一 Runtime 链路继续保留，压缩不会删除任何原始消息。

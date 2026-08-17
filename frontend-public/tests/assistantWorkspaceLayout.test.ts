@@ -71,7 +71,7 @@ describe('GitPilot 助手工作区布局契约', () => {
     assert.match(workspace, /getWorkItemDetail/)
     assert.match(workspace, /resolveDevelopmentExecutionActionContext/)
     assert.match(workspace, /<DevelopmentExecutionDialog/)
-    assert.match(workspace, /triggerSource="HERMES"/)
+    assert.match(workspace, /triggerSource="ASSISTANT"/)
     assert.match(dialog, /initialInputText = ''/)
     assert.match(dialog, /triggerSource = 'PAGE'/)
   })

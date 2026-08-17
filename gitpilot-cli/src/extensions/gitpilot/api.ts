@@ -63,6 +63,7 @@ export interface CliDesignVersionUploadResult {
 }
 
 export type CliProvider = "OPENAI" | "ANTHROPIC";
+export type CliModelInputModality = "text" | "image";
 
 export interface CliModel {
 	id: number;
@@ -75,6 +76,8 @@ export interface CliModel {
 	contextLength?: number;
 	/** 平台配置的最大输出 token 数，未配置时为 undefined，toModelConfig 回退默认。 */
 	maxOutputTokens?: number;
+	/** 平台管理员配置的输入模态；旧平台接口缺失时由适配层回退为 text。 */
+	inputModalities?: CliModelInputModality[];
 }
 
 export interface ModelSession {
@@ -219,11 +222,12 @@ export interface PageResponse<T> {
 	totalPages: number;
 }
 
-/** CLI 需求列表项（与后端 CliDtos.CliTaskSummary 对应）。 */
+/** CLI 工作项列表项（与后端 CliDtos.CliTaskSummary 对应）。 */
 export interface CliTaskSummary {
 	id: number;
 	workItemCode: string;
 	name: string;
+	workItemType: string;
 	status: string;
 	priority: string | null;
 	assignee: string | null;
@@ -245,9 +249,11 @@ export interface ListMyTasksParams {
 	priority?: string;
 	projectId?: number;
 	keyword?: string;
+	/** 为空时查询当前用户负责的全部工作项。 */
+	workItemType?: string;
 }
 
-/** 列出当前 CLI 用户负责的需求（workItemType=需求）。 */
+/** 列出当前 CLI 用户负责的工作项；调用方可按类型限制结果。 */
 export const listMyTasks = (platformUrl: string, token: string, params: ListMyTasksParams = {}, requestOptions: Pick<RequestOptions, "timeoutMs"> = {}) => {
 	const query = new URLSearchParams();
 	if (params.page != null) query.set("page", String(params.page));
@@ -256,6 +262,7 @@ export const listMyTasks = (platformUrl: string, token: string, params: ListMyTa
 	if (params.priority) query.set("priority", params.priority);
 	if (params.projectId != null) query.set("projectId", String(params.projectId));
 	if (params.keyword) query.set("keyword", params.keyword);
+	if (params.workItemType) query.set("workItemType", params.workItemType);
 	const qs = query.toString();
 	return requestJson<PageResponse<CliTaskSummary>>(platformUrl, `/api/cli/tasks${qs ? `?${qs}` : ""}`, { token, ...requestOptions });
 };

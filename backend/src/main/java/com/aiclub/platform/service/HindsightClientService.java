@@ -165,7 +165,7 @@ public class HindsightClientService {
         sendJsonRequest(
                 "POST",
                 bankMemoriesUrl(properties.assistantUserMemoryBankId(userId)),
-                buildRetainPayload(documentId, title, content, tags, metadata, "hermes", "hermes")
+                buildRetainPayload(documentId, title, content, tags, metadata, "assistant", "assistant")
         );
     }
 

@@ -64,6 +64,19 @@ import type {
 	UserBashEventResult,
 } from "./types.ts";
 
+export interface ExtensionToolExecutionContextOptions {
+	hasUI?: boolean;
+}
+
+/** Desktop/RPC 可选的宿主工具适配器，用于在第三方扩展工具执行前接管原生审核。 */
+export type ExtensionToolExecutionAdapter = <T>(input: {
+	toolName: string;
+	toolCallId: string;
+	params: unknown;
+	signal: AbortSignal | undefined;
+	execute: (options?: ExtensionToolExecutionContextOptions) => Promise<T>;
+}) => Promise<T>;
+
 // Extension shortcuts compete with canonical keybinding ids from keybindings.json.
 // Only editor-global shortcuts are reserved here. Picker-specific bindings are not.
 const RESERVED_KEYBINDINGS_FOR_EXTENSION_CONFLICTS = [
@@ -292,6 +305,7 @@ export class ExtensionRunner {
 	private shortcutDiagnostics: ResourceDiagnostic[] = [];
 	private commandDiagnostics: ResourceDiagnostic[] = [];
 	private staleMessage: string | undefined;
+	private toolExecutionAdapter: ExtensionToolExecutionAdapter | undefined;
 
 	constructor(
 		extensions: Extension[],
@@ -429,6 +443,15 @@ export class ExtensionRunner {
 	setUIContext(uiContext?: ExtensionUIContext, mode: ExtensionMode = "print"): void {
 		this.uiContext = uiContext ?? noOpUIContext;
 		this.mode = mode;
+	}
+
+	setToolExecutionAdapter(adapter?: ExtensionToolExecutionAdapter): void {
+		this.toolExecutionAdapter = adapter;
+	}
+
+	async executeTool<T>(toolName: string, toolCallId: string, params: unknown, signal: AbortSignal | undefined, execute: (options?: ExtensionToolExecutionContextOptions) => Promise<T>): Promise<T> {
+		if (!this.toolExecutionAdapter) return execute();
+		return this.toolExecutionAdapter({ toolName, toolCallId, params, signal, execute });
 	}
 
 	getUIContext(): ExtensionUIContext {
@@ -662,7 +685,7 @@ export class ExtensionRunner {
 	 * Create an ExtensionContext for use in event handlers and tool execution.
 	 * Context values are resolved at call time, so changes via bindCore/bindUI are reflected.
 	 */
-	createContext(): ExtensionContext {
+	createContext(options: ExtensionToolExecutionContextOptions = {}): ExtensionContext {
 		const runner = this;
 		const getModel = this.getModel;
 		return {
@@ -676,7 +699,7 @@ export class ExtensionRunner {
 			},
 			get hasUI() {
 				runner.assertActive();
-				return runner.hasUI();
+				return options.hasUI ?? runner.hasUI();
 			},
 			get cwd() {
 				runner.assertActive();

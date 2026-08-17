@@ -9,6 +9,7 @@ GitPilot 在 Code、Work、Design 中提供一致的 Web 研究能力，并将 M
 - `pi-web-access@0.22.0` 默认启用。
 - `pi-mcp-adapter@2.21.0` 固定使用；GitPilot 当前 Pi SDK 为 `0.81.1`，不自动升级到要求 Pi `0.84.1` 的 adapter 新版本。
 - 两个包由 CLI loader 静态引用，Bun sidecar 的 virtual module 与 Node alias 同步提供，安装包不依赖用户本机 Node/npm。
+- Web 搜索首次运行默认使用 `workflow: "none"` 且 `autoOpenBrowser: false`：联网仍可执行，但不会启动 Curator 或自动打开浏览器；用户显式配置或单次调用参数可重新启用摘要流程。
 
 ## 配置与授权
 

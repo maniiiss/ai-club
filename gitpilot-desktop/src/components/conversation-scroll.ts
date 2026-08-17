@@ -78,6 +78,11 @@ export function getLatestContentScrollTop(
 	return Math.max(0, container.scrollHeight - container.clientHeight - Math.max(0, additionalTail));
 }
 
+/** 清理人工尾部留白后，将旧滚动位置限制在当前滚动容器的真实范围内。 */
+export function clampScrollTopToContainer(scrollTop: number, scrollHeight: number, clientHeight: number): number {
+	return Math.min(Math.max(0, scrollTop), Math.max(0, scrollHeight - clientHeight));
+}
+
 /** 输出跟随只允许向下推进，短回复时保留新问题的初始定位。 */
 export function getConversationFollowScrollTop(
 	container: Pick<ScrollContainerLike, 'clientHeight' | 'scrollHeight'>,

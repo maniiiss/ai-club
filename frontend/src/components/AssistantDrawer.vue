@@ -7,17 +7,17 @@
     :class="drawerPresentation.classNames"
   >
     <template #header>
-      <div class="hermes-head">
-        <div class="hermes-head-left">
-          <button v-if="memoryViewVisible" class="hermes-back-button" type="button" @click="memoryViewVisible = false">返回</button>
-          <div class="hermes-title-wrap">
-            <div class="hermes-title">{{ memoryViewVisible ? '知识' : 'GitPilot 助手' }}</div>
+      <div class="assistant-head">
+        <div class="assistant-head-left">
+          <button v-if="memoryViewVisible" class="assistant-back-button" type="button" @click="memoryViewVisible = false">返回</button>
+          <div class="assistant-title-wrap">
+            <div class="assistant-title">{{ memoryViewVisible ? '知识' : 'GitPilot 助手' }}</div>
             <el-tooltip v-if="!memoryViewVisible" placement="bottom-start" effect="light">
-              <button class="hermes-help-button" type="button" aria-label="查看 GitPilot 能力边界说明">
+              <button class="assistant-help-button" type="button" aria-label="查看 GitPilot 能力边界说明">
                 <el-icon><QuestionFilled /></el-icon>
               </button>
               <template #content>
-                <div class="hermes-help-tooltip">
+                <div class="assistant-help-tooltip">
                   <p>{{ assistantTooltipCopy.intro }}</p>
                   <p>{{ assistantTooltipCopy.boundary }}</p>
                   <p>{{ assistantTooltipCopy.confirmation }}</p>
@@ -26,52 +26,52 @@
             </el-tooltip>
           </div>
         </div>
-        <div class="hermes-head-right">
-          <button v-if="!memoryViewVisible" class="hermes-memory-entry" type="button" @click="handleOpenMemoryView">知识</button>
-          <button v-if="!isMobileViewport" class="hermes-close-button hermes-view-toggle-button" type="button" @click="toggleDesktopFullscreen">
+        <div class="assistant-head-right">
+          <button v-if="!memoryViewVisible" class="assistant-memory-entry" type="button" @click="handleOpenMemoryView">知识</button>
+          <button v-if="!isMobileViewport" class="assistant-close-button assistant-view-toggle-button" type="button" @click="toggleDesktopFullscreen">
             {{ desktopFullscreen ? '退出全屏' : '全屏' }}
           </button>
-          <button class="hermes-close-button" type="button" @click="drawerVisible = false">关闭</button>
+          <button class="assistant-close-button" type="button" @click="drawerVisible = false">关闭</button>
         </div>
       </div>
     </template>
 
-    <div class="hermes-panel" :style="{ gridTemplateColumns: drawerPresentation.panelColumns }">
+    <div class="assistant-panel" :style="{ gridTemplateColumns: drawerPresentation.panelColumns }">
       <div
         v-if="isMobileViewport"
-        class="hermes-mobile-session-backdrop"
+        class="assistant-mobile-session-backdrop"
         :class="{ visible: mobileSessionPanelVisible }"
         @click="closeMobileSessionPanel"
       ></div>
 
       <aside
-        class="hermes-session-sidebar"
+        class="assistant-session-sidebar"
         :class="{ 'mobile-panel-open': isMobileViewport && mobileSessionPanelVisible }"
       >
-        <div class="hermes-session-content">
-          <div v-if="isMobileViewport" class="hermes-mobile-session-head">
-            <div class="hermes-mobile-session-title">会话记录</div>
-            <button class="hermes-mobile-session-close" type="button" @click="closeMobileSessionPanel">收起</button>
+        <div class="assistant-session-content">
+          <div v-if="isMobileViewport" class="assistant-mobile-session-head">
+            <div class="assistant-mobile-session-title">会话记录</div>
+            <button class="assistant-mobile-session-close" type="button" @click="closeMobileSessionPanel">收起</button>
           </div>
-          <div class="hermes-session-toolbar">
-            <button class="hermes-primary-button" type="button" :disabled="sending" @click="handleCreateSession">新建会话</button>
-            <div class="hermes-session-tabs">
-              <button class="hermes-tab" :class="{ active: !archivedView }" type="button" :disabled="sending" @click="archivedView = false">当前</button>
-              <button class="hermes-tab" :class="{ active: archivedView }" type="button" :disabled="sending" @click="archivedView = true">已归档</button>
+          <div class="assistant-session-toolbar">
+            <button class="assistant-primary-button" type="button" :disabled="sending" @click="handleCreateSession">新建会话</button>
+            <div class="assistant-session-tabs">
+              <button class="assistant-tab" :class="{ active: !archivedView }" type="button" :disabled="sending" @click="archivedView = false">当前</button>
+              <button class="assistant-tab" :class="{ active: archivedView }" type="button" :disabled="sending" @click="archivedView = true">已归档</button>
             </div>
           </div>
 
-          <div class="hermes-session-list">
-            <div v-if="sessionLoading" class="hermes-muted-card">正在加载会话...</div>
+          <div class="assistant-session-list">
+            <div v-if="sessionLoading" class="assistant-muted-card">正在加载会话...</div>
             <template v-else-if="sessionSummaries.length">
               <div
                 v-for="session in sessionSummaries"
                 :key="session.id"
-                class="hermes-session-item"
+                class="assistant-session-item"
                 :class="{ active: selectedSessionId === session.id }"
               >
                 <button
-                  class="hermes-session-main"
+                  class="assistant-session-main"
                   type="button"
                   :disabled="sending"
                   :title="session.title || '新会话'"
@@ -84,8 +84,8 @@
                   placement="bottom-end"
                   @command="handleSessionCommandEvent(session, $event)"
                 >
-                  <button class="hermes-session-more-button" type="button" :disabled="sending">
-                    <el-icon class="hermes-session-more-icon"><MoreFilled /></el-icon>
+                  <button class="assistant-session-more-button" type="button" :disabled="sending">
+                    <el-icon class="assistant-session-more-icon"><MoreFilled /></el-icon>
                   </button>
                   <template #dropdown>
                     <el-dropdown-menu>
@@ -97,48 +97,48 @@
                   </template>
                 </el-dropdown>
               </div>
-              <button v-if="canLoadMoreSessions" class="hermes-load-more-button" type="button" :disabled="loadingMoreSessions" @click="loadMoreSessions">
+              <button v-if="canLoadMoreSessions" class="assistant-load-more-button" type="button" :disabled="loadingMoreSessions" @click="loadMoreSessions">
                 {{ loadingMoreSessions ? '加载中...' : '查看更多' }}
               </button>
             </template>
-            <div v-else class="hermes-muted-card">{{ archivedView ? '暂无已归档会话' : '暂无会话记录' }}</div>
+            <div v-else class="assistant-muted-card">{{ archivedView ? '暂无已归档会话' : '暂无会话记录' }}</div>
           </div>
         </div>
       </aside>
 
       <!-- 记忆管理二级页面 -->
-      <section v-if="memoryViewVisible" class="hermes-memory-view">
-        <div class="hermes-memory-header">
-          <div class="hermes-memory-tabs">
-            <button class="hermes-tab" :class="{ active: knowledgeTab === 'memory' }" type="button" @click="knowledgeTab = 'memory'">会话记忆</button>
-            <button class="hermes-tab" :class="{ active: knowledgeTab === 'fileLibrary' }" type="button" @click="handleOpenFileLibraryTab">文件库</button>
+      <section v-if="memoryViewVisible" class="assistant-memory-view">
+        <div class="assistant-memory-header">
+          <div class="assistant-memory-tabs">
+            <button class="assistant-tab" :class="{ active: knowledgeTab === 'memory' }" type="button" @click="knowledgeTab = 'memory'">会话记忆</button>
+            <button class="assistant-tab" :class="{ active: knowledgeTab === 'fileLibrary' }" type="button" @click="handleOpenFileLibraryTab">文件库</button>
           </div>
-          <div v-if="knowledgeTab === 'memory'" class="hermes-memory-tabs secondary">
-            <button class="hermes-tab" :class="{ active: memoryTab === 'conversation' }" type="button" @click="memoryTab = 'conversation'">原始会话记忆</button>
-            <button class="hermes-tab" :class="{ active: memoryTab === 'consolidated' }" type="button" @click="memoryTab = 'consolidated'">整理后摘要</button>
+          <div v-if="knowledgeTab === 'memory'" class="assistant-memory-tabs secondary">
+            <button class="assistant-tab" :class="{ active: memoryTab === 'conversation' }" type="button" @click="memoryTab = 'conversation'">原始会话记忆</button>
+            <button class="assistant-tab" :class="{ active: memoryTab === 'consolidated' }" type="button" @click="memoryTab = 'consolidated'">整理后摘要</button>
           </div>
-          <div v-if="knowledgeTab === 'memory'" class="hermes-memory-search">
+          <div v-if="knowledgeTab === 'memory'" class="assistant-memory-search">
             <input
               v-model="memoryQuery"
-              class="hermes-memory-search-input"
+              class="assistant-memory-search-input"
               type="text"
               placeholder="搜索记忆..."
               @input="handleMemorySearch"
             />
           </div>
-          <div v-else class="hermes-memory-search">
+          <div v-else class="assistant-memory-search">
             <input
               v-model="fileLibraryQuery"
-              class="hermes-memory-search-input"
+              class="assistant-memory-search-input"
               type="text"
               placeholder="搜索文件库..."
               @input="handleFileLibrarySearch"
             />
           </div>
         </div>
-        <div v-if="knowledgeTab === 'memory'" class="hermes-memory-body">
-          <div v-if="memoryConsolidating" class="hermes-muted-card">{{ memoryConsolidationHint }}</div>
-          <div v-if="memoryLoading" class="hermes-muted-card">正在加载记忆...</div>
+        <div v-if="knowledgeTab === 'memory'" class="assistant-memory-body">
+          <div v-if="memoryConsolidating" class="assistant-muted-card">{{ memoryConsolidationHint }}</div>
+          <div v-if="memoryLoading" class="assistant-muted-card">正在加载记忆...</div>
 
           <!-- 原始会话记忆 -->
           <template v-if="memoryTab === 'conversation' && !memoryLoading && !memoryConsolidating">
@@ -146,26 +146,26 @@
               <div
                 v-for="memory in memoryConversationList"
                 :key="memory.documentId"
-                class="hermes-memory-item"
+                class="assistant-memory-item"
                 :class="{ expanded: expandedMemoryIds[memory.documentId] }"
               >
-                <div class="hermes-memory-content">
-                  <div v-if="memory.scene" class="hermes-memory-scene">{{ memory.scene }}</div>
-                  <div class="hermes-memory-question">{{ memory.question || memory.title || '未命名记忆' }}</div>
+                <div class="assistant-memory-content">
+                  <div v-if="memory.scene" class="assistant-memory-scene">{{ memory.scene }}</div>
+                  <div class="assistant-memory-question">{{ memory.question || memory.title || '未命名记忆' }}</div>
                   <template v-if="expandedMemoryIds[memory.documentId]">
-                    <div v-if="memory.answer" class="hermes-memory-answer-label">GitPilot 回答</div>
-                    <div v-if="memory.answer" class="hermes-memory-answer">{{ memory.answer }}</div>
+                    <div v-if="memory.answer" class="assistant-memory-answer-label">GitPilot 回答</div>
+                    <div v-if="memory.answer" class="assistant-memory-answer">{{ memory.answer }}</div>
                   </template>
-                  <div v-if="memory.createdAt" class="hermes-memory-time">{{ formatMemoryTime(memory.createdAt) }}</div>
+                  <div v-if="memory.createdAt" class="assistant-memory-time">{{ formatMemoryTime(memory.createdAt) }}</div>
                 </div>
-                <div class="hermes-memory-actions">
+                <div class="assistant-memory-actions">
                   <button
-                    class="hermes-memory-toggle"
+                    class="assistant-memory-toggle"
                     type="button"
                     @click="toggleMemoryExpand(memory.documentId)"
                   >{{ expandedMemoryIds[memory.documentId] ? '收起' : '展开' }}</button>
                   <button
-                    class="hermes-memory-delete"
+                    class="assistant-memory-delete"
                     type="button"
                     title="删除这条记忆"
                     @click="handleDeleteMemory(memory)"
@@ -173,9 +173,9 @@
                 </div>
               </div>
             </template>
-            <div v-else class="hermes-empty-state compact">
-              <div class="hermes-empty-kicker">原始会话记忆</div>
-              <div class="hermes-empty-title">暂无会话记忆</div>
+            <div v-else class="assistant-empty-state compact">
+              <div class="assistant-empty-kicker">原始会话记忆</div>
+              <div class="assistant-empty-title">暂无会话记忆</div>
               <p>GitPilot 会自动记住你和它的对话要点，下次聊天时会参考这些记忆来回答。</p>
             </div>
           </template>
@@ -183,103 +183,103 @@
           <!-- 整理后摘要 -->
           <template v-if="memoryTab === 'consolidated' && !memoryLoading && !memoryConsolidating">
             <template v-if="memoryFactList.length">
-              <article v-for="fact in memoryFactList" :key="fact.id" class="hermes-memory-fact-item">
-                <div class="hermes-memory-fact-summary">{{ fact.summary || '未生成摘要' }}</div>
-                <div v-if="fact.subject || fact.predicate || fact.object" class="hermes-memory-fact-meta">
+              <article v-for="fact in memoryFactList" :key="fact.id" class="assistant-memory-fact-item">
+                <div class="assistant-memory-fact-summary">{{ fact.summary || '未生成摘要' }}</div>
+                <div v-if="fact.subject || fact.predicate || fact.object" class="assistant-memory-fact-meta">
                   {{ [fact.subject, fact.predicate, fact.object].filter(Boolean).join(' · ') }}
                 </div>
-                <div class="hermes-memory-fact-footer">
-                  <div v-if="fact.tags.length" class="hermes-memory-fact-tags">
-                    <span v-for="tag in fact.tags.slice(0, 6)" :key="`${fact.id}-${tag}`" class="hermes-memory-tag">{{ tag }}</span>
+                <div class="assistant-memory-fact-footer">
+                  <div v-if="fact.tags.length" class="assistant-memory-fact-tags">
+                    <span v-for="tag in fact.tags.slice(0, 6)" :key="`${fact.id}-${tag}`" class="assistant-memory-tag">{{ tag }}</span>
                   </div>
-                  <div v-if="fact.createdAt" class="hermes-memory-time">{{ formatMemoryTime(fact.createdAt) }}</div>
+                  <div v-if="fact.createdAt" class="assistant-memory-time">{{ formatMemoryTime(fact.createdAt) }}</div>
                 </div>
               </article>
             </template>
-            <div v-else class="hermes-empty-state compact">
-              <div class="hermes-empty-kicker">整理后摘要</div>
-              <div class="hermes-empty-title">暂无结构化摘要</div>
+            <div v-else class="assistant-empty-state compact">
+              <div class="assistant-empty-kicker">整理后摘要</div>
+              <div class="assistant-empty-title">暂无结构化摘要</div>
               <p>先多聊几轮积累记忆，再点击下方"整理记忆"按钮，GitPilot 会用 AI 将碎片记忆整合为结构化知识。</p>
             </div>
           </template>
         </div>
-        <div v-if="knowledgeTab === 'memory'" class="hermes-memory-footer">
-          <button class="hermes-primary-button" type="button" :disabled="memoryLoading || memoryConsolidating" @click="handleConsolidateMemories">{{ memoryConsolidating ? '整理中...' : '整理记忆' }}</button>
-          <button v-if="memoryConversationList.length" class="hermes-danger-button" type="button" :disabled="memoryLoading || memoryConsolidating" @click="handleClearMemories">清空全部</button>
+        <div v-if="knowledgeTab === 'memory'" class="assistant-memory-footer">
+          <button class="assistant-primary-button" type="button" :disabled="memoryLoading || memoryConsolidating" @click="handleConsolidateMemories">{{ memoryConsolidating ? '整理中...' : '整理记忆' }}</button>
+          <button v-if="memoryConversationList.length" class="assistant-danger-button" type="button" :disabled="memoryLoading || memoryConsolidating" @click="handleClearMemories">清空全部</button>
         </div>
-        <div v-if="knowledgeTab === 'fileLibrary'" class="hermes-memory-body">
+        <div v-if="knowledgeTab === 'fileLibrary'" class="assistant-memory-body">
           <input ref="fileLibraryInputRef" type="file" accept=".pdf,.docx,.pptx,.xlsx" style="display: none" @change="handleFileLibraryInputChange" />
-          <div v-if="fileLibraryLoading" class="hermes-muted-card">正在加载文件库...</div>
-          <div v-if="fileLibraryUploading" class="hermes-muted-card">正在上传并索引文件...</div>
+          <div v-if="fileLibraryLoading" class="assistant-muted-card">正在加载文件库...</div>
+          <div v-if="fileLibraryUploading" class="assistant-muted-card">正在上传并索引文件...</div>
           <template v-if="!fileLibraryLoading && fileLibraryItems.length">
-            <article v-for="item in fileLibraryItems" :key="item.id" class="hermes-memory-item">
-              <div class="hermes-memory-content">
-                <div class="hermes-memory-scene">{{ item.sourceFormat || 'FILE' }} · {{ formatFileSize(item.fileSize) }} · {{ resolveFileLibraryStatusText(item) }}</div>
-                <div class="hermes-memory-question">{{ item.title || item.fileName || '未命名文件' }}</div>
-                <div v-if="item.description" class="hermes-memory-answer">{{ item.description }}</div>
-                <div v-if="item.warnings.length" class="hermes-memory-answer warning">转换警告：{{ item.warnings.join('；') }}</div>
-                <div v-if="item.lastError" class="hermes-memory-answer warning">切片/向量化失败：{{ item.lastError }}</div>
-                <div v-if="item.updatedAt" class="hermes-memory-time">{{ formatMemoryTime(item.updatedAt) }}</div>
+            <article v-for="item in fileLibraryItems" :key="item.id" class="assistant-memory-item">
+              <div class="assistant-memory-content">
+                <div class="assistant-memory-scene">{{ item.sourceFormat || 'FILE' }} · {{ formatFileSize(item.fileSize) }} · {{ resolveFileLibraryStatusText(item) }}</div>
+                <div class="assistant-memory-question">{{ item.title || item.fileName || '未命名文件' }}</div>
+                <div v-if="item.description" class="assistant-memory-answer">{{ item.description }}</div>
+                <div v-if="item.warnings.length" class="assistant-memory-answer warning">转换警告：{{ item.warnings.join('；') }}</div>
+                <div v-if="item.lastError" class="assistant-memory-answer warning">切片/向量化失败：{{ item.lastError }}</div>
+                <div v-if="item.updatedAt" class="assistant-memory-time">{{ formatMemoryTime(item.updatedAt) }}</div>
               </div>
-              <div class="hermes-memory-actions">
-                <button class="hermes-memory-toggle" type="button" :disabled="fileLibraryUpdatingId === item.id" @click="handleToggleFileLibraryItem(item)">{{ item.enabled ? '停用' : '启用' }}</button>
-                <button class="hermes-memory-toggle" type="button" :disabled="fileLibraryUpdatingId === item.id" @click="handleReindexFileLibraryItem(item)">重新向量化</button>
-                <button class="hermes-memory-toggle" type="button" @click="handleDownloadFileLibraryItem(item)">下载</button>
-                <button class="hermes-memory-delete" type="button" :disabled="fileLibraryUpdatingId === item.id" @click="handleDeleteFileLibraryItem(item)">删除</button>
+              <div class="assistant-memory-actions">
+                <button class="assistant-memory-toggle" type="button" :disabled="fileLibraryUpdatingId === item.id" @click="handleToggleFileLibraryItem(item)">{{ item.enabled ? '停用' : '启用' }}</button>
+                <button class="assistant-memory-toggle" type="button" :disabled="fileLibraryUpdatingId === item.id" @click="handleReindexFileLibraryItem(item)">重新向量化</button>
+                <button class="assistant-memory-toggle" type="button" @click="handleDownloadFileLibraryItem(item)">下载</button>
+                <button class="assistant-memory-delete" type="button" :disabled="fileLibraryUpdatingId === item.id" @click="handleDeleteFileLibraryItem(item)">删除</button>
               </div>
             </article>
           </template>
-          <div v-if="!fileLibraryLoading && !fileLibraryItems.length" class="hermes-empty-state compact">
-            <div class="hermes-empty-kicker">文件库</div>
-            <div class="hermes-empty-title">暂无个人知识文件</div>
+          <div v-if="!fileLibraryLoading && !fileLibraryItems.length" class="assistant-empty-state compact">
+            <div class="assistant-empty-kicker">文件库</div>
+            <div class="assistant-empty-title">暂无个人知识文件</div>
             <p>上传 PDF、Word、PPT 或 Excel 后，GitPilot 会在普通问答中按需召回这些个人资料。</p>
           </div>
         </div>
-        <div v-if="knowledgeTab === 'fileLibrary'" class="hermes-memory-footer">
-          <button class="hermes-primary-button" type="button" :disabled="fileLibraryUploading" @click="openFileLibraryPicker">{{ fileLibraryUploading ? '上传中...' : '上传文件' }}</button>
+        <div v-if="knowledgeTab === 'fileLibrary'" class="assistant-memory-footer">
+          <button class="assistant-primary-button" type="button" :disabled="fileLibraryUploading" @click="openFileLibraryPicker">{{ fileLibraryUploading ? '上传中...' : '上传文件' }}</button>
         </div>
       </section>
 
-      <section v-if="!memoryViewVisible" class="hermes-chat-shell">
-        <div v-if="isMobileViewport" class="hermes-mobile-session-toggle-shell">
+      <section v-if="!memoryViewVisible" class="assistant-chat-shell">
+        <div v-if="isMobileViewport" class="assistant-mobile-session-toggle-shell">
           <button
-            class="hermes-mobile-session-toggle"
+            class="assistant-mobile-session-toggle"
             type="button"
             :aria-expanded="mobileSessionPanelVisible"
             :disabled="sending"
             @click="toggleMobileSessionPanel"
           >
-            <span class="hermes-mobile-session-toggle-label">
+            <span class="assistant-mobile-session-toggle-label">
               {{ mobileSessionPanelVisible ? '收起会话记录' : '打开会话记录' }}
             </span>
-            <strong class="hermes-mobile-session-toggle-value">{{ mobileSessionToggleValue }}</strong>
+            <strong class="assistant-mobile-session-toggle-value">{{ mobileSessionToggleValue }}</strong>
           </button>
         </div>
 
-        <div ref="messageScrollRef" class="hermes-body" @click="handleThinkSummaryClick" @toggle.capture="handleThinkBlockToggle" @scroll="handleMessageScroll">
-          <section v-if="!currentSessionDetail" class="hermes-empty-state">
-            <div class="hermes-empty-kicker">云端会话</div>
-            <div class="hermes-empty-title">选择历史会话，或从当前页面新建</div>
+        <div ref="messageScrollRef" class="assistant-body" @click="handleThinkSummaryClick" @toggle.capture="handleThinkBlockToggle" @scroll="handleMessageScroll">
+          <section v-if="!currentSessionDetail" class="assistant-empty-state">
+            <div class="assistant-empty-kicker">云端会话</div>
+            <div class="assistant-empty-title">选择历史会话，或从当前页面新建</div>
           </section>
 
-          <section v-if="displayPrompts.length" class="hermes-section">
-            <div class="hermes-section-title">你可以这样问</div>
-            <div class="hermes-chip-list">
-              <button v-for="prompt in displayPrompts" :key="prompt" class="hermes-chip-button" type="button" :disabled="footerDisabled" @click="handleSubmit(prompt)">
+          <section v-if="displayPrompts.length" class="assistant-section">
+            <div class="assistant-section-title">你可以这样问</div>
+            <div class="assistant-chip-list">
+              <button v-for="prompt in displayPrompts" :key="prompt" class="assistant-chip-button" type="button" :disabled="footerDisabled" @click="handleSubmit(prompt)">
                 {{ prompt }}
               </button>
             </div>
           </section>
 
-          <section v-if="detailLoading" class="hermes-muted-card">正在读取会话记录...</section>
+          <section v-if="detailLoading" class="assistant-muted-card">正在读取会话记录...</section>
 
-          <section v-if="currentMessages.length" class="hermes-message-section">
-            <div v-for="message in currentMessages" :key="message.id" class="hermes-message-row" :class="message.role">
-              <div class="hermes-message-label">
+          <section v-if="currentMessages.length" class="assistant-message-section">
+            <div v-for="message in currentMessages" :key="message.id" class="assistant-message-row" :class="message.role">
+              <div class="assistant-message-label">
                 {{ message.role === 'user' ? '我' : 'GitPilot' }}
-                <span v-if="message.role === 'assistant'" class="hermes-role-tag">协作助手</span>
+                <span v-if="message.role === 'assistant'" class="assistant-role-tag">协作助手</span>
               </div>
-              <div class="hermes-message-bubble" :class="[message.status, { 'stream-loading': shouldShowInlineStreamStatus(message) && !message.content?.trim() }]">
+              <div class="assistant-message-bubble" :class="[message.status, { 'stream-loading': shouldShowInlineStreamStatus(message) && !message.content?.trim() }]">
                 <pre v-if="message.role === 'user'">{{ message.content || '暂无内容' }}</pre>
                 <template v-else>
                   <div v-if="shouldShowAssistantMarkdown(message)" class="assistant-markdown-content" v-html="renderAssistantMessage(message)"></div>
@@ -288,25 +288,25 @@
                     <span class="assistant-thinking-text">{{ currentStreamStatusText }}</span>
                     <span class="assistant-thinking-dots"><span>.</span><span>.</span><span>.</span></span>
                   </div>
-                  <details v-if="shouldShowProcessTrace(message)" class="hermes-process-trace" :class="`is-${resolveMessageProcessTraceSummary(message).tone}`">
+                  <details v-if="shouldShowProcessTrace(message)" class="assistant-process-trace" :class="`is-${resolveMessageProcessTraceSummary(message).tone}`">
                     <summary>
-                      <span class="hermes-process-summary-main">
-                        <span class="hermes-process-status-icon">{{ resolveProcessToneIcon(resolveMessageProcessTraceSummary(message).tone) }}</span>
+                      <span class="assistant-process-summary-main">
+                        <span class="assistant-process-status-icon">{{ resolveProcessToneIcon(resolveMessageProcessTraceSummary(message).tone) }}</span>
                         <span>{{ resolveMessageProcessTraceSummary(message).title }}</span>
                       </span>
-                      <span class="hermes-process-summary-meta">{{ resolveMessageProcessTraceSummary(message).countText }}</span>
+                      <span class="assistant-process-summary-meta">{{ resolveMessageProcessTraceSummary(message).countText }}</span>
                     </summary>
-                    <div class="hermes-process-trace-body">
-                      <p class="hermes-process-description">{{ resolveMessageProcessTraceSummary(message).description }}</p>
-                      <p v-if="resolveMessageToolExecutionHint(message)" class="hermes-process-description muted">{{ resolveMessageToolExecutionHint(message) }}</p>
+                    <div class="assistant-process-trace-body">
+                      <p class="assistant-process-description">{{ resolveMessageProcessTraceSummary(message).description }}</p>
+                      <p v-if="resolveMessageToolExecutionHint(message)" class="assistant-process-description muted">{{ resolveMessageToolExecutionHint(message) }}</p>
                     </div>
                   </details>
                 </template>
-                <div v-if="message.attachments?.length" class="hermes-chip-list">
+                <div v-if="message.attachments?.length" class="assistant-chip-list">
                   <button
                     v-for="attachment in message.attachments"
                     :key="`${attachment.assetId}-${attachment.fileName}`"
-                    class="hermes-reference-item"
+                    class="assistant-reference-item"
                     type="button"
                     @click="handleDownloadAttachment(attachment)"
                   >
@@ -318,97 +318,97 @@
             </div>
           </section>
 
-          <section v-if="currentSessionDetail && !currentMessages.length && !detailLoading" class="hermes-empty-state compact">
-            <div class="hermes-empty-kicker">新会话</div>
-            <div class="hermes-empty-title">把当前上下文交给 GitPilot</div>
+          <section v-if="currentSessionDetail && !currentMessages.length && !detailLoading" class="assistant-empty-state compact">
+            <div class="assistant-empty-kicker">新会话</div>
+            <div class="assistant-empty-title">把当前上下文交给 GitPilot</div>
             <p>发送第一条问题后，会话记录会保存在云端，后续可以从左侧列表继续打开。</p>
           </section>
 
-          <section v-if="hasPendingUserConfirmation" class="hermes-confirmation-hint">
+          <section v-if="hasPendingUserConfirmation" class="assistant-confirmation-hint">
             <div>
               <strong>需要你确认后继续</strong>
               <span>{{ currentSelectionCards.length ? assistantTooltipCopy.confirmation : 'GitPilot 已准备好动作，确认后才会真正执行。' }}</span>
             </div>
           </section>
 
-          <section v-if="currentSelectionCards.length" class="hermes-section">
-            <div class="hermes-section-title">需要你确认</div>
-            <article v-for="(selectionCard, cardIndex) in currentSelectionCards" :key="`${selectionCard.slot}-${cardIndex}`" class="hermes-card">
+          <section v-if="currentSelectionCards.length" class="assistant-section">
+            <div class="assistant-section-title">需要你确认</div>
+            <article v-for="(selectionCard, cardIndex) in currentSelectionCards" :key="`${selectionCard.slot}-${cardIndex}`" class="assistant-card">
               <strong>{{ selectionCard.title }}</strong>
               <span>{{ selectionCard.description }}</span>
-              <div class="hermes-option-list">
-                <article v-for="(option, optionIndex) in selectionCard.options" :key="`${option.entityType}-${option.entityId ?? optionIndex}`" class="hermes-option-card">
+              <div class="assistant-option-list">
+                <article v-for="(option, optionIndex) in selectionCard.options" :key="`${option.entityType}-${option.entityId ?? optionIndex}`" class="assistant-option-card">
                   <div>
                     <strong>{{ option.title }}</strong>
                     <span>{{ option.subtitle }}</span>
                     <small v-if="option.matchReasons.length">{{ option.matchReasons.join(' / ') }}</small>
                   </div>
-                  <div class="hermes-inline-actions">
-                    <button v-if="option.route" class="hermes-inline-button secondary" type="button" @click="handleOpenReference(option.route)">查看</button>
-                    <button class="hermes-inline-button" type="button" :disabled="footerDisabled || option.entityId == null" @click="handleSelectOption(selectionCard, option)">选择此项</button>
+                  <div class="assistant-inline-actions">
+                    <button v-if="option.route" class="assistant-inline-button secondary" type="button" @click="handleOpenReference(option.route)">查看</button>
+                    <button class="assistant-inline-button" type="button" :disabled="footerDisabled || option.entityId == null" @click="handleSelectOption(selectionCard, option)">选择此项</button>
                   </div>
                 </article>
               </div>
             </article>
           </section>
 
-          <section v-if="currentActions.length" class="hermes-section">
-            <div class="hermes-section-title">可执行动作</div>
-            <article v-for="(action, index) in currentActions" :key="`${action.type}-${index}`" class="hermes-action-card">
-              <div class="hermes-action-copy">
+          <section v-if="currentActions.length" class="assistant-section">
+            <div class="assistant-section-title">可执行动作</div>
+            <article v-for="(action, index) in currentActions" :key="`${action.type}-${index}`" class="assistant-action-card">
+              <div class="assistant-action-copy">
                 <strong>{{ action.title }}</strong>
                 <span>{{ action.description }}</span>
               </div>
-              <button class="hermes-inline-button" type="button" :disabled="footerDisabled || executingActionKey === actionKey(action, index) || executedActionKeys.has(actionKey(action, index))" @click="handleConfirmAction(action, index)">
+              <button class="assistant-inline-button" type="button" :disabled="footerDisabled || executingActionKey === actionKey(action, index) || executedActionKeys.has(actionKey(action, index))" @click="handleConfirmAction(action, index)">
                 {{ executedActionKeys.has(actionKey(action, index)) ? '已执行' : (executingActionKey === actionKey(action, index) ? '执行中...' : '确认执行') }}
               </button>
             </article>
           </section>
 
-          <section v-if="currentReferences.length" class="hermes-section">
-            <div v-if="wikiReferences.length" class="hermes-section-title">相关 Wiki 页面</div>
-            <div v-if="wikiReferences.length" class="hermes-chip-list">
+          <section v-if="currentReferences.length" class="assistant-section">
+            <div v-if="wikiReferences.length" class="assistant-section-title">相关 Wiki 页面</div>
+            <div v-if="wikiReferences.length" class="assistant-chip-list">
               <button
                 v-for="reference in wikiReferences"
                 :key="`wiki-${reference.id ?? reference.title}`"
-                class="hermes-reference-item"
+                class="assistant-reference-item"
                 type="button"
                 :title="formatReferenceDisplayText(reference)"
                 @click="handleOpenReference(reference.route)"
               >
-                <span v-if="shouldShowReferenceLabel(reference)" class="hermes-reference-label">{{ formatReferenceTypeLabel(reference.type) }}:</span>
-                <strong class="hermes-reference-title">{{ reference.title }}</strong>
+                <span v-if="shouldShowReferenceLabel(reference)" class="assistant-reference-label">{{ formatReferenceTypeLabel(reference.type) }}:</span>
+                <strong class="assistant-reference-title">{{ reference.title }}</strong>
               </button>
             </div>
 
-            <div class="hermes-section-title">引用来源</div>
-            <div class="hermes-chip-list">
+            <div class="assistant-section-title">引用来源</div>
+            <div class="assistant-chip-list">
               <button
                 v-for="reference in nonWikiReferences"
                 :key="`${reference.type}-${reference.id ?? reference.title}`"
-                class="hermes-reference-item"
+                class="assistant-reference-item"
                 type="button"
                 :title="formatReferenceDisplayText(reference)"
                 @click="handleOpenReference(reference.route)"
               >
-                <span v-if="shouldShowReferenceLabel(reference)" class="hermes-reference-label">{{ formatReferenceTypeLabel(reference.type) }}:</span>
-                <strong class="hermes-reference-title">{{ reference.title }}</strong>
+                <span v-if="shouldShowReferenceLabel(reference)" class="assistant-reference-label">{{ formatReferenceTypeLabel(reference.type) }}:</span>
+                <strong class="assistant-reference-title">{{ reference.title }}</strong>
               </button>
             </div>
           </section>
 
-          <section v-if="isDebugMode && currentDebug" class="hermes-section">
-            <div class="hermes-section-title">调试轨迹</div>
-            <pre class="hermes-debug-pre">{{ formatDebugInfo(currentDebug) }}</pre>
+          <section v-if="isDebugMode && currentDebug" class="assistant-section">
+            <div class="assistant-section-title">调试轨迹</div>
+            <pre class="assistant-debug-pre">{{ formatDebugInfo(currentDebug) }}</pre>
           </section>
         </div>
 
-        <div class="hermes-footer">
-          <div class="hermes-attachment-bar">
+        <div class="assistant-footer">
+          <div class="assistant-attachment-bar">
             <input ref="fileInputRef" type="file" multiple accept=".pdf,.docx,.pptx,.xlsx" style="display: none" @change="handleFileInputChange" />
-            <button class="hermes-inline-button secondary" type="button" :disabled="footerDisabled" @click="openFilePicker">添加附件</button>
+            <button class="assistant-inline-button secondary" type="button" :disabled="footerDisabled" @click="openFilePicker">添加附件</button>
             <button
-              class="hermes-inline-button secondary hermes-voice-button"
+              class="assistant-inline-button secondary assistant-voice-button"
               type="button"
               :disabled="voiceButtonDisabled"
               :class="{ active: recording }"
@@ -416,24 +416,24 @@
             >
               {{ transcribing ? '转写中...' : recording ? '结束录音' : '语音输入' }}
             </button>
-            <div v-if="recording" class="hermes-voice-meter" :class="{ active: recording }">
-              <div class="hermes-voice-meter-track" aria-hidden="true">
-                <div class="hermes-voice-meter-fill" :style="{ width: `${voiceLevelBarWidth}%` }"></div>
+            <div v-if="recording" class="assistant-voice-meter" :class="{ active: recording }">
+              <div class="assistant-voice-meter-track" aria-hidden="true">
+                <div class="assistant-voice-meter-fill" :style="{ width: `${voiceLevelBarWidth}%` }"></div>
               </div>
-              <span class="hermes-voice-meter-label">{{ voiceLevelLabel }}</span>
+              <span class="assistant-voice-meter-label">{{ voiceLevelLabel }}</span>
             </div>
           </div>
-          <div v-if="pendingFiles.length" class="hermes-pending-file-list">
-            <div v-for="file in pendingFiles" :key="`${file.name}-${file.size}`" class="hermes-pending-file-chip">
-              <span class="hermes-pending-file-name">{{ file.name }}</span>
-              <button class="hermes-pending-file-remove-button" type="button" :disabled="footerDisabled" @click="removePendingFile(file)">移除</button>
+          <div v-if="pendingFiles.length" class="assistant-pending-file-list">
+            <div v-for="file in pendingFiles" :key="`${file.name}-${file.size}`" class="assistant-pending-file-chip">
+              <span class="assistant-pending-file-name">{{ file.name }}</span>
+              <button class="assistant-pending-file-remove-button" type="button" :disabled="footerDisabled" @click="removePendingFile(file)">移除</button>
             </div>
           </div>
-          <div v-if="slashMenuVisible" class="hermes-slash-menu">
+          <div v-if="slashMenuVisible" class="assistant-slash-menu">
             <button
               v-for="(command, index) in slashCommands"
               :key="command.command"
-              class="hermes-slash-item"
+              class="assistant-slash-item"
               :class="{ active: activeSlashCommandIndex === index }"
               type="button"
               :aria-selected="activeSlashCommandIndex === index"
@@ -444,17 +444,17 @@
               <span>{{ command.label }}</span>
             </button>
           </div>
-          <div v-if="selectedSlashCommand" class="hermes-selected-skill">
-            <span class="hermes-selected-skill-kicker">Skill</span>
+          <div v-if="selectedSlashCommand" class="assistant-selected-skill">
+            <span class="assistant-selected-skill-kicker">Skill</span>
             <strong>{{ selectedSlashCommand }}</strong>
             <span>{{ resolveSlashCommandLabel(selectedSlashCommand) }}</span>
             <button type="button" title="移除已选 Skill" @click="clearSelectedSlashCommand">×</button>
           </div>
           <el-input ref="questionInputRef" v-model="draftQuestion" type="textarea" :rows="3" resize="none" :disabled="footerDisabled" :placeholder="footerPlaceholder" @keydown="handleQuestionInputKeydown" />
-          <div class="hermes-footer-actions">
+          <div class="assistant-footer-actions">
             <span>{{ footerTip }}</span>
-            <button v-if="sending" class="hermes-ghost-button danger" type="button" :disabled="!activeStreamAbort" @click="handleStopStream">停止</button>
-            <button v-else class="hermes-send-button" type="button" :disabled="footerDisabled" @click="handleSubmit()">发送</button>
+            <button v-if="sending" class="assistant-ghost-button danger" type="button" :disabled="!activeStreamAbort" @click="handleStopStream">停止</button>
+            <button v-else class="assistant-send-button" type="button" :disabled="footerDisabled" @click="handleSubmit()">发送</button>
           </div>
         </div>
       </section>
@@ -544,8 +544,8 @@ const executingActionKey = ref('')
 // 已成功执行过的动作 key 集合，用于把按钮从"确认执行"切换到"已执行"，
 // 避免用户在抽屉中重复触发同一个写入动作。
 const executedActionKeys = ref<Set<string>>(new Set())
-const ASSISTANT_DEBUG_STORAGE_KEY = 'git-ai-club:hermes:debug'
-const ASSISTANT_SELECTED_SESSION_STORAGE_KEY = 'git-ai-club:hermes:selected-session'
+const ASSISTANT_DEBUG_STORAGE_KEY = 'git-ai-club:assistant:debug'
+const ASSISTANT_SELECTED_SESSION_STORAGE_KEY = 'git-ai-club:assistant:selected-session'
 const SESSION_PAGE_SIZE = 20
 const isDebugMode = ref(false)
 const currentStreamStatus = ref<AssistantStreamStatusEvent | null>(null)
@@ -1322,7 +1322,7 @@ const executeAction = async (action: { type: string; title: string; description:
     executingActionKey.value = key
     const params = action.params || {}
     if (action.type === 'CREATE_EXECUTION_TASK') {
-      const executionTask = await createExecutionTask({ scenarioCode: String(params.scenarioCode || ''), projectId: Number(params.projectId), workItemId: params.workItemId == null ? null : Number(params.workItemId), triggerSource: String(params.triggerSource || 'HERMES'), inputPayload: (params.inputPayload || {}) as Record<string, unknown> })
+      const executionTask = await createExecutionTask({ scenarioCode: String(params.scenarioCode || ''), projectId: Number(params.projectId), workItemId: params.workItemId == null ? null : Number(params.workItemId), triggerSource: String(params.triggerSource || 'ASSISTANT'), inputPayload: (params.inputPayload || {}) as Record<string, unknown> })
       markExecuted()
       // 保留抽屉打开状态，让按钮直接呈现"已执行"，由用户决定是否查看任务详情。
       ElMessage.success(`执行任务已创建（#${executionTask.id}）`)
@@ -2147,7 +2147,7 @@ async function handleVoiceRecorderStop(sourceSampleRate: number) {
     const voiceBlob = buildVoiceWavBlob(sourceSampleRate, collectedChunks)
     const voiceFile = new File(
       [voiceBlob],
-      `hermes-voice-${Date.now()}.wav`,
+      `assistant-voice-${Date.now()}.wav`,
       { type: 'audio/wav' }
     )
     const transcribedText = (await transcribeAssistantSpeech(voiceFile)).trim()
@@ -2411,23 +2411,23 @@ function persistSelectedSessionId(sessionId: number | null) {
 </script>
 
 <style scoped>
-.hermes-head,
-.hermes-current-session-card,
-.hermes-footer-actions,
-.hermes-option-card,
-.hermes-action-card {
+.assistant-head,
+.assistant-current-session-card,
+.assistant-footer-actions,
+.assistant-option-card,
+.assistant-action-card {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
 }
 
-.hermes-head {
+.assistant-head {
   width: 100%;
   align-items: center;
 }
 
-.hermes-head-left {
+.assistant-head-left {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -2435,14 +2435,14 @@ function persistSelectedSessionId(sessionId: number | null) {
   min-width: 0;
 }
 
-.hermes-head-right {
+.assistant-head-right {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-shrink: 0;
 }
 
-.hermes-back-button {
+.assistant-back-button {
   padding: 4px 12px;
   border: 1px solid rgba(var(--app-outline-rgb), 0.2);
   border-radius: 6px;
@@ -2453,11 +2453,11 @@ function persistSelectedSessionId(sessionId: number | null) {
   transition: all 0.2s;
 }
 
-.hermes-back-button:hover {
+.assistant-back-button:hover {
   background: rgba(var(--app-outline-rgb), 0.06);
 }
 
-.hermes-memory-entry {
+.assistant-memory-entry {
   padding: 4px 14px;
   border: 1px solid rgba(var(--app-primary-rgb), 0.3);
   border-radius: 6px;
@@ -2469,17 +2469,17 @@ function persistSelectedSessionId(sessionId: number | null) {
   transition: all 0.2s;
 }
 
-.hermes-memory-entry:hover {
+.assistant-memory-entry:hover {
   background: rgba(var(--app-primary-rgb), 0.08);
   border-color: rgba(var(--app-primary-rgb), 0.5);
 }
 
-.hermes-view-toggle-button {
+.assistant-view-toggle-button {
   min-width: 74px;
   text-align: center;
 }
 
-.hermes-memory-view {
+.assistant-memory-view {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
@@ -2487,7 +2487,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   overflow: hidden;
 }
 
-.hermes-memory-header {
+.assistant-memory-header {
   padding: 12px 18px;
   border-bottom: 1px solid rgba(var(--app-outline-rgb), 0.1);
   display: flex;
@@ -2495,17 +2495,17 @@ function persistSelectedSessionId(sessionId: number | null) {
   gap: 10px;
 }
 
-.hermes-memory-tabs {
+.assistant-memory-tabs {
   display: flex;
   gap: 8px;
 }
 
-.hermes-memory-tabs .hermes-tab {
+.assistant-memory-tabs .assistant-tab {
   flex: 1;
   text-align: center;
 }
 
-.hermes-memory-body {
+.assistant-memory-body {
   flex: 1 1 auto;
   min-height: 0;
   overflow: auto;
@@ -2516,31 +2516,31 @@ function persistSelectedSessionId(sessionId: number | null) {
   scrollbar-gutter: stable;
 }
 
-.hermes-memory-section {
+.assistant-memory-section {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.hermes-memory-section-head {
+.assistant-memory-section-head {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.hermes-memory-section-title {
+.assistant-memory-section-title {
   color: #0f172a;
   font-size: 14px;
   font-weight: 700;
 }
 
-.hermes-memory-section-caption {
+.assistant-memory-section-caption {
   color: #64748b;
   font-size: 12px;
   line-height: 1.5;
 }
 
-.hermes-memory-inline-empty {
+.assistant-memory-inline-empty {
   padding: 12px 14px;
   border: 1px dashed rgba(var(--app-outline-rgb), 0.18);
   border-radius: 10px;
@@ -2549,7 +2549,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   background: rgba(var(--app-primary-rgb), 0.03);
 }
 
-.hermes-memory-fact-item {
+.assistant-memory-fact-item {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -2559,7 +2559,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
 }
 
-.hermes-memory-fact-summary {
+.assistant-memory-fact-summary {
   color: #0f172a;
   font-size: 13px;
   font-weight: 600;
@@ -2568,13 +2568,13 @@ function persistSelectedSessionId(sessionId: number | null) {
   word-break: break-word;
 }
 
-.hermes-memory-fact-meta {
+.assistant-memory-fact-meta {
   color: #475569;
   font-size: 12px;
   line-height: 1.5;
 }
 
-.hermes-memory-fact-footer {
+.assistant-memory-fact-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -2582,14 +2582,14 @@ function persistSelectedSessionId(sessionId: number | null) {
   flex-wrap: wrap;
 }
 
-.hermes-memory-fact-tags {
+.assistant-memory-fact-tags {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
 }
 
-.hermes-memory-tag {
+.assistant-memory-tag {
   display: inline-flex;
   align-items: center;
   padding: 2px 8px;
@@ -2600,36 +2600,36 @@ function persistSelectedSessionId(sessionId: number | null) {
   font-weight: 600;
 }
 
-.hermes-memory-footer {
+.assistant-memory-footer {
   padding: 12px 18px;
   border-top: 1px solid rgba(var(--app-outline-rgb), 0.1);
   display: flex;
   gap: 10px;
 }
 
-.hermes-memory-footer .hermes-primary-button {
+.assistant-memory-footer .assistant-primary-button {
   flex: 1;
 }
 
-.hermes-memory-footer .hermes-danger-button {
+.assistant-memory-footer .assistant-danger-button {
   flex: 0 0 auto;
   width: auto;
 }
 
-.hermes-title {
+.assistant-title {
   color: var(--app-text);
   font-family: var(--app-font-heading);
   font-size: 24px;
   font-weight: 900;
 }
 
-.hermes-title-wrap {
+.assistant-title-wrap {
   display: inline-flex;
   align-items: center;
   gap: 10px;
 }
 
-.hermes-help-button {
+.assistant-help-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2644,34 +2644,34 @@ function persistSelectedSessionId(sessionId: number | null) {
   transition: background-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
-.hermes-help-button:hover {
+.assistant-help-button:hover {
   background: rgba(var(--app-primary-rgb), 0.16);
   box-shadow: inset 0 0 0 1px rgba(var(--app-primary-rgb), 0.22);
   transform: translateY(-1px);
 }
 
-.hermes-help-button :deep(svg) {
+.assistant-help-button :deep(svg) {
   width: 14px;
   height: 14px;
 }
 
-.hermes-help-tooltip {
+.assistant-help-tooltip {
   max-width: 280px;
   color: #334155;
   font-size: 12px;
   line-height: 1.65;
 }
 
-.hermes-help-tooltip p {
+.assistant-help-tooltip p {
   margin: 0;
 }
 
-.hermes-help-tooltip p + p {
+.assistant-help-tooltip p + p {
   margin-top: 8px;
 }
 
-.hermes-subtitle,
-.hermes-section-title {
+.assistant-subtitle,
+.assistant-section-title {
   color: #64748b;
   font-size: 11px;
   font-weight: 800;
@@ -2679,41 +2679,41 @@ function persistSelectedSessionId(sessionId: number | null) {
   text-transform: uppercase;
 }
 
-.hermes-confirmation-hint {
+.assistant-confirmation-hint {
   padding: 12px 14px;
   border: 1px solid rgba(20, 184, 166, 0.24);
   border-radius: 16px;
   background: rgba(240, 253, 250, 0.9);
 }
 
-.hermes-confirmation-hint div {
+.assistant-confirmation-hint div {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.hermes-confirmation-hint strong {
+.assistant-confirmation-hint strong {
   color: #0f766e;
   font-size: 13px;
   font-weight: 900;
 }
 
-.hermes-confirmation-hint span {
+.assistant-confirmation-hint span {
   color: #64748b;
   font-size: 12px;
   line-height: 1.6;
 }
 
-.hermes-close-button,
-.hermes-primary-button,
-.hermes-tab,
-.hermes-session-item,
-.hermes-load-more-button,
-.hermes-ghost-button,
-.hermes-chip-button,
-.hermes-inline-button,
-.hermes-send-button,
-.hermes-reference-item {
+.assistant-close-button,
+.assistant-primary-button,
+.assistant-tab,
+.assistant-session-item,
+.assistant-load-more-button,
+.assistant-ghost-button,
+.assistant-chip-button,
+.assistant-inline-button,
+.assistant-send-button,
+.assistant-reference-item {
   border: 0;
   appearance: none;
   -webkit-appearance: none;
@@ -2721,12 +2721,12 @@ function persistSelectedSessionId(sessionId: number | null) {
   font: inherit;
 }
 
-.hermes-close-button,
-.hermes-ghost-button,
-.hermes-tab,
-.hermes-chip-button,
-.hermes-reference-item,
-.hermes-load-more-button {
+.assistant-close-button,
+.assistant-ghost-button,
+.assistant-tab,
+.assistant-chip-button,
+.assistant-reference-item,
+.assistant-load-more-button {
   padding: 8px 12px;
   border-radius: 999px;
   background: #eef2f7;
@@ -2735,7 +2735,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   font-weight: 800;
 }
 
-.hermes-tab {
+.assistant-tab {
   display: inline-flex;
   flex: 1 1 0;
   align-items: center;
@@ -2743,9 +2743,9 @@ function persistSelectedSessionId(sessionId: number | null) {
   text-align: center;
 }
 
-.hermes-primary-button,
-.hermes-send-button,
-.hermes-inline-button {
+.assistant-primary-button,
+.assistant-send-button,
+.assistant-inline-button {
   padding: 10px 14px;
   border-radius: 999px;
   background: #191c1d;
@@ -2754,11 +2754,11 @@ function persistSelectedSessionId(sessionId: number | null) {
   font-weight: 800;
 }
 
-.hermes-primary-button.compact {
+.assistant-primary-button.compact {
   align-self: flex-start;
 }
 
-.hermes-panel {
+.assistant-panel {
   position: relative;
   display: grid;
   grid-template-columns: 164px minmax(0, 1fr);
@@ -2769,8 +2769,8 @@ function persistSelectedSessionId(sessionId: number | null) {
   background: #f3f4f5;
 }
 
-.hermes-session-sidebar {
-  --hermes-session-scroll-gutter: 14px;
+.assistant-session-sidebar {
+  --assistant-session-scroll-gutter: 14px;
   position: relative;
   display: flex;
   flex-direction: column;
@@ -2783,13 +2783,13 @@ function persistSelectedSessionId(sessionId: number | null) {
   background: rgba(248, 250, 252, 0.95);
 }
 
-.hermes-mobile-session-backdrop,
-.hermes-mobile-session-head,
-.hermes-mobile-session-toggle-shell {
+.assistant-mobile-session-backdrop,
+.assistant-mobile-session-head,
+.assistant-mobile-session-toggle-shell {
   display: none;
 }
 
-.hermes-session-content {
+.assistant-session-content {
   width: 100%;
   height: 100%;
   min-height: 0;
@@ -2799,17 +2799,17 @@ function persistSelectedSessionId(sessionId: number | null) {
   flex-direction: column;
 }
 
-.hermes-session-toolbar {
+.assistant-session-toolbar {
   display: flex;
   flex-direction: column;
   gap: 12px;
   width: 100%;
   box-sizing: border-box;
-  padding: 10px var(--hermes-session-scroll-gutter) 10px 0;
+  padding: 10px var(--assistant-session-scroll-gutter) 10px 0;
   border-bottom: 1px solid rgba(var(--app-outline-rgb), 0.1);
 }
 
-.hermes-session-tabs {
+.assistant-session-tabs {
   display: flex;
   justify-content: center;
   align-items: center;
@@ -2817,16 +2817,16 @@ function persistSelectedSessionId(sessionId: number | null) {
   width: 100%;
 }
 
-.hermes-tab.active {
+.assistant-tab.active {
   background: rgba(var(--app-primary-rgb), 0.12);
   color: var(--app-primary);
 }
 
-.hermes-memory-search {
+.assistant-memory-search {
   width: 100%;
 }
 
-.hermes-memory-search-input {
+.assistant-memory-search-input {
   width: 100%;
   box-sizing: border-box;
   padding: 8px 14px;
@@ -2838,11 +2838,11 @@ function persistSelectedSessionId(sessionId: number | null) {
   background: #fff;
 }
 
-.hermes-memory-search-input:focus {
+.assistant-memory-search-input:focus {
   border-color: rgba(var(--app-primary-rgb), 0.5);
 }
 
-.hermes-memory-item {
+.assistant-memory-item {
   width: 100%;
   box-sizing: border-box;
   display: flex;
@@ -2855,7 +2855,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.04);
 }
 
-.hermes-memory-content {
+.assistant-memory-content {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
@@ -2863,7 +2863,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   gap: 6px;
 }
 
-.hermes-memory-scene {
+.assistant-memory-scene {
   display: inline-block;
   align-self: flex-start;
   padding: 1px 8px;
@@ -2874,7 +2874,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   font-weight: 600;
 }
 
-.hermes-memory-question {
+.assistant-memory-question {
   color: #0f172a;
   font-size: 13px;
   font-weight: 600;
@@ -2882,7 +2882,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   word-break: break-all;
 }
 
-.hermes-memory-answer-label {
+.assistant-memory-answer-label {
   color: #64748b;
   font-size: 11px;
   font-weight: 600;
@@ -2890,7 +2890,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   margin-top: 4px;
 }
 
-.hermes-memory-answer {
+.assistant-memory-answer {
   color: #475569;
   font-size: 12px;
   line-height: 1.6;
@@ -2898,12 +2898,12 @@ function persistSelectedSessionId(sessionId: number | null) {
   word-break: break-all;
 }
 
-.hermes-memory-time {
+.assistant-memory-time {
   color: #94a3b8;
   font-size: 11px;
 }
 
-.hermes-memory-actions {
+.assistant-memory-actions {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -2911,7 +2911,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   align-items: flex-end;
 }
 
-.hermes-memory-toggle {
+.assistant-memory-toggle {
   padding: 2px 10px;
   border: 1px solid rgba(var(--app-primary-rgb), 0.3);
   border-radius: 6px;
@@ -2922,12 +2922,12 @@ function persistSelectedSessionId(sessionId: number | null) {
   transition: all 0.2s;
 }
 
-.hermes-memory-toggle:hover {
+.assistant-memory-toggle:hover {
   background: rgba(var(--app-primary-rgb), 0.08);
   border-color: rgba(var(--app-primary-rgb), 0.5);
 }
 
-.hermes-memory-delete {
+.assistant-memory-delete {
   flex-shrink: 0;
   padding: 4px 10px;
   border: 1px solid rgba(239, 68, 68, 0.3);
@@ -2939,12 +2939,12 @@ function persistSelectedSessionId(sessionId: number | null) {
   transition: all 0.2s;
 }
 
-.hermes-memory-delete:hover {
+.assistant-memory-delete:hover {
   background: rgba(239, 68, 68, 0.08);
   border-color: rgba(239, 68, 68, 0.5);
 }
 
-.hermes-danger-button {
+.assistant-danger-button {
   width: 100%;
   padding: 8px 12px;
   border: 1px solid rgba(239, 68, 68, 0.3);
@@ -2957,34 +2957,34 @@ function persistSelectedSessionId(sessionId: number | null) {
   transition: all 0.2s;
 }
 
-.hermes-danger-button:hover {
+.assistant-danger-button:hover {
   background: rgba(239, 68, 68, 0.08);
   border-color: rgba(239, 68, 68, 0.5);
 }
 
-.hermes-danger-button:disabled {
+.assistant-danger-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }
 
-.hermes-session-list,
-.hermes-body {
+.assistant-session-list,
+.assistant-body {
   overflow: auto;
   display: flex;
   flex-direction: column;
 }
 
-.hermes-session-list {
+.assistant-session-list {
   flex: 1 1 auto;
   gap: 6px;
   width: 100%;
   box-sizing: border-box;
-  padding: 8px var(--hermes-session-scroll-gutter) 8px 0;
+  padding: 8px var(--assistant-session-scroll-gutter) 8px 0;
   align-items: stretch;
   scrollbar-gutter: stable;
 }
 
-.hermes-session-item {
+.assistant-session-item {
   width: 100%;
   box-sizing: border-box;
   display: flex;
@@ -2997,24 +2997,24 @@ function persistSelectedSessionId(sessionId: number | null) {
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.04);
 }
 
-.hermes-session-item.active {
+.assistant-session-item.active {
   box-shadow: inset 0 0 0 2px rgba(var(--app-primary-rgb), 0.22);
 }
 
-.hermes-session-main,
-.hermes-session-more-button {
+.assistant-session-main,
+.assistant-session-more-button {
   border: 0;
   background: transparent;
   padding: 0;
 }
 
-.hermes-session-main {
+.assistant-session-main {
   flex: 1 1 auto;
   min-width: 0;
   text-align: left;
 }
 
-.hermes-session-main strong {
+.assistant-session-main strong {
   display: block;
   overflow: hidden;
   color: #0f172a;
@@ -3023,7 +3023,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   font-size: 13px;
 }
 
-.hermes-session-more-button {
+.assistant-session-more-button {
   flex: 0 0 auto;
   width: 28px;
   height: 28px;
@@ -3034,22 +3034,22 @@ function persistSelectedSessionId(sessionId: number | null) {
   color: #94a3b8;
 }
 
-.hermes-session-more-button:hover {
+.assistant-session-more-button:hover {
   background: rgba(226, 232, 240, 0.8);
   color: #334155;
 }
 
-.hermes-session-more-icon {
+.assistant-session-more-icon {
   font-size: 16px;
   transform: rotate(90deg);
 }
 
-.hermes-muted-card {
+.assistant-muted-card {
   color: #94a3b8;
   font-size: 11px;
 }
 
-.hermes-chat-shell {
+.assistant-chat-shell {
   min-width: 0;
   min-height: 0;
   overflow: hidden;
@@ -3057,7 +3057,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   flex-direction: column;
 }
 
-.hermes-mobile-session-toggle {
+.assistant-mobile-session-toggle {
   width: 100%;
   display: flex;
   align-items: center;
@@ -3078,8 +3078,8 @@ function persistSelectedSessionId(sessionId: number | null) {
   font: inherit;
 }
 
-.hermes-mobile-session-toggle-label,
-.hermes-mobile-session-title {
+.assistant-mobile-session-toggle-label,
+.assistant-mobile-session-title {
   color: #64748b;
   font-size: 11px;
   font-weight: 800;
@@ -3087,21 +3087,21 @@ function persistSelectedSessionId(sessionId: number | null) {
   text-transform: uppercase;
 }
 
-.hermes-mobile-session-toggle-value {
+.assistant-mobile-session-toggle-value {
   color: #0f172a;
   font-size: 13px;
   font-weight: 900;
   white-space: nowrap;
 }
 
-.hermes-mobile-session-head {
+.assistant-mobile-session-head {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 2px 0 12px;
 }
 
-.hermes-mobile-session-close {
+.assistant-mobile-session-close {
   min-height: 30px;
   padding: 0 12px;
   border: 0;
@@ -3112,50 +3112,50 @@ function persistSelectedSessionId(sessionId: number | null) {
   font-weight: 800;
 }
 
-.hermes-body {
+.assistant-body {
   flex: 1 1 auto;
   min-height: 0;
   gap: 16px;
   padding: 12px 18px 10px;
 }
 
-.hermes-current-session-card,
-.hermes-empty-state,
-.hermes-card,
-.hermes-action-card,
-.hermes-muted-card {
+.assistant-current-session-card,
+.assistant-empty-state,
+.assistant-card,
+.assistant-action-card,
+.assistant-muted-card {
   padding: 14px;
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.96);
 }
 
-.hermes-current-session-copy,
-.hermes-card,
-.hermes-section,
-.hermes-option-list {
+.assistant-current-session-copy,
+.assistant-card,
+.assistant-section,
+.assistant-option-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
   min-width: 0;
 }
 
-.hermes-current-session-copy strong,
-.hermes-empty-title {
+.assistant-current-session-copy strong,
+.assistant-empty-title {
   color: #0f172a;
   font-family: var(--app-font-heading);
   font-size: 18px;
   font-weight: 900;
 }
 
-.hermes-current-session-actions,
-.hermes-inline-actions,
-.hermes-chip-list {
+.assistant-current-session-actions,
+.assistant-inline-actions,
+.assistant-chip-list {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.hermes-action-copy {
+.assistant-action-copy {
   display: flex;
   flex: 1 1 auto;
   flex-direction: column;
@@ -3163,21 +3163,21 @@ function persistSelectedSessionId(sessionId: number | null) {
   min-width: 0;
 }
 
-.hermes-action-copy strong {
+.assistant-action-copy strong {
   display: block;
   color: #0f172a;
   font-size: 14px;
   line-height: 1.45;
 }
 
-.hermes-reference-label {
+.assistant-reference-label {
   flex: 0 0 auto;
   color: #64748b;
   font-size: 11px;
   font-weight: 700;
 }
 
-.hermes-reference-item {
+.assistant-reference-item {
   display: inline-flex;
   max-width: min(100%, 420px);
   min-width: 0;
@@ -3187,7 +3187,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   white-space: nowrap;
 }
 
-.hermes-reference-title {
+.assistant-reference-title {
   flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
@@ -3198,21 +3198,21 @@ function persistSelectedSessionId(sessionId: number | null) {
   font-weight: 800;
 }
 
-.hermes-attachment-bar {
+.assistant-attachment-bar {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
 
-.hermes-attachment-tip {
+.assistant-attachment-tip {
   color: #94a3b8;
   font-size: 10px;
   font-weight: 600;
   line-height: 1.4;
 }
 
-.hermes-voice-meter {
+.assistant-voice-meter {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -3223,11 +3223,11 @@ function persistSelectedSessionId(sessionId: number | null) {
   background: rgba(15, 23, 42, 0.04);
 }
 
-.hermes-voice-meter.active {
+.assistant-voice-meter.active {
   background: rgba(15, 118, 110, 0.08);
 }
 
-.hermes-voice-meter-track {
+.assistant-voice-meter-track {
   position: relative;
   flex: 1 1 auto;
   min-width: 120px;
@@ -3239,7 +3239,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   box-shadow: inset 0 0 0 1px rgba(var(--app-outline-rgb), 0.08);
 }
 
-.hermes-voice-meter-track::after {
+.assistant-voice-meter-track::after {
   content: '';
   position: absolute;
   inset: 0;
@@ -3254,7 +3254,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   pointer-events: none;
 }
 
-.hermes-voice-meter-fill {
+.assistant-voice-meter-fill {
   height: 100%;
   min-width: 6px;
   border-radius: inherit;
@@ -3263,7 +3263,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   transition: width 0.08s linear, box-shadow 0.12s ease;
 }
 
-.hermes-voice-meter-label {
+.assistant-voice-meter-label {
   flex: 0 0 auto;
   color: #64748b;
   font-size: 10px;
@@ -3272,18 +3272,18 @@ function persistSelectedSessionId(sessionId: number | null) {
   white-space: nowrap;
 }
 
-.hermes-voice-button.active {
+.assistant-voice-button.active {
   background: #93000a;
   color: #fff;
 }
 
-.hermes-pending-file-list {
+.assistant-pending-file-list {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.hermes-pending-file-chip {
+.assistant-pending-file-chip {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -3294,7 +3294,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   color: #334155;
 }
 
-.hermes-pending-file-name {
+.assistant-pending-file-name {
   overflow: hidden;
   max-width: 220px;
   color: #334155;
@@ -3304,7 +3304,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   white-space: nowrap;
 }
 
-.hermes-pending-file-remove-button {
+.assistant-pending-file-remove-button {
   flex: 0 0 auto;
   border: 0;
   appearance: none;
@@ -3317,22 +3317,22 @@ function persistSelectedSessionId(sessionId: number | null) {
   line-height: 1;
 }
 
-.hermes-pending-file-remove-button:hover {
+.assistant-pending-file-remove-button:hover {
   color: #64748b;
 }
 
-.hermes-ghost-button.primary,
-.hermes-inline-button {
+.assistant-ghost-button.primary,
+.assistant-inline-button {
   background: #0f766e;
   color: #fff;
 }
 
-.hermes-ghost-button.danger {
+.assistant-ghost-button.danger {
   background: rgba(255, 218, 214, 0.86);
   color: #93000a;
 }
 
-.hermes-empty-kicker {
+.assistant-empty-kicker {
   color: #8b5e34;
   font-size: 11px;
   font-weight: 800;
@@ -3340,49 +3340,49 @@ function persistSelectedSessionId(sessionId: number | null) {
   text-transform: uppercase;
 }
 
-.hermes-empty-state p,
-.hermes-card span,
-.hermes-action-card span,
-.hermes-option-card span {
+.assistant-empty-state p,
+.assistant-card span,
+.assistant-action-card span,
+.assistant-option-card span {
   margin: 0;
   color: #64748b;
   font-size: 13px;
   line-height: 1.7;
 }
 
-.hermes-option-card {
+.assistant-option-card {
   align-items: center;
   padding: 12px;
   border-radius: 14px;
   background: #eef2f7;
 }
 
-.hermes-message-section {
+.assistant-message-section {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
 
-.hermes-message-row {
+.assistant-message-row {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.hermes-message-row.user {
+.assistant-message-row.user {
   align-items: flex-end;
 }
 
-.hermes-message-row.assistant {
+.assistant-message-row.assistant {
   align-items: flex-start;
 }
 
-.hermes-message-row.assistant .hermes-message-bubble {
+.assistant-message-row.assistant .assistant-message-bubble {
   width: 100%;
   box-sizing: border-box;
 }
 
-.hermes-message-label {
+.assistant-message-label {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -3391,7 +3391,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   font-weight: 800;
 }
 
-.hermes-role-tag {
+.assistant-role-tag {
   padding: 4px 8px;
   border-radius: 999px;
   background: rgba(255, 220, 195, 0.72);
@@ -3399,7 +3399,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   font-size: 10px;
 }
 
-.hermes-message-bubble {
+.assistant-message-bubble {
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -3411,24 +3411,24 @@ function persistSelectedSessionId(sessionId: number | null) {
   transition: border-color 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease;
 }
 
-.hermes-message-row.user .hermes-message-bubble {
+.assistant-message-row.user .assistant-message-bubble {
   background: linear-gradient(135deg, rgba(var(--app-primary-container-rgb), 0.92), rgba(var(--app-primary-rgb), 0.92));
   color: #fff;
 }
 
-.hermes-message-bubble.streaming {
+.assistant-message-bubble.streaming {
   border: 1px dashed rgba(var(--app-primary-rgb), 0.26);
   box-shadow: 0 10px 22px rgba(var(--app-primary-rgb), 0.08);
 }
 
-.hermes-message-bubble.stream-loading {
+.assistant-message-bubble.stream-loading {
   position: relative;
   border: 3px solid transparent;
   background:
     linear-gradient(#fff, #fff) padding-box,
     conic-gradient(from 0deg, transparent 0deg, rgba(var(--app-primary-rgb), 0.35) 60deg, var(--app-primary) 100deg, rgba(var(--app-primary-container-rgb), 0.98) 140deg, transparent 200deg, rgba(var(--app-primary-rgb), 0.3) 360deg) border-box;
   box-shadow: 0 14px 36px rgba(var(--app-primary-rgb), 0.22), 0 0 0 6px rgba(var(--app-primary-rgb), 0.08);
-  animation: hermes-loading-border 2s linear infinite;
+  animation: assistant-loading-border 2s linear infinite;
 }
 
 .assistant-thinking-indicator {
@@ -3460,10 +3460,10 @@ function persistSelectedSessionId(sessionId: number | null) {
   box-sizing: border-box;
   line-height: 0;
   transform-origin: 50% 50%;
-  animation: hermes-spin 1.2s linear infinite;
+  animation: assistant-spin 1.2s linear infinite;
 }
 
-.hermes-process-trace {
+.assistant-process-trace {
   position: relative;
   margin-top: 12px;
   width: max-content;
@@ -3478,7 +3478,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   overflow: hidden;
 }
 
-.hermes-process-trace summary {
+.assistant-process-trace summary {
   display: flex;
   align-items: center;
   justify-content: flex-start;
@@ -3493,11 +3493,11 @@ function persistSelectedSessionId(sessionId: number | null) {
   list-style: none;
 }
 
-.hermes-process-trace summary::-webkit-details-marker {
+.assistant-process-trace summary::-webkit-details-marker {
   display: none;
 }
 
-.hermes-process-summary-main {
+.assistant-process-summary-main {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -3506,7 +3506,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   white-space: nowrap;
 }
 
-.hermes-process-status-icon {
+.assistant-process-status-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -3518,7 +3518,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   font-weight: 900;
 }
 
-.hermes-process-summary-meta {
+.assistant-process-summary-meta {
   flex: 0 0 auto;
   padding: 2px 6px;
   border-radius: 999px;
@@ -3529,7 +3529,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   white-space: nowrap;
 }
 
-.hermes-process-trace summary::after {
+.assistant-process-trace summary::after {
   content: '展开';
   flex: 0 0 auto;
   padding-left: 2px;
@@ -3539,33 +3539,33 @@ function persistSelectedSessionId(sessionId: number | null) {
   white-space: nowrap;
 }
 
-.hermes-process-trace[open] summary::after {
+.assistant-process-trace[open] summary::after {
   content: '收起';
 }
 
-.hermes-process-trace[open] {
+.assistant-process-trace[open] {
   width: 100%;
   max-width: 520px;
   border-radius: 10px;
 }
 
-.hermes-process-trace-body {
+.assistant-process-trace-body {
   padding: 0 14px 12px 18px;
   border-top: 1px solid rgba(51, 65, 85, 0.08);
 }
 
-.hermes-process-description {
+.assistant-process-description {
   margin: 10px 0 0;
   color: #64748b;
   font-size: 12px;
   line-height: 1.6;
 }
 
-.hermes-process-description.muted {
+.assistant-process-description.muted {
   color: #94a3b8;
 }
 
-.hermes-process-trace.is-running {
+.assistant-process-trace.is-running {
   border-color: rgba(37, 99, 235, 0.22);
   border-left-color: #2563eb;
   background:
@@ -3573,7 +3573,7 @@ function persistSelectedSessionId(sessionId: number | null) {
     repeating-linear-gradient(135deg, rgba(37, 99, 235, 0.08) 0 1px, transparent 1px 8px);
 }
 
-.hermes-process-trace.is-success {
+.assistant-process-trace.is-success {
   border-color: rgba(15, 118, 110, 0.2);
   border-left-color: #0f766e;
   background:
@@ -3581,7 +3581,7 @@ function persistSelectedSessionId(sessionId: number | null) {
     repeating-linear-gradient(135deg, rgba(15, 118, 110, 0.08) 0 1px, transparent 1px 8px);
 }
 
-.hermes-process-trace.is-warning {
+.assistant-process-trace.is-warning {
   border-color: rgba(245, 158, 11, 0.26);
   border-left-color: #d97706;
   background:
@@ -3589,7 +3589,7 @@ function persistSelectedSessionId(sessionId: number | null) {
     repeating-linear-gradient(135deg, rgba(245, 158, 11, 0.1) 0 1px, transparent 1px 8px);
 }
 
-.hermes-process-trace.is-danger {
+.assistant-process-trace.is-danger {
   border-color: rgba(220, 38, 38, 0.22);
   border-left-color: #dc2626;
   background:
@@ -3597,7 +3597,7 @@ function persistSelectedSessionId(sessionId: number | null) {
     repeating-linear-gradient(135deg, rgba(220, 38, 38, 0.08) 0 1px, transparent 1px 8px);
 }
 
-.hermes-process-trace.is-running .hermes-process-status-icon {
+.assistant-process-trace.is-running .assistant-process-status-icon {
   border: 2px solid rgba(37, 99, 235, 0.16);
   border-top-color: #2563eb;
   background: transparent;
@@ -3605,47 +3605,47 @@ function persistSelectedSessionId(sessionId: number | null) {
   font-size: 0;
   line-height: 0;
   transform-origin: 50% 50%;
-  animation: hermes-spin 1.2s linear infinite;
+  animation: assistant-spin 1.2s linear infinite;
 }
 
-.hermes-process-trace.is-success .hermes-process-status-icon {
+.assistant-process-trace.is-success .assistant-process-status-icon {
   background: rgba(15, 118, 110, 0.14);
   color: #0f766e;
 }
 
-.hermes-process-trace.is-warning .hermes-process-status-icon {
+.assistant-process-trace.is-warning .assistant-process-status-icon {
   background: rgba(245, 158, 11, 0.14);
   color: #b45309;
 }
 
-.hermes-process-trace.is-danger .hermes-process-status-icon {
+.assistant-process-trace.is-danger .assistant-process-status-icon {
   background: rgba(220, 38, 38, 0.12);
   color: #dc2626;
 }
 
-@keyframes hermes-spin {
+@keyframes assistant-spin {
   from { transform: rotate(0deg); }
   to { transform: rotate(360deg); }
 }
 
-@property --hermes-loading-angle {
+@property --assistant-loading-angle {
   syntax: '<angle>';
   inherits: false;
   initial-value: 0deg;
 }
 
-@keyframes hermes-loading-border {
+@keyframes assistant-loading-border {
   from {
-    --hermes-loading-angle: 0deg;
+    --assistant-loading-angle: 0deg;
     background:
       linear-gradient(#fff, #fff) padding-box,
-      conic-gradient(from var(--hermes-loading-angle), transparent 0deg, rgba(var(--app-primary-rgb), 0.35) 60deg, var(--app-primary) 100deg, rgba(var(--app-primary-container-rgb), 0.98) 140deg, transparent 200deg, rgba(var(--app-primary-rgb), 0.3) 360deg) border-box;
+      conic-gradient(from var(--assistant-loading-angle), transparent 0deg, rgba(var(--app-primary-rgb), 0.35) 60deg, var(--app-primary) 100deg, rgba(var(--app-primary-container-rgb), 0.98) 140deg, transparent 200deg, rgba(var(--app-primary-rgb), 0.3) 360deg) border-box;
   }
   to {
-    --hermes-loading-angle: 360deg;
+    --assistant-loading-angle: 360deg;
     background:
       linear-gradient(#fff, #fff) padding-box,
-      conic-gradient(from var(--hermes-loading-angle), transparent 0deg, rgba(var(--app-primary-rgb), 0.35) 60deg, var(--app-primary) 100deg, rgba(var(--app-primary-container-rgb), 0.98) 140deg, transparent 200deg, rgba(var(--app-primary-rgb), 0.3) 360deg) border-box;
+      conic-gradient(from var(--assistant-loading-angle), transparent 0deg, rgba(var(--app-primary-rgb), 0.35) 60deg, var(--app-primary) 100deg, rgba(var(--app-primary-container-rgb), 0.98) 140deg, transparent 200deg, rgba(var(--app-primary-rgb), 0.3) 360deg) border-box;
   }
 }
 
@@ -3659,7 +3659,7 @@ function persistSelectedSessionId(sessionId: number | null) {
 }
 
 .assistant-thinking-dots span {
-  animation: hermes-dot-blink 1.4s infinite;
+  animation: assistant-dot-blink 1.4s infinite;
   opacity: 0;
 }
 
@@ -3671,18 +3671,18 @@ function persistSelectedSessionId(sessionId: number | null) {
   animation-delay: 0.4s;
 }
 
-@keyframes hermes-dot-blink {
+@keyframes assistant-dot-blink {
   0%, 20% { opacity: 0; }
   50% { opacity: 1; }
   100% { opacity: 0; }
 }
 
-.hermes-message-bubble.error {
+.assistant-message-bubble.error {
   background: rgba(255, 218, 214, 0.86);
   color: #93000a;
 }
 
-.hermes-message-bubble pre {
+.assistant-message-bubble pre {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
@@ -3728,7 +3728,7 @@ function persistSelectedSessionId(sessionId: number | null) {
 .assistant-markdown-content :deep(hr:last-child),
 .assistant-markdown-content :deep(img:last-child),
 .assistant-markdown-content :deep(.assistant-table-wrap:last-child),
-.hermes-message-bubble > :last-child {
+.assistant-message-bubble > :last-child {
   margin-bottom: 0;
 }
 
@@ -3915,7 +3915,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   font-size: 0;
   line-height: 0;
   transform-origin: 50% 50%;
-  animation: hermes-spin 1.2s linear infinite;
+  animation: assistant-spin 1.2s linear infinite;
 }
 
 .assistant-markdown-content :deep(.assistant-think-status-icon.done) {
@@ -4004,7 +4004,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   }
 }
 
-.hermes-debug-pre {
+.assistant-debug-pre {
   margin: 0;
   padding: 12px;
   border-radius: 16px;
@@ -4014,7 +4014,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   white-space: pre-wrap;
 }
 
-.hermes-footer {
+.assistant-footer {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -4023,12 +4023,12 @@ function persistSelectedSessionId(sessionId: number | null) {
   background: #fff;
 }
 
-.hermes-footer-actions span {
+.assistant-footer-actions span {
   color: #94a3b8;
   font-size: 11px;
 }
 
-.hermes-slash-menu {
+.assistant-slash-menu {
   display: grid;
   gap: 6px;
   padding: 8px;
@@ -4038,7 +4038,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   box-shadow: 0 12px 28px rgba(15, 23, 42, 0.12);
 }
 
-.hermes-slash-item {
+.assistant-slash-item {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -4051,22 +4051,22 @@ function persistSelectedSessionId(sessionId: number | null) {
   text-align: left;
 }
 
-.hermes-slash-item:hover,
-.hermes-slash-item.active {
+.assistant-slash-item:hover,
+.assistant-slash-item.active {
   background: rgba(var(--app-primary-rgb), 0.08);
 }
 
-.hermes-slash-item strong {
+.assistant-slash-item strong {
   color: #0f172a;
   font-size: 13px;
 }
 
-.hermes-slash-item span {
+.assistant-slash-item span {
   color: #64748b;
   font-size: 12px;
 }
 
-.hermes-selected-skill {
+.assistant-selected-skill {
   display: inline-flex;
   align-self: flex-start;
   align-items: center;
@@ -4080,7 +4080,7 @@ function persistSelectedSessionId(sessionId: number | null) {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.62);
 }
 
-.hermes-selected-skill-kicker {
+.assistant-selected-skill-kicker {
   color: var(--app-primary);
   font-size: 10px;
   font-weight: 900;
@@ -4088,12 +4088,12 @@ function persistSelectedSessionId(sessionId: number | null) {
   text-transform: uppercase;
 }
 
-.hermes-selected-skill strong {
+.assistant-selected-skill strong {
   color: #0f172a;
   font-weight: 900;
 }
 
-.hermes-selected-skill button {
+.assistant-selected-skill button {
   width: 18px;
   height: 18px;
   border: 0;
@@ -4103,24 +4103,24 @@ function persistSelectedSessionId(sessionId: number | null) {
   line-height: 1;
 }
 
-:deep(.hermes-drawer .el-drawer__header) {
+:deep(.assistant-drawer .el-drawer__header) {
   margin-bottom: 0;
   padding: 14px 18px 6px;
 }
 
-:deep(.hermes-drawer .el-drawer__body) {
+:deep(.assistant-drawer .el-drawer__body) {
   display: flex;
   min-height: 0;
   padding: 0;
   overflow: hidden;
 }
 
-:deep(.hermes-drawer.is-desktop-fullscreen .el-drawer) {
+:deep(.assistant-drawer.is-desktop-fullscreen .el-drawer) {
   width: 100% !important;
   max-width: 100%;
 }
 
-:deep(.hermes-drawer .el-textarea__inner) {
+:deep(.assistant-drawer .el-textarea__inner) {
   min-height: 94px !important;
   border-radius: 18px;
   background: #f8fafc;
@@ -4133,14 +4133,14 @@ button:disabled {
 }
 
 @media (max-width: 900px) {
-  .hermes-panel {
+  .assistant-panel {
     position: relative;
     grid-template-columns: 1fr;
     grid-template-rows: minmax(0, 1fr);
   }
 
-  .hermes-session-sidebar {
-    --hermes-session-scroll-gutter: 0px;
+  .assistant-session-sidebar {
+    --assistant-session-scroll-gutter: 0px;
     position: absolute;
     top: 12px;
     left: 12px;
@@ -4158,13 +4158,13 @@ button:disabled {
     transition: transform 0.26s ease, opacity 0.22s ease;
   }
 
-  .hermes-session-sidebar.mobile-panel-open {
+  .assistant-session-sidebar.mobile-panel-open {
     transform: translateY(0);
     opacity: 1;
     pointer-events: auto;
   }
 
-  .hermes-mobile-session-backdrop {
+  .assistant-mobile-session-backdrop {
     display: block;
     position: absolute;
     inset: 0;
@@ -4176,37 +4176,37 @@ button:disabled {
     backdrop-filter: blur(2px);
   }
 
-  .hermes-mobile-session-backdrop.visible {
+  .assistant-mobile-session-backdrop.visible {
     opacity: 1;
     pointer-events: auto;
   }
 
-  .hermes-mobile-session-head,
-  .hermes-mobile-session-toggle-shell {
+  .assistant-mobile-session-head,
+  .assistant-mobile-session-toggle-shell {
     display: flex;
   }
 
-  .hermes-mobile-session-toggle-shell {
+  .assistant-mobile-session-toggle-shell {
     padding: 12px 14px 0;
   }
 
-  .hermes-body {
+  .assistant-body {
     padding: 12px 14px 8px;
   }
 
-  .hermes-option-card,
-  .hermes-action-card,
-  .hermes-footer-actions {
+  .assistant-option-card,
+  .assistant-action-card,
+  .assistant-footer-actions {
     align-items: stretch;
     flex-direction: column;
   }
 
-  :deep(.hermes-drawer.is-mobile .el-drawer) {
+  :deep(.assistant-drawer.is-mobile .el-drawer) {
     border-radius: 24px 24px 0 0;
     overflow: hidden;
   }
 
-  :deep(.hermes-drawer.is-mobile .el-drawer__body) {
+  :deep(.assistant-drawer.is-mobile .el-drawer__body) {
     display: flex;
     min-height: 0;
     padding: 0;

@@ -887,20 +887,30 @@ public class PlatformStoreService {
     public PageResponse<CliDtos.CliTaskSummary> pageMyRequirementTasks(Long userId, int page, int size,
                                                                        String status, String priority,
                                                                        Long projectId, String keyword) {
+        return pageMyWorkItems(userId, page, size, status, priority, projectId, keyword, "需求");
+    }
+
+    /** 分页查询当前用户负责的工作项；类型为空时返回需求、任务和缺陷，供桌面端统一入口分组展示。 */
+    public PageResponse<CliDtos.CliTaskSummary> pageMyWorkItems(Long userId, int page, int size,
+                                                                String status, String priority,
+                                                                Long projectId, String keyword,
+                                                                String workItemType) {
         Pageable pageable = buildPageable(page, size, Sort.by(Sort.Direction.DESC, "id"));
         Page<CliDtos.CliTaskSummary> pageData = taskRepository
-                .findAll(cliMyTasksSpecification(userId, keyword, status, priority, projectId), pageable)
+                .findAll(cliMyTasksSpecification(userId, keyword, status, priority, projectId, workItemType), pageable)
                 .map(this::toCliTaskSummary);
         return PageResponse.from(pageData);
     }
 
-    /** CLI /requirement 命令的查询谓词：负责人=userId 且 workItemType=需求，不叠加项目可见性。 */
+    /** CLI 工作项查询谓词：负责人=userId，类型可选，且不叠加项目可见性。 */
     private Specification<TaskEntity> cliMyTasksSpecification(Long userId, String keyword, String status,
-                                                              String priority, Long projectId) {
+                                                              String priority, Long projectId, String workItemType) {
         return (root, query, cb) -> {
             List<Predicate> predicates = new ArrayList<>();
             predicates.add(cb.equal(root.get("assigneeUser").get("id"), userId));
-            predicates.add(cb.equal(root.get("workItemType"), normalizeWorkItemType("需求")));
+            if (hasText(workItemType)) {
+                predicates.add(cb.equal(root.get("workItemType"), normalizeWorkItemType(workItemType)));
+            }
             if (hasText(keyword)) {
                 String pattern = "%" + keyword.trim().toLowerCase() + "%";
                 predicates.add(cb.or(
@@ -2225,6 +2235,7 @@ public class PlatformStoreService {
                 entity.getId(),
                 entity.getWorkItemCode(),
                 entity.getName(),
+                normalizeWorkItemType(entity.getWorkItemType()),
                 entity.getStatus(),
                 entity.getPriority(),
                 entity.getAssignee(),

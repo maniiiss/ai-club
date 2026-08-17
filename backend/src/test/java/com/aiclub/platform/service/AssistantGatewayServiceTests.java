@@ -114,7 +114,7 @@ class AssistantGatewayServiceTests {
         server.createContext("/v1/chat/completions", this::handleRequest);
         server.start();
         return new AssistantGatewayService(
-                new AssistantProperties("http://localhost:" + server.getAddress().getPort() + "/v1", "", "hermes-agent", 60, "test:hermes", 6, 86400),
+                new AssistantProperties("http://localhost:" + server.getAddress().getPort() + "/v1", "", "assistant-agent", 60, "test:assistant", 6, 86400),
                 new ObjectMapper()
         );
     }

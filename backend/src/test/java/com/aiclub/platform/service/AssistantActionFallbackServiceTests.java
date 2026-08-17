@@ -189,7 +189,7 @@ class AssistantActionFallbackServiceTests {
                         true,
                         List.of("PM"),
                         List.of("项目经理"),
-                        List.of("hermes:chat", "project:view", "task:view"),
+                        List.of("assistant:chat", "project:view", "task:view"),
                         List.of()
                 ),
                 new AssistantConversationContextSnapshot(

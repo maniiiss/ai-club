@@ -2122,6 +2122,8 @@ export interface GitlabAutoMergeLogIssueFeedbackPayload {
 
 export type AiModelType = 'CHAT' | 'EMBEDDING'
 export type OpenAiApiMode = 'AUTO' | 'RESPONSES' | 'CHAT_COMPLETIONS' | 'CHAT_COMPLETIONS_PLAIN'
+/** 平台模型可接收的输入模态；当前由管理员配置文本或文本+图片。 */
+export type AiModelInputModality = 'text' | 'image'
 
 export interface AiModelConfigItem {
   id: number
@@ -2134,6 +2136,8 @@ export interface AiModelConfigItem {
   apiKeyConfigured: boolean
   description: string
   enabled: boolean
+  /** 平台明确配置的输入能力，旧接口缺失时前端按仅文本兼容展示。 */
+  inputModalities?: AiModelInputModality[]
   /** 模型上下文窗口长度（token），用于 GitPilot CLI 展示与自动压缩阈值判断。 */
   contextLength?: number
   /** 模型最大输出 token 数。 */

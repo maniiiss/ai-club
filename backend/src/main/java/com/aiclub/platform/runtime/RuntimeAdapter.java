@@ -39,7 +39,7 @@ public interface RuntimeAdapter {
 
     /**
      * 同步聊天入口，供 GitPilot 会话和聊天室复用统一 Runtime 路由。
-     * 旧 Assistant Legacy 由兼容服务直接调用，不经过该方法。
+     * 所有聊天入口都应通过 RuntimeChatService 调用该方法。
      */
     default RuntimeChatResult chat(RuntimeInvocationContext context) {
         throw new UnsupportedOperationException("Runtime does not support synchronous chat: " + descriptor().runtimeCode());
@@ -47,7 +47,7 @@ public interface RuntimeAdapter {
 
     /**
      * 流式聊天入口，所有支持 STREAM_EVENTS 的 AgentRuntime 都遵守同一事件协议。
-     * 业务意图：未实现实时协议的旧 Runtime 自动降级为单个完整文本事件，保证迁移期间功能可用。
+     * 业务意图：未实现实时协议的 Runtime 自动降级为单个完整文本事件，保持统一事件契约。
      */
     default RuntimeChatResult streamChat(RuntimeInvocationContext context,
                                           Consumer<RuntimeStreamEvent> eventConsumer) {

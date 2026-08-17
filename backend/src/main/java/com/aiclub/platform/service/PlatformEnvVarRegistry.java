@@ -32,22 +32,22 @@ public class PlatformEnvVarRegistry {
     public static final String KEY_PR_REVIEW_DEFAULT_DEV_GROUP_NAME = "PLATFORM_PR_REVIEW_DEFAULT_DEV_GROUP_NAME";
     public static final String KEY_PR_REVIEW_OA_USER_ID = "PLATFORM_PR_REVIEW_OA_USER_ID";
     public static final String KEY_PR_REVIEW_OA_TOKEN = "PLATFORM_PR_REVIEW_OA_TOKEN";
-    public static final String KEY_HERMES_BASE_URL = "PLATFORM_HERMES_BASE_URL";
-    public static final String KEY_HERMES_API_KEY = "PLATFORM_HERMES_API_KEY";
-    public static final String KEY_HERMES_MODEL = "PLATFORM_HERMES_MODEL";
-    public static final String KEY_HERMES_TIMEOUT_SECONDS = "PLATFORM_HERMES_TIMEOUT_SECONDS";
-    public static final String KEY_HERMES_SPEECH_BASE_URL = "PLATFORM_HERMES_SPEECH_BASE_URL";
-    public static final String KEY_HERMES_SPEECH_API_KEY = "PLATFORM_HERMES_SPEECH_API_KEY";
-    public static final String KEY_HERMES_SPEECH_MODEL = "PLATFORM_HERMES_SPEECH_MODEL";
-    public static final String KEY_HERMES_SPEECH_TIMEOUT_SECONDS = "PLATFORM_HERMES_SPEECH_TIMEOUT_SECONDS";
+    public static final String KEY_ASSISTANT_BASE_URL = "PLATFORM_ASSISTANT_BASE_URL";
+    public static final String KEY_ASSISTANT_API_KEY = "PLATFORM_ASSISTANT_API_KEY";
+    public static final String KEY_ASSISTANT_MODEL = "PLATFORM_ASSISTANT_MODEL";
+    public static final String KEY_ASSISTANT_TIMEOUT_SECONDS = "PLATFORM_ASSISTANT_TIMEOUT_SECONDS";
+    public static final String KEY_ASSISTANT_SPEECH_BASE_URL = "PLATFORM_ASSISTANT_SPEECH_BASE_URL";
+    public static final String KEY_ASSISTANT_SPEECH_API_KEY = "PLATFORM_ASSISTANT_SPEECH_API_KEY";
+    public static final String KEY_ASSISTANT_SPEECH_MODEL = "PLATFORM_ASSISTANT_SPEECH_MODEL";
+    public static final String KEY_ASSISTANT_SPEECH_TIMEOUT_SECONDS = "PLATFORM_ASSISTANT_SPEECH_TIMEOUT_SECONDS";
     /** GitPilot 外部 MCP 访问目标的管理员白名单。 */
     public static final String KEY_ASSISTANT_EXTERNAL_MCP_ALLOWED_HOSTS = "PLATFORM_ASSISTANT_EXTERNAL_MCP_ALLOWED_HOSTS";
     /** DataWorkbench 外部 PostgreSQL 连接目标的管理员白名单。 */
     public static final String KEY_DATA_WORKBENCH_ALLOWED_DB_HOSTS = "PLATFORM_DATA_WORKBENCH_ALLOWED_DB_HOSTS";
     public static final String KEY_HINDSIGHT_API_URL = "HINDSIGHT_API_URL";
     public static final String KEY_HINDSIGHT_API_KEY = "HINDSIGHT_API_KEY";
-    public static final String KEY_HERMES_HINDSIGHT_BANK_ID = "HERMES_HINDSIGHT_BANK_ID";
-    public static final String KEY_HERMES_HINDSIGHT_BUDGET = "HERMES_HINDSIGHT_BUDGET";
+    public static final String KEY_ASSISTANT_HINDSIGHT_BANK_ID = "ASSISTANT_HINDSIGHT_BANK_ID";
+    public static final String KEY_ASSISTANT_HINDSIGHT_BUDGET = "ASSISTANT_HINDSIGHT_BUDGET";
     public static final String KEY_HINDSIGHT_TIMEOUT_SECONDS = "PLATFORM_HINDSIGHT_TIMEOUT_SECONDS";
     public static final String KEY_SERVER_MODULE_ENABLED = "PLATFORM_SERVER_MODULE_ENABLED";
     public static final String KEY_SERVER_MONITOR_INTERVAL_SECONDS = "PLATFORM_SERVER_MONITOR_INTERVAL_SECONDS";
@@ -174,59 +174,59 @@ public class PlatformEnvVarRegistry {
         // Assistant / Hindsight 的基础连接地址与鉴权密钥继续固定走部署配置，
         // 避免后台覆盖值与容器真实接入参数漂移；模型、预算、超时这类调优项仍允许后台维护。
         registerUrl(new PlatformEnvVarDefinition(
-                KEY_HERMES_BASE_URL,
-                "platform.hermes.base-url",
+                KEY_ASSISTANT_BASE_URL,
+                "platform.assistant.base-url",
                 "GitPilot API 地址",
                 "平台内置助手调用 GitPilot Gateway 的 OpenAI 兼容接口基础地址。",
                 false,
                 false
         ));
         registerText(new PlatformEnvVarDefinition(
-                KEY_HERMES_API_KEY,
-                "platform.hermes.api-key",
+                KEY_ASSISTANT_API_KEY,
+                "platform.assistant.api-key",
                 "GitPilot API Key",
                 "平台内置助手调用 GitPilot Gateway 时携带的鉴权密钥。",
                 true,
                 false
         ));
         registerText(new PlatformEnvVarDefinition(
-                KEY_HERMES_MODEL,
-                "platform.hermes.model",
+                KEY_ASSISTANT_MODEL,
+                "platform.assistant.model",
                 "GitPilot 模型名",
                 "平台内置助手请求 GitPilot Gateway 时使用的模型名称。",
                 false
         ));
         registerIntegerRange(new PlatformEnvVarDefinition(
-                KEY_HERMES_TIMEOUT_SECONDS,
-                "platform.hermes.timeout-seconds",
+                KEY_ASSISTANT_TIMEOUT_SECONDS,
+                "platform.assistant.timeout-seconds",
                 "GitPilot 请求超时秒数",
                 "平台内置助手等待 GitPilot Gateway 响应的最长秒数。",
                 false
         ), 30, 600);
         registerUrl(new PlatformEnvVarDefinition(
-                KEY_HERMES_SPEECH_BASE_URL,
-                "platform.hermes.speech.base-url",
+                KEY_ASSISTANT_SPEECH_BASE_URL,
+                "platform.assistant.speech.base-url",
                 "GitPilot 语音转写 API 地址",
                 "语音转写功能调用 OpenAI 兼容 audio/transcriptions 接口的基础地址。",
                 false
         ));
         registerText(new PlatformEnvVarDefinition(
-                KEY_HERMES_SPEECH_API_KEY,
-                "platform.hermes.speech.api-key",
+                KEY_ASSISTANT_SPEECH_API_KEY,
+                "platform.assistant.speech.api-key",
                 "GitPilot 语音转写 API Key",
                 "语音转写功能调用外部模型服务时携带的鉴权密钥。",
                 true
         ));
         registerText(new PlatformEnvVarDefinition(
-                KEY_HERMES_SPEECH_MODEL,
-                "platform.hermes.speech.model",
+                KEY_ASSISTANT_SPEECH_MODEL,
+                "platform.assistant.speech.model",
                 "GitPilot 语音转写模型",
                 "语音转写功能请求外部模型服务时使用的模型名称。",
                 false
         ));
         registerIntegerRange(new PlatformEnvVarDefinition(
-                KEY_HERMES_SPEECH_TIMEOUT_SECONDS,
-                "platform.hermes.speech.timeout-seconds",
+                KEY_ASSISTANT_SPEECH_TIMEOUT_SECONDS,
+                "platform.assistant.speech.timeout-seconds",
                 "GitPilot 语音转写超时秒数",
                 "语音转写请求等待外部模型服务响应的最长秒数。",
                 false
@@ -264,14 +264,14 @@ public class PlatformEnvVarRegistry {
                 false
         ));
         registerText(new PlatformEnvVarDefinition(
-                KEY_HERMES_HINDSIGHT_BANK_ID,
+                KEY_ASSISTANT_HINDSIGHT_BANK_ID,
                 "platform.hindsight.bank-prefix",
                 "Hindsight Bank 前缀",
                 "平台在 Hindsight 中隔离 Wiki 与用户会话记忆时使用的 bank ID 前缀。",
                 false
         ));
         registerBudget(new PlatformEnvVarDefinition(
-                KEY_HERMES_HINDSIGHT_BUDGET,
+                KEY_ASSISTANT_HINDSIGHT_BUDGET,
                 "platform.hindsight.recall-budget",
                 "Hindsight 召回预算",
                 "平台调用 Hindsight recall 接口时使用的预算档位。",

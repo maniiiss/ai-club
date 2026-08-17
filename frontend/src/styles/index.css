@@ -1849,12 +1849,12 @@
 [data-theme="carbon-black"] .mobile-form-drawer,
 [data-theme="carbon-black"] .mobile-form-drawer .el-drawer,
 [data-theme="carbon-black"] .mobile-form-drawer .el-drawer__footer,
-[data-theme="carbon-black"] .hermes-footer,
-[data-theme="carbon-black"] .hermes-slash-menu,
-[data-theme="carbon-black"] .hermes-session-sidebar,
-[data-theme="carbon-black"] .hermes-option-card,
-[data-theme="carbon-black"] .hermes-action-card,
-[data-theme="carbon-black"] .hermes-message-bubble,
+[data-theme="carbon-black"] .assistant-footer,
+[data-theme="carbon-black"] .assistant-slash-menu,
+[data-theme="carbon-black"] .assistant-session-sidebar,
+[data-theme="carbon-black"] .assistant-option-card,
+[data-theme="carbon-black"] .assistant-action-card,
+[data-theme="carbon-black"] .assistant-message-bubble,
 [data-theme="carbon-black"] .assistant-markdown-content .assistant-table-wrap,
 [data-theme="carbon-black"] .assistant-markdown-content .assistant-think-block {
   background: var(--app-surface-card) !important;
@@ -1866,8 +1866,8 @@
 [data-theme="carbon-black"] .assistant-markdown-content h2,
 [data-theme="carbon-black"] .assistant-markdown-content h3,
 [data-theme="carbon-black"] .assistant-markdown-content h4,
-[data-theme="carbon-black"] .hermes-slash-item strong,
-[data-theme="carbon-black"] .hermes-selected-skill strong,
+[data-theme="carbon-black"] .assistant-slash-item strong,
+[data-theme="carbon-black"] .assistant-selected-skill strong,
 [data-theme="carbon-black"] .assistant-markdown-content code {
   color: var(--app-text) !important;
 }
@@ -1876,11 +1876,11 @@
 [data-theme="carbon-black"] .assistant-markdown-content li,
 [data-theme="carbon-black"] .assistant-markdown-content blockquote,
 [data-theme="carbon-black"] .assistant-markdown-content .assistant-table-wrap td,
-[data-theme="carbon-black"] .hermes-slash-item,
-[data-theme="carbon-black"] .hermes-selected-skill,
+[data-theme="carbon-black"] .assistant-slash-item,
+[data-theme="carbon-black"] .assistant-selected-skill,
 [data-theme="carbon-black"] .assistant-thinking-text,
-[data-theme="carbon-black"] .hermes-process-description,
-[data-theme="carbon-black"] .hermes-process-summary-meta {
+[data-theme="carbon-black"] .assistant-process-description,
+[data-theme="carbon-black"] .assistant-process-summary-meta {
   color: var(--app-text-soft) !important;
 }
 
@@ -1888,14 +1888,14 @@
 [data-theme="carbon-black"] .assistant-markdown-content .assistant-table-wrap tbody tr:nth-child(even),
 [data-theme="carbon-black"] .assistant-markdown-content .assistant-think-content,
 [data-theme="carbon-black"] .assistant-markdown-content .assistant-process-block .assistant-think-content p,
-[data-theme="carbon-black"] .hermes-slash-item:hover,
-[data-theme="carbon-black"] .hermes-slash-item.active {
+[data-theme="carbon-black"] .assistant-slash-item:hover,
+[data-theme="carbon-black"] .assistant-slash-item.active {
   background: var(--app-surface-muted) !important;
   color: var(--app-text-soft) !important;
 }
 
 [data-theme="carbon-black"] .mobile-form-drawer .el-drawer__footer,
-[data-theme="carbon-black"] .hermes-footer {
+[data-theme="carbon-black"] .assistant-footer {
   border-top-color: rgba(var(--app-outline-rgb), 0.2) !important;
 }
 
@@ -1956,7 +1956,7 @@
 [data-theme="carbon-black"] .sidebar-menu-button,
 [data-theme="carbon-black"] .system-submenu-button,
 [data-theme="carbon-black"] .system-popover-button,
-[data-theme="carbon-black"] .header-hermes-button,
+[data-theme="carbon-black"] .header-assistant-button,
 [data-theme="carbon-black"] .header-notification-button {
   color: var(--app-text-soft) !important;
 }
@@ -1964,7 +1964,7 @@
 [data-theme="carbon-black"] .sidebar-menu-button:hover,
 [data-theme="carbon-black"] .system-submenu-button:hover,
 [data-theme="carbon-black"] .system-popover-button:hover,
-[data-theme="carbon-black"] .header-hermes-button:hover,
+[data-theme="carbon-black"] .header-assistant-button:hover,
 [data-theme="carbon-black"] .header-notification-button:hover {
   background: var(--app-surface-muted) !important;
   color: var(--app-text) !important;
@@ -5327,83 +5327,83 @@ a {
   里直接写死浅色（SFC 行 2724 起的 #eef2f7、2987 的 #fff、3070 的白渐变），
   通用规则没有覆盖到，这里集中把卡片、标签、引用块和确认提示统一到暗色表面。
 */
-[data-theme="carbon-black"] .hermes-ghost-button,
-[data-theme="carbon-black"] .hermes-tab,
-[data-theme="carbon-black"] .hermes-chip-button,
-[data-theme="carbon-black"] .hermes-load-more-button,
-[data-theme="carbon-black"] .hermes-reference-item,
-[data-theme="carbon-black"] .hermes-pending-file-chip {
+[data-theme="carbon-black"] .assistant-ghost-button,
+[data-theme="carbon-black"] .assistant-tab,
+[data-theme="carbon-black"] .assistant-chip-button,
+[data-theme="carbon-black"] .assistant-load-more-button,
+[data-theme="carbon-black"] .assistant-reference-item,
+[data-theme="carbon-black"] .assistant-pending-file-chip {
   background: var(--app-surface-muted) !important;
   color: var(--app-text-soft) !important;
   box-shadow: none !important;
 }
 
-[data-theme="carbon-black"] .hermes-tab.active,
-[data-theme="carbon-black"] .hermes-tab:hover {
+[data-theme="carbon-black"] .assistant-tab.active,
+[data-theme="carbon-black"] .assistant-tab:hover {
   /* 当前态用主色 + 暗色卡片叠加，避免在暗色下与未选中标签对比度不足。 */
   background: color-mix(in srgb, var(--app-primary) 22%, var(--app-surface-card)) !important;
   color: var(--app-primary-light-7) !important;
 }
 
-[data-theme="carbon-black"] .hermes-session-item,
-[data-theme="carbon-black"] .hermes-mobile-session-toggle,
-[data-theme="carbon-black"] .hermes-empty-state.compact {
+[data-theme="carbon-black"] .assistant-session-item,
+[data-theme="carbon-black"] .assistant-mobile-session-toggle,
+[data-theme="carbon-black"] .assistant-empty-state.compact {
   background: var(--app-surface-card) !important;
   color: var(--app-text) !important;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28) !important;
   border: 1px solid rgba(var(--app-outline-rgb), 0.2) !important;
 }
 
-[data-theme="carbon-black"] .hermes-session-main strong,
-[data-theme="carbon-black"] .hermes-mobile-session-toggle-value,
-[data-theme="carbon-black"] .hermes-reference-title {
+[data-theme="carbon-black"] .assistant-session-main strong,
+[data-theme="carbon-black"] .assistant-mobile-session-toggle-value,
+[data-theme="carbon-black"] .assistant-reference-title {
   color: var(--app-text) !important;
 }
 
-[data-theme="carbon-black"] .hermes-session-more-button,
-[data-theme="carbon-black"] .hermes-session-more-icon {
+[data-theme="carbon-black"] .assistant-session-more-button,
+[data-theme="carbon-black"] .assistant-session-more-icon {
   color: var(--app-text-muted) !important;
 }
 
-[data-theme="carbon-black"] .hermes-session-item.active {
+[data-theme="carbon-black"] .assistant-session-item.active {
   /* active 会话项用主色描边 + 表面色填充，确保在暗色卡片上能看清。 */
   background: color-mix(in srgb, var(--app-primary) 16%, var(--app-surface-card)) !important;
   box-shadow: inset 0 0 0 1px rgba(var(--app-primary-rgb), 0.45) !important;
 }
 
-[data-theme="carbon-black"] .hermes-muted-card {
+[data-theme="carbon-black"] .assistant-muted-card {
   color: var(--app-text-muted) !important;
   background: var(--app-surface-muted) !important;
   border-radius: 12px;
   padding: 10px 14px;
 }
 
-[data-theme="carbon-black"] .hermes-subtitle,
-[data-theme="carbon-black"] .hermes-section-title,
-[data-theme="carbon-black"] .hermes-mobile-session-toggle-label,
-[data-theme="carbon-black"] .hermes-mobile-session-title {
+[data-theme="carbon-black"] .assistant-subtitle,
+[data-theme="carbon-black"] .assistant-section-title,
+[data-theme="carbon-black"] .assistant-mobile-session-toggle-label,
+[data-theme="carbon-black"] .assistant-mobile-session-title {
   color: var(--app-text-muted) !important;
 }
 
 /* 确认提示在 SFC 中用浅薄荷色背景，暗色下换成透明 + 主色描边，沿用主题色。 */
-[data-theme="carbon-black"] .hermes-confirmation-hint {
+[data-theme="carbon-black"] .assistant-confirmation-hint {
   background: color-mix(in srgb, var(--app-primary-container) 18%, var(--app-surface-card)) !important;
   border-color: rgba(var(--app-primary-container-rgb), 0.36) !important;
 }
 
-[data-theme="carbon-black"] .hermes-confirmation-hint strong {
+[data-theme="carbon-black"] .assistant-confirmation-hint strong {
   color: var(--app-primary-container) !important;
 }
 
-[data-theme="carbon-black"] .hermes-confirmation-hint div,
-[data-theme="carbon-black"] .hermes-confirmation-hint span {
+[data-theme="carbon-black"] .assistant-confirmation-hint div,
+[data-theme="carbon-black"] .assistant-confirmation-hint span {
   color: var(--app-text-soft) !important;
 }
 
 /* 助手页底部输入条 "添加附件 / 语音输入" 按钮在 SFC 里硬编码为青绿底色；
    暗色下保留主品牌色但调亮一档，避免在暗背景上被吞掉。 */
-[data-theme="carbon-black"] .hermes-ghost-button.primary,
-[data-theme="carbon-black"] .hermes-inline-button {
+[data-theme="carbon-black"] .assistant-ghost-button.primary,
+[data-theme="carbon-black"] .assistant-inline-button {
   background: var(--app-primary-container) !important;
   color: var(--app-text) !important;
 }
@@ -5500,28 +5500,28 @@ a {
 
 /*
   曜石黑主题下 GitPilot 助手面板、消息泡、过程轨迹专项补齐。
-  业务意图：AssistantDrawer SFC 行 2761 把 .hermes-panel 写死 #f3f4f5、行 3402 / 3424 把
-  .hermes-message-bubble 写死 #fff、loading 态用 linear-gradient(#fff, #fff)；行 3466 起
-  .hermes-process-trace 4 种 tone 全部用 rgba(255, 255, 255, ...) 拼渐变；行 3122 把
-  .hermes-current-session-card / .hermes-empty-state / .hermes-card 写死 rgba(255,255,255,0.96)；
+  业务意图：AssistantDrawer SFC 行 2761 把 .assistant-panel 写死 #f3f4f5、行 3402 / 3424 把
+  .assistant-message-bubble 写死 #fff、loading 态用 linear-gradient(#fff, #fff)；行 3466 起
+  .assistant-process-trace 4 种 tone 全部用 rgba(255, 255, 255, ...) 拼渐变；行 3122 把
+  .assistant-current-session-card / .assistant-empty-state / .assistant-card 写死 rgba(255,255,255,0.96)；
   通用助手规则只覆盖了几个核心类，没下穿到这些 SFC 内部白块，这里统一收口。
 */
-[data-theme="carbon-black"] .hermes-panel,
-[data-theme="carbon-black"] .hermes-current-session-card,
-[data-theme="carbon-black"] .hermes-empty-state,
-[data-theme="carbon-black"] .hermes-card,
-[data-theme="carbon-black"] .hermes-action-card,
-[data-theme="carbon-black"] .hermes-message-bubble,
-[data-theme="carbon-black"] .hermes-message-bubble.streaming,
-[data-theme="carbon-black"] .hermes-option-card,
-[data-theme="carbon-black"] .hermes-process-trace {
+[data-theme="carbon-black"] .assistant-panel,
+[data-theme="carbon-black"] .assistant-current-session-card,
+[data-theme="carbon-black"] .assistant-empty-state,
+[data-theme="carbon-black"] .assistant-card,
+[data-theme="carbon-black"] .assistant-action-card,
+[data-theme="carbon-black"] .assistant-message-bubble,
+[data-theme="carbon-black"] .assistant-message-bubble.streaming,
+[data-theme="carbon-black"] .assistant-option-card,
+[data-theme="carbon-black"] .assistant-process-trace {
   background: var(--app-surface-card) !important;
   color: var(--app-text) !important;
   border-color: rgba(var(--app-outline-rgb), 0.2) !important;
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28) !important;
 }
 
-[data-theme="carbon-black"] .hermes-message-bubble.stream-loading {
+[data-theme="carbon-black"] .assistant-message-bubble.stream-loading {
   /* 加载态原本用 linear-gradient(#fff, #fff) padding-box 当内容背景，暗色下换成 surface-card
      并保留外层 conic 渐变动画，让流式响应时仍能看清流光边框。 */
   background:
@@ -5529,77 +5529,77 @@ a {
     conic-gradient(from 0deg, transparent 0deg, rgba(var(--app-primary-rgb), 0.45) 60deg, var(--app-primary) 100deg, rgba(var(--app-primary-container-rgb), 0.98) 140deg, transparent 200deg, rgba(var(--app-primary-rgb), 0.4) 360deg) border-box !important;
 }
 
-[data-theme="carbon-black"] .hermes-message-bubble.error {
+[data-theme="carbon-black"] .assistant-message-bubble.error {
   background: color-mix(in srgb, var(--app-danger) 18%, var(--app-surface-card)) !important;
   color: var(--app-danger) !important;
   border: 1px solid rgba(var(--app-danger-rgb), 0.4) !important;
 }
 
-[data-theme="carbon-black"] .hermes-message-bubble pre {
+[data-theme="carbon-black"] .assistant-message-bubble pre {
   color: var(--app-text-soft) !important;
 }
 
 /* 过程轨迹 4 种 tone 沿用主题色（蓝 / 青 / 橙 / 红）但用 surface-card 取代内层白色渐变。 */
-[data-theme="carbon-black"] .hermes-process-trace.is-running,
-[data-theme="carbon-black"] .hermes-process-trace.is-success,
-[data-theme="carbon-black"] .hermes-process-trace.is-warning,
-[data-theme="carbon-black"] .hermes-process-trace.is-danger {
+[data-theme="carbon-black"] .assistant-process-trace.is-running,
+[data-theme="carbon-black"] .assistant-process-trace.is-success,
+[data-theme="carbon-black"] .assistant-process-trace.is-warning,
+[data-theme="carbon-black"] .assistant-process-trace.is-danger {
   background:
     color-mix(in srgb, var(--app-surface-muted) 70%, var(--app-surface-card)),
     repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0 1px, transparent 1px 8px) !important;
 }
 
-[data-theme="carbon-black"] .hermes-process-trace summary,
-[data-theme="carbon-black"] .hermes-process-trace summary::after {
+[data-theme="carbon-black"] .assistant-process-trace summary,
+[data-theme="carbon-black"] .assistant-process-trace summary::after {
   color: var(--app-text-soft) !important;
 }
 
-[data-theme="carbon-black"] .hermes-process-summary-meta {
+[data-theme="carbon-black"] .assistant-process-summary-meta {
   background: var(--app-surface-muted) !important;
   color: var(--app-text-muted) !important;
 }
 
-[data-theme="carbon-black"] .hermes-process-trace-body {
+[data-theme="carbon-black"] .assistant-process-trace-body {
   border-top-color: rgba(var(--app-outline-rgb), 0.2) !important;
 }
 
-[data-theme="carbon-black"] .hermes-process-description {
+[data-theme="carbon-black"] .assistant-process-description {
   color: var(--app-text-soft) !important;
 }
 
-[data-theme="carbon-black"] .hermes-process-description.muted {
+[data-theme="carbon-black"] .assistant-process-description.muted {
   color: var(--app-text-muted) !important;
 }
 
 /* 消息标签与角色 tag 在 SFC 中硬编码 #64748b / 暖橙色，暗色下跟随主题。 */
-[data-theme="carbon-black"] .hermes-message-label {
+[data-theme="carbon-black"] .assistant-message-label {
   color: var(--app-text-muted) !important;
 }
 
-[data-theme="carbon-black"] .hermes-role-tag {
+[data-theme="carbon-black"] .assistant-role-tag {
   background: color-mix(in srgb, var(--app-primary-container) 20%, var(--app-surface-card)) !important;
   color: var(--app-primary-container) !important;
 }
 
-[data-theme="carbon-black"] .hermes-empty-kicker {
+[data-theme="carbon-black"] .assistant-empty-kicker {
   color: var(--app-primary-container) !important;
 }
 
-[data-theme="carbon-black"] .hermes-empty-state p,
-[data-theme="carbon-black"] .hermes-card span,
-[data-theme="carbon-black"] .hermes-action-card span,
-[data-theme="carbon-black"] .hermes-option-card span {
+[data-theme="carbon-black"] .assistant-empty-state p,
+[data-theme="carbon-black"] .assistant-card span,
+[data-theme="carbon-black"] .assistant-action-card span,
+[data-theme="carbon-black"] .assistant-option-card span {
   color: var(--app-text-soft) !important;
 }
 
-[data-theme="carbon-black"] .hermes-current-session-copy strong,
-[data-theme="carbon-black"] .hermes-empty-title,
-[data-theme="carbon-black"] .hermes-action-copy strong {
+[data-theme="carbon-black"] .assistant-current-session-copy strong,
+[data-theme="carbon-black"] .assistant-empty-title,
+[data-theme="carbon-black"] .assistant-action-copy strong {
   color: var(--app-text) !important;
 }
 
 /* 删除类按钮原本用浅红 + 暗红文字，暗色下把底色换成暗红混合。 */
-[data-theme="carbon-black"] .hermes-ghost-button.danger {
+[data-theme="carbon-black"] .assistant-ghost-button.danger {
   background: color-mix(in srgb, var(--app-danger) 18%, var(--app-surface-card)) !important;
   color: var(--app-danger) !important;
 }

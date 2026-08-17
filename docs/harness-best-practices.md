@@ -42,7 +42,7 @@
 
 新增复杂能力时，应同步补充对应文档，尤其是：
 
-- 新增跨服务链路，例如 Hermes 调后端、后端调 code-processing。
+- 新增跨服务链路，例如 Assistant 调后端、后端调 code-processing。
 - 新增数据库迁移、调度任务、权限策略、后台任务。
 - 新增智能体工具、MCP 工具、自动化执行链路。
 - 修改启动方式、端口、环境变量或日志位置。
@@ -129,7 +129,7 @@
 | 公众端页面 / 类型 | `cd frontend-public && npm run test` + `cd frontend-public && npm run build` | 源码模式启动后人工走一遍公众端主流程 |
 | code-processing | `cd code-processing && pip install -e .` | 启动 FastAPI 并访问 `/docs` |
 | 跨服务链路 | 相关单测 + 对应模块构建 | `scripts/start.ps1` 或 `scripts/start-linux.sh` 源码模式联调 |
-| 智能体工具 / MCP 工具 | 工具 schema 或服务测试 | 通过 Hermes 或 MCP 客户端跑真实调用样例 |
+| 智能体工具 / MCP 工具 | 工具 schema 或服务测试 | 通过 Assistant 或 MCP 客户端跑真实调用样例 |
 
 ## 统一 Harness 命令
 
@@ -238,7 +238,7 @@ bash ./scripts/harness-linux.sh all
 - 公众端启动失败：查看 `frontend-public` 日志和 `frontend-public/package.json`。
 - 后端启动失败：查看后端日志、`.env`、PostgreSQL 端口和 Flyway 迁移。
 - code-processing 启动失败：查看 Python 依赖、虚拟环境和端口占用。
-- Hermes / Hindsight 调用失败：检查 Docker 容器状态、内部地址、后端内部认证配置。
+- Assistant / Hindsight 调用失败：检查 Docker 容器状态、内部地址、后端内部认证配置。
 
 排障记录如果超过一次性说明，应沉淀到模块文档的“常见失败”章节。
 

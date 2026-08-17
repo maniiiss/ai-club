@@ -1,6 +1,6 @@
-# Hermes 记忆系统优化点
+# Assistant 记忆系统优化点
 
-基于代码分析，当前 Hermes 记忆系统存在以下可优化项。
+基于代码分析，当前 Assistant 记忆系统存在以下可优化项。
 
 ---
 
@@ -10,7 +10,7 @@
 
 每轮对话都作为独立 document 写入 Hindsight，没有做任何整合。
 
-`HermesHindsightMemoryService.java:377-384` 中 `retainConversationTurn` 逐轮写入，用户聊 100 轮就有 100 条独立 document。
+`AssistantHindsightMemoryService.java:377-384` 中 `retainConversationTurn` 逐轮写入，用户聊 100 轮就有 100 条独立 document。
 
 **问题**
 
@@ -30,11 +30,11 @@
 
 工具调用的结果只保存在 Redis 热状态中，TTL（默认 86400 秒）到期即丢失。
 
-`HermesConversationState.java:24` 中 `toolExecutions` 只在 Redis 里，不写入 Hindsight。
+`AssistantConversationState.java:24` 中 `toolExecutions` 只在 Redis 里，不写入 Hindsight。
 
 **问题**
 
-用户问"上次帮我查的那个项目有哪些迭代"，如果超过 24h 或 Redis 被清理，Hermes 完全不记得。
+用户问"上次帮我查的那个项目有哪些迭代"，如果超过 24h 或 Redis 被清理，Assistant 完全不记得。
 
 **改进方向**
 
@@ -47,18 +47,18 @@
 
 **现状**
 
-没有任何 API 让用户查看、编辑、删除或标记自己的 Hermes 记忆。
+没有任何 API 让用户查看、编辑、删除或标记自己的 Assistant 记忆。
 
 `HindsightClientService` 只有 retain/recall，没有 list/update/delete 用户记忆的公开接口。
 
 **问题**
 
-如果 Hermes 记住了一条错误信息（比如用户随口说的"我明天要去公司"），这条记忆会一直参与召回，用户无法修正。
+如果 Assistant 记住了一条错误信息（比如用户随口说的"我明天要去公司"），这条记忆会一直参与召回，用户无法修正。
 
 **改进方向**
 
 - 后端新增 `/api/assistant/memories` 列表/删除 API
-- 前端 Hermes 抽屉侧边栏新增"记忆"Tab
+- 前端 Assistant 抽屉侧边栏新增"记忆"Tab
 - 对话中支持"忘掉刚才那个"之类的显式遗忘指令
 
 ---
@@ -67,13 +67,13 @@
 
 **现状**
 
-附件只绑定在消息记录上（`HermesConversationAttachmentEntity`），不写入 Hindsight。
+附件只绑定在消息记录上（`AssistantConversationAttachmentEntity`），不写入 Hindsight。
 
-`HermesAttachmentService.java:89` 中 `setMarkdown` 只存 DB，不入 Hindsight。
+`AssistantAttachmentService.java:89` 中 `setMarkdown` 只存 DB，不入 Hindsight。
 
 **问题**
 
-用户上传了一份需求文档并和 Hermes 讨论过，下次在另一个会话中问"之前那份需求文档的核心结论是什么"，Hermes 无法召回。
+用户上传了一份需求文档并和 Assistant 讨论过，下次在另一个会话中问"之前那份需求文档的核心结论是什么"，Assistant 无法召回。
 
 **改进方向**
 
@@ -87,15 +87,15 @@
 
 Grounding 纯粹依赖 Redis，TTL 到期即丢失。
 
-`HermesConversationStateStore.java:61-65` 中 Redis key 过期后 grounding 绑定全部清除。
+`AssistantConversationStateStore.java:61-65` 中 Redis key 过期后 grounding 绑定全部清除。
 
 **问题**
 
-用户第二天回来继续聊同一个会话，Redis 可能已过期，Hermes 不记得"当前项目"是哪个，需要用户重新说明。
+用户第二天回来继续聊同一个会话，Redis 可能已过期，Assistant 不记得"当前项目"是哪个，需要用户重新说明。
 
 **改进方向**
 
-- Grounding 关键绑定（projectId、taskId）在会话创建时已持久化到 `HermesConversationSessionEntity`
+- Grounding 关键绑定（projectId、taskId）在会话创建时已持久化到 `AssistantConversationSessionEntity`
 - 可以在 Redis miss 时从 DB 恢复基础 grounding，而非直接丢失
 
 ---
@@ -105,7 +105,7 @@ Grounding 纯粹依赖 Redis，TTL 到期即丢失。
 **现状**
 
 ```java
-// HermesHindsightMemoryService.java:32-34
+// AssistantHindsightMemoryService.java:32-34
 private static final int MAX_FACTS_PER_BANK = 3;
 private static final int MAX_TOTAL_FACTS = 6;
 private static final int MAX_SUMMARY_LENGTH = 180;
@@ -128,7 +128,7 @@ private static final int MAX_SUMMARY_LENGTH = 180;
 
 每个会话的 Redis 状态是隔离的，Hindsight 记忆虽然按用户共享，但 tags 过滤可能导致跨场景召回不完整。
 
-`HermesHindsightMemoryService.java:82` 中 `recallTags` 按当前项目/空间过滤，可能漏掉其他场景的记忆。
+`AssistantHindsightMemoryService.java:82` 中 `recallTags` 按当前项目/空间过滤，可能漏掉其他场景的记忆。
 
 **问题**
 

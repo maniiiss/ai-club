@@ -240,7 +240,7 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
         <div
           className={cn(
             'chat-composer-surface relative rounded-xl border bg-[var(--color-bg-elevated)] shadow-[var(--shadow-xs)] transition-colors',
-            hasAssistantMention ? 'is-hermes' : 'border-[var(--color-border-strong)] focus-within:border-[var(--color-primary)]',
+            hasAssistantMention ? 'is-assistant' : 'border-[var(--color-border-strong)] focus-within:border-[var(--color-primary)]',
           )}
         >
           {mentionOpen && (
@@ -369,15 +369,15 @@ export const ChatComposer = ({ disabled = false, sending, members = [], onSend }
                 className={cn(
                   'inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[12px] font-medium transition-colors disabled:opacity-50',
                   hasAssistantMention
-                    ? 'chat-hermes-button is-active'
-                    : 'chat-hermes-button is-inactive',
+                    ? 'chat-assistant-button is-active'
+                    : 'chat-assistant-button is-inactive',
                 )}
               >
                 <AtSign className="h-4 w-4" />
                 GitPilot
               </button>
               {hasAssistantMention && (
-                <span className="chat-hermes-hint hidden text-[12px] sm:inline">将触发 GitPilot 回复</span>
+                <span className="chat-assistant-hint hidden text-[12px] sm:inline">将触发 GitPilot 回复</span>
               )}
             </div>
             <div className="ml-auto flex items-center gap-3">

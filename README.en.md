@@ -6,7 +6,7 @@
 
 **Bring projects, iterations, requirements, testing, code repositories, pipelines, runtime observability, knowledge bases, and agent collaboration together under a single project lens.**
 
-Lets engineering teams continuously complete the **Plan → Develop → Test → Release → Observe → Retrospect** loop around a single project, and brings AI agents into daily engineering workflows through the Hermes conversational assistant.
+Lets engineering teams continuously complete the **Plan → Develop → Test → Release → Observe → Retrospect** loop around a single project, and brings AI agents into daily engineering workflows through the Assistant conversational assistant.
 
 <br/>
 
@@ -46,10 +46,10 @@ AI Club targets software engineering teams. Its goal is **not to replace any sin
 The platform is built around three core ideas:
 
 - **Unified project lens** — iterations, work items, test plans, code repositories, pipelines, runtime instances, and knowledge bases all hang off the project dimension, so cross-tool context is no longer fragmented.
-- **Controlled AI collaboration** — Hermes never reads or writes the database directly; it accesses platform data through controlled MCP tools. Write operations default to generating "pending action cards" that only execute after user confirmation.
+- **Controlled AI collaboration** — Assistant never reads or writes the database directly; it accesses platform data through controlled MCP tools. Write operations default to generating "pending action cards" that only execute after user confirmation.
 - **Traceable and governable** — async tasks, auto-merge, pipelines, automated testing, and patrol runs are fully traceable; sensitive credentials are always stored as ciphertext, and key actions land in the audit log.
 
-> The platform has evolved from its original three-module scaffold into a complete engineering system comprising **admin console + public frontend + business backend + code-processing service + Hermes collaboration gateway + Hindsight memory service + vector retrieval + built-in pipeline foundation**.
+> The platform has evolved from its original three-module scaffold into a complete engineering system comprising **admin console + public frontend + business backend + code-processing service + Assistant collaboration gateway + Hindsight memory service + vector retrieval + built-in pipeline foundation**.
 
 ---
 
@@ -80,7 +80,7 @@ The platform is built around three core ideas:
 <td width="50%" valign="top">
 
 ### 🧠 AI Collaboration
-- **Hermes assistant** — platform-wide, context-aware, action-card confirmation
+- **Assistant assistant** — platform-wide, context-aware, action-card confirmation
 - **Requirement AI assistant** — standardize requirements, break down subtasks, generate test cases
 - **API test-case generation** — reviewable AI suggestions based on API assets
 - **Model management + benchmarking** — token metering, cross-model benchmarks
@@ -120,11 +120,11 @@ flowchart TD
     BE --> DB[(PostgreSQL<br/>business DB + memory DB)]
     BE --> RD[(Redis)]
     BE --> MN[(MinIO)]
-    BE --> HM[Hermes<br/>collaboration gateway]
+    BE --> PI[pi-runtime<br/>PI_RUNTIME unified assistant runtime]
     BE --> CP[code-processing<br/>FastAPI code processing / MCP gateway]
     BE --> WP[Woodpecker<br/>built-in pipeline foundation]
-    HM --> HS[Hindsight<br/>memory & retrieval]
-    HM -.MCP.-> CP
+    PI --> HS[Hindsight<br/>memory & retrieval]
+    PI -.MCP.-> CP
     CP --> BE
     BE --> QD[(Qdrant<br/>Wiki vector retrieval)]
     CP --> GN[GitNexus<br/>full-repo code graph]
@@ -135,15 +135,15 @@ flowchart TD
 | `frontend` | Vue 3 + Element Plus admin console, for the private-deployment backoffice and platform governance |
 | `frontend-public` | React + Vite public frontend, for open registration, project collaboration, and the SaaS experience |
 | `backend` | Spring Boot business backend — core business, permissions, persistence, tool orchestration, action cards |
-| `code-processing` | FastAPI code-processing service — code scanning, MR review, GitNexus hosting; exposes platform tools to Hermes as an MCP Server |
-| `hermes` | Conversational collaboration gateway, integrates platform tools via API Server + MCP |
-| `hindsight` | Memory & retrieval service, provides per-user session memory for Hermes |
+| `code-processing` | FastAPI code-processing service — code scanning, MR review, GitNexus hosting; exposes platform tools to Assistant as an MCP Server |
+| `pi-runtime` | PI_RUNTIME stateful assistant runtime for unified chat, streaming events, and tool calls |
+| `hindsight` | Memory & retrieval service, provides per-user session memory for Assistant |
 | `woodpecker` | Built-in pipeline foundation (server + agent), enabled by default |
 | `postgres` | Unified PostgreSQL, hosting business DB `ai_agent_platform` and memory DB `hindsight` |
 | `qdrant` | Dedicated vector backend for Wiki knowledge retrieval |
 | `redis` / `minio` | Cache & session support / object storage for files and execution artifacts |
 
-> Key design: `code-processing` is both a "code analysis service" and an "MCP tool gateway"; Hermes accesses platform data through it in a controlled way, with write operations landing as pending action cards. See [docs/architecture.md](docs/architecture.md) for full details.
+> Key design: `code-processing` is both a "code analysis service" and an "MCP tool gateway"; Assistant accesses platform data through it in a controlled way, with write operations landing as pending action cards. See [docs/architecture.md](docs/architecture.md) for full details.
 
 ---
 
@@ -155,7 +155,7 @@ flowchart TD
 | Public frontend | React 18 · Vite · TypeScript · React Router · Zustand · Tailwind CSS |
 | Backend | Spring Boot 3 · Spring Web · Spring Data JPA · Flyway · PostgreSQL · Redis |
 | Code processing | Python · FastAPI · GitNexus CLI · Playwright |
-| AI collaboration | Hermes (API Server + MCP) · Hindsight memory service |
+| AI collaboration | PI_RUNTIME via RuntimeChatService · Hindsight memory service |
 | Retrieval | Qdrant vector store · DB keyword candidates · dedicated reranker hybrid search |
 | Pipelines | Woodpecker (built-in provider) · Jenkins (external compatibility) |
 | Infrastructure | PostgreSQL · Redis · MinIO · Docker Compose |
@@ -197,7 +197,7 @@ bash ./scripts/start-linux.sh
 
 The source-mode scripts automatically:
 
-1. Start `postgres`, `redis`, `minio`, `qdrant`, `hindsight`, `gitnexus-web`, `hermes`, `woodpecker-server`, `woodpecker-agent` containers (skipping Woodpecker when `WOODPECKER_ENABLED=false` is set explicitly)
+1. Start `postgres`, `redis`, `minio`, `qdrant`, `hindsight`, `gitnexus-web`, `woodpecker-server`, `woodpecker-agent` containers (skipping Woodpecker when `WOODPECKER_ENABLED=false` is set explicitly)
 2. Install admin and public frontend dependencies
 3. Check and create `code-processing/.venv`
 4. Start `code-processing`, `backend`, `frontend`, `frontend-public`
@@ -301,7 +301,7 @@ uvicorn app.main:app --reload --port 9000
 | Frontend (public) | `http://localhost:5175` |
 | Backend | `http://localhost:8080` |
 | Code Processing | `http://localhost:9000` |
-| Hermes | `http://localhost:18080` |
+| Assistant | `http://localhost:18080` |
 | Qdrant | `http://localhost:16333` |
 | Hindsight | `http://localhost:18888` |
 | GitNexus Web UI | `http://localhost:5174` |
@@ -383,7 +383,7 @@ bash ./scripts/harness-linux.sh <target>
 ## 🛣️ Roadmap
 
 - Gradually introduce clearer layering in the backend (`domain / application / infrastructure / interface`) to slim down the heavy `service` layer.
-- Add dedicated architecture docs and sequence descriptions for Hermes, the execution center, repo scanning, and GitLab management.
+- Add dedicated architecture docs and sequence descriptions for Assistant, the execution center, repo scanning, and GitLab management.
 - Advance the native API workbench (`api-studio`) to closure.
 - Extend the observability center with more health dimensions and project-level SLA aggregation.
 - Upgrade the project read-only sharing page into a fuller release-record view (version numbers, related MRs, release notes).

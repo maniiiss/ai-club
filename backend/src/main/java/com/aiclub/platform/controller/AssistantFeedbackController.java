@@ -37,7 +37,7 @@ public class AssistantFeedbackController {
 
     /** 用户提交或覆盖一条助手回答评价。 */
     @PostMapping("/api/assistant/sessions/{sessionId}/messages/{messageId}/feedback")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantFeedbackSummary> submit(@PathVariable Long sessionId,
                                                         @PathVariable Long messageId,
                                                         @Valid @RequestBody AssistantMessageFeedbackRequest request) {
@@ -46,7 +46,7 @@ public class AssistantFeedbackController {
 
     /** 当前用户分页查看自己的 GitPilot 反馈。 */
     @GetMapping("/api/assistant/feedback")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<PageResponse<AssistantFeedbackSummary>> pageMine(
             @RequestParam(defaultValue = "1") int page,
             @RequestParam(defaultValue = "20") int size,
@@ -56,7 +56,7 @@ public class AssistantFeedbackController {
 
     /** 当前用户读取一条反馈及处理结果。 */
     @GetMapping("/api/assistant/feedback/{id}")
-    @RequirePermission(value = "assistant:chat", anyOf = {"hermes:chat"})
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantFeedbackDetail> getMine(@PathVariable Long id) {
         return ApiResponse.success(assistantFeedbackService.getMine(id));
     }

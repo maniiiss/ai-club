@@ -552,7 +552,7 @@ public class AssistantToolOrchestrator {
      */
     private PlatformToolResult safeExecute(String toolCode, String scopeKey, Long projectId, Map<String, Object> payload) {
         try {
-            return platformToolExecutor.execute(new PlatformToolRequest(toolCode, "HERMES", scopeKey, projectId, null, null, payload));
+            return platformToolExecutor.execute(new PlatformToolRequest(toolCode, "ASSISTANT", scopeKey, projectId, null, null, payload));
         } catch (RuntimeException exception) {
             return new PlatformToolResult(
                     toolCode,

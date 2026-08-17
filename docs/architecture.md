@@ -14,7 +14,7 @@
 
 AI Club 是一个面向 AI 代理协作与工程管理的多服务平台，目标是把“项目、工作项、执行任务、测试计划、代码仓库、模型配置、智能体协作”统一放到同一套业务平台中管理。
 
-当前仓库已经不是最初的三模块脚手架，而是一个包含前端、后端、代码处理服务、Hermes 智能协作网关、Hindsight 记忆服务以及基础中间件的完整工程系统。
+当前仓库已经不是最初的三模块脚手架，而是一个包含前端、后端、代码处理服务、Assistant 智能协作网关、Hindsight 记忆服务以及基础中间件的完整工程系统。
 
 当前主要覆盖能力包括：
 
@@ -32,7 +32,7 @@ AI Club 是一个面向 AI 代理协作与工程管理的多服务平台，目�
 - 平台级服务器管理，支持 Linux 服务器接入、SSH 终端、资源监控与站内告警
 - 逻辑图谱、通知、反馈、操作日志
 - GitPilot 统一助手入口与平台工具联动
-- GitPilot 统一助手入口与多运行时智能体演进：产品入口不绑定具体运行时，Legacy Gateway、Pi、Codex、Claude Code、OpenCode 通过受控 Runtime Adapter 接入
+- GitPilot 统一助手入口与多运行时智能体演进：产品入口不绑定具体运行时，PI_RUNTIME、Codex、Claude Code、OpenCode 通过受控 Runtime Adapter 接入
 
 ## 2. 总体架构
 
@@ -42,8 +42,7 @@ AI Club 是一个面向 AI 代理协作与工程管理的多服务平台，目�
 - `frontend-public`：React + Vite 公众端前端，面向公开注册、项目协作和 SaaS 化产品体验
 - `backend`：Spring Boot 业务后端，负责核心业务、权限、持久化、工具编排
 - `code-processing`：FastAPI 代码处理服务，负责代码扫描、MR 审查、MCP 工具暴露
-- `assistant gateway`：兼容旧协议的对话式助手网关，通过 API Server + MCP 方式接入平台工具
-- `pi-runtime`：基于 Pi Agent Core 的独立状态化运行时服务，为 GitPilot 和执行编排提供可配置工具循环、Redis 短期会话缓存、统一事件流和取消/恢复能力
+- `pi-runtime`：基于 Pi Agent Core 的统一状态化运行时服务，为 GitPilot 助手、聊天室 Agent 和执行编排提供可配置工具循环、Redis 短期会话缓存、统一事件流和取消/恢复能力
 - `hindsight`：记忆与检索服务，作为平台 `MemoryProvider` 的当前默认实现
 - `woodpecker-server / woodpecker-agent`：默认启用的内置流水线底座，显式设置 `WOODPECKER_ENABLED=false` 时跳过
 - `postgres`：统一 PostgreSQL 服务，同时承载业务库 `ai_agent_platform` 与 Hindsight 记忆库 `hindsight`
@@ -60,8 +59,8 @@ AI Club 是一个面向 AI 代理协作与工程管理的多服务平台，目�
   -> backend
      -> PostgreSQL / Redis / RabbitMQ / MinIO
   -> Assistant/GitPilot API（/api/assistant）
-        -> Runtime Adapter Registry
-        -> Hermes Legacy / Pi Runtime / code-processing CLI
+        -> RuntimeChatService / Runtime Adapter Registry
+        -> PI_RUNTIME / 其它受支持 Runtime / code-processing CLI
         -> MemoryProvider（默认 Hindsight）/ Platform Tool Gateway
      -> code-processing HTTP API
      -> Woodpecker API
@@ -86,7 +85,7 @@ AI Club 是一个面向 AI 代理协作与工程管理的多服务平台，目�
 
 ### 3.9 助手命名与兼容边界
 
-后端 Java 类型、接口、方法、前端类型和组件统一使用 `Assistant`/`Runtime` 中性命名，不再把业务能力绑定在某个历史 Runtime 名称上。数据库表列、权限码、Redis/记忆前缀和 `HERMES_LEGACY` 运行时编码属于内部兼容字段；对外 HTTP 接口统一使用 `/api/assistant/**`，内部 MCP 接口统一使用 `/internal/assistant/**`，新增代码不得再创建 Hermes 专属业务类型。
+后端 Java 类型、接口、方法、前端类型和组件统一使用 `Assistant`/`Runtime` 中性命名，不再把业务能力绑定在某个历史 Runtime 名称上。数据库表列、权限码、Redis/记忆前缀和 `PI_RUNTIME` 运行时编码均使用当前中性命名；对外 HTTP 接口统一使用 `/api/assistant/**`，内部 MCP 接口统一使用 `/internal/assistant/**`，新增代码不得再创建特定 Runtime 专属业务类型。
 - 逻辑图谱、通知、操作日志等可视化页面
 - 管理端侧边栏通过 `frontend/src/utils/permissionTaxonomy.ts` 将后台治理入口分为 `系统管理` 和 `平台管理`，角色授权与功能管理页复用同一映射展示用途标签
 
@@ -121,8 +120,8 @@ AI Club 是一个面向 AI 代理协作与工程管理的多服务平台，目�
 - 版本发布提示：公众端进入 `ProductLayout` 时读取最新未展示版本，使用 Markdown 弹窗展示，关闭或确认后按用户记录展示状态
 - Markdown 浏览、编辑和图片上传等产品化内容组件
 - 需求 AI 助手（标准化需求、拆解子任务、生成测试用例），通过公众端专属接口调用并自动消耗积分
-- Hermes 公众端助手，在项目空间右下角提供浮标入口，按当前项目上下文服务协作问题
-- 多人聊天室中的房间级 Hermes Agent：房主可配置 Agent 身份、工具授权和主动能力开关，`@hermes` 触发的回复以持久化任务方式运行并通过 WebSocket 展示进度
+- Assistant 公众端助手，在项目空间右下角提供浮标入口，按当前项目上下文服务协作问题
+- 多人聊天室中的房间级 Assistant Agent：房主可配置 Agent 身份、工具授权和主动能力开关，`@assistant` 触发的回复以持久化任务方式运行并通过 WebSocket 展示进度
 - 复用后端统一 `/api/**` 接口与 `ApiResponse<T>` 响应协议，但维护独立 React API client，避免与 Vue 管理端跨框架耦合
 
 公众端部署为独立静态服务。Docker 镜像采用 Node 构建阶段和 nginx 运行阶段，nginx 负责 SPA fallback，并把 `/api/` 与 `/ws/` 代理到 Docker Compose 网络内的 `backend:8080`。在根级 Compose 中，公众端服务名为 `frontend-public`，默认镜像名为 `git-ai-club-frontend-public:latest`，默认宿主机端口为 `FRONTEND_PUBLIC_PORT=5175`；管理端仍使用 `FRONTEND_PORT=5173`。
@@ -165,7 +164,7 @@ AI Club 是一个面向 AI 代理协作与工程管理的多服务平台，目�
 - Gitee 项目绑定、迭代绑定、工作项同步日志与测试计划/测试用例推送管理
 - 用户管理中的 GitLab 用户绑定，负责复用已启用仓库绑定凭据读取用户候选并保存本地用户到远端用户的快照映射
 - 用户管理中的 Gitee 企业成员绑定，负责读取成员候选并保存本地用户到远端成员的快照映射
-- Hermes 会话、上下文拼装、工具编排、动作卡片生成
+- Assistant 会话、上下文拼装、工具编排、动作卡片生成
 - 执行中心任务、运行步骤、执行产物管理、RabbitMQ 调度信号消费，以及执行结果站内通知收口
 - 仓库扫描规则集与代码扫描任务联动
 - 逻辑图谱、通知、版本发布、操作日志、反馈管理
@@ -191,8 +190,8 @@ AI Club 是一个面向 AI 代理协作与工程管理的多服务平台，目�
 - `CicdController`
 - `ObservabilityController`
 - `KnowledgeGraphController`
-- `HermesController`
-- `InternalHermesController`
+- `AssistantController`
+- `InternalAssistantController`
 - `InternalObservabilityController`
 - `PlatformToolController`
 - `RepositoryScanRulesetController`
@@ -416,7 +415,7 @@ SQL 执行链路强制校验项目条件、定位字段、可修改字段、敏�
 - `ModelConfigService.invokePromptWithUsage` 入口具备底层兜底：未显式埋点时自动以 `UNKNOWN_MODEL_CALL` 分类记录调用栈类名
 - 看板上对 UNKNOWN 来源有显眼告警横幅，**禁止依赖兜底作为最终方案**
 - 流式 SSE 必须在控制器线程预先抓 AuthContext，子线程不再调 `AuthContextHolder.get()`
-- `hermes_chat_audit` 与 `agent_invocation_log` 一期双写，通过 `correlation_id` 互查
+- `assistant_chat_audit` 与 `agent_invocation_log` 一期双写，通过 `correlation_id` 互查
 - 数据权限只对 `system:agent-usage:view` 开放，不按部门隔离
 
 PR 评审检查清单：
@@ -434,7 +433,7 @@ PR 评审检查清单：
 
 埋点覆盖扩展：
 
-- `AgentType.HERMES_CHAT`：GitPilot 流式对话（默认 runtime，最大消耗源）。`AssistantGatewayService` 请求体开启 `stream_options.include_usage`，`ChatAssistantService.executeChat` 通过 `recorder.startManual` 显式抓取用户快照落账；provider 标记为 `HERMES`，`model_config_id` 留空（env 配置不入库）。
+- `AgentType.ASSISTANT_CHAT`：GitPilot 流式对话（默认 Runtime，最大消耗源）。`ChatAssistantService.executeChat` 通过 `RuntimeChatService` 调用 PI_RUNTIME，并由 `AgentInvocationRecorder` 统一记录用户快照与用量；provider 标记为 `ASSISTANT`，`model_config_id` 留空（部署配置不入库）。
 - `AgentType.GITPILOT_CLI`：GitPilot CLI 本地推理。所有 CLI 模型调用经 `GitPilotModelProxyService` 单咽喉点代理转发，把裸 `transferTo` 改为「边转发边嗅探 SSE usage」后 `recorder.startManual` 落账；用户与模型配置取自 gms_ 会话状态，无需新增鉴权。
 - code-processing 跨服务回传：代码审核等 Python 侧调用经 `POST /internal/model-usage/events`（共享 Bearer Token 鉴权）回传 usage，由 `ModelUsageIngestService` 落账（`AgentType.CODE_REVIEW` 等，`correlation_id=usageKey` 幂等去重）。`review_service._call_provider` 解析 usage，`model_usage_reporter` 复用 `_post_backend_json` 异步重试上报。
 
@@ -483,7 +482,7 @@ PR 评审检查清单：
 - 仓库级 Playwright 自动化执行与产物采集
 - 把 review / PATROL 等跨服务模型调用 usage 回传 backend
 - 与后端内部接口联动
-- 以 MCP Server 形式向 Hermes 暴露平台工具
+- 以 MCP Server 形式向 Assistant 暴露平台工具
 - 仓库镜像推送（`git clone` + `git push`，由 backend 解密凭据后调用）
 
 其中 GitLab 自动合并的 MR 审查现在额外承担“历史问题带入”“审查严格度门禁”和“版本指纹缓存”职责：backend 会按“GitLab 项目标识快照 + MR IID”读取最近一次 `AI_REJECTED` 日志里的结构化问题清单，并把自动合并策略上的 `reviewStrictness`（`HIGH / MEDIUM / LOW`，默认 `MEDIUM`）通过 `/api/code/review` 一并传给 `code-processing`；`code-processing` 需要在最终提示词中追加平台统一门禁规则，高严格度遇到明确不规范或潜在风险即拒绝，中严格度拒绝严重和中等风险，低严格度只拒绝线上故障、安全漏洞、数据破坏、兼容性破坏等严重问题。无论严格度如何，`code-processing` 都需要返回当前仍需处理的问题总表、已修复历史问题和未修复历史问题，backend 再据此决定是否放行自动合并，并把结果固化到自动合并日志；backend 仍保留安全兜底，只要 `unresolvedPreviousIssues` 非空，即使模型返回 `approved=true` 也不会继续自动合并。为了避免同一版 MR 在调度里重复消耗 token，自动合并日志还会额外保存 `review_fingerprint / review_fingerprint_source / review_result_json / review_cache_hit`：优先按 GitLab MR 详情里的 `sha + diff_refs.base_sha + diff_refs.start_sha` 结合审查配置生成 `SHA` 指纹，若远端未返回 SHA，再回退为基于归一化 diff 的 `DIFF` 指纹；同一 `项目 + MR IID + 指纹` 命中历史日志时直接复用结构化审查结果，不再重新调用模型。
@@ -492,7 +491,7 @@ GitLab 自动合并还在每条配置上挂了独立的 **外发 Webhook 通知*
 
 为了让非登录访问者也能查看日志，平台补充了"**项目只读分享页**"（表 `gitlab_auto_merge_project_share`，迁移 `V87`/`V88`，1:1 项目维度，token 通过 `TokenCipherService` 加密保存）。管理员在「项目管理」列表的行操作里按项目生成或刷新一条带过期时间（或永久）的分享链接，前端组件统一通过 `useProjectReadonlyShare` composable 复用同一份对话框逻辑。同一份分享链接同时承载两类只读能力：① `/api/gitlab/public/projects/{projectId}/auto-merge-logs/{token}` 返回该项目 `PROJECT_BOUND` 策略的自动合并日志分页；② `/api/gitlab/public/projects/{projectId}/pipelines/{token}` 与 `.../pipelines/{token}/runs` 合并暴露该项目下绑定的 Woodpecker（`AiClubPipelineEntity`）和 Jenkins（`ProjectPipelineBindingEntity`）流水线及其运行历史摘要，仅展示编号、状态、分支、事件、触发时间、外链 6 个非敏感字段。Jenkins 数据为实时调用 Jenkins API，外部不可达时返回空列表 + warning 而不是抛错，避免一次故障拖垮整个分享页。重新生成链接时旧 token 立即失效，也可以手动关闭分享状态。`AuthInterceptor` 通过 `/api/gitlab/public/` 前缀放行，分享页本体由 `GitlabAutoMergePublicView`（路径 `/gitlab/public/projects/:projectId/auto-merge-logs/:token`）和语义别名 `/public/projects/:projectId/readonly/:token` 提供，前端使用 tab 切换两类内容，旧分享链接保持向后兼容。详细数据脱敏白名单与双源聚合策略见 `docs/project-readonly-share-design-v1.md`。
 
-其中比较关键的一点是：`code-processing` 不只是“代码分析服务”，也是平台 MCP 工具网关。Hermes 通过访问 `code-processing` 暴露的 MCP 工具，再由 `code-processing` 调用后端内部接口执行实际平台工具。
+其中比较关键的一点是：`code-processing` 不只是“代码分析服务”，也是平台 MCP 工具网关。Assistant 通过访问 `code-processing` 暴露的 MCP 工具，再由 `code-processing` 调用后端内部接口执行实际平台工具。
 
 对于 GitLab 仓库代码结构能力，`code-processing` 当前承担的是：
 
@@ -506,22 +505,22 @@ GitNexus Web UI 由 `docker/gitnexus-web` 基于官方镜像二次封装，随 D
 
 全量 Docker 部署时，`code-processing` 镜像会通过多阶段构建复用官方 `ghcr.io/abhigyanpatwari/gitnexus` CLI 镜像内的 `gitnexus` 可执行文件与 Node 运行时，避免容器内缺少 CLI 导致“仓库代码结构服务调用失败”或“无法启动全仓图”。
 
-GitNexus 官方 Nexus AI 不读取平台 Hermes / Hindsight 的后端配置，而是读取浏览器同源 `sessionStorage` 中的 `gitnexus-llm-settings`。为避免用户在平台已经配置模型后还需要进入 GitNexus 再配置一次，`gitnexus-web` 启动时会生成 `/gitnexus-runtime-config.js`：优先读取 `GITNEXUS_AI_*`，未单独配置且 `GITNEXUS_AI_FALLBACK_TO_HERMES=true` 时复用 `HERMES_LLM_*`，并在 GitNexus 主应用加载前写入 Nexus AI 需要的设置。默认启用 `GITNEXUS_AI_PROXY_ENABLED=true`，前端只访问同源 `/api/gitnexus-ai/v1`，由 `gitnexus-web` 服务端转发到真实 OpenAI 兼容模型地址，避免浏览器 CORS 和 API Key 暴露问题。默认启用 `GITNEXUS_AI_FORCE_CHINESE=true`，代理会在 `chat/completions` 请求前追加中文系统提示，并在最后一个用户问题前补充中文回答约束；如需调整口径，可通过 `GITNEXUS_AI_SYSTEM_PROMPT` 覆盖。
+GitNexus 官方 Nexus AI 不读取平台后端模型配置，而是读取浏览器同源 `sessionStorage` 中的 `gitnexus-llm-settings`。`gitnexus-web` 启动时生成 `/gitnexus-runtime-config.js`，只读取独立的 `GITNEXUS_AI_*` 配置并在 GitNexus 主应用加载前写入 Nexus AI 需要的设置。默认启用 `GITNEXUS_AI_PROXY_ENABLED=true`，前端只访问同源 `/api/gitnexus-ai/v1`，由 `gitnexus-web` 服务端转发到真实 OpenAI 兼容模型地址，避免浏览器 CORS 和 API Key 暴露问题。默认启用 `GITNEXUS_AI_FORCE_CHINESE=true`，代理会在 `chat/completions` 请求前追加中文系统提示，并在最后一个用户问题前补充中文回答约束；如需调整口径，可通过 `GITNEXUS_AI_SYSTEM_PROMPT` 覆盖。
 
-### 3.4 hermes
+### 3.4 PI_RUNTIME 助手运行时
 
-Hermes 通过 `docker/hermes` 中的容器配置运行，是当前平台的对话式智能协作入口。
+助手和聊天室统一通过 `pi-runtime` 服务承载，backend 只负责会话、权限、上下文、工具契约和审计边界，不再维护独立的旧网关容器。
 
-当前 Hermes 的工作方式是：
+当前 Assistant 的工作方式是：
 
 - 由后端生成系统提示词和用户提示词
-- 通过 Hermes API Server 发起会话代理模式调用
-- Hermes 通过 MCP 调用 `code-processing` 暴露的平台工具
+- `RuntimeChatService` 按 `PI_RUNTIME` 注册项发起统一聊天和流式调用
+- PI_RUNTIME 按统一工具契约调用 `code-processing` 暴露的平台工具
 - 平台工具再回调后端内部接口获取或写入业务数据
 - 写操作默认不是直接落库，而是生成待确认动作卡片，由前端确认后执行
 - 平台业务 Skill 只通过结构化 Slash 命令启用，例如 `/wiki`、`/需求`、`/仓库扫描`、`/执行任务`；普通问题不再按关键词自动注入业务 Skill
 
-这意味着 Hermes 当前已经不是简单聊天助手，而是平台内的受控业务代理。
+这意味着 Assistant 当前已经不是简单聊天助手，而是由 PI_RUNTIME 承载、受平台后端控制的业务代理。
 
 ### 3.4.1 GitPilot Runtime 路由与配置边界
 
@@ -529,34 +528,34 @@ GitPilot 的产品入口与具体 Runtime 解耦，Runtime 注册项统一维护
 
 两类聊天入口的实际绑定规则如下：
 
-- Runtime 管理页通过 `/api/runtime-registry/scenario-defaults` 维护四类平台默认：`ASSISTANT`（GitPilot 助手）、`CHAT_ROOM`（聊天室 Agent）、`DEVELOPMENT_IMPLEMENTATION`（开发实现）和 `TECHNICAL_DESIGN_AUTHORING`（技术设计）。每个场景保存一个 Runtime Registry 编码，并按场景所需能力校验；旧环境变量 `PLATFORM_GITPILOT_DEFAULT_RUNTIME_CODE` 仅作为数据库迁移或测试环境不可用时的助手兼容回退。
-- GitPilot 助手创建会话时读取 `ASSISTANT` 默认 Runtime，写入 `hermes_conversation_session.runtime_registry_code`；后续续聊始终使用该会话快照。`HERMES_LEGACY` 走原有 `HermesGatewayService`，其他具备 `CHAT` 能力且健康可用的 Runtime 走 `RuntimeChatService -> RuntimeAdapterRegistry`。
+- Runtime 管理页通过 `/api/runtime-registry/scenario-defaults` 维护四类平台默认：`ASSISTANT`（GitPilot 助手）、`CHAT_ROOM`（聊天室 Agent）、`DEVELOPMENT_IMPLEMENTATION`（开发实现）和 `TECHNICAL_DESIGN_AUTHORING`（技术设计）。每个场景保存一个 Runtime Registry 编码，并按场景所需能力校验；助手和聊天室没有旧 Runtime 隐式回退。
+- GitPilot 助手创建会话时读取 `ASSISTANT` 默认 Runtime，写入 `assistant_conversation_session.runtime_registry_code`；后续续聊始终使用该会话快照。助手和聊天室默认均为 `PI_RUNTIME`，统一通过 `RuntimeChatService -> RuntimeAdapterRegistry` 调用。
 - GitPilot Runtime Registry 另外维护上下文窗口、最大输出 token、压缩阈值和压缩策略。新会话/新执行固化 `runtime_context_profile_snapshot_json`，公共 Conversation Context 层按快照计算预算并优先调用 Runtime 原生压缩；Runtime 不支持或压缩失败时由 backend 摘要兜底。完整消息、滚动摘要、结构化项目/分支事实和待确认问题同时落库并写入 Redis 热状态，详见 `docs/design-docs/gitpilot-conversation-context-technical-design-v1.md`。
-- 聊天室 Agent 的历史 `HERMES_LEGACY` 配置视为未单独覆盖，实时跟随 `CHAT_ROOM` 默认值；显式绑定其它 Runtime 的房间继续使用自己的配置。任务入队时把最终 Runtime 复制到任务 payload，执行时按任务快照路由。
+- 聊天室 Agent 的历史 Runtime 值在迁移中统一为 `PI_RUNTIME`；显式绑定其它 Runtime 的房间继续使用自己的配置。任务入队时把最终 Runtime 复制到任务 payload，执行时按任务快照路由。
 - `DEVELOPMENT_IMPLEMENTATION` 和 `TECHNICAL_DESIGN_AUTHORING` 在执行任务创建时把场景默认 Runtime 写入 `execution_task.runtime_registry_code_snapshot`，执行步骤通过该快照覆盖 Agent Profile 的默认 Runtime 路由，同时保留 Agent 的提示词、工具策略和沙箱快照。
 - Pi Runtime 的模型部署配置由 `PLATFORM_PI_RUNTIME_MODEL_PROVIDER`、`PLATFORM_PI_RUNTIME_MODEL_ID`、`PLATFORM_PI_RUNTIME_MODEL_BASE_URL` 和 `PLATFORM_PI_RUNTIME_API_KEY` 提供；其中 Base URL 可覆盖 Pi 内置模型地址，用于 OpenAI-compatible 或自建模型网关，不属于 Runtime Registry 的 endpointRef。
-- 所有非 Legacy AgentRuntime 通过统一 `tools` / `toolPolicy` 契约接收平台工具目录、JSON Schema、授权工具编码、自动执行工具编码和短期会话令牌；backend 的 `RuntimeToolContractService` 负责按用户权限和聊天室策略生成契约，具体 Runtime 只做原生 tool calling 转换。
+- 所有 AgentRuntime 通过统一 `tools` / `toolPolicy` 契约接收平台工具目录、JSON Schema、授权工具编码、自动执行工具编码和短期会话令牌；backend 的 `RuntimeToolContractService` 负责按用户权限和聊天室策略生成契约，具体 Runtime 只做原生 tool calling 转换。
 - Runtime 工具函数名使用稳定的 `project__search` 形式，执行时仍回传平台内部编码 `project.search`；工具最终由 backend `/internal/runtime/tools/execute` 二次鉴权、按项目范围执行并记录审计，不能由 Runtime 本地策略绕过。
 - 工具契约按需下发：平台 MCP 工具（最多 24 个）一次性下发会超过部分模型（如 Ark `deepseek-v4-flash`）的有效阈值，导致思考流在第一个词就异常结束、不产出正文。`PlatformToolSelector` 根据本轮用户输入（问题文本、slash 命令、路由）按“规则匹配 + 向量检索兜底”选出相关工具子集，通过现成的 `restrictedToolCodes` 通道下发，控制在 `maxTools`（默认 12）内；规则与向量均未命中时下发核心工具集（≤8 高频只读工具）。向量检索复用 `QdrantClientService` 与 Wiki 的 embedding 配置，embedding 未配置或 Qdrant 不可用时自动降级为纯规则。聊天室在房间启用工具集内按需筛选，保证“按需 ⊂ 房间策略”。下发的 `tools` 与 `toolPolicy.allowedToolCodes` 由 `RuntimeToolContractService.build()` 自动同源，pi-runtime 无需改动。具体设计见 `docs/design-docs/gitpilot-on-demand-tool-selection-technical-design-v1.md`。
 - GitPilot 公众端支持用户在助手“更多”菜单配置个人外部 MCP 服务，配置保存在 `assistant_mcp_server` 并按用户隔离。backend 负责 Streamable HTTP/SSE 握手、工具发现和实际调用，Bearer/API Key 通过 `TokenCipherService` 加密保存，不把长期凭证下发给 Runtime。
 - 外部 MCP 服务必须通过管理员网络白名单校验。管理员在“系统管理 → 环境变量管理”配置 `PLATFORM_ASSISTANT_EXTERNAL_MCP_ALLOWED_HOSTS`，填写 `10.0.0.0/8,192.168.1.0/24,corp.example.com` 等英文逗号分隔的域名/IP/CIDR；公网服务使用 HTTPS，内网、HTTP、回环和云元数据地址需要命中该配置。新建 GitPilot 会话固化启用服务的加密快照和配置版本，历史会话不会因用户编辑服务而漂移。
-- 非 Legacy Runtime 的统一工具契约会加入 `external_mcp__{serverId}__v{version}__{toolName}` 命名空间。外部工具默认需要确认，用户在个人 MCP 配置中明确取消确认后才进入自动执行列表，并由界面提示未声明只读工具的风险；`HERMES_LEGACY` 保持平台固定 MCP 兼容边界。具体设计见 `docs/design-docs/gitpilot-external-mcp-technical-design-v1.md`。
+- 统一工具契约会加入 `external_mcp__{serverId}__v{version}__{toolName}` 命名空间。外部工具默认需要确认，用户在个人 MCP 配置中明确取消确认后才进入自动执行列表，并由界面提示未声明只读工具的风险；PI_RUNTIME 与其它 Runtime 共用同一平台 MCP 边界。具体设计见 `docs/design-docs/gitpilot-external-mcp-technical-design-v1.md`。
 
 因此，“当前使用哪个 Runtime”应分别查看会话的 `runtimeRegistryCode`、聊天室任务 payload 和执行任务的 `runtimeRegistryCodeSnapshot`；Runtime 管理页的场景默认只影响后续新建会话/任务，不会改写历史会话、已入队任务或运行中的步骤。
 
-Hermes 还提供用户级“个人文件库”。用户在管理端或公众端的 Hermes“知识”面板上传 `.pdf/.docx/.pptx/.xlsx` 后，后端复用通用文档资产与 MarkItDown 转 Markdown 链路保存原始文件和 Markdown，再切块、生成 embedding 并写入 Qdrant collection `hermes_file_library_chunks`。文件库是个人长期知识，不替代项目 Wiki，也不产生项目共享文件库。
+Assistant 还提供用户级“个人文件库”。用户在管理端或公众端的 Assistant“知识”面板上传 `.pdf/.docx/.pptx/.xlsx` 后，后端复用通用文档资产与 MarkItDown 转 Markdown 链路保存原始文件和 Markdown，再切块、生成 embedding 并写入 Qdrant collection `assistant_file_library_chunks`。文件库是个人长期知识，不替代项目 Wiki，也不产生项目共享文件库。
 
 ### 3.5 记忆 Provider 与 hindsight
 
 平台记忆能力通过 backend 的 `MemoryProvider` 接口承接，GitPilot/Assistant 业务层不直接依赖 Hindsight 客户端、bank id 或 Hindsight DTO。当前默认实现为 `HindsightMemoryProvider`，通过 Docker 启动的 Hindsight 负责：
 
-- 存储平台托管的 Hermes 用户会话记忆与共享记忆事实
+- 存储平台托管的 Assistant 用户会话记忆与共享记忆事实
 - 提供会话相关的上下文检索能力
-- 存储按用户隔离的 Hermes 会话记忆，当前默认 bank 规则为 `git-ai-club:hermes:user:{userId}`
+- 存储按用户隔离的 Assistant 会话记忆，当前默认 bank 规则为 `git-ai-club:assistant:user:{userId}`
 
 Hindsight 不再单独占用一套 PostgreSQL 服务，而是与业务后端共用同一 PostgreSQL 实例，通过独立数据库 `hindsight` 隔离记忆表与向量索引。
 
-当前默认关闭 Hermes 网关自身的外部 Hindsight memory provider，避免其再额外写入默认 bank（如 `hermes`）造成重复 retain。
+当前默认关闭 Runtime 自身的外部 Hindsight memory provider，避免 Runtime 再额外写入默认 bank（如 `assistant`）造成重复 retain；会话记忆统一由 backend 的 `MemoryProvider` 负责。
 平台侧所有可审计的用户会话记忆召回与沉淀，统一由业务后端负责：
 
 - 问答前，后端按当前用户 / 项目作用域从 Hindsight 召回可直接塞进 Prompt 的会话记忆摘要
@@ -570,17 +569,17 @@ Provider 的抽象边界包含用户/共享 scope、语义召回、记忆文档�
 
 ### 3.6 qdrant
 
-Qdrant 是 Wiki 知识检索和 Hermes 个人文件库检索的专用向量后端，当前通过 Docker 启动，主要用于：
+Qdrant 是 Wiki 知识检索和 Assistant 个人文件库检索的专用向量后端，当前通过 Docker 启动，主要用于：
 
 - 存储项目 Wiki 与空间化 Wiki 的多 chunk 知识向量
-- 存储 Hermes 个人文件库的多 chunk 知识向量，默认 collection 为 `hermes_file_library_chunks`
+- 存储 Assistant 个人文件库的多 chunk 知识向量，默认 collection 为 `assistant_file_library_chunks`
 - 提供 Wiki 场景下的向量召回能力
 - 作为后端混合检索链路中的“向量候选来源”，再与数据库关键词候选和专用 reranker 组合输出最终排序
 
 Qdrant 与 Hindsight 的职责边界如下：
 
-- `Hindsight`：Hermes 用户会话记忆、共享记忆事实、记忆整合
-- `Qdrant`：Wiki 知识 chunk、相关页面候选、Hermes 的 Wiki 证据召回、Hermes 个人文件库证据召回
+- `Hindsight`：Assistant 用户会话记忆、共享记忆事实、记忆整合
+- `Qdrant`：Wiki 知识 chunk、相关页面候选、Assistant 的 Wiki 证据召回、Assistant 个人文件库证据召回
 - 业务库：Wiki 原文、目录结构、页面权限、同步状态、版本历史
 
 Wiki 页面保存后，不再把整页内容直接 retain 到 Hindsight bank，而是先写入 `wiki_page_sync_task` 或 `wiki_page_sync_task_v2` 同步任务表，事务提交后向独立 `wiki.sync.*` RabbitMQ 队列投递 `{ taskType, syncTaskId }` 轻量唤醒信号。消费者收到消息后仍以数据库任务表为事实源，通过 `PENDING -> RUNNING` 条件更新原子领取任务，再切块、生成向量并写入 Qdrant 的项目/空间 collection。业务同步失败继续使用同步任务表中的 `attemptCount / maxAttempts / nextAttemptAt / lastError` 退避与诊断；MQ retry/DLQ 只覆盖消费入口或 claim 前异常。原 30 秒 Wiki 同步调度器保留为补偿发布器，只扫描到期 `PENDING` 任务并重新投递 MQ 信号，覆盖事务提交后发布失败、服务重启或 RabbitMQ 短暂不可用后的漏发场景。搜索时先从业务库拿关键词候选，再从 Qdrant 拿向量候选，最后由专用 reranker 重排，保证“术语精确匹配”和“自然语言语义命中”同时可用。
@@ -590,7 +589,7 @@ Wiki 页面保存后，不再把整页内容直接 retain 到 Hindsight bank，�
 当前基础设施职责如下：
 
 - `postgres`：统一保存业务核心数据与 Hindsight 记忆数据，其中业务库为 `ai_agent_platform`，记忆库为 `hindsight`
-- `qdrant`：保存 Wiki 知识索引向量、Hermes 个人文件库向量与片段 payload
+- `qdrant`：保存 Wiki 知识索引向量、Assistant 个人文件库向量与片段 payload
 - `redis`：缓存、登录会话相关支持、部分运行态数据
 - `rabbitmq`：承载异步任务信号、消费者并发、ack/nack、延迟重试和死信队列；执行中心以 `execution_task` 为事实源，RabbitMQ 只投递轻量 `executionTaskId`；Wiki 同步以同步任务表为事实源，RabbitMQ 只投递轻量 `taskType/syncTaskId`；聊天室 Agent 以数据库任务表为事实源，RabbitMQ 只投递轻量 `taskId`
 - `minio`：图片、文件和执行产物对象存储
@@ -665,18 +664,18 @@ GitLab 绑定页的“同步 API”是 API 管理的补充入口：
 5. 后端确保项目 Yaade collection 存在，并在其下按 Controller 创建或复用子 collection，再调用 Yaade request CRUD 创建、更新或删除平台生成项
 6. 前端展示新增、更新、删除、跳过数量，并可跳转到 `/apis/projects/{projectId}` 查看结果
 
-### 4.3 Hermes 对话链路
+### 4.3 Assistant 对话链路
 
-Hermes 相关链路如下：
+Assistant 相关链路如下：
 
-1. 用户在前端 Hermes 抽屉中输入问题，或先录制短语音并由后端转写成文本
-2. 前端调用后端 Hermes 会话接口
+1. 用户在前端 Assistant 抽屉中输入问题，或先录制短语音并由后端转写成文本
+2. 前端调用后端 Assistant 会话接口
 3. 后端根据当前用户、页面路由、上下文对象、已绑定对象和结构化 `slashCommand` 组装提示词，并先从 Hindsight 召回当前用户自己的会话记忆，再从 Qdrant 召回个人文件库证据和 Wiki 知识证据；如果用户显式选择 Slash Skill，后端会把该选择固化到当前轮用户消息中，作为专项入口约束，而不只是在 system prompt 里追加说明
-4. 后端调用 Hermes API Server
-5. Hermes API Server 默认仅使用自身内置 memory；与 Hindsight / Qdrant 相关的外部知识召回和用户会话沉淀都由后端负责
-6. Hermes 需要事实时，通过 MCP 调用 `code-processing`
+4. 后端通过 `RuntimeChatService` 调用 `PI_RUNTIME`，并按统一 Runtime 工具契约注入上下文、MCP 工具和短期会话令牌
+5. PI_RUNTIME 不直接访问数据库；Hindsight / Qdrant 相关的外部知识召回和用户会话沉淀都由 backend 负责
+6. PI_RUNTIME 需要事实时，通过平台 MCP 契约调用 `code-processing`
 7. `code-processing` 通过内部认证调用后端工具执行接口
-8. 后端返回工具结果，Hermes 再继续推理与回答
+8. 后端返回工具结果，PI_RUNTIME 再继续推理与回答
 9. 回答成功后，后端会把“用户问题 + 助手回答”异步写入当前用户独立的 Hindsight bank，作为后续续聊可召回的用户会话记忆
 10. 如果是写操作，后端返回动作卡片，由前端提示用户确认
 
@@ -689,25 +688,25 @@ Slash Skill 唤起规则如下：
 - `/执行任务` 启用执行任务查询 / 摘要 Skill，并要求当前轮进入执行任务、仓库扫描任务或测试执行结果查询流程
 - 无 `slashCommand` 时只启用基础协作规则、会话记忆、个人文件库和当前页面上下文，不注入平台业务 Skill
 
-公众端复用同一套 Hermes 后端链路，并按当前项目拆分会话作用域和上下文装配：
+公众端复用同一套 Assistant 后端链路，并按当前项目拆分会话作用域和上下文装配：
 
-- 项目空间内的 Hermes 浮标只在用户拥有 `hermes:chat` 权限时展示，前端创建会话时传 `routeName="projects"` 和当前 `projectId`，会话列表使用 `scope=PROJECT&projectId=...`
-- 管理端 Vue 与公众端 React 都在 Hermes 输入框支持 `/` 命令菜单，并把命令剥离为结构化 `slashCommand` 提交；两端“知识”面板都包含会话记忆和文件库页签
+- 项目空间内的 Assistant 浮标只在用户拥有 `assistant:chat` 权限时展示，前端创建会话时传 `routeName="projects"` 和当前 `projectId`，会话列表使用 `scope=PROJECT&projectId=...`
+- 管理端 Vue 与公众端 React 都在 Assistant 输入框支持 `/` 命令菜单，并把命令剥离为结构化 `slashCommand` 提交；两端“知识”面板都包含会话记忆和文件库页签
 - 管理端兼容旧行为继续可使用 `scope=ALL` 查询当前用户全部会话；后端分页查询在 repository 层完成作用域过滤，避免前端分页后再本地裁剪
 - 空会话复用以 `routeName/projectId/taskId/iterationId/planId/wikiSpaceId/wikiPageId` 完全一致为前提，避免项目助手和具体业务对象之间串用草稿会话
-- `PUBLIC_DEFAULT` 默认角色被授予 `hermes:chat`，但 `SUPER_ADMIN` 既有权限逻辑保持不变
+- `PUBLIC_DEFAULT` 默认角色被授予 `assistant:chat`，但 `SUPER_ADMIN` 既有权限逻辑保持不变
 - `PUBLIC_DEFAULT` 不自动授予 `dashboard:view`，公众用户能否进入管理端首页仍完全由角色权限配置决定
 
-公众端聊天室在项目 Hermes 之外提供房间级共享 Agent。它不复用私有 Hermes 会话表作为主存储，而是在 `chat_room_agent_config`、`chat_room_agent_tool_policy`、`chat_room_agent_task` 和 `chat_room_agent_task_event` 中维护房间级身份、授权和任务生命周期。`@hermes` 消息先创建助手占位消息，再创建 `PENDING` Agent 任务；事务提交后通过 RabbitMQ 投递 `{ taskId }`，消费者再以数据库 `PENDING -> RUNNING` 条件更新领取任务，调用聊天室 Hermes 运行时生成回复，并通过 `/ws/chat` 推送 Agent 任务事件。主动总结、关键字监听和任务状态回写默认关闭，房主显式开启后分别按消息阈值、关键词命中和同项目执行任务状态创建 `SUMMARY / KEYWORD / TASK_STATUS` 任务，复用同一 RabbitMQ 队列、延迟重试、DLQ 和数据库补偿发布机制。聊天室任务会把房间工具策略以 `HermesToolExecutionPolicy` 固化进 Hermes Redis 会话态，MCP bridge 回调后端内部工具接口时仍由 `HermesInternalToolExecutionService` 恢复授权人身份、进入 `HermesToolOrchestrator` 和 `PlatformToolExecutor`；写工具自动执行仅允许低中风险白名单，并且必须同时通过房间授权、功能权限和项目数据权限校验，未满足条件时继续生成动作确认卡片。
+公众端聊天室在项目 Assistant 之外提供房间级共享 Agent。它不复用私有 Assistant 会话表作为主存储，而是在 `chat_room_agent_config`、`chat_room_agent_tool_policy`、`chat_room_agent_task` 和 `chat_room_agent_task_event` 中维护房间级身份、授权和任务生命周期。`@assistant` 消息先创建助手占位消息，再创建 `PENDING` Agent 任务；事务提交后通过 RabbitMQ 投递 `{ taskId }`，消费者再以数据库 `PENDING -> RUNNING` 条件更新领取任务，调用聊天室 Assistant 运行时生成回复，并通过 `/ws/chat` 推送 Agent 任务事件。主动总结、关键字监听和任务状态回写默认关闭，房主显式开启后分别按消息阈值、关键词命中和同项目执行任务状态创建 `SUMMARY / KEYWORD / TASK_STATUS` 任务，复用同一 RabbitMQ 队列、延迟重试、DLQ 和数据库补偿发布机制。聊天室任务会把房间工具策略以 `AssistantToolExecutionPolicy` 固化进 Assistant Redis 会话态，MCP bridge 回调后端内部工具接口时仍由 `AssistantInternalToolExecutionService` 恢复授权人身份、进入 `AssistantToolOrchestrator` 和 `PlatformToolExecutor`；写工具自动执行仅允许低中风险白名单，并且必须同时通过房间授权、功能权限和项目数据权限校验，未满足条件时继续生成动作确认卡片。
 
-其中语音输入只是 Hermes 文本问答链路前的一层预处理：
+其中语音输入只是 Assistant 文本问答链路前的一层预处理：
 
 - 前端使用浏览器录音能力采集短语音
 - 后端调用 OpenAI 兼容 `audio/transcriptions` 接口把音频转成文本
-- 转写结果回填到 Hermes 输入框后，仍然按原有 `question` 文本协议发送
+- 转写结果回填到 Assistant 输入框后，仍然按原有 `question` 文本协议发送
 - 第一版不持久化原始音频，也不把录音接入现有文档附件存储链路
 
-当前 Hermes 提示词中已经明确要求：
+当前 Assistant 提示词中已经明确要求：
 
 - 查询事实时优先调用平台 MCP 工具
 - 不允许假装直接访问数据库
@@ -719,7 +718,7 @@ Slash Skill 唤起规则如下：
 
 当前仓库扫描相关链路如下：
 
-1. 用户或 Hermes 选择 GitLab 仓库绑定
+1. 用户或 Assistant 选择 GitLab 仓库绑定
 2. 通过规则集列表选择仓库扫描规则集
 3. 发起 `repo_scan.start`
 4. 后端创建执行任务或扫描提案
@@ -741,7 +740,7 @@ Slash Skill 唤起规则如下：
 7. 前端在新窗口打开 `GitNexus UI + repoAlias + serve URL`
 8. 用户手动触发刷新时，后端继续通过原有快照链路异步更新平台内摘要
 
-GitNexus 全仓图中的 Nexus AI 属于 GitNexus Web UI 自身能力。Docker 部署时，`gitnexus-web` 会在页面加载前把 `GITNEXUS_AI_*` 或 `HERMES_LLM_*` 映射为 GitNexus 官方前端识别的 AI 设置；如果用户在 GitNexus UI 中手动保存了有效 provider，默认不会覆盖用户当前浏览器会话，除非显式设置 `GITNEXUS_AI_FORCE_CONFIG=true`。
+GitNexus 全仓图中的 Nexus AI 属于 GitNexus Web UI 自身能力。Docker 部署时，`gitnexus-web` 会在页面加载前读取独立的 `GITNEXUS_AI_*` 配置并映射为 GitNexus 官方前端识别的 AI 设置；如果用户在 GitNexus UI 中手动保存了有效 provider，默认不会覆盖用户当前浏览器会话，除非显式设置 `GITNEXUS_AI_FORCE_CONFIG=true`。
 
 ### 4.6 GitLab 产品分支同步链路
 
@@ -950,8 +949,8 @@ GitPilot 反馈与通用的“反馈与建议”入口分离，按助手消息�
 - 管理端与公众端端口：`FRONTEND_PORT`、`FRONTEND_PUBLIC_PORT`
 - 前端构建期 API 地址：`VITE_API_BASE_URL`、`VITE_API_PORT`
 - 管理端与公众端镜像名：`FRONTEND_IMAGE`、`FRONTEND_PUBLIC_IMAGE`
-- Hermes API 地址与模型配置
-- Hermes OpenAI 兼容语音转写配置
+- Assistant API 地址与模型配置
+- Assistant OpenAI 兼容语音转写配置
 - code-processing 基础地址
 - GitLab 默认 API 地址
 - Woodpecker provider 地址和 API Token；Woodpecker 登录配置不再作为 AI Club 环境变量暴露
@@ -971,11 +970,11 @@ GitPilot 反馈与通用的“反馈与建议”入口分离，按助手消息�
 - Gitee 企业 API 地址、企业 ID、Access Token，以及测试计划推送所需的默认负责人、模块和用例类型
 - PR 评审统计的 OA 地址、默认开发组、OA 用户 ID 和 OA 令牌，其中 OA 用户 ID 与令牌必须通过后台环境变量管理配置，不再从配置文件直接生效
 - Yaade 代理地址、管理员账号、公共集合名称和平台代理会话有效期
-- Hermes 模型名、请求超时，以及语音转写服务地址、API Key、模型名和超时时间
+- Assistant 模型名、请求超时，以及语音转写服务地址、API Key、模型名和超时时间
 - Hindsight bank 前缀、recall 预算和请求超时
 - 服务器管理模块开关、监控采样间隔，以及连通性 / CPU / 内存 / 磁盘告警的默认阈值、连续越线次数和冷却时间
 
-其中 Hermes 对话服务地址 / API Key 与 Hindsight API 地址 / API Key 重新收口为部署配置，统一通过 `.env`、`.env.server` 或 Spring 配置文件维护，不再通过后台“环境变量管理”做运行时覆盖。
+其中 Assistant 对话服务地址 / API Key 与 Hindsight API 地址 / API Key 重新收口为部署配置，统一通过 `.env`、`.env.server` 或 Spring 配置文件维护，不再通过后台“环境变量管理”做运行时覆盖。
 
 服务器管理属于高风险能力，运行期开关与默认告警规则统一通过固定注册表维护：
 
@@ -1017,8 +1016,8 @@ GitPilot 反馈与通用的“反馈与建议”入口分离，按助手消息�
 
 当前模式下：
 
-- `postgres`、`redis`、`rabbitmq`、`minio`、`hindsight`、`hermes`、`woodpecker-server`、`woodpecker-agent` 走 Docker；显式设置 `WOODPECKER_ENABLED=false` 时跳过 Woodpecker
-- `frontend`、`backend`、`code-processing` 走本地源码进程
+- `postgres`、`redis`、`rabbitmq`、`minio`、`hindsight`、`woodpecker-server`、`woodpecker-agent` 走 Docker；显式设置 `WOODPECKER_ENABLED=false` 时跳过 Woodpecker
+- `pi-runtime`、`frontend`、`backend`、`code-processing` 走本地源码进程，其中 Pi Runtime 先于 backend 启动并监听 `PI_RUNTIME_PORT`
 - Windows PowerShell 源码模式同时启动 `frontend-public` 公众端源码进程，并按 `FRONTEND_PUBLIC_PORT` 注入端口，默认 `5175`；单独在 `frontend-public/` 下执行 `npm run dev` 时默认使用模块内 `3000`
 - 日志统一输出到 `.run-logs/`
 
@@ -1054,8 +1053,8 @@ Woodpecker 在两种运行模式中都使用 Compose `woodpecker` profile，由�
 - 平台开始承担“项目自动化测试编排器”角色，测试计划、GitLab 仓库和执行中心被打通为一条闭环。
 - 流水线中心把 Woodpecker 收敛为平台内置 provider，同时保留 Jenkins 作为外部兼容能力。
 - 可观测性中心已经打通项目运行实例、受管服务器 SSH、应用日志检索和健康趋势闭环，项目部署后的排障入口不再分散。
-- Hermes 并不是直接访问数据库，而是通过 MCP 工具受控访问平台数据。
-- GitPilot 是用户可见的统一助手产品名，不绑定 Hermes；运行时适配器只能调用受控工具网关，身份、数据权限、写操作确认、审计和预算仍由平台后端最终裁决。技术设计、开发实现和测试等编排步骤按运行时能力选择 Agent，而不是固定依赖特定 CLI；每个执行任务都会快照 Agent Profile、Runtime、模型、提示词、工具和沙箱策略，保证可追溯和可回放。Hermes 在迁移期继续以兼容 Runtime 运行，详见 `docs/design-docs/gitpilot-multi-runtime-technical-design-v1.md`。
+- Assistant 并不是直接访问数据库，而是通过 MCP 工具受控访问平台数据。
+- GitPilot 是用户可见的统一助手产品名，不绑定具体 Runtime；运行时适配器只能调用受控工具网关，身份、数据权限、写操作确认、审计和预算仍由平台后端最终裁决。技术设计、开发实现和测试等编排步骤按运行时能力选择 Agent，而不是固定依赖特定 CLI；每个执行任务都会快照 Agent Profile、Runtime、模型、提示词、工具和沙箱策略，保证可追溯和可回放。助手和聊天室统一通过 `RuntimeChatService` 使用 `PI_RUNTIME` 默认链路，详见 `docs/design-docs/gitpilot-multi-runtime-technical-design-v1.md`。
 - Runtime Registry 的平台管理员入口为管理端 `/runtime-registry`，通过 `runtime:manage` 权限维护 Runtime 编码、适配器、能力、沙箱策略、降级链和启停状态；Agent 管理页只读取注册中心的健康 Runtime 选项。
 - Runtime Registry 仅允许已启用且健康状态为 `HEALTHY`/`DEGRADED` 的 Runtime 承接新任务；`UNKNOWN`、`UNHEALTHY` 和 `DISABLED` 只可用于历史快照回显。运行中的任务固定 Profile/Runtime 快照，故障降级只在没有工具副作用和确认状态前发生，并写入 Runtime 事件与审计关联。
 - `code-processing` 同时承担“代码分析服务”和“MCP 工具暴露层”两种角色。
@@ -1073,7 +1072,7 @@ Woodpecker 在两种运行模式中都使用 Compose `woodpecker` profile，由�
 
 公众端工作台（frontend-public）新增「GitLab 快速发起 MR」「快捷任务便签」「在线智能体」「快速构建」「常用系统访问入口」五张卡片后，对 `PUBLIC_DEFAULT` 角色的权限边界做了下放（V110 迁移）：
 
-- `PUBLIC_DEFAULT` 此前仅授 hermes/chat/data-workbench 相关权限，自助注册用户无法使用工作台卡片（现有工作台能跑是因为测试账号被额外授权）。
+- `PUBLIC_DEFAULT` 此前仅授 assistant/chat/data-workbench 相关权限，自助注册用户无法使用工作台卡片（现有工作台能跑是因为测试账号被额外授权）。
 - V110 给 `PUBLIC_DEFAULT` 补授 `dashboard:view`、`gitlab:view`、`gitlab:manage`、`cicd:view`、`cicd:build`，使自助注册用户也能使用上述五张卡片。
 - 这些权限码与后端接口在 V1 即已存在，本次仅补角色-权限关联，不新增权限点、不新增后端接口。
 - `dashboard:widget:*` 是管理端前端组件可见性权限，后端不校验，公众端前端自行控制卡片可见性，未下放给 `PUBLIC_DEFAULT`。
@@ -1083,11 +1082,13 @@ GitPilot CLI 已改为基于 pi-coding-agent 二开的本地执行平面：
 
 - `gitpilot-cli` 是 `@earendil-works/pi-coding-agent@0.81.1` 的源码 fork，运行在用户设备上，直接复用 Pi 的 Agent 循环、交互式 TUI、`read`/`write`/`edit`/`bash`/`grep`/`find`/`ls` 内置工具和树形会话管理，不再自造 CLI 框架。品牌通过 `package.json` 的 `piConfig: { name: "gitpilot", configDir: ".gitpilot" }` 派生，配置目录为 `~/.gitpilot/agent`。
 - GitPilot 内置 `pi-web-access@0.22.0` 与 `pi-mcp-adapter@2.21.0`：Web 默认覆盖 Code、Work、Design，MCP 服务按独立的 `mcp-scopes.json` 分配三种模式，未分配服务默认仅 Code。标准连接定义仍保留在全局与项目 MCP 配置层，凭据和 OAuth 不进入 Desktop 状态；Bun sidecar 静态打包两个扩展及运行依赖。详细边界见 `docs/design-docs/gitpilot-web-mcp-extensions-technical-design-v1.md`。
+- Plannotator 计划能力采用 CLI/TUI 与 Desktop 双宿主适配：CLI 保留 `@plannotator/pi-extension` 的浏览器审核，Desktop/RPC 不启动浏览器，当前 MVP 将原生审核和 checklist 进度映射为输入框上方的紧凑 `第 N/M 步` 状态及悬停步骤浮层；后续再升级到右侧执行工作台的结构化“计划”Tab。计划状态事件携带 `sessionFile`，避免多会话串线。详细边界见 `docs/design-docs/gitpilot-plannotator-desktop-integration-technical-design-v1.md`。
 - 平台对接以 Pi 内置 extension 形式实现（`src/extensions/gitpilot/`），随源码编译并默认加载，不侵入核心 TUI 与工具：
   - `platform-auth`：`/gitpilot login|logout|status` 斜杠命令，设备授权换取独立 CLI Token（`gpt_`），Token 只保存在系统凭据库，服务端只保存 hash。
   - `platform-model`：注册 `gitpilot` provider，读取 `/api/cli/models` 启用 CHAT 模型（清单含 `contextLength`/`maxOutputTokens`，由 `ai_model_config` 表 V144 迁移新增、管理端可配置）；`toModelConfig` 透传两字段为 pi 的 `contextWindow`/`maxTokens`，未配置时回退默认 128K/16K。推理时用 `gpt_` 签发短期模型会话令牌（`gms_`，默认 900s），缓存并临近过期自动重建，通过 `streamSimple` 把请求改写到平台模型代理（OpenAI 走 `/chat/completions`、Anthropic 走 `/messages`）。平台模型 API Key、真实上游地址和完整请求审计留在 backend。CLI 据真实 `contextWindow` 在 `/model` 选择器详情与 `--list-models` 列动态展示窗口，并按 pi 原生 `shouldCompact`（已用 token > 窗口 − reserveTokens）触发自动压缩，无需自写压缩逻辑。
-  - `platform-requirement`：`/requirement` 斜杠命令，读取 `GET /api/cli/tasks` 拉取负责人是当前 CLI 用户的需求（强制 `workItemType=需求`），选择器展示后选中即用 `pi.sendUserMessage` 触发 AI 进行技术设计与开发；查询走独立谓词、绕过项目参与人可见性，确保“分配给我但未参与的项目”需求可见。
-- backend `/api/cli/model-sessions/{id}` 只开放 Chat Completions 与 Anthropic Messages 两个固定协议路径，禁止把短期 session 变成任意 URL 代理；新增 `GET /api/cli/tasks` 供 `/requirement` 命令读取负责人是当前用户的需求（新增 `cli:task:read` scope，新签发 token 默认携带），CLI Token scope 与设备授权流程其余保持不变。
+  - `platform-requirement`：`/requirement` 斜杠命令仍读取 `GET /api/cli/tasks?workItemType=需求`，拉取负责人是当前 CLI 用户的需求，选择器展示后选中即用 `pi.sendUserMessage` 触发 AI 进行技术设计与开发；查询走独立谓词、绕过项目参与人可见性，确保“分配给我但未参与的项目”需求可见。
+  - Desktop 输入框右侧加号新增“工作项”页签，与附件页签共用同一个添加上下文菜单。该页签通过新增 `get_platform_work_items` RPC 由 sidecar 调用 `GET /api/cli/tasks`，查询当前用户负责的需求、任务和缺陷，并在 React 侧按“需求任务 / 缺陷”分组、可折叠展示。点击条目只把轻量工作项上下文写入输入框，必须由用户再次确认发送，不直接启动 Agent；平台令牌始终留在 sidecar。
+- backend `/api/cli/model-sessions/{id}` 只开放 Chat Completions 与 Anthropic Messages 两个固定协议路径，禁止把短期 session 变成任意 URL 代理；`GET /api/cli/tasks` 通过可选 `workItemType` 支持当前用户负责的全部工作项或单一类型（继续受 `cli:task:read` scope 保护），`/requirement` 使用需求过滤，Desktop 工作项入口使用全量查询。CLI Token scope 与设备授权流程其余保持不变。
 - `packages/gitpilot-agent-core` 收窄为 pi-runtime 专用的 Pi Agent 封装 + Handoff 协议层，已随 pi-runtime 升级到 `@earendil-works/*@0.81.1`（`getModel`/`getModels`/`streamSimple` 经 `pi-ai/compat` 兼容入口消费）；CLI 不再依赖该包。
 - 云端接力（项目关联、Git 快照、handoff 分支、Cloud Coding 工作区）尚未接入，相关代码（`gitstate/snapshot.ts`、handoff envelope、`HandoffSessionEnvelopeValidator`、`cloud_coding_sandbox_policy.py`）已停车到 `packages/gitpilot-agent-core/cloud/`，后续作为 Pi extension 接入；接力仍需遵循 `gitpilot-cli-cloud-coding-handoff-technical-design-v1.md` 的本地零污染和 Sandbox Worker 边界。
 - P0 已冻结 `HandoffSessionEnvelope v1` Schema/限制/敏感字段拒绝规则、CLI scope 和 `cloud-coding-sandbox-v1`。Cloud Coding 默认关闭，公众发布门槛为 `CONTAINER` Worker；Session 表、云端 REST 和公众端仍属于 P1。
@@ -1101,7 +1102,7 @@ GitPilot CLI 已改为基于 pi-coding-agent 二开的本地执行平面：
 
 - `backend` 下的 `service` 仍然较重，部分业务编排、集成调用、动作规划集中在同一层。
 - 领域模型、应用服务、基础设施适配器尚未完全分层。
-- Hermes、执行中心、代码扫描、GitLab 等子域之间的边界文档还不够细。
+- Assistant、执行中心、代码扫描、GitLab 等子域之间的边界文档还不够细。
 - Python 侧当前以服务脚本和功能模块为主，自动化测试体系还不够完整。
 - 前端已经包含很多平台页面，但模块化边界和共享组件规范仍可继续沉淀。
 
@@ -1110,7 +1111,7 @@ GitPilot CLI 已改为基于 pi-coding-agent 二开的本地执行平面：
 基于当前现状，建议后续优先沿以下方向演进：
 
 1. 在后端逐步引入更清晰的分层，例如按 `domain / application / infrastructure / interface` 拆分复杂能力。
-2. 为 Hermes、执行中心、仓库扫描、GitLab 管理分别补齐专项架构文档和时序说明。
+2. 为 Assistant、执行中心、仓库扫描、GitLab 管理分别补齐专项架构文档和时序说明。
 3. 补充 `code-processing` 的自动化测试与回归样例，避免代码扫描和 MCP 工具回归难以及时发现。
 4. 为跨服务链路建立更稳定的 harness，包括真实样例、日志定位和故障回放方式。
 5. 收敛前端页面与后端 DTO 的字段约定，减少跨模块改动时的联动成本。

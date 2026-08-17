@@ -352,7 +352,7 @@
           <div class="header-profile-group">
             <button
               v-if="isMobileViewport && canUseAssistant"
-              class="header-hermes-button"
+              class="header-assistant-button"
               type="button"
               aria-label="打开 GitPilot 助手"
               @click.stop="handleOpenAssistantDrawer"
@@ -964,7 +964,7 @@ const effectiveSidebarCollapsed = computed(() => isMobileViewport.value || appSt
 const asideWidth = computed(() => (effectiveSidebarCollapsed.value ? '80px' : '256px'))
 const userInitial = computed(() => (authStore.user?.nickname || authStore.user?.username || 'U').slice(0, 1).toUpperCase())
 const userAvatarUrl = computed(() => resolveAssetUrl(authStore.user?.avatarUrl))
-const canUseAssistant = computed(() => authStore.hasPermission('hermes:chat'))
+const canUseAssistant = computed(() => authStore.hasPermission('assistant:chat'))
 const assistantRouteName = computed(() => String(route.name || ''))
 const assistantProjectId = computed(() => {
   const projectId = Number(route.params.projectId)
@@ -1880,7 +1880,7 @@ watch(
 
 .header-search-input,
 .header-search-button,
-.header-hermes-button {
+.header-assistant-button {
   border: 0;
   appearance: none;
   -webkit-appearance: none;
@@ -1931,7 +1931,7 @@ watch(
   align-items: center;
 }
 
-.header-hermes-button,
+.header-assistant-button,
 .header-notification-button {
   width: 34px;
   height: 34px;
@@ -1945,7 +1945,7 @@ watch(
   position: relative;
 }
 
-.header-hermes-button:hover,
+.header-assistant-button:hover,
 .header-notification-button:hover {
   background: rgba(226, 232, 240, 0.55);
   color: var(--app-primary);

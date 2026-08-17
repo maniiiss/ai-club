@@ -277,7 +277,7 @@ ${chalk.bold("选项：")}
   --help, -h                     显示此帮助
   --version, -v                  显示版本号
 
-扩展可以注册额外参数（例如 plan-mode 扩展的 --plan）。${extensionFlagsText}
+扩展可以注册额外参数（例如 Plannotator 的 --plan、Plan Mode 的 --plan-mode）。${extensionFlagsText}
 
 ${chalk.bold("示例：")}
   # 交互模式

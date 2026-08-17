@@ -200,11 +200,11 @@ public class HindsightProperties {
     }
 
     public String getBankPrefix() {
-        return resolveOrDefault(PlatformEnvVarRegistry.KEY_HERMES_HINDSIGHT_BANK_ID, bankPrefix);
+        return resolveOrDefault(PlatformEnvVarRegistry.KEY_ASSISTANT_HINDSIGHT_BANK_ID, bankPrefix);
     }
 
     public String getRecallBudget() {
-        return resolveOrDefault(PlatformEnvVarRegistry.KEY_HERMES_HINDSIGHT_BUDGET, recallBudget);
+        return resolveOrDefault(PlatformEnvVarRegistry.KEY_ASSISTANT_HINDSIGHT_BUDGET, recallBudget);
     }
 
     public int getTimeoutSeconds() {
@@ -266,7 +266,7 @@ public class HindsightProperties {
      * Assistant 用户会话记忆按用户独立分 bank，避免不同用户的私人记忆互相污染。
      */
     public String assistantUserMemoryBankId(Long userId) {
-        return getBankPrefix() + ":hermes:user:" + userId;
+        return getBankPrefix() + ":assistant:user:" + userId;
     }
 
     /**

@@ -19,7 +19,7 @@ import java.time.LocalDateTime;
  * 该实体只负责保存会话元信息与前端回显快照，不承载 Assistant 内部隐藏记忆。
  */
 @Entity
-@Table(name = "hermes_conversation_session")
+@Table(name = "assistant_conversation_session")
 public class AssistantConversationSessionEntity {
 
     /** 会话主键ID。 */
@@ -50,7 +50,7 @@ public class AssistantConversationSessionEntity {
 
     /** GitPilot 会话创建时固定的 Runtime，后续对话不因平台默认切换而改变。 */
     @Column(name = "runtime_registry_code", length = 40)
-    private String runtimeRegistryCode = "HERMES_LEGACY";
+    private String runtimeRegistryCode = "PI_RUNTIME";
 
     /** 创建会话时绑定的 Agent Profile 版本，用于历史会话回放。 */
     @Column(name = "runtime_profile_version")

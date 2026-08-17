@@ -80,15 +80,15 @@ public class ChatWebSocketPushService {
     }
 
     public void broadcastAssistantDelta(Long roomId, Long messageId, String delta) {
-        broadcast(roomId, Map.of("type", "HERMES_STREAM_DELTA", "messageId", messageId, "delta", delta == null ? "" : delta));
+        broadcast(roomId, Map.of("type", "ASSISTANT_STREAM_DELTA", "messageId", messageId, "delta", delta == null ? "" : delta));
     }
 
     public void broadcastAssistantMessageDone(Long roomId, ChatMessageSummary message) {
-        broadcast(roomId, Map.of("type", "HERMES_MESSAGE_DONE", "message", message));
+        broadcast(roomId, Map.of("type", "ASSISTANT_MESSAGE_DONE", "message", message));
     }
 
     public void broadcastAssistantMessageError(Long roomId, ChatMessageSummary message) {
-        broadcast(roomId, Map.of("type", "HERMES_MESSAGE_ERROR", "message", message));
+        broadcast(roomId, Map.of("type", "ASSISTANT_MESSAGE_ERROR", "message", message));
     }
 
     public void broadcastRoomUpdated(Long roomId, ChatRoomSummary room) {

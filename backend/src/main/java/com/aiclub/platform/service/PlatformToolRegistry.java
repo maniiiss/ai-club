@@ -194,7 +194,7 @@ public class PlatformToolRegistry {
                 schema("testPlanId", "测试计划ID", "cases", "测试用例"),
                 pendingActionOutputSchema("APPEND_TEST_CASES", "确认后向测试计划追加测试用例", "追加测试用例所需的测试计划标识与用例列表"));
         register(result, TOOL_DOCUMENT_CONVERT_MARKDOWN, "文档转 Markdown", "DOCUMENT", "读取指定文档资产并转换为 Markdown，供 Wiki 导入、Assistant 附件理解和智能体工具调用复用", true, "LOW", "", false,
-                schema("assetId", "文档资产ID", "scene", "转换场景，例如 WIKI_IMPORT 或 HERMES_ATTACHMENT", "maxChars", "最大保留字符数"),
+                schema("assetId", "文档资产ID", "scene", "转换场景，例如 WIKI_IMPORT 或 ASSISTANT_ATTACHMENT", "maxChars", "最大保留字符数"),
                 documentMarkdownOutputSchema());
         register(result, TOOL_WIKI_SPACE_SEARCH, "搜索 Wiki 页面", "WIKI", "按关键词、空间或项目搜索当前用户可见的 Wiki 页面，必要时会结合语义召回返回相关页面", true, "LOW", "wiki:view", false,
                 schema("query", "Wiki 查询语句", "spaceId", "Wiki 空间ID，可选", "projectId", "绑定项目ID，可选"),

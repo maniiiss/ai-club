@@ -44,7 +44,7 @@ public class WikiKnowledgeProperties {
             @Value("${platform.wiki-knowledge.qdrant.timeout-seconds:20}") int qdrantTimeoutSeconds,
             @Value("${platform.wiki-knowledge.qdrant.project-collection:wiki_project_chunks}") String projectCollection,
             @Value("${platform.wiki-knowledge.qdrant.space-collection:wiki_space_chunks}") String spaceCollection,
-            @Value("${platform.wiki-knowledge.qdrant.hermes-file-library-collection:hermes_file_library_chunks}") String assistantFileLibraryCollection,
+            @Value("${platform.wiki-knowledge.qdrant.assistant-file-library-collection:assistant_file_library_chunks}") String assistantFileLibraryCollection,
             @Value("${platform.wiki-knowledge.embedding.model-id:0}") long embeddingModelId,
             @Value("${platform.wiki-knowledge.embedding.base-url:}") String embeddingBaseUrl,
             @Value("${platform.wiki-knowledge.embedding.api-key:}") String embeddingApiKey,
@@ -67,7 +67,7 @@ public class WikiKnowledgeProperties {
         this.qdrantTimeoutSeconds = Math.max(5, qdrantTimeoutSeconds);
         this.projectCollection = hasText(projectCollection) ? projectCollection.trim() : "wiki_project_chunks";
         this.spaceCollection = hasText(spaceCollection) ? spaceCollection.trim() : "wiki_space_chunks";
-        this.assistantFileLibraryCollection = hasText(assistantFileLibraryCollection) ? assistantFileLibraryCollection.trim() : "hermes_file_library_chunks";
+        this.assistantFileLibraryCollection = hasText(assistantFileLibraryCollection) ? assistantFileLibraryCollection.trim() : "assistant_file_library_chunks";
         this.embeddingModelId = embeddingModelId > 0 ? embeddingModelId : null;
         this.embeddingBaseUrl = trimTrailingSlash(embeddingBaseUrl);
         this.embeddingApiKey = defaultString(embeddingApiKey);
@@ -112,7 +112,7 @@ public class WikiKnowledgeProperties {
                                    int graphMaxEdgesPerNode,
                                    int graphScrollPageSize) {
         this(enabled, qdrantBaseUrl, qdrantApiKey, qdrantTimeoutSeconds, projectCollection, spaceCollection,
-                "hermes_file_library_chunks", embeddingModelId, embeddingBaseUrl, embeddingApiKey, embeddingModelName,
+                "assistant_file_library_chunks", embeddingModelId, embeddingBaseUrl, embeddingApiKey, embeddingModelName,
                 embeddingProvider, vectorSearchLimit, candidateLimit, rerankBaseUrl, rerankApiKey, rerankModel,
                 rerankProvider, rerankTimeoutSeconds, rerankTopK, graphSimilarityThreshold, graphMaxEdgesPerNode,
                 graphScrollPageSize);

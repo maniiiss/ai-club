@@ -20,10 +20,10 @@ public class AssistantSpeechProperties {
     private final PlatformEnvVarResolver platformEnvVarResolver;
 
     @Autowired
-    public AssistantSpeechProperties(@Value("${platform.hermes.speech.base-url:https://api.openai.com/v1}") String baseUrl,
-                                  @Value("${platform.hermes.speech.api-key:}") String apiKey,
-                                  @Value("${platform.hermes.speech.model:gpt-4o-mini-transcribe}") String model,
-                                  @Value("${platform.hermes.speech.timeout-seconds:60}") String timeoutSeconds,
+    public AssistantSpeechProperties(@Value("${platform.assistant-runtime.speech.base-url:https://api.openai.com/v1}") String baseUrl,
+                                  @Value("${platform.assistant-runtime.speech.api-key:}") String apiKey,
+                                  @Value("${platform.assistant-runtime.speech.model:gpt-4o-mini-transcribe}") String model,
+                                  @Value("${platform.assistant-runtime.speech.timeout-seconds:60}") String timeoutSeconds,
                                   @Value("${spring.servlet.multipart.max-file-size:20MB}") DataSize maxFileSize,
                                   PlatformEnvVarResolver platformEnvVarResolver) {
         this(baseUrl, apiKey, model, timeoutSeconds, maxFileSize, platformEnvVarResolver, true);
@@ -53,19 +53,19 @@ public class AssistantSpeechProperties {
     }
 
     public String getBaseUrl() {
-        return trimTrailingSlash(resolveOrDefault(PlatformEnvVarRegistry.KEY_HERMES_SPEECH_BASE_URL, baseUrl));
+        return trimTrailingSlash(resolveOrDefault(PlatformEnvVarRegistry.KEY_ASSISTANT_SPEECH_BASE_URL, baseUrl));
     }
 
     public String getApiKey() {
-        return resolveOptional(PlatformEnvVarRegistry.KEY_HERMES_SPEECH_API_KEY, apiKey);
+        return resolveOptional(PlatformEnvVarRegistry.KEY_ASSISTANT_SPEECH_API_KEY, apiKey);
     }
 
     public String getModel() {
-        return resolveOrDefault(PlatformEnvVarRegistry.KEY_HERMES_SPEECH_MODEL, model);
+        return resolveOrDefault(PlatformEnvVarRegistry.KEY_ASSISTANT_SPEECH_MODEL, model);
     }
 
     public int getTimeoutSeconds() {
-        String resolved = resolveOrDefault(PlatformEnvVarRegistry.KEY_HERMES_SPEECH_TIMEOUT_SECONDS, String.valueOf(timeoutSeconds));
+        String resolved = resolveOrDefault(PlatformEnvVarRegistry.KEY_ASSISTANT_SPEECH_TIMEOUT_SECONDS, String.valueOf(timeoutSeconds));
         try {
             return Math.max(10, Math.min(Integer.parseInt(resolved), 300));
         } catch (NumberFormatException exception) {

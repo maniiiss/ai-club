@@ -19,7 +19,7 @@ export const resolveAssistantDrawerPresentation = (
   if (options.isMobileViewport) {
     return {
       size: '100%',
-      classNames: ['hermes-drawer', 'is-mobile'],
+      classNames: ['assistant-drawer', 'is-mobile'],
       panelColumns: '164px minmax(0, 1fr)'
     }
   }
@@ -27,14 +27,14 @@ export const resolveAssistantDrawerPresentation = (
   if (options.desktopFullscreen) {
     return {
       size: '100%',
-      classNames: ['hermes-drawer', 'is-desktop-fullscreen'],
+      classNames: ['assistant-drawer', 'is-desktop-fullscreen'],
       panelColumns: '220px minmax(0, 1fr)'
     }
   }
 
   return {
     size: '880px',
-    classNames: ['hermes-drawer'],
+    classNames: ['assistant-drawer'],
     panelColumns: '164px minmax(0, 1fr)'
   }
 }

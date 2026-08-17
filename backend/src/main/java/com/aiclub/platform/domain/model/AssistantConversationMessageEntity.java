@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
  * Assistant 会话中的单条可回显消息记录。
  */
 @Entity
-@Table(name = "hermes_conversation_message")
+@Table(name = "assistant_conversation_message")
 public class AssistantConversationMessageEntity {
 
     /** 消息主键ID。 */

@@ -145,24 +145,24 @@ platform:
       test-plan-assignee-id: ${PLATFORM_GITEE_TEST_PUSH_TEST_PLAN_ASSIGNEE_ID:}
       test-case-module-id: ${PLATFORM_GITEE_TEST_PUSH_TEST_CASE_MODULE_ID:}
       test-case-type: ${PLATFORM_GITEE_TEST_PUSH_TEST_CASE_TYPE:}
-  hermes:
-    base-url: ${PLATFORM_HERMES_BASE_URL:}
-    api-key: ${PLATFORM_HERMES_API_KEY:}
-    model: ${PLATFORM_HERMES_MODEL:}
-    timeout-seconds: ${PLATFORM_HERMES_TIMEOUT_SECONDS:}
-    session-prefix: ${PLATFORM_HERMES_SESSION_PREFIX:ai-club:hermes}
-    max-context-messages: ${PLATFORM_HERMES_MAX_CONTEXT_MESSAGES:6}
-    grounding-ttl-seconds: ${PLATFORM_HERMES_GROUNDING_TTL_SECONDS:86400}
+  assistant-runtime:
+    base-url: ${PLATFORM_ASSISTANT_BASE_URL:http://localhost:9010}
+    api-key: ${PLATFORM_ASSISTANT_API_KEY:}
+    model: ${PLATFORM_ASSISTANT_MODEL:PI_RUNTIME}
+    timeout-seconds: ${PLATFORM_ASSISTANT_TIMEOUT_SECONDS:180}
+    session-prefix: ${PLATFORM_ASSISTANT_SESSION_PREFIX:ai-club:assistant}
+    max-context-messages: ${PLATFORM_ASSISTANT_MAX_CONTEXT_MESSAGES:6}
+    grounding-ttl-seconds: ${PLATFORM_ASSISTANT_GROUNDING_TTL_SECONDS:86400}
     speech:
-      base-url: ${PLATFORM_HERMES_SPEECH_BASE_URL:}
-      api-key: ${PLATFORM_HERMES_SPEECH_API_KEY:}
-      model: ${PLATFORM_HERMES_SPEECH_MODEL:}
-      timeout-seconds: ${PLATFORM_HERMES_SPEECH_TIMEOUT_SECONDS:}
+      base-url: ${PLATFORM_ASSISTANT_SPEECH_BASE_URL:}
+      api-key: ${PLATFORM_ASSISTANT_SPEECH_API_KEY:}
+      model: ${PLATFORM_ASSISTANT_SPEECH_MODEL:}
+      timeout-seconds: ${PLATFORM_ASSISTANT_SPEECH_TIMEOUT_SECONDS:}
   pi-runtime:
     base-url: ${PLATFORM_PI_RUNTIME_BASE_URL:http://localhost:9010}
     service-token: ${PLATFORM_PI_RUNTIME_SERVICE_TOKEN:${PLATFORM_INTERNAL_SERVICE_TOKEN:git-ai-club-internal-service-token}}
   assistant:
-    default-runtime-code: ${PLATFORM_GITPILOT_DEFAULT_RUNTIME_CODE:HERMES_LEGACY}
+    default-runtime-code: ${PLATFORM_GITPILOT_DEFAULT_RUNTIME_CODE:PI_RUNTIME}
     external-mcp:
       # 环境变量管理中的数据库覆盖优先；此配置仅作为部署环境兜底。
       allowed-hosts: ${PLATFORM_ASSISTANT_EXTERNAL_MCP_ALLOWED_HOSTS:}
@@ -176,8 +176,8 @@ platform:
   hindsight:
     base-url: ${HINDSIGHT_API_URL:}
     api-key: ${HINDSIGHT_API_KEY:}
-    bank-prefix: ${HERMES_HINDSIGHT_BANK_ID:}
-    recall-budget: ${HERMES_HINDSIGHT_BUDGET:}
+    bank-prefix: ${ASSISTANT_HINDSIGHT_BANK_ID:}
+    recall-budget: ${ASSISTANT_HINDSIGHT_BUDGET:}
     timeout-seconds: ${PLATFORM_HINDSIGHT_TIMEOUT_SECONDS:}
     memory-fact:
       project-bank-template: ${PLATFORM_HINDSIGHT_MEMORY_FACT_PROJECT_BANK_TEMPLATE:}
@@ -215,8 +215,8 @@ platform:
       top-k: ${PLATFORM_WIKI_KNOWLEDGE_RERANK_TOP_K:10}
   lightrag:
     enabled: ${PLATFORM_LIGHTRAG_ENABLED:true}
-    # 阶段三切流开关：hermes 证据默认关闭灰度按需开启；图谱默认开启走 LightRAG+Neo4j。
-    hermes-evidence-enabled: ${PLATFORM_LIGHTRAG_HERMES_EVIDENCE_ENABLED:false}
+    # Assistant 证据默认关闭灰度按需开启；图谱默认开启走 LightRAG+Neo4j。
+    assistant-evidence-enabled: ${PLATFORM_LIGHTRAG_ASSISTANT_EVIDENCE_ENABLED:false}
     graph-enabled: ${PLATFORM_LIGHTRAG_GRAPH_ENABLED:true}
     query:
       top-k: ${PLATFORM_LIGHTRAG_QUERY_TOP_K:3}

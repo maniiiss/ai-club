@@ -212,7 +212,7 @@ export const AssistantMcpPanel = ({ onClose }: AssistantMcpPanelProps) => {
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto p-4">
         {error && <div className="mb-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] text-red-700">{error}</div>}
-        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] leading-5 text-amber-800">外部 MCP 仅注入新 Runtime 会话；如果当前 GitPilot 仍使用 HERMES_LEGACY，服务不会出现在模型工具目录中。</div>
+        <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[12px] leading-5 text-amber-800">外部 MCP 仅注入新 Runtime 会话；当前会话需使用 PI_RUNTIME 才会出现在模型工具目录中。</div>
         <div className="mb-4 rounded-xl border border-[var(--color-border-light)] bg-[var(--color-bg-hover)] p-4">
           <div className="mb-3 flex items-center justify-between gap-2">
             <div className="text-[13px] font-semibold text-[var(--color-text-primary)]">{editingId == null ? '添加 MCP 服务' : '编辑 MCP 服务'}</div>

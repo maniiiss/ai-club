@@ -55,7 +55,7 @@ rpc.prompt(promptMessage, images)
 ### 4.1 `src/utils/document-parser.ts`
 - `extractDocumentText(buffer, ext, maxChars=15000)`：按扩展名分发到 pdf/docx/xlsx/pptx 抽取器。
 - 依赖：`unpdf`（pdf）、`mammoth`（docx）、`xlsx`（SheetJS，xlsx）、`jszip`（pptx 读取 `ppt/slides/slideN.xml` 抽 `<a:t>` 文本节点）。
-- 限制：单文件 20MB（对齐 `platform.upload.max-document-size`），文本上限 15000 字符（对齐后端 `HERMES_ATTACHMENT` maxChars），超限置 `truncated=true`。
+- 限制：单文件 20MB（对齐 `platform.upload.max-document-size`），文本上限 15000 字符（对齐后端 `ASSISTANT_ATTACHMENT` maxChars），超限置 `truncated=true`。
 - pptx v1 仅抽取文本，不含嵌入图片/图表。
 
 ### 4.2 `src/core/attachments/prepare-attachment.ts`

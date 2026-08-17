@@ -17,6 +17,17 @@ use std::time::Duration;
 use serde_json::Value;
 use tauri::{AppHandle, Emitter};
 
+/// 写入非关键诊断信息时忽略 stderr 错误，避免 GUI 进程的关闭管道触发 panic。
+///
+/// 业务意图：RPC 协议转发和会话恢复不能依赖控制台存在；桌面端以无控制台模式运行，
+/// 或启动它的开发终端被关闭后，stderr 可能不可写。诊断输出失败时应继续处理协议。
+fn write_diagnostic(args: std::fmt::Arguments<'_>) {
+	let stderr = std::io::stderr();
+	let mut handle = stderr.lock();
+	let _ = handle.write_fmt(args);
+	let _ = handle.write_all(b"\n");
+}
+
 /**
  * 为本地问题排查生成不含业务内容的协议摘要。
  *
@@ -109,6 +120,12 @@ impl SidecarBridge {
 			// Bun 二进制默认按自身目录寻找 theme，因此显式指定资源根目录，保证
 			// 安装态和源码态都使用同一套主题、导出模板与运行时资产。
 			.env("PI_PACKAGE_DIR", cwd)
+			// Plannotator 的上游实现通过 import.meta.url 寻找内置规则；Bun 编译后
+			// 该地址会落到虚拟目录。显式交给扩展 Tauri resources 内的真实配置文件。
+			.env(
+				"PLANNOTATOR_INTERNAL_CONFIG_PATH",
+				PathBuf::from(cwd).join("plannotator.json"),
+			)
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
 			.stderr(Stdio::inherit());
@@ -148,7 +165,7 @@ impl SidecarBridge {
 							let sequence = protocol_sequence_clone.fetch_add(1, Ordering::SeqCst) + 1;
 							let summary = protocol_event_summary(&v);
 							let diagnostic_line = format!("#{sequence} {summary}");
-							eprintln!("[rpc] <- sidecar stdout: {diagnostic_line}");
+							write_diagnostic(format_args!("[rpc] <- sidecar stdout: {diagnostic_line}"));
 							write_protocol_log(protocol_log_clone.as_ref(), &diagnostic_line);
 							// 合法协议输出（尤其是 response）已证明子进程可通信；不能只依赖新协议的 ready 信号。
 							ready_clone.store(true, Ordering::SeqCst);
@@ -172,12 +189,12 @@ impl SidecarBridge {
 							// 非 response（agent 事件 / extension_ui / error）走 event
 							let res = app_clone.emit("rpc:event", v);
 							let emit_line = format!("#{sequence} emit_rpc_event_ok={}", res.is_ok());
-							eprintln!("[rpc] {emit_line}");
+							write_diagnostic(format_args!("[rpc] {emit_line}"));
 							write_protocol_log(protocol_log_clone.as_ref(), &emit_line);
 						}
 						Err(error) => {
 							// sidecar 可能误把诊断文本写到 stdout；只记录长度与解析失败原因，不能把模型上下文原文转发给界面。
-							eprintln!("[rpc] invalid sidecar JSONL output: bytes={}, error={}", line.len(), error);
+							write_diagnostic(format_args!("[rpc] invalid sidecar JSONL output: bytes={}, error={}", line.len(), error));
 							let _ = app_clone.emit(
 								"rpc:event",
 								serde_json::json!({ "type": "rpc:error", "message": "本地 Coding Agent 返回了无法识别的输出。请重试；若持续出现，请重新启动应用。" }),
@@ -227,11 +244,11 @@ impl SidecarBridge {
 			.insert(id.clone(), tx);
 
 		// 请求可能包含设备授权 token；日志只保留关联信息，绝不输出完整 JSON 载荷。
-		eprintln!(
+		write_diagnostic(format_args!(
 			"[rpc] -> sidecar stdin: id={}, type={}",
 			id,
 			command.get("type").and_then(|t| t.as_str()).unwrap_or("?")
-		);
+		));
 		{
 			let mut guard = self.stdin.lock().map_err(|e| format!("stdin 锁失败: {e}"))?;
 			let stdin = guard.as_mut().ok_or("sidecar stdin 不可用")?;

@@ -108,7 +108,8 @@ function toModelConfig(model: CliModel): ProviderModelConfig {
 		reasoning: profile?.reasoning ?? false,
 		thinkingLevelMap: profile?.thinkingLevelMap,
 		compat: profile?.compat,
-		input: ["text"],
+		// PI 的 Model.input 是适配层元数据，真实能力由平台模型管理配置下发；旧接口安全回退为文本。
+		input: model.inputModalities?.length ? model.inputModalities : ["text"],
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: model.contextLength ?? DEFAULT_CONTEXT_WINDOW,
 		maxTokens: model.maxOutputTokens ?? DEFAULT_MAX_TOKENS,

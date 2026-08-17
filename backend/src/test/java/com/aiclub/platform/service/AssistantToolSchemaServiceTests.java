@@ -94,11 +94,11 @@ class AssistantToolSchemaServiceTests {
     private CurrentUserInfo currentUser() {
         return new CurrentUserInfo(
                 1L,
-                "hermes",
+                "assistant",
                 "Assistant",
-                "hermes@example.com",
+                "assistant@example.com",
                 "",
-                "hermes",
+                "assistant",
                 "",
                 true,
                 List.of("SUPER_ADMIN"),

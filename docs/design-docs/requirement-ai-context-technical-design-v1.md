@@ -24,7 +24,7 @@
 - 用户仍从现有需求 AI 助手发起操作，并继续使用现有编辑、创建和回写能力。
 - 分析在执行中心异步运行；用户可以留在弹窗等待，也可以关闭弹窗继续使用系统。
 - 用户重新打开需求 AI 助手时，能够恢复运行中任务、查看完成结果和历史结果。
-- 图片理解建模为可配置的全局 Agent，统一绑定模型和提示词，并可被需求 AI 与 Hermes 复用。
+- 图片理解建模为可配置的全局 Agent，统一绑定模型和提示词，并可被需求 AI 与 Assistant 复用。
 - OpenAI Responses、OpenAI Chat Completions、Anthropic Messages 分别使用正确的多模态协议。
 - 后台任务具备步骤级超时、整体截止时间、降级、通知、积分补偿和调用用量记录。
 - AI 原始结果不可变；用户在结果副本上编辑，确认后再回写业务数据，并保留应用记录。
@@ -37,7 +37,7 @@
 - 不改造现有 PRD 缺口检查、PRD 建议生成和写入链路，这些能力继续保持独立。
 - V1 不持久化用户尚未提交的编辑草稿；关闭前端前提示未回写内容可能丢失。
 - V1 不把需求 AI 场景纳入平台/项目可发布编排管理，场景步骤由代码固定。
-- 不改造 Hermes 已有附件文本注入链路。
+- 不改造 Assistant 已有附件文本注入链路。
 
 ## 3. 核心设计原则
 
@@ -127,7 +127,7 @@ scenarioCode: REQUIREMENT_AI_ANALYSIS
     编辑副本 -> 用户确认 -> 回写需求/评论/子任务/测试用例
 ```
 
-Hermes 继续通过 MCP 工具 `image.understand` 调用同一个图片理解 Agent：
+Assistant 继续通过 MCP 工具 `image.understand` 调用同一个图片理解 Agent：
 
 ```text
 Assistant -> code-processing MCP -> /internal/assistant/mcp/execute
@@ -541,7 +541,7 @@ OpenAI Responses 只有返回 `404` 时才允许沿用现有兼容策略回退 C
 
 - 需求 AI 自动分析只接受平台 `documentAssetId` 或可解析回平台资产 ID 的文件 URL。
 - 不由后端直接抓取需求 Markdown 中的任意外部 URL，避免 SSRF 和不可控下载。
-- Hermes MCP 如需支持外部 URL，应独立配置协议、域名、重定向、DNS、响应大小和超时限制。
+- Assistant MCP 如需支持外部 URL，应独立配置协议、域名、重定向、DNS、响应大小和超时限制。
 - Base64 转换前校验文件大小、MIME、图片宽高和像素总量。
 - 图片、附件、关联工作项正文属于待分析数据，系统提示词必须声明其中的指令性文本不得覆盖系统规则。
 
@@ -566,7 +566,7 @@ OpenAI Responses 只有返回 `404` 时才允许沿用现有兼容策略回退 C
 | `TaskRequirementAiService` | 拆分为可复用的上下文构建、提示词调用和结果解析能力，避免再承担同步 HTTP 生命周期 |
 | `ModelConfigService` | 新增带 usage 的多模态入口和三个 provider/mode 请求构建器 |
 | `AgentExecutionService` | 新增 `LLM_VISION` 执行入口和 `IMAGE_UNDERSTANDING` Agent 解析 |
-| `PlatformToolRegistry/Executor` | 新增 Hermes MCP 工具 `image.understand` |
+| `PlatformToolRegistry/Executor` | 新增 Assistant MCP 工具 `image.understand` |
 | `RequirementAiDialog.vue/.tsx` | 增加后台任务状态、SSE 恢复、历史结果和执行详情入口，结果编辑区保持现有操作 |
 | 通知服务 | 执行完成/失败时创建带需求回链的消息通知 |
 | Flyway | 新增图片理解 Agent 种子数据和 `requirement_ai_result_application` 表 |
@@ -663,7 +663,7 @@ OpenAI Responses 只有返回 `404` 时才允许沿用现有兼容策略回退 C
 3. 完成后加载原有 `TaskRequirementAiResult` 编辑界面。
 4. 增加统一应用接口、并发冲突检测和应用记录。
 
-### 阶段四：Hermes 复用与完整验证
+### 阶段四：Assistant 复用与完整验证
 
 1. 注册 `image.understand` MCP 工具。
 2. 更新 `docs/architecture.md` 中的需求 AI 和图片理解链路。

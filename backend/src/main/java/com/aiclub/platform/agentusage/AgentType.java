@@ -22,11 +22,11 @@ public enum AgentType {
     /** 平台统一图片理解能力。 */
     IMAGE_UNDERSTANDING("图片理解"),
     /** Assistant 流式对话。 */
-    HERMES_CHAT("GitPilot 对话"),
+    ASSISTANT_CHAT("GitPilot 对话"),
     /** GitPilot CLI 本地推理（经模型代理网关转发到上游 provider）。 */
     GITPILOT_CLI("GitPilot CLI 本地推理"),
     /** Assistant 语音转写。 */
-    HERMES_SPEECH_TRANSCRIBE("GitPilot 语音转写"),
+    ASSISTANT_SPEECH_TRANSCRIBE("GitPilot 语音转写"),
     /** 代码审核（MR 自动合并审查）。 */
     CODE_REVIEW("代码审核"),
     /** 仓库扫描。 */

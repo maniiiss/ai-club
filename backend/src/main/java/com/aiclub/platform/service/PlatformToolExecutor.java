@@ -598,7 +598,7 @@ public class PlatformToolExecutor {
                                 "scenarioCode", ExecutionWorkflowService.SCENARIO_DEVELOPMENT_IMPLEMENTATION,
                                 "projectId", task.getProject().getId(),
                                 "workItemId", task.getId(),
-                                "triggerSource", "HERMES"
+                                "triggerSource", "ASSISTANT"
                         )
                 ))
                 : List.of();

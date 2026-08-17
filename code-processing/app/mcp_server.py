@@ -8,7 +8,7 @@ from mcp.server.fastmcp import Context, FastMCP
 from mcp.server.transport_security import TransportSecuritySettings
 from pydantic import Field
 
-from app.services.hermes_internal_client import hermes_internal_client
+from app.services.assistant_internal_client import assistant_internal_client
 from app.services.lightrag_queue_consumer import lightrag_queue_consumer
 from app.services.gitnexus_cli_support import discover_gitnexus_cli_path
 from app.services.gitnexus_serve_manager import ensure_gitnexus_serve_running
@@ -28,7 +28,6 @@ mcp_server = FastMCP(
             "host.docker.internal:*",
             "code-processing:*",
             "backend:*",
-            "hermes:*",
         ],
         allowed_origins=[
             "http://127.0.0.1:*",
@@ -36,11 +35,10 @@ mcp_server = FastMCP(
             "http://host.docker.internal:*",
             "http://code-processing:*",
             "http://backend:*",
-            "http://hermes:*",
         ],
     ),
 )
-# 平台工具本身不依赖 MCP 传输层会话态，启用无状态 HTTP 可避免 Hermes 客户端因 session 生命周期问题报
+# 平台工具本身不依赖 MCP 传输层会话态，启用无状态 HTTP 可避免客户端因 session 生命周期问题报
 # “Session terminated”，也能减少连接协商带来的额外波动。
 mcp_server.settings.stateless_http = True
 mcp_server.settings.streamable_http_path = "/"
@@ -62,7 +60,7 @@ async def _execute_platform_tool(
     arguments: dict[str, object],
 ) -> str:
     """统一转发平台工具请求到 backend 内部接口。"""
-    response = await hermes_internal_client.execute_tool(
+    response = await assistant_internal_client.execute_tool(
         session_token=session_token,
         tool_code=tool_code,
         arguments=arguments,

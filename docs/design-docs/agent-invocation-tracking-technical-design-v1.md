@@ -8,9 +8,9 @@
 
 ## 1. 背景与目标
 
-平台已集成需求 AI、API 测试用例 AI、Hermes 对话、代码审核、知识图谱、Wiki LightRAG 等十多个智能体（AI 入口）。在本设计落地之前：
+平台已集成需求 AI、API 测试用例 AI、Assistant 对话、代码审核、知识图谱、Wiki LightRAG 等十多个智能体（AI 入口）。在本设计落地之前：
 
-- 已有的 `user_operation_log`、`hermes_chat_audit`、`user_credit_transaction` 各自服务于操作审计、Hermes 排障和积分扣费，**没有一张统一表能按"用户 × 智能体 × 模型 × 时间"做调用量聚合**。
+- 已有的 `user_operation_log`、`assistant_chat_audit`、`user_credit_transaction` 各自服务于操作审计、Assistant 排障和积分扣费，**没有一张统一表能按"用户 × 智能体 × 模型 × 时间"做调用量聚合**。
 - 缺乏 token / 耗时 / 成功率维度的看板，运营无法回答"哪个用户调用最多"、"哪个智能体失败率最高"、"哪个模型最费 token"。
 - 关键风险：**后续新增的 AI Service 没有任何机制能保证被纳入统计**，依靠开发自觉容易遗漏。
 
@@ -27,13 +27,13 @@
 
 | 名词 | 含义 |
 |---|---|
-| 智能体调用 | 一次 AI 模型调用，由用户或系统通过 `ModelConfigService` / `HermesGatewayService` 等入口触发 |
-| 智能体类型（AgentType） | 业务语义维度，如"需求标准化"、"API 测试用例"、"Hermes 对话" |
+| 智能体调用 | 一次 AI 模型调用，由用户或系统通过 `ModelConfigService` / `AssistantGatewayService` 等入口触发 |
+| 智能体类型（AgentType） | 业务语义维度，如"需求标准化"、"API 测试用例"、"Assistant 对话" |
 | UNKNOWN_MODEL_CALL | 兜底分类：走了 `ModelConfigService` 但未通过 `AgentInvocationRecorder` 显式埋点的调用，需要在看板上告警并补埋点 |
 | Recorder | `AgentInvocationRecorder`，统一埋点服务，REQUIRES_NEW 独立事务 |
 | UsageSink | 流式 / 异步场景的延迟回填句柄，用于在调用结束后回填 token / 字符数 |
 
-**计入范围**：所有用户或系统触发的 AI 模型调用、Hermes 对话、代码审核、知识图谱构建等。
+**计入范围**：所有用户或系统触发的 AI 模型调用、Assistant 对话、代码审核、知识图谱构建等。
 **不计入范围**：模型管理页的"测试模型"调用（不进业务计量，目前直接走 `ModelConfigService.invokeChatTestPrompt`，不经过 `invokePromptWithUsage`）；模型对比测试（Benchmark）有独立的 `ai_model_benchmark_metric` 表。
 
 ---
@@ -58,7 +58,7 @@
 | prompt_tokens / completion_tokens / total_tokens | INTEGER | 模型 usage（拿不到则 null） |
 | input_chars / output_chars | INTEGER | 不依赖 usage 的降级指标 |
 | duration_ms | BIGINT NOT NULL | 耗时毫秒 |
-| cost_credits / correlation_id | INTEGER / VARCHAR | 消费积分、外部关联 ID（如 hermes_response_id） |
+| cost_credits / correlation_id | INTEGER / VARCHAR | 消费积分、外部关联 ID（如 assistant_response_id） |
 | created_at | TIMESTAMP NOT NULL | 创建时间 |
 
 **索引**：`created_at DESC`、`(user_id, created_at DESC)`、`(agent_type, created_at DESC)`、`(agent_type, status)`、`(model_name, created_at DESC)`、`(project_id) WHERE project_id IS NOT NULL`。
@@ -77,8 +77,8 @@ REQUIREMENT_AI_BREAKDOWN     需求拆解
 REQUIREMENT_AI_TEST_CASES    需求测试用例
 PRD_ANALYZE                  PRD 分析
 API_TEST_CASE_AI             API 接口测试用例
-HERMES_CHAT                  Hermes 对话
-HERMES_SPEECH_TRANSCRIBE     Hermes 语音转写
+ASSISTANT_CHAT                  Assistant 对话
+ASSISTANT_SPEECH_TRANSCRIBE     Assistant 语音转写
 CODE_REVIEW                  代码审核
 REPOSITORY_SCAN              仓库扫描
 REPOSITORY_STRUCTURE         代码结构化
@@ -169,7 +169,7 @@ public ModelInvocation invokePromptWithUsage(ResolvedModelConfig config, String 
 
 - **必须**在控制器线程预先抓 `AuthContextHolder.get()`，通过 `AgentInvocationContext.captureAuthContext(...)` 塞进 builder。
 - **不允许**在 `StreamingResponseBody` 子线程里再调 `AuthContextHolder.get()`（ThreadLocal 已清）。
-- `finishSuccess` / `finishFailure` / `HermesClientStreamDisconnectedException` 三路必须都落账（最后一路用 `finish(... CLIENT_DISCONNECTED ...)`）。
+- `finishSuccess` / `finishFailure` / `AssistantClientStreamDisconnectedException` 三路必须都落账（最后一路用 `finish(... CLIENT_DISCONNECTED ...)`）。
 
 ---
 
@@ -280,7 +280,7 @@ API 客户端：`frontend/src/api/agent-usage.ts`，所有类型与查询函数�
 | 维度 | 决策 |
 |---|---|
 | 日志膨胀 | 单条 ~500B，1e6 条 ~500MB，PostgreSQL 单表舒适。本期不做自动清理；Benchmark 用 batch save |
-| 与 hermes_chat_audit 关系 | 一期双写不迁移，通过 `correlation_id = hermes_response_id` 互查 |
+| 与 assistant_chat_audit 关系 | 一期双写不迁移，通过 `correlation_id = assistant_response_id` 互查 |
 | 测试模型调用 | 不计入；测试走的是 `invokeChatTestPrompt`，不经过 `invokePromptWithUsage` |
 | 多租户 / 部门隔离 | 不做；AuthContext 无部门字段。仅 `system:agent-usage:view` 权限可见 |
 | 主链路防护 | `recorder.persistSafely(...)` 永远 `catch(Exception) log.warn`，不向外抛 |
@@ -296,7 +296,7 @@ API 客户端：`frontend/src/api/agent-usage.ts`，所有类型与查询函数�
 1. 触发需求 AI（标准化 / 拆解 / 测试用例）+ API 测试用例 AI + 触发任意已绑定模型的 Agent 测试 → `psql` 确认 `agent_invocation_log` 写入对应记录
 2. 临时写一个不调 recorder 的 `FakeAiService` 调 `ModelConfigService.invokePromptWithUsage` → 数据库出现 `agent_type=UNKNOWN_MODEL_CALL`、`action=FakeAiService`（**兜底①验证**）
 3. 配错模型 base_url → status=FAILURE / error_code 正确
-4. `hermes_chat_audit` 仍正常写入（双写未破坏）
+4. `assistant_chat_audit` 仍正常写入（双写未破坏）
 
 ### 前端
 

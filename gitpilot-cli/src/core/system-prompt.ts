@@ -6,6 +6,20 @@ import { getDocsPath, getExamplesPath, getReadmePath } from "../config.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 
 /**
+ * 桌面端默认语言约束。
+ *
+ * 业务意图：让自然语言进展、结论和错误解释优先使用简体中文，
+ * 同时保留代码、路径、命令、日志和异常原文，避免翻译破坏可执行内容。
+ */
+export const DESKTOP_CHINESE_OUTPUT_PROMPT = `<gitpilot_output_language>
+默认使用简体中文回答。
+用户明确要求其他语言时，遵循用户要求。
+计划、进展说明、结论、错误解释和操作摘要使用中文。
+代码、文件路径、命令、日志、异常原文、标识符和协议字段保持原样，不要翻译。
+不要为了翻译而修改代码、命令、补丁、日志或错误原文。
+</gitpilot_output_language>`;
+
+/**
  * GitPilot 的产品级流式可见性规则。
  *
  * 业务意图：SYSTEM.md 可以替换领域指令，但不能让桌面端退化为只显示思考和工具记录；

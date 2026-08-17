@@ -35,7 +35,7 @@ Content-Type: application/json
 
 `RuntimeAdapter.streamChat` 是唯一的 Runtime 流式入口。HTTP Runtime 适配器逐行读取 NDJSON，其他适配器可以直接实现同一接口。未声明 `STREAM_EVENTS` 的 Runtime 使用 `RuntimeAdapter` 默认实现，把同步结果包装成一个 `TEXT_DELTA`，保证兼容迁移。
 
-`RuntimeChatService` 负责校验 `CHAT` 能力并调用适配器。`AssistantChatService` 将 `TEXT_DELTA` 写成对浏览器的 SSE `delta` 事件；`ChatAssistantService` 将同一增量广播为聊天室 WebSocket 的 `HERMES_STREAM_DELTA`，历史事件名保持兼容。
+`RuntimeChatService` 负责校验 `CHAT` 能力并调用适配器。`AssistantChatService` 将 `TEXT_DELTA` 写成对浏览器的 SSE `delta` 事件；`ChatAssistantService` 将同一增量广播为聊天室 WebSocket 的 `ASSISTANT_STREAM_DELTA`。旧 Runtime 专属事件不再由 backend 生成，客户端统一升级到 Assistant 事件协议。
 
 当 backend 在发送前压缩历史，或 Runtime 在流式运行中发出 `CONTEXT_COMPACTED` 时，Assistant SSE 会发送 `status={ stage: "compacting", message: "GitPilot 正在压缩上下文" }`。该状态只用于界面提示，不会写入助手正文、会话历史或模型上下文。
 

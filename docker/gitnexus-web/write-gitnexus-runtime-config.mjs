@@ -22,11 +22,7 @@ const readNumber = (name, fallback) => {
   return Number.isFinite(parsed) ? parsed : fallback
 }
 
-const readAiEnv = (name, hermesName = '') => {
-  const value = readEnv(name)
-  if (value) return value
-  return readBool('GITNEXUS_AI_FALLBACK_TO_HERMES', true) && hermesName ? readEnv(hermesName) : ''
-}
+const readAiEnv = (name) => readEnv(name)
 
 const defaults = {
   activeProvider: 'gemini',
@@ -47,7 +43,7 @@ const defaults = {
   glm: { apiKey: '', model: 'GLM-5', baseUrl: 'https://api.z.ai/api/coding/paas/v4', temperature: 0.1 }
 }
 
-// 平台中的 Hermes 常使用 custom 表示 OpenAI 兼容网关；GitNexus 前端需要映射到自己支持的 provider。
+// 平台可能使用 custom 表示 OpenAI 兼容网关；GitNexus 前端需要映射到自己支持的 provider。
 const normalizeProvider = (provider) => {
   const value = provider.trim().toLowerCase().replace(/_/g, '-').replace(/\s+/g, '-')
   if (['azure', 'azure-openai', 'azureopenai'].includes(value)) return 'azure-openai'
@@ -67,25 +63,18 @@ const providerFromBaseUrl = (baseUrl) => {
   return 'openai'
 }
 
-// 专用 GITNEXUS_AI_* 优先级最高；也可显式开启回退到 HERMES_LLM_*，减少本地部署重复填 key。
 const resolveProvider = (baseUrl) => {
   const explicit = normalizeProvider(readEnv('GITNEXUS_AI_PROVIDER'))
   if (explicit) return explicit
-
-  const hermesProvider = readBool('GITNEXUS_AI_FALLBACK_TO_HERMES', true)
-    ? normalizeProvider(readEnv('HERMES_LLM_PROVIDER'))
-    : ''
-  if (hermesProvider) return hermesProvider
-
   return baseUrl ? providerFromBaseUrl(baseUrl) : 'openai'
 }
 
 const buildSettings = () => {
   if (!readBool('GITNEXUS_AI_AUTO_CONFIG_ENABLED', true)) return null
 
-  const baseUrl = readAiEnv('GITNEXUS_AI_BASE_URL', 'HERMES_LLM_BASE_URL')
-  const apiKey = readAiEnv('GITNEXUS_AI_API_KEY', 'HERMES_LLM_API_KEY')
-  const model = readAiEnv('GITNEXUS_AI_MODEL', 'HERMES_LLM_MODEL')
+  const baseUrl = readAiEnv('GITNEXUS_AI_BASE_URL')
+  const apiKey = readAiEnv('GITNEXUS_AI_API_KEY')
+  const model = readAiEnv('GITNEXUS_AI_MODEL')
   const provider = resolveProvider(baseUrl)
   const useProxy = readBool('GITNEXUS_AI_PROXY_ENABLED', true)
   const temperature = readNumber('GITNEXUS_AI_TEMPERATURE', 0.1)

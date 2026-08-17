@@ -126,7 +126,7 @@ public class AssistantSpeechTranscriptionService {
         }
         try {
             return new ValidatedAudioFile(
-                    "hermes-voice." + extension,
+                    "assistant-voice." + extension,
                     contentType,
                     file.getBytes()
             );

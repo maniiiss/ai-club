@@ -1,21 +1,21 @@
-# Hermes Skill 化架构 V1
+# Assistant Skill 化架构 V1
 
 ## 1. 背景
 
-Hermes 早期把基础安全约束、Wiki 问答、工作项创建、仓库扫描、执行任务查询等规则全部堆在同一个 system prompt 里。随着功能增加，这种“大 prompt”会带来几个问题：
+Assistant 早期把基础安全约束、Wiki 问答、工作项创建、仓库扫描、执行任务查询等规则全部堆在同一个 system prompt 里。随着功能增加，这种“大 prompt”会带来几个问题：
 
 - 新增能力时只能继续往同一段文本里追加，维护成本越来越高；
 - 不同业务规则彼此耦合，修改仓库扫描逻辑时容易误伤 Wiki 或工作项逻辑；
 - 很难做针对性的单测，无法清晰验证“某类问题到底命中了哪些业务规则”；
 - 后续如果要做配置化、灰度或权限隔离，也缺少稳定的模块边界。
 
-因此 V1 的目标不是把 Hermes 拆成多个 agent，而是把 **Hermes 主 agent 内部的提示词体系 Skill 化**。
+因此 V1 的目标不是把 Assistant 拆成多个 agent，而是把 **Assistant 主 agent 内部的提示词体系 Skill 化**。
 
 ## 2. 目标
 
-V1 固定采用“**单 Hermes 主 agent + 多个内置 Skill**”模式：
+V1 固定采用“**单 Assistant 主 agent + 多个内置 Skill**”模式：
 
-- Hermes 仍然是唯一对话入口；
+- Assistant 仍然是唯一对话入口；
 - Base Prompt 负责全局安全与工具调用底座规则；
 - Skill Prompt 负责按意图注入某一类业务能力；
 - Runtime Context 继续携带当前用户、页面锚点、上下文摘要、已绑定对象和当前问题。
@@ -28,7 +28,7 @@ V1 固定采用“**单 Hermes 主 agent + 多个内置 Skill**”模式：
 
 ### 3.1 Base Prompt
 
-位置：`backend/src/main/resources/prompts/hermes/base/system.md`
+位置：`backend/src/main/resources/prompts/assistant/base/system.md`
 
 职责：
 
@@ -40,22 +40,22 @@ V1 固定采用“**单 Hermes 主 agent + 多个内置 Skill**”模式：
 - 平台写工具只生成待确认动作卡片；
 - 工具失败时必须如实说明。
 
-这些规则属于 Hermes 的“底座行为”，不允许下沉到业务 Skill。
+这些规则属于 Assistant 的“底座行为”，不允许下沉到业务 Skill。
 
 ### 3.2 Skill Registry / Skill Match
 
 核心类型：
 
-- `HermesPromptSkill`
-- `HermesSkillContext`
-- `HermesPromptResourceLoader`
-- `HermesPromptBuilder`
+- `AssistantPromptSkill`
+- `AssistantSkillContext`
+- `AssistantPromptResourceLoader`
+- `AssistantPromptBuilder`
 
 装配流程：
 
-1. `HermesPromptBuilder` 先构造 `HermesSkillContext`
+1. `AssistantPromptBuilder` 先构造 `AssistantSkillContext`
 2. 读取 Base Prompt
-3. 注入并遍历所有 `HermesPromptSkill`
+3. 注入并遍历所有 `AssistantPromptSkill`
 4. 调用 `matches(context)` 判断是否命中
 5. 按 `order()` 排序后，把命中的 Skill 片段拼进最终 system prompt
 
@@ -145,7 +145,7 @@ V1 不把业务 Skill 规则重复塞进 user prompt，避免同一规则在 sys
 V1 统一采用 Markdown 资源文件承载 Prompt 正文：
 
 ```text
-backend/src/main/resources/prompts/hermes/
+backend/src/main/resources/prompts/assistant/
 ├── base/
 │   └── system.md
 └── skills/
@@ -166,10 +166,10 @@ backend/src/main/resources/prompts/hermes/
 
 后续新增能力时，按下面步骤扩展：
 
-1. 在 `prompts/hermes/skills/` 新增一份 Markdown 文件；
-2. 新增一个 `HermesPromptSkill` 实现类；
-3. 在构造函数中通过 `HermesPromptResourceLoader` 读取对应 Markdown；
-4. 在 `matches(HermesSkillContext context)` 里定义命中规则；
+1. 在 `prompts/assistant/skills/` 新增一份 Markdown 文件；
+2. 新增一个 `AssistantPromptSkill` 实现类；
+3. 在构造函数中通过 `AssistantPromptResourceLoader` 读取对应 Markdown；
+4. 在 `matches(AssistantSkillContext context)` 里定义命中规则；
 5. 通过 Spring 注册为 bean；
 6. 补单测，验证该 Skill 在目标问题下会命中，在无关问题下不会误命中。
 
@@ -184,7 +184,7 @@ backend/src/main/resources/prompts/hermes/
 
 V1 至少覆盖以下验证：
 
-- `HermesPromptBuilderTests`
+- `AssistantPromptBuilderTests`
   - Wiki 问题命中 `wiki-qa`
   - 创建需求问题命中 `work-item-create`
   - 仓库扫描问题命中 `repo-scan`
@@ -192,13 +192,13 @@ V1 至少覆盖以下验证：
   - 泛问答不误命中业务 Skill
   - 缺失 Prompt 资源时测试失败
 
-- `HermesChatServiceTests`
+- `AssistantChatServiceTests`
   - 保持原有会话装配、selection 恢复、附件上下文等测试通过
-  - 新增真实 `HermesPromptBuilder` 场景，验证传给网关的 system prompt 已包含命中的 Skill 片段
+  - 新增真实 `AssistantPromptBuilder` 场景，验证传给网关的 system prompt 已包含命中的 Skill 片段
 
 - Harness
   - `python scripts/check_encoding.py`
-  - `cd backend && mvn -s maven-settings-central.xml "-Dtest=HermesPromptBuilderTests,HermesChatServiceTests" test`
+  - `cd backend && mvn -s maven-settings-central.xml "-Dtest=AssistantPromptBuilderTests,AssistantChatServiceTests" test`
 
 ## 8. 后续演进方向
 
@@ -214,7 +214,7 @@ V1 只是先把 Prompt 模块化，后续可继续演进：
    - 允许不同项目或角色启用不同能力组合。
 
 4. **前端显式 Skill 标识**
-   - 对部分强业务场景，可由前端明确告诉 Hermes 当前对话是“仓库扫描助手”“Wiki 助手”等。
+   - 对部分强业务场景，可由前端明确告诉 Assistant 当前对话是“仓库扫描助手”“Wiki 助手”等。
 
 5. **从 Skill 演进到子 Agent**
    - 当某一能力需要独立会话、独立状态或长任务生命周期时，再从 Skill 升级为独立 agent。

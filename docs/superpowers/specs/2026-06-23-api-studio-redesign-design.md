@@ -127,7 +127,7 @@ frontend/src/modules/api-studio/
 ### 4.4 与平台壳的关系
 
 - 继续在 `AppLayout` 内承载，`ApiStudioLayout` 只接管主内容区。
-- 平台顶栏、Hermes 助手、消息中心、用户菜单照常显示；不再做"嵌入模式隐藏顶栏"。
+- 平台顶栏、Assistant 助手、消息中心、用户菜单照常显示；不再做"嵌入模式隐藏顶栏"。
 - 平台主题切换：API Studio 通过 CSS 变量自动跟随，不需要消息桥接，不需要 `aiclubTheme` 参数。
 
 ### 4.5 代码编辑器
@@ -270,4 +270,3 @@ frontend/src/modules/api-studio/
 - 公共空间是否完全保持隐式入口（仅在某些项目下浮现），还是显式在顶部加 tab？建议显式，避免 iframe 时期"找不到入口"的老问题。
 
 这些问题进入实施计划阶段再决，不影响架构与切片节奏。
-

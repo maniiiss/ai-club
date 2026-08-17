@@ -2,7 +2,7 @@
 .root::after { position: absolute; z-index: 0; top: 100%; right: -18px; left: -18px; height: 16px; background: var(--gp-panel-deep); content: ''; pointer-events: none; }
 .root > * { pointer-events: auto; }
 /* 业务意图：使用不透明表面替代实时背景模糊，避免侧栏切换时对聊天正文做大面积重绘。 */
-.surface { position: relative; z-index: 1; display: flex; width: min(860px, 100%); min-width: 0; flex-direction: column; overflow: hidden; border: 1px solid var(--gp-border-strong); border-radius: 14px; background: linear-gradient(180deg, var(--gp-surface-raised), var(--gp-surface)); padding: 12px 14px 10px; box-shadow: var(--shadow-lg), 0 0 0 1px var(--gp-accent-soft); transition: border-color 140ms ease, box-shadow 140ms ease; }
+.surface { position: relative; z-index: 1; display: flex; width: min(860px, 100%); min-width: 0; flex-direction: column; overflow: visible; border: 1px solid var(--gp-border-strong); border-radius: 14px; background: linear-gradient(180deg, var(--gp-surface-raised), var(--gp-surface)); padding: 12px 14px 10px; box-shadow: var(--shadow-lg), 0 0 0 1px var(--gp-accent-soft); transition: border-color 140ms ease, box-shadow 140ms ease; }
 .surface::before { position: absolute; top: 0; right: 14px; left: 14px; height: 2px; background: linear-gradient(90deg, var(--gp-accent), transparent 68%, var(--gp-warm)); content: ''; opacity: .85; }
 .surface:focus-within { border-color: color-mix(in srgb, var(--gp-accent) 65%, var(--gp-border)); box-shadow: 0 20px 54px var(--gp-shadow-color), 0 0 0 3px var(--gp-accent-soft); }
 .guidanceList { display: flex; max-height: 188px; flex-direction: column; gap: 6px; margin: -2px 0 8px; overflow-y: auto; padding: 0 0 2px; }
@@ -39,6 +39,8 @@
 .dropHint { position: absolute; z-index: 31; top: -28px; left: 50%; transform: translateX(-50%); border-radius: 999px; background: var(--gp-action); padding: 4px 12px; color: var(--primary-foreground); font-size: calc(12px * var(--desktop-font-scale)); white-space: nowrap; }
 .attachments { display: flex; flex-wrap: wrap; gap: 6px; max-height: 120px; overflow-y: auto; padding: 2px 2px 8px; }
 .attachment { display: inline-flex; max-width: 220px; align-items: center; gap: 5px; border: 1px solid var(--gp-border); border-radius: 8px; background: var(--gp-accent-soft); padding: 4px 6px 4px 8px; color: var(--gp-text); font-size: calc(12px * var(--desktop-font-scale)); line-height: 1.4; }
+.workItemAttachment { border-color: color-mix(in srgb, var(--gp-accent) 42%, var(--gp-border)); background: color-mix(in srgb, var(--gp-accent) 12%, var(--gp-accent-soft)); }
+.workItemAttachmentDefect { border-color: color-mix(in srgb, var(--gp-danger) 48%, var(--gp-border)); background: color-mix(in srgb, var(--gp-danger) 12%, var(--gp-accent-soft)); color: var(--gp-danger); }
 .attachmentName { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .attachmentSize { flex-shrink: 0; color: var(--gp-text-muted); }
 .attachmentRemove { display: inline-flex; width: 16px; height: 16px; align-items: center; justify-content: center; flex-shrink: 0; border: 0; border-radius: 50%; background: transparent; color: var(--gp-text-muted); }

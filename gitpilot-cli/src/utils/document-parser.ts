@@ -5,7 +5,7 @@
  * 与 parse_attachment 工具（模型主动调用）复用，避免重复实现解析逻辑。
  *
  * 与后端 code-processing 的 markitdown 管线对齐：
- * - 单文件抽取文本上限默认 15000 字符（与 HERMES_ATTACHMENT maxChars 一致）；
+ * - 单文件抽取文本上限默认 15000 字符（与 ASSISTANT_ATTACHMENT maxChars 一致）；
  * - 单文件二进制上限 20MB（与 platform.upload.max-document-size 一致），超限直接拒绝以防空内存。
  *
  * 解析均在本地 sidecar 完成，离线零网络，契合桌面端安全边界。
@@ -22,7 +22,7 @@ export interface ExtractedDocument {
 	warnings: string[];
 }
 
-/** 单文件抽取文本的默认字符上限（对齐后端 HERMES_ATTACHMENT 场景的 15000）。 */
+/** 单文件抽取文本的默认字符上限（对齐后端 ASSISTANT_ATTACHMENT 场景的 15000）。 */
 export const DEFAULT_MAX_DOC_CHARS = 15_000;
 
 /** 单文件二进制上限：20MB（对齐 platform.upload.max-document-size 默认值）。 */

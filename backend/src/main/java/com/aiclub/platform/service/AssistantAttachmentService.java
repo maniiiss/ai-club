@@ -55,11 +55,11 @@ public class AssistantAttachmentService {
         }
         return files.stream()
                 .map(file -> {
-                    DocumentAssetSummary asset = documentAssetService.uploadAsset(file, "hermes-attachments");
+                    DocumentAssetSummary asset = documentAssetService.uploadAsset(file, "assistant-attachments");
                     DocumentAssetEntity entity = documentAssetService.requireAccessibleAsset(asset.id());
                     DocumentMarkdownResult converted = documentMarkdownService.convert(
                             asset.id(),
-                            DocumentMarkdownService.SCENE_HERMES_ATTACHMENT,
+                            DocumentMarkdownService.SCENE_ASSISTANT_ATTACHMENT,
                             15000
                     );
                     return new PreparedAttachment(entity, converted);
@@ -82,7 +82,7 @@ public class AssistantAttachmentService {
                     entity.setMessage(message);
                     entity.setDocumentAsset(documentAssetService.bindAsset(
                             attachment.asset(),
-                            DocumentAssetService.BIZ_TYPE_HERMES_ATTACHMENT,
+                    DocumentAssetService.BIZ_TYPE_ASSISTANT_ATTACHMENT,
                             message.getId()
                     ));
                     entity.setSuggestedTitle(attachment.converted().suggestedTitle());

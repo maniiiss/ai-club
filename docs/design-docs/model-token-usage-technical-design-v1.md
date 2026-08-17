@@ -19,7 +19,7 @@
 - 不回填历史 token 数据
 - 不统计“测试模型”按钮触发的调用
 - 不在页面展示 prompt token / completion token 拆分
-- 不覆盖 Hermes 全局模型、语音转写模型等非 `ai_model_config` 管理模型
+- 不覆盖 Assistant 全局模型、语音转写模型等非 `ai_model_config` 管理模型
 - 不做本地 token 估算，只记录 provider 实际返回的 usage
 
 ## 2. 统计口径与边界

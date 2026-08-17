@@ -124,7 +124,7 @@ public class GitPilotCliController {
     }
 
     /**
-     * 列出当前 CLI 用户负责的需求（workItemType=需求），供 /requirement 命令使用。
+     * 列出当前 CLI 用户负责的工作项，供桌面端“工作项”入口与 /requirement 命令使用。
      * 复用 gpt_ token 认证与 scope 校验，负责人取当前登录用户，绕过项目可见性以覆盖“分配给我但未参与的项目”。
      */
     @GetMapping("/tasks")
@@ -134,11 +134,12 @@ public class GitPilotCliController {
             @RequestParam(required = false) String status,
             @RequestParam(required = false) String priority,
             @RequestParam(required = false) Long projectId,
-            @RequestParam(required = false) String keyword) {
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false) String workItemType) {
         var ctx = AuthContextHolder.get().orElseThrow();
         cliService.requireScope(ctx.token(), GitPilotCliService.SCOPE_TASK_READ);
         Long me = ctx.userId();
-        return ApiResponse.success(platformStoreService.pageMyRequirementTasks(me, page, size, status, priority, projectId, keyword));
+        return ApiResponse.success(platformStoreService.pageMyWorkItems(me, page, size, status, priority, projectId, keyword, workItemType));
     }
 
     /** Work 研究由服务端托管供应商密钥、限流和审计，CLI 只取得可引用摘要。 */

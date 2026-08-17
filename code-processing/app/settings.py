@@ -8,7 +8,7 @@ class Settings:
 
     backend_internal_base_url: str
     internal_service_token: str
-    hermes_mcp_shared_token: str
+    assistant_mcp_shared_token: str
     minio_endpoint: str
     minio_access_key: str
     minio_secret_key: str
@@ -66,7 +66,7 @@ settings = Settings(
         os.getenv("PLATFORM_BACKEND_INTERNAL_BASE_URL", "http://localhost:8080")
     ),
     internal_service_token=(os.getenv("PLATFORM_INTERNAL_SERVICE_TOKEN", "git-ai-club-internal-service-token") or "").strip(),
-    hermes_mcp_shared_token=(os.getenv("PLATFORM_HERMES_MCP_SHARED_TOKEN", "git-ai-club-hermes-mcp-token") or "").strip(),
+    assistant_mcp_shared_token=(os.getenv("PLATFORM_ASSISTANT_MCP_SHARED_TOKEN", "git-ai-club-assistant-mcp-token") or "").strip(),
     minio_endpoint=_trim_trailing_slash(os.getenv("PLATFORM_MINIO_ENDPOINT", "http://localhost:19000")),
     minio_access_key=(os.getenv("PLATFORM_MINIO_ACCESS_KEY", "minioadmin") or "").strip(),
     minio_secret_key=(os.getenv("PLATFORM_MINIO_SECRET_KEY", "minioadmin") or "").strip(),

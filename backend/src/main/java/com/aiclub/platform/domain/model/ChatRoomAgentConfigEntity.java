@@ -39,7 +39,7 @@ public class ChatRoomAgentConfigEntity {
 
     /** 房间 Agent 绑定的 Runtime 注册编码；创建任务时会复制到任务快照。 */
     @Column(name = "runtime_registry_code", nullable = false, length = 40)
-    private String runtimeRegistryCode = "HERMES_LEGACY";
+    private String runtimeRegistryCode = "PI_RUNTIME";
 
     @Column(name = "system_instruction", nullable = false, columnDefinition = "TEXT")
     private String systemInstruction = "";

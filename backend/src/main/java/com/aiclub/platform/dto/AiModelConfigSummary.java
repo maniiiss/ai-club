@@ -1,6 +1,7 @@
 package com.aiclub.platform.dto;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 public record AiModelConfigSummary(
         Long id,
@@ -42,6 +43,31 @@ public record AiModelConfigSummary(
         /**
          * 每千缓存命中输入 token 单价；为空时按输入单价 ×0.5 兜底。
          */
-        BigDecimal cachedInputCreditPer1k
+        BigDecimal cachedInputCreditPer1k,
+        /** 平台归一化后的输入模态列表，供管理端展示和 CLI 映射到 PI Model.input。 */
+        List<String> inputModalities
 ) {
+    /** 兼容新增输入能力字段前的调用方，旧模型默认仅支持文本输入。 */
+    public AiModelConfigSummary(
+            Long id,
+            String name,
+            String modelType,
+            String provider,
+            String apiBaseUrl,
+            String modelName,
+            String openaiApiMode,
+            Boolean apiKeyConfigured,
+            String description,
+            Boolean enabled,
+            Integer contextLength,
+            Integer maxOutputTokens,
+            Boolean tokenBillingEnabled,
+            BigDecimal inputCreditPer1k,
+            BigDecimal outputCreditPer1k,
+            BigDecimal cachedInputCreditPer1k
+    ) {
+        this(id, name, modelType, provider, apiBaseUrl, modelName, openaiApiMode, apiKeyConfigured, description,
+                enabled, contextLength, maxOutputTokens, tokenBillingEnabled, inputCreditPer1k,
+                outputCreditPer1k, cachedInputCreditPer1k, List.of("text"));
+    }
 }

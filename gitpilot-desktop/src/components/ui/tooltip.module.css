@@ -32,12 +32,7 @@
 .legacy {
 	position: fixed;
 	width: max-content;
-	transform: translate(-50%, calc(-100% - 10px));
 	pointer-events: none;
-}
-
-.legacyBelow {
-	transform: translate(-50%, 10px);
 }
 
 @media (prefers-reduced-motion: reduce) {

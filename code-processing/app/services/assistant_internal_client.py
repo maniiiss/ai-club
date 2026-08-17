@@ -4,12 +4,12 @@ from urllib.parse import urlparse
 
 import httpx
 
-from app.models import HermesInternalToolExecuteRequest, HermesInternalToolExecuteResponse
+from app.models import AssistantInternalToolExecuteRequest, AssistantInternalToolExecuteResponse
 from app.settings import settings
 
 
-class HermesInternalClient:
-    """负责调用 backend 内部 Hermes MCP 执行接口。"""
+class AssistantInternalClient:
+    """负责调用 backend 内部 Assistant MCP 执行接口。"""
 
     def _build_backend_base_url_candidates(self) -> list[str]:
         """生成 backend 内部地址候选，兼容全量 Docker 与本地源码两种运行拓扑。"""
@@ -40,8 +40,8 @@ class HermesInternalClient:
         session_token: str,
         tool_code: str,
         arguments: dict[str, object] | None = None,
-    ) -> HermesInternalToolExecuteResponse:
-        payload = HermesInternalToolExecuteRequest(
+    ) -> AssistantInternalToolExecuteResponse:
+        payload = AssistantInternalToolExecuteRequest(
             sessionToken=session_token,
             toolCode=tool_code,
             arguments=arguments or {},
@@ -61,22 +61,21 @@ class HermesInternalClient:
                     )
                     break
                 except (httpx.ConnectError, httpx.ConnectTimeout) as exception:
-                    # 只对“连不上目标地址”的问题做候选地址重试；HTTP 已响应的业务错误仍直接返回给 Hermes。
                     connect_errors.append(f"{base_url}: {exception}")
             else:
                 raise RuntimeError(self._build_connect_error_message(connect_errors))
         if response.status_code < 200 or response.status_code >= 300:
             raise RuntimeError(self._build_error_message(response))
-        return HermesInternalToolExecuteResponse.model_validate(response.json())
+        return AssistantInternalToolExecuteResponse.model_validate(response.json())
 
     def _build_connect_error_message(self, connect_errors: list[str]) -> str:
-        """把 backend 连接失败转成可排查的中文错误，避免 Hermes 只显示 All connection attempts failed。"""
+        """把 backend 连接失败转成可排查的中文错误。"""
         if not connect_errors:
             return "平台内部工具调用失败，无法连接 backend。"
         return "平台内部工具调用失败，无法连接 backend。已尝试：" + "；".join(connect_errors)
 
     def _build_error_message(self, response: httpx.Response) -> str:
-        """尽量从 backend 的错误响应里提取清晰信息，避免 MCP 侧只看到 HTTP 状态码。"""
+        """尽量从 backend 的错误响应里提取清晰信息。"""
         try:
             body = response.json()
         except json.JSONDecodeError:
@@ -89,4 +88,4 @@ class HermesInternalClient:
         return f"平台内部工具调用失败，HTTP {response.status_code}"
 
 
-hermes_internal_client = HermesInternalClient()
+assistant_internal_client = AssistantInternalClient()

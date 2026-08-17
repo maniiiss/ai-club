@@ -39,7 +39,7 @@ public class ExecutionTaskEntity {
     private Long sourceId;
 
     /**
-     * 触发来源，例如 PAGE、HERMES。
+     * 触发来源，例如 PAGE、ASSISTANT。
      */
     @Column(name = "trigger_source", nullable = false, length = 40)
     private String triggerSource = "PAGE";

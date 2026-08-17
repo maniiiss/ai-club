@@ -94,6 +94,24 @@ test('preserves ordinary prose instead of applying global emphasis cleanup', asy
   assert.match(html, /项目：<strong>示例项目<\/strong> \| 负责人：\* 管理员 \| \*\* 状态：进行中/)
 })
 
+test('repairs padded Chinese label emphasis without touching inline code', async () => {
+  const { renderAssistantMarkdownToHtml } = await loadModule()
+
+  const html = renderAssistantMarkdownToHtml([
+    '- 项目： CRM项目 - **迭代名称： **20260429（迭代ID：1）',
+    '- **状态： **进行中- 入口： /projects/4/iterations?iterationId=1',
+    '<strong>优先级： </strong>高',
+    '**负责人： ** 管理员',
+    '`**状态： **不要改写`',
+  ].join('\n'))
+
+  assert.match(html, /<strong>迭代名称：<\/strong> 20260429（迭代ID：1）/)
+  assert.match(html, /<strong>状态：<\/strong> 进行中- 入口： \/projects\/4\/iterations\?iterationId=1/)
+  assert.match(html, /<strong>优先级：<\/strong> 高/)
+  assert.match(html, /<strong>负责人：<\/strong> 管理员/)
+  assert.match(html, /<code>\*\*状态： \*\*不要改写<\/code>/)
+})
+
 test('keeps inline project ids in the paragraph instead of splitting them into headings', async () => {
   const { renderAssistantMarkdownToHtml } = await loadModule()
 
@@ -217,7 +235,7 @@ test('renders risk matrix table when divider row uses malformed center markers',
   assert.doesNotMatch(html, /<p>\|风险项\|严重程度/)
 })
 
-test('merges multiline hermes table rows in risk analysis output', async () => {
+test('merges multiline assistant table rows in risk analysis output', async () => {
   const { renderAssistantMarkdownToHtml } = await loadModule()
 
   const html = renderAssistantMarkdownToHtml(`### 🔴高风险

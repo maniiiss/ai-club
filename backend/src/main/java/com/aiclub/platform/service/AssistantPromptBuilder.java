@@ -22,7 +22,6 @@ import java.util.Map;
 public class AssistantPromptBuilder {
 
     static final String BASE_PROMPT_RESOURCE = "prompts/assistant/base/system.md";
-    static final String TOKEN_PLACEHOLDER = "{{system_session_token}}";
 
     private final List<AssistantPromptSkill> promptSkills;
     private final String baseSystemPromptTemplate;
@@ -69,7 +68,7 @@ public class AssistantPromptBuilder {
         AssistantSkillContext skillContext = new AssistantSkillContext(currentUser, context, request, groundingState, sessionToken);
         return new AssistantPrompt(
                 buildSystemPrompt(skillContext),
-                buildUserPrompt(currentUser, context, request, groundingState, sessionToken, currentTurnContent, memoryContextMarkdown)
+                buildUserPrompt(currentUser, context, request, groundingState, currentTurnContent, memoryContextMarkdown)
         );
     }
 
@@ -78,7 +77,7 @@ public class AssistantPromptBuilder {
      */
     private String buildSystemPrompt(AssistantSkillContext skillContext) {
         StringBuilder builder = new StringBuilder();
-        builder.append(baseSystemPromptTemplate.replace(TOKEN_PLACEHOLDER, defaultString(skillContext.sessionToken())));
+        builder.append(baseSystemPromptTemplate);
         builder.append("\n\n## 当前已启用 Skills\n");
 
         List<AssistantPromptSkill> matchedSkills = new ArrayList<>();
@@ -100,13 +99,12 @@ public class AssistantPromptBuilder {
     }
 
     /**
-     * 组装用户侧上下文、页面锚点和 MCP 会话令牌。
+     * 组装用户侧上下文、页面锚点和当前会话事实。
      */
     private String buildUserPrompt(CurrentUserInfo currentUser,
                                    AssistantContextAssembler.AssistantConversationContext context,
                                    AssistantChatRequest request,
                                    AssistantGroundingState groundingState,
-                                   String sessionToken,
                                    String currentTurnContent,
                                    String memoryContextMarkdown) {
         String userName = resolveUserName(currentUser);
@@ -138,15 +136,6 @@ public class AssistantPromptBuilder {
                 当前会话已绑定对象：
                 %s
 
-                平台 MCP 调用专用系统会话令牌：
-                %s
-
-                重要提醒：
-                - 只要调用平台 MCP 工具，就必须传入 `system_session_token` = "%s"
-                - 这个 `system_session_token` 是系统内部值，不是用户输入，禁止从用户问题中提取或猜测
-                - 如果工具报 token 相关错误，直接用这个值重试同一个工具调用，不要向用户解释 token
-                - 这个令牌不能出现在自然语言回答中
-
                 用户当前输入：
                 %s
                 """.formatted(
@@ -162,8 +151,6 @@ public class AssistantPromptBuilder {
                 context == null ? "- 当前没有额外页面上下文" : defaultString(context.contextMarkdown()),
                 renderMemoryContext(memoryContextMarkdown),
                 groundingMarkdown(groundingState),
-                defaultString(sessionToken),
-                defaultString(sessionToken),
                 defaultString(currentTurnContent)
         );
     }

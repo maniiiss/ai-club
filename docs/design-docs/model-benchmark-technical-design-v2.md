@@ -137,7 +137,7 @@ updated_at`。索引：`created_at`、`created_by`。
   `backend/src/test/resources/application.yml`），意味着 V82 SQL 不在测试时执行；
   生产/开发环境（PostgreSQL + Flyway）需要在首次部署时运行 V82 完成历史数据合并。
 - 全量 `mvn test` 中存在与 benchmark 模块**无关**的失败用例（`PlatformStoreService`、
-  `Hermes*` 等），是仓库 working tree 里其他改动导致的环境问题，不在本次范围。
+  `Assistant*` 等），是仓库 working tree 里其他改动导致的环境问题，不在本次范围。
 
 ## 6. 风险与回滚
 

@@ -140,7 +140,7 @@ export const AssistantComposer = ({
       if (!blob.size) return
       setTranscribing(true)
       try {
-        const text = await onTranscribe(new File([blob], `hermes-voice-${Date.now()}.webm`, { type: blob.type }))
+        const text = await onTranscribe(new File([blob], `assistant-voice-${Date.now()}.webm`, { type: blob.type }))
         setQuestion((prev) => [prev.trim(), text.trim()].filter(Boolean).join('\n'))
       } finally {
         setTranscribing(false)

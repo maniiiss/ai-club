@@ -10,16 +10,16 @@ test('Assistant drawer exposes assistant boundary copy through header tooltip in
   assert.match(source, /平台内协作助手/)
   assert.match(source, /不会直接代替外部浏览器、联网搜索/)
   assert.doesNotMatch(source, /<p>{{ assistantEmptyStateIntro }}<\/p>/)
-  assert.doesNotMatch(source, /<p class="hermes-section-description">{{ assistantPromptSectionDescription }}<\/p>/)
+  assert.doesNotMatch(source, /<p class="assistant-section-description">{{ assistantPromptSectionDescription }}<\/p>/)
 })
 
 test('Assistant drawer keeps confirmation flow concise without expanded inline explanation blocks', async () => {
   const source = await readFile(new URL('../src/components/AssistantDrawer.vue', import.meta.url), 'utf8')
 
   assert.match(source, /需要你确认后继续/)
-  assert.doesNotMatch(source, /<p class="hermes-section-description">{{ assistantSelectionHint }}<\/p>/)
-  assert.doesNotMatch(source, /<p class="hermes-section-description">{{ assistantActionHint }}<\/p>/)
-  assert.doesNotMatch(source, /<small class="hermes-inline-note">确认后才会真正创建或执行。<\/small>/)
+  assert.doesNotMatch(source, /<p class="assistant-section-description">{{ assistantSelectionHint }}<\/p>/)
+  assert.doesNotMatch(source, /<p class="assistant-section-description">{{ assistantActionHint }}<\/p>/)
+  assert.doesNotMatch(source, /<small class="assistant-inline-note">确认后才会真正创建或执行。<\/small>/)
 })
 
 test('Assistant stream interruption copy tells users they can retry or continue with existing confirmations', async () => {

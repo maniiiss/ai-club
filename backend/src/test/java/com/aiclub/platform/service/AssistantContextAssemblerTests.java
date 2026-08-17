@@ -66,7 +66,7 @@ class AssistantContextAssemblerTests {
      */
     @Test
     void shouldBuildDashboardContext() {
-        UserEntity user = createUser("hermes-dashboard", "首页成员");
+        UserEntity user = createUser("assistant-dashboard", "首页成员");
         loginAs(user);
 
         AssistantContextAssembler.AssistantConversationContext context = assistantContextAssembler.assemble(
@@ -85,8 +85,8 @@ class AssistantContextAssemblerTests {
      */
     @Test
     void shouldBuildTaskContextWithTaskDetails() {
-        UserEntity creator = createUser("hermes-task-creator", "任务创建人");
-        UserEntity owner = createUser("hermes-task-owner", "项目负责人");
+        UserEntity creator = createUser("assistant-task-creator", "任务创建人");
+        UserEntity owner = createUser("assistant-task-owner", "项目负责人");
         ProjectEntity project = createProjectAs(creator, owner, "Assistant 项目");
 
         loginAs(creator);
@@ -136,8 +136,8 @@ class AssistantContextAssemblerTests {
      */
     @Test
     void shouldBuildIterationContextWithReleaseSummary() {
-        UserEntity creator = createUser("hermes-iteration-creator", "迭代创建人");
-        UserEntity owner = createUser("hermes-iteration-owner", "迭代负责人");
+        UserEntity creator = createUser("assistant-iteration-creator", "迭代创建人");
+        UserEntity owner = createUser("assistant-iteration-owner", "迭代负责人");
         ProjectEntity project = createProjectAs(creator, owner, "发版项目");
 
         loginAs(creator);
@@ -229,7 +229,7 @@ class AssistantContextAssemblerTests {
      */
     @Test
     void shouldBuildPublicKnowledgeRoutesForWikiReferences() {
-        UserEntity creator = createUser("hermes-wiki-route", "Wiki 成员");
+        UserEntity creator = createUser("assistant-wiki-route", "Wiki 成员");
         ProjectEntity project = createProjectAs(creator, creator, "Wiki 深链项目");
 
         loginAs(creator);
@@ -255,9 +255,9 @@ class AssistantContextAssemblerTests {
      */
     @Test
     void shouldFallbackToGlobalContextWhenTaskIsNotVisible() {
-        UserEntity creator = createUser("hermes-hidden-creator", "隐藏创建人");
-        UserEntity owner = createUser("hermes-hidden-owner", "隐藏负责人");
-        UserEntity outsider = createUser("hermes-outsider", "旁观者");
+        UserEntity creator = createUser("assistant-hidden-creator", "隐藏创建人");
+        UserEntity owner = createUser("assistant-hidden-owner", "隐藏负责人");
+        UserEntity outsider = createUser("assistant-outsider", "旁观者");
         ProjectEntity project = createProjectAs(creator, owner, "隐藏项目");
 
         loginAs(creator);
@@ -342,7 +342,7 @@ class AssistantContextAssemblerTests {
                 user.getUsername(),
                 user.getNickname(),
                 Set.of(user.getRoles().stream().findFirst().orElseThrow().getCode()),
-                Set.of("dashboard:view", "project:view", "task:view", "hermes:chat")
+                Set.of("dashboard:view", "project:view", "task:view", "assistant:chat")
         ));
     }
 
@@ -358,7 +358,7 @@ class AssistantContextAssemblerTests {
                 user.isEnabled(),
                 user.getRoles().stream().map(RoleEntity::getCode).toList(),
                 user.getRoles().stream().map(RoleEntity::getName).toList(),
-                List.of("dashboard:view", "project:view", "task:view", "hermes:chat"),
+                List.of("dashboard:view", "project:view", "task:view", "assistant:chat"),
                 List.of()
         );
     }

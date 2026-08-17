@@ -63,7 +63,7 @@ class AssistantFeedbackServiceTests {
         session = new AssistantConversationSessionEntity();
         session.setId(10L);
         session.setRouteName("projects");
-        session.setRuntimeRegistryCode("HERMES_LEGACY");
+        session.setRuntimeRegistryCode("PI_RUNTIME");
         session.setProjectId(12L);
         userMessage = new AssistantConversationMessageEntity();
         userMessage.setId(20L);

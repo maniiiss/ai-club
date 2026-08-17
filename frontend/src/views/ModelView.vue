@@ -319,6 +319,13 @@
               <el-option v-for="item in openAiApiModeOptions" :key="item.value" :label="item.label" :value="item.value" />
             </el-select>
           </el-form-item>
+          <el-form-item v-if="form.modelType === 'CHAT'" label="输入能力" prop="inputModalities">
+            <el-checkbox-group v-model="form.inputModalities">
+              <el-checkbox label="text" disabled>文本</el-checkbox>
+              <el-checkbox label="image">图片</el-checkbox>
+            </el-checkbox-group>
+            <div class="platform-form-section-subtitle" style="margin-top: 6px">开启图片后，桌面端会把图片直接作为该模型的输入；未开启时按文本模型处理。</div>
+          </el-form-item>
           <el-form-item label="上下文长度" prop="contextLength">
             <el-input-number v-model="form.contextLength" :min="0" :step="1000" controls-position="right" style="width: 100%" placeholder="如 128000" />
           </el-form-item>
@@ -412,6 +419,13 @@
               <el-option v-for="item in openAiApiModeOptions" :key="item.value" :label="item.label" :value="item.value" />
             </el-select>
           </el-form-item>
+          <el-form-item v-if="form.modelType === 'CHAT'" label="输入能力" prop="inputModalities">
+            <el-checkbox-group v-model="form.inputModalities">
+              <el-checkbox label="text" disabled>文本</el-checkbox>
+              <el-checkbox label="image">图片</el-checkbox>
+            </el-checkbox-group>
+            <div class="platform-form-section-subtitle" style="margin-top: 6px">开启图片后，桌面端会把图片直接作为该模型的输入；未开启时按文本模型处理。</div>
+          </el-form-item>
           <el-form-item label="上下文长度" prop="contextLength">
             <el-input-number v-model="form.contextLength" :min="0" :step="1000" controls-position="right" style="width: 100%" placeholder="如 128000" />
           </el-form-item>
@@ -480,7 +494,7 @@ import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
 import ModelBenchmarkView from '@/views/ModelBenchmarkConfigView.vue'
 import { createModelConfig, deleteModelConfig, pageModelConfigs, testModelConfig, updateModelConfig } from '@/api/models'
-import type { AiModelConfigItem, AiModelType, OpenAiApiMode } from '@/types/platform'
+import type { AiModelConfigItem, AiModelInputModality, AiModelType, OpenAiApiMode } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
 import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
 
@@ -514,6 +528,8 @@ interface ModelForm {
   apiKey: string
   description: string
   enabled: boolean
+  /** 模型实际接受的输入模态；文本固定存在，图片由管理员选择。 */
+  inputModalities: AiModelInputModality[]
   contextLength?: number
   maxOutputTokens?: number
   tokenBillingEnabled?: boolean
@@ -563,6 +579,7 @@ const form = reactive<ModelForm>({
   apiKey: '',
   description: '',
   enabled: true,
+  inputModalities: ['text'],
   contextLength: undefined,
   maxOutputTokens: undefined
 })
@@ -588,6 +605,7 @@ watch(
   () => form.modelType,
   (modelType) => {
     if (modelType === 'EMBEDDING') {
+      form.inputModalities = ['text']
       if (form.provider === 'ANTHROPIC') {
         form.provider = 'OPENAI'
         return
@@ -671,6 +689,7 @@ const resetForm = () => {
   form.apiKey = ''
   form.description = ''
   form.enabled = true
+  form.inputModalities = ['text']
   form.contextLength = undefined
   form.maxOutputTokens = undefined
   form.tokenBillingEnabled = false
@@ -742,6 +761,7 @@ const fillForm = (row: AiModelConfigItem) => {
   form.apiKey = ''
   form.description = row.description
   form.enabled = row.enabled
+  form.inputModalities = row.modelType === 'CHAT' && row.inputModalities?.length ? [...row.inputModalities] : ['text']
   form.contextLength = row.contextLength
   form.maxOutputTokens = row.maxOutputTokens
   form.tokenBillingEnabled = row.tokenBillingEnabled ?? false

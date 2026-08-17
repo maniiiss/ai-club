@@ -25,7 +25,8 @@ import java.util.function.Consumer;
 @Service
 public class RuntimeChatService {
 
-    public static final String HERMES_LEGACY = "HERMES_LEGACY";
+    /** 平台默认聊天 Runtime；助手和聊天室统一经由该 Runtime 适配器执行。 */
+    public static final String DEFAULT_RUNTIME = "PI_RUNTIME";
 
     private final RuntimeRegistryService runtimeRegistryService;
     private final RuntimeAdapterRegistry runtimeAdapterRegistry;
@@ -42,18 +43,13 @@ public class RuntimeChatService {
         this.runtimeToolContractService = runtimeToolContractService;
     }
 
-    /** 判断是否应该继续走历史 Assistant Gateway 兼容链路。 */
-    public boolean isLegacy(String runtimeCode) {
-        return HERMES_LEGACY.equals(normalize(runtimeCode));
-    }
-
     /**
      * 查询当前聊天 Runtime 是否声明某项能力。
      * 业务意图：上下文编排必须先尊重 Runtime 原生压缩，再决定是否由 backend 兜底，不能只看管理员选择的策略名称。
      */
     public boolean supportsCapability(String runtimeCode, RuntimeCapability capability) {
         String normalized = normalize(runtimeCode);
-        if (isLegacy(normalized) || capability == null) {
+        if (capability == null) {
             return false;
         }
         try {
@@ -64,14 +60,11 @@ public class RuntimeChatService {
     }
 
     /**
-     * 调用非 Legacy Runtime 的同步聊天入口。
-     * Legacy 由原有 AssistantGatewayService 处理，避免破坏其工具调用和 SSE 兼容协议。
+     * 调用统一 Runtime 的同步聊天入口。
+     * 所有聊天请求都经过 Runtime Registry，具体协议由适配器隔离。
      */
     public RuntimeChatResult chat(String runtimeCode, RuntimeInvocationContext context) {
         String normalized = normalize(runtimeCode);
-        if (isLegacy(normalized)) {
-            throw new IllegalArgumentException("HERMES_LEGACY 必须通过 Assistant Gateway 调用");
-        }
         if (!runtimeRegistryService.isAvailable(normalized, Set.of(RuntimeCapability.CHAT))) {
             throw new IllegalStateException("Runtime 当前不可用于聊天：" + normalized);
         }
@@ -80,16 +73,13 @@ public class RuntimeChatService {
     }
 
     /**
-     * 调用非 Legacy Runtime 的实时聊天入口。
+     * 调用统一 Runtime 的实时聊天入口。
      * 业务意图：Assistant 会话和聊天室只消费统一事件，具体 Runtime 的 HTTP、Gateway 或 SDK 差异由适配器隔离。
      */
     public RuntimeChatResult streamChat(String runtimeCode,
                                         RuntimeInvocationContext context,
                                         Consumer<RuntimeStreamEvent> eventConsumer) {
         String normalized = normalize(runtimeCode);
-        if (isLegacy(normalized)) {
-            throw new IllegalArgumentException("HERMES_LEGACY 必须通过 Assistant Gateway 调用");
-        }
         if (!runtimeRegistryService.isAvailable(normalized, Set.of(RuntimeCapability.CHAT))) {
             throw new IllegalStateException("Runtime 当前不可用于聊天：" + normalized);
         }
@@ -137,7 +127,7 @@ public class RuntimeChatService {
     }
 
     /**
-     * 为所有非 Legacy Runtime 注入统一工具契约。
+     * 为所有聊天 Runtime 注入统一工具契约。
      * 业务意图：业务服务只提供当前用户和房间策略，Runtime 适配器不再各自拼装工具字段。
      */
     public RuntimeInvocationContext withToolContract(RuntimeInvocationContext context,
@@ -166,9 +156,6 @@ public class RuntimeChatService {
     /** 校验聊天室或会话配置引用了已注册且具备 CHAT 能力的 Runtime。 */
     public void validateChatRuntime(String runtimeCode) {
         String normalized = normalize(runtimeCode);
-        if (isLegacy(normalized)) {
-            return;
-        }
         if (!runtimeRegistryService.descriptor(normalized).supports(RuntimeCapability.CHAT)) {
             throw new IllegalArgumentException("Runtime 不支持聊天能力：" + normalized);
         }
@@ -185,7 +172,7 @@ public class RuntimeChatService {
 
     private String normalize(String runtimeCode) {
         return runtimeCode == null || runtimeCode.isBlank()
-                ? HERMES_LEGACY
+                ? DEFAULT_RUNTIME
                 : runtimeCode.trim().toUpperCase(Locale.ROOT);
     }
 }

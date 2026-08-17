@@ -146,7 +146,7 @@ public class AssistantChatService {
                 assistantChatAuditRepository, assistantConversationSessionService, assistantAttachmentService, wikiKnowledgeSearchService, null, null, objectMapper, null);
     }
 
-    /** 兼容尚未接入 Runtime 路由的旧测试构造方式，默认所有会话走 Assistant Legacy。 */
+    /** 兼容尚未接入 Runtime 路由的旧测试构造方式；生产链路始终由 RuntimeChatService 承载。 */
     public AssistantChatService(AuthService authService,
                              UserRepository userRepository,
                              AssistantProperties assistantProperties,
@@ -428,16 +428,17 @@ public class AssistantChatService {
 
     /**
      * 按会话创建时固化的 Runtime 执行当前轮次。
-     * Legacy 继续保留原生工具调用链；其他 Runtime 通过统一同步聊天协议执行，避免平台入口仍偷偷固定到 Assistant。
+     * 按会话快照调用统一 Runtime 聊天协议，避免平台入口分散维护 Runtime 分支。
      */
     private ChatExecutionResult executeChat(AssistantConversationSessionEntity session,
                                               PreparedConversation preparedConversation,
                                               Consumer<String> deltaConsumer,
                                               Runnable contextCompactionConsumer) {
         String runtimeCode = defaultString(session.getRuntimeRegistryCode()).isBlank()
-                ? RuntimeChatService.HERMES_LEGACY
+                ? RuntimeChatService.DEFAULT_RUNTIME
                 : session.getRuntimeRegistryCode().trim().toUpperCase(java.util.Locale.ROOT);
-        if (runtimeChatService == null || runtimeChatService.isLegacy(runtimeCode)) {
+        // 仅保留测试和离线构造场景的 HTTP fallback；生产 Spring 容器始终注入 RuntimeChatService。
+        if (runtimeChatService == null && assistantGatewayService != null) {
             AssistantGatewayService.AssistantGatewayResult result = deltaConsumer == null
                     ? assistantGatewayService.createChatCompletion(
                     preparedConversation.prompt(), preparedConversation.outboundTranscript())
@@ -445,7 +446,6 @@ public class AssistantChatService {
                     preparedConversation.prompt(), preparedConversation.outboundTranscript(), delta -> deltaConsumer.accept(delta));
             return new ChatExecutionResult(result.content(), result.responseId());
         }
-
         Map<String, Object> requestBody = new LinkedHashMap<>();
         requestBody.put("runId", "gitpilot-session-" + session.getId() + "-" + System.nanoTime());
         requestBody.put("sessionId", preparedConversation.state().clientConversationId());
@@ -1377,7 +1377,7 @@ public class AssistantChatService {
     ) {
     }
 
-    /** Runtime 统一聊天结果，responseId 在非 Legacy Runtime 中由 runId 兼容承载。 */
+    /** Runtime 统一聊天结果，responseId 使用 Runtime runId 兼容承载。 */
     private record ChatExecutionResult(String content, String responseId) {
     }
 

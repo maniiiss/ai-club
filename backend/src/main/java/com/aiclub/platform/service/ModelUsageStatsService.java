@@ -27,7 +27,7 @@ import java.util.Locale;
  * 平台模型调用量统计聚合服务。
  *
  * <p>以「模型」为中心聚合 {@code agent_invocation_log}，聚合键为 {@code (model_name, provider)}，
- * 覆盖 {@code ai_model_config} 表内模型、env 配置的 Hermes 模型与 code-processing 回传模型。
+ * 覆盖 {@code ai_model_config} 表内模型、env 配置的 Assistant 模型与 code-processing 回传模型。
  * 与 {@link AgentUsageStatsService}（按智能体/用户维度）互补，不改动其逻辑。
  *
  * <p>实现风格与 {@link AgentUsageStatsService} 一致：native SQL + EntityManager，
@@ -139,7 +139,7 @@ public class ModelUsageStatsService {
         int limit = request.limit() == null ? DEFAULT_TOP_LIMIT : Math.max(1, Math.min(request.limit(), MAX_TOP_LIMIT));
 
         // 聚合键 (model_name, provider)，COALESCE 把空串/null 归为 <unknown>，
-        // 让 env 配置的 Hermes 模型与 code-processing 回传模型也能正确聚合。
+        // 让 env 配置的 Assistant 模型与 code-processing 回传模型也能正确聚合。
         String modelNameExpr = "COALESCE(NULLIF(model_name, ''), '<unknown>')";
         String providerExpr = "COALESCE(NULLIF(provider, ''), '<unknown>')";
         String sql = "SELECT " + modelNameExpr + " AS model_name, " +

@@ -12,8 +12,10 @@ export function getExecutionActivityLabel(execution: ExecutionRun, isStreaming: 
 	// 仅显示当前仍在执行的真实工具；没有活跃工具时按模型增量阶段判断。
 	const activeTool = [...execution.steps].reverse().find((step) => step.status === 'running' || step.status === 'waiting');
 	if (activeTool) return describeExecutionActivity(activeTool);
-	// 正文已经在输出时模型处于回答阶段，由正文气泡本身体现进度，不再展示“正在思考”。
-	if (execution.lastDeltaKind === 'text') return null;
+	const hasUnreportedTrace = Boolean(execution.thinking?.trim()) || getUnreportedExecutionSteps(execution).length > 0;
+	// 正文已经开始输出时仍保留尚未归档的思考/工具痕迹，避免工具刚结束就从界面消失。
+	// 纯正文回答没有执行痕迹时继续隐藏，避免每个普通回答都显示冗余状态。
+	if (execution.lastDeltaKind === 'text') return hasUnreportedTrace ? '执行过程' : null;
 	// thinking 文本是本次任务的历史记录；只有最近事件仍是 thinking_delta 时才表示模型正在思考。
 	// 工具已结束但正文尚未到达时，模型正在根据工具结果组织下一轮请求；显式说明该等待，不能回退成旧思考或无文字的转圈。
 	if (execution.lastDeltaKind === 'tool') return '正在整理工具结果…';
@@ -235,6 +237,7 @@ export function ExecutionActivity({ isStreaming }: { isStreaming: boolean }) {
 	const [expanded, setExpanded] = useState(false);
 	const label = getExecutionActivityLabel(execution, isStreaming);
 	const visibleSteps = getUnreportedExecutionSteps(execution);
+	// 只允许展开当前正文尚未归档的步骤；已归档批次已经在聊天时间线中展示。
 	const canExpand = Boolean(execution.thinking?.trim()) || visibleSteps.length > 0;
 	const liveItems: TraceItem[] = [];
 	if (execution.thinking?.trim()) liveItems.push({ type: 'thinking', text: execution.thinking.trim() });
@@ -246,10 +249,6 @@ export function ExecutionActivity({ isStreaming }: { isStreaming: boolean }) {
 	useEffect(() => {
 		if (!canExpand) setExpanded(false);
 	}, [canExpand]);
-	// 总结正文开始输出时收起执行过程详情（工具已结束，正文是结论）。
-	useEffect(() => {
-		if (execution.lastDeltaKind === 'text') setExpanded(false);
-	}, [execution.lastDeltaKind]);
 
 	if (!label) return null;
 

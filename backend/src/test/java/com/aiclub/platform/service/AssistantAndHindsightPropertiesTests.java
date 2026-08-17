@@ -20,40 +20,40 @@ class AssistantAndHindsightPropertiesTests {
     @Test
     void shouldReadAssistantBaseUrlAndApiKeyFromDeploymentConfigOnly() {
         AssistantProperties properties = new AssistantProperties(
-                "http://runtime-hermes:18080/v1",
-                "runtime-hermes-key",
-                "hermes-agent",
+                "http://runtime-assistant:18080/v1",
+                "runtime-assistant-key",
+                "assistant-agent",
                 "180",
-                "ai-club:hermes",
+                "ai-club:assistant",
                 6,
                 86400,
                 platformEnvVarResolver
         );
 
-        assertThat(properties.getBaseUrl()).isEqualTo("http://runtime-hermes:18080/v1");
-        assertThat(properties.getApiKey()).isEqualTo("runtime-hermes-key");
+        assertThat(properties.getBaseUrl()).isEqualTo("http://runtime-assistant:18080/v1");
+        assertThat(properties.getApiKey()).isEqualTo("runtime-assistant-key");
         verifyNoInteractions(platformEnvVarResolver);
     }
 
     @Test
     void shouldKeepAssistantModelAndTimeoutAsRuntimeManagedFields() {
-        when(platformEnvVarResolver.resolveOrDefault(eq(PlatformEnvVarRegistry.KEY_HERMES_MODEL), any(), eq("hermes-agent")))
-                .thenReturn("hermes-agent-gray");
-        when(platformEnvVarResolver.resolveOrDefault(eq(PlatformEnvVarRegistry.KEY_HERMES_TIMEOUT_SECONDS), any(), eq("180")))
+        when(platformEnvVarResolver.resolveOrDefault(eq(PlatformEnvVarRegistry.KEY_ASSISTANT_MODEL), any(), eq("assistant-agent")))
+                .thenReturn("assistant-agent-gray");
+        when(platformEnvVarResolver.resolveOrDefault(eq(PlatformEnvVarRegistry.KEY_ASSISTANT_TIMEOUT_SECONDS), any(), eq("180")))
                 .thenReturn("240");
 
         AssistantProperties properties = new AssistantProperties(
-                "http://runtime-hermes:18080/v1",
-                "runtime-hermes-key",
-                "hermes-agent",
+                "http://runtime-assistant:18080/v1",
+                "runtime-assistant-key",
+                "assistant-agent",
                 "180",
-                "ai-club:hermes",
+                "ai-club:assistant",
                 6,
                 86400,
                 platformEnvVarResolver
         );
 
-        assertThat(properties.getModel()).isEqualTo("hermes-agent-gray");
+        assertThat(properties.getModel()).isEqualTo("assistant-agent-gray");
         assertThat(properties.getTimeoutSeconds()).isEqualTo(240);
     }
 
@@ -84,9 +84,9 @@ class AssistantAndHindsightPropertiesTests {
 
     @Test
     void shouldKeepHindsightBudgetFieldsAsRuntimeManagedFields() {
-        when(platformEnvVarResolver.resolveOrDefault(eq(PlatformEnvVarRegistry.KEY_HERMES_HINDSIGHT_BANK_ID), any(), eq("git-ai-club")))
+        when(platformEnvVarResolver.resolveOrDefault(eq(PlatformEnvVarRegistry.KEY_ASSISTANT_HINDSIGHT_BANK_ID), any(), eq("git-ai-club")))
                 .thenReturn("runtime-bank-prefix");
-        when(platformEnvVarResolver.resolveOrDefault(eq(PlatformEnvVarRegistry.KEY_HERMES_HINDSIGHT_BUDGET), any(), eq("mid")))
+        when(platformEnvVarResolver.resolveOrDefault(eq(PlatformEnvVarRegistry.KEY_ASSISTANT_HINDSIGHT_BUDGET), any(), eq("mid")))
                 .thenReturn("high");
         when(platformEnvVarResolver.resolveOrDefault(eq(PlatformEnvVarRegistry.KEY_HINDSIGHT_TIMEOUT_SECONDS), any(), eq("30")))
                 .thenReturn("45");

@@ -58,7 +58,7 @@ class ChatAssistantServiceTests {
     void shouldStreamAssistantReplyWithRoomSummaryAndRecentMessages() {
         ChatRoomEntity room = room();
         ChatMessageEntity assistant = message(102L, room, null, "assistant", "", "STREAMING");
-        ChatMessageEntity userMessage = message(101L, room, user(5L, "pm", "产品"), "user", "@hermes 汇总一下", "DONE");
+        ChatMessageEntity userMessage = message(101L, room, user(5L, "pm", "产品"), "user", "@assistant 汇总一下", "DONE");
         ChatMessageEntity previous = message(100L, room, user(6L, "dev", "开发"), "user", "后端接口已经联调完成", "DONE");
         ChatAssistantService service = new ChatAssistantService(
                 chatRoomRepository,
@@ -94,7 +94,7 @@ class ChatAssistantServiceTests {
         assertThat(joinedTranscript)
                 .contains("历史摘要：昨天确认了上线范围")
                 .contains("开发：后端接口已经联调完成")
-                .contains("产品：@hermes 汇总一下");
+                .contains("产品：@assistant 汇总一下");
         verify(chatWebSocketPushService).broadcastAssistantDelta(41L, 102L, "当前结论：");
         verify(chatWebSocketPushService).broadcastAssistantMessageDone(eq(41L), any());
         assertThat(assistant.getContent()).isEqualTo("当前结论：可以发布。");
@@ -106,7 +106,7 @@ class ChatAssistantServiceTests {
     void shouldInjectMcpSessionTokenAndSaveStateBeforeGatewayCall() {
         ChatRoomEntity room = room();
         ChatMessageEntity assistant = message(102L, room, null, "assistant", "", "STREAMING");
-        ChatMessageEntity userMessage = message(101L, room, user(5L, "pm", "产品"), "user", "@hermes 查示例项目 #4最近的需求工作项", "DONE");
+        ChatMessageEntity userMessage = message(101L, room, user(5L, "pm", "产品"), "user", "@assistant 查示例项目 #4最近的需求工作项", "DONE");
         ChatAssistantService service = new ChatAssistantService(
                 chatRoomRepository,
                 chatMessageRepository,
@@ -139,10 +139,9 @@ class ChatAssistantServiceTests {
         inOrder.verify(assistantConversationStateStore).save(any(AssistantConversationState.class));
         inOrder.verify(assistantGatewayService).streamChatCompletion(any(), any(), any());
         assertThat(promptCaptor.getValue().systemPrompt())
-                .contains("当前轮唯一有效的 `system_session_token` 是：`hcs_chat_token_1234`")
-                .contains("每次调用平台 MCP 工具必须原样传入 `system_session_token`")
                 .contains("数量必须使用 `metadata.totalCount`")
-                .contains("聊天室默认只绑定项目，不自动代表某个迭代");
+                .contains("聊天室默认只绑定项目，不自动代表某个迭代")
+                .doesNotContain("system_session_token");
         assertThat(stateCaptor.getValue().scopeKey()).isEqualTo("chat-room:41:user:5:message:101");
         assertThat(stateCaptor.getValue().clientConversationId()).isEqualTo("chat-room-41-message-101");
         assertThat(stateCaptor.getValue().mcpSessionToken()).isEqualTo("hcs_chat_token_1234");

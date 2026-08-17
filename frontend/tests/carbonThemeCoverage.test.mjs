@@ -24,7 +24,7 @@ describe('management carbon theme coverage', () => {
       '.orchestration-editor-card',
       '.api-studio-editor-shell',
       '.benchmark-metric-table',
-      '.hermes-footer',
+      '.assistant-footer',
       '.notification-item',
       '.api-studio-home-card',
       '.wiki-workbench',

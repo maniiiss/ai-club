@@ -17,7 +17,7 @@ import java.time.LocalDateTime;
  * Assistant 会话轻量审计日志，用于排障与运营分析，不承担记忆召回职责。
  */
 @Entity
-@Table(name = "hermes_chat_audit")
+@Table(name = "assistant_chat_audit")
 public class AssistantChatAuditEntity {
 
     @Id
@@ -88,7 +88,7 @@ public class AssistantChatAuditEntity {
     /**
      * Assistant 网关返回的响应标识，便于关联远端日志。
      */
-    @Column(name = "hermes_response_id", length = 120)
+    @Column(name = "assistant_response_id", length = 120)
     private String assistantResponseId;
 
     /**

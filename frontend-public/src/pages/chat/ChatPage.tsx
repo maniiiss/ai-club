@@ -200,9 +200,9 @@ export const ChatPage = () => {
   const handleSocketEvent = useCallback((event: ChatSocketEvent) => {
     if (event.type === 'ROOM_MESSAGE_CREATED' && 'message' in event) {
       setMessages((current) => mergeChatMessage(current, event.message as ChatMessageItem))
-    } else if (event.type === 'HERMES_STREAM_DELTA' && 'messageId' in event && 'delta' in event) {
+    } else if (event.type === 'ASSISTANT_STREAM_DELTA' && 'messageId' in event && 'delta' in event) {
       setMessages((current) => appendChatStreamDelta(current, Number(event.messageId), String(event.delta || '')))
-    } else if ((event.type === 'HERMES_MESSAGE_DONE' || event.type === 'HERMES_MESSAGE_ERROR') && 'message' in event) {
+    } else if ((event.type === 'ASSISTANT_MESSAGE_DONE' || event.type === 'ASSISTANT_MESSAGE_ERROR') && 'message' in event) {
       setMessages((current) => mergeChatMessage(current, event.message as ChatMessageItem))
     } else if (event.type === 'ROOM_UPDATED' && 'room' in event) {
       setRooms((current) => mergeRoom(current, event.room as ChatRoomItem))
@@ -831,7 +831,7 @@ const ChatAgentSettingsDialog = ({
   const isOwner = currentUserId !== null && room.creatorUserId === currentUserId
   const [enabled, setEnabled] = useState(config.enabled)
   const [displayName, setDisplayName] = useState(config.displayName || 'GitPilot')
-  const [runtimeRegistryCode, setRuntimeRegistryCode] = useState(config.runtimeRegistryCode || 'HERMES_LEGACY')
+  const [runtimeRegistryCode, setRuntimeRegistryCode] = useState(config.runtimeRegistryCode || 'PI_RUNTIME')
   const [systemInstruction, setSystemInstruction] = useState(config.systemInstruction || '')
   const [proactiveSummaryEnabled, setProactiveSummaryEnabled] = useState(config.proactiveSummaryEnabled)
   const [keywordWatchEnabled, setKeywordWatchEnabled] = useState(config.keywordWatchEnabled)

@@ -6,6 +6,7 @@
 #   src-tauri/resources/theme/*.json               （sidecar 运行时 fs.readFileSync 读取）
 #   src-tauri/resources/export-html/**             （export_html 命令用）
 #   src-tauri/resources/skills/**                  （平台内置 Skill 首次安装用）
+#   src-tauri/resources/plannotator.json            （Plannotator 内置阶段规则）
 #
 # 对应设计文档第 13.1 节 spike 结论：bun --compile 可行，资源需外部分发。
 set -euo pipefail
@@ -22,9 +23,14 @@ TARGET="x86_64-pc-windows-msvc"
 
 echo "==> 编译 sidecar (bun --compile, target=bun-windows-x64)"
 mkdir -p "$BIN"
+# Bun 单文件二进制中的 import.meta.url 指向虚拟目录；先对精确锁定的扩展
+# 应用资源路径兼容补丁，令其运行时读取 Tauri resources 中的内置配置。
+node "$CLI/scripts/prepare-plannotator-package.mjs"
 bun build "$CLI/src/rpc-entry.ts" \
   --compile \
   --target=bun-windows-x64 \
+  --external='@anthropic-ai/claude-agent-sdk' \
+  --external='@opencode-ai/sdk' \
   --outfile="$BIN/gitpilot-rpc-$TARGET.exe"
 
 # dev 模式下 resolve_sidecar（main.rs）优先查 src-tauri/target/debug/ 同级目录，
@@ -48,6 +54,7 @@ cp "$CLI/package.json" "$RES/package.json"
 cp "$CLI/src/modes/interactive/theme/"*.json "$RES/theme/"
 cp "$CLI/src/core/export-html/template."* "$RES/export-html/" 2>/dev/null || true
 cp "$CLI/src/core/export-html/vendor/"* "$RES/export-html/vendor/" 2>/dev/null || true
+cp "$CLI/node_modules/@plannotator/pi-extension/plannotator.json" "$RES/plannotator.json"
 cp -R "$CLI/src/bundled-skills/cross-agent-harness" "$RES/skills/"
 cp -R "$CLI/src/bundled-skills/kuaikai-platform" "$RES/skills/"
 

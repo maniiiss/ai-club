@@ -23,7 +23,7 @@
 - [公众 SaaS 前端设计](public-saas-frontend-technical-design-v1.md) - 公众端产品信息架构与前端边界
 - [公众端积分扣费设计](public-credit-technical-design-v1.md) - 公众端积分账户、流水和 AI 消费扣减
 - [公众端技术设计 AI Runtime 设计](public-technical-design-ai-runtime-technical-design-v1.md) - 基于 GitNexus 与成熟 Agent Runtime 的技术设计生成链路
-- [GitPilot 多运行时智能体技术设计](gitpilot-multi-runtime-technical-design-v1.md) - GitPilot 产品入口、Pi Runtime 接入、运行时能力适配与 Hermes 渐进迁移方案
+- [GitPilot 多运行时智能体技术设计](gitpilot-multi-runtime-technical-design-v1.md) - GitPilot 产品入口、Pi Runtime 接入、运行时能力适配与 Assistant 渐进迁移方案
 - [GitPilot CLI 云端开发接力技术设计](gitpilot-cli-cloud-coding-handoff-technical-design-v1.md) - 内嵌 Pi Agent Core 的本地 Coding CLI、工作区与会话接力、云端 Codex Runtime 及安全结果回传
 - [GitPilot 桌面版技术设计](gitpilot-desktop-technical-design-v1.md) - Tauri 2 + React + bun sidecar 三进程模型，复用 RPC 协议只换 UI 层，类 Codex 原生 GUI 编码助手
 - [GitPilot CLI 会话执行快照与 Desktop 恢复技术设计](gitpilot-cli-session-execution-snapshot-technical-design-v1.md) - CLI Core 统一维护多任务运行快照、精确耗时和事件游标，Desktop 通过兼容 RPC 在切换与重连后恢复执行状态
@@ -32,6 +32,7 @@
 - [GitPilot Work 技术设计](gitpilot-work-technical-design-v1.md) - Code/Work 双模式、本机任务空间与受控联网研究
 - [GitPilot Desktop AI UI 设计编辑器技术设计](gitpilot-desktop-ai-ui-design-editor-technical-design-v1.md) - 单人结构化设计文档、DOM/CSS 画布、AI DesignPatch 与 Canvas/协作演进边界
 - [GitPilot Pi 生产力扩展技术设计](gitpilot-pi-productivity-extensions-technical-design-v1.md) - 内置 slopchop、goal、plan-mode、subagents、pi-rtk-optimizer 的 CLI/Desktop 双宿主适配、离线打包、自主委派边界与命令重写/输出压缩
+- [GitPilot Plannotator Desktop 原生适配技术设计](gitpilot-plannotator-desktop-integration-technical-design-v1.md) - Plannotator 计划清单、Desktop 右侧计划 Tab、原生审核与执行进度事件
 - [GitPilot 提问执行引导 P0 技术设计](gitpilot-execution-guidance-p0-technical-design-v1.md) - CLI 与 Desktop 的立即引导、完成后追加、队列展示和停止清队列语义
 - [AgentRuntime 统一聊天流式技术设计](agent-runtime-chat-streaming-technical-design-v1.md) - 多 Runtime 的 NDJSON 事件协议、Backend 转发和流式降级策略
 - [原生 API 工作台设计](api-studio-native-technical-design-v1.md) - 平台原生 API 资产与调试工作台
@@ -67,7 +68,7 @@
 
 ### 智能体
 
-- [Hermes 技能架构](../exec-plans/active/hermes-skill-architecture-v1.md) - 智能助手架构
+- [Assistant 技能架构](../exec-plans/active/assistant-skill-architecture-v1.md) - 智能助手架构
 - [模型 Token 用量设计](model-token-usage-technical-design-v1.md) - Token 计费设计（已 superseded，改用复用 agent_invocation_log）
 - [平台模型调用量统计设计](platform-model-usage-stats-technical-design-v1.md) - 模型为中心的平台级看板，补齐流式对话与 code-processing 覆盖盲区
 - [模型调用量缓存命中统计设计](model-usage-cache-hit-stats-technical-design-v1.md) - 缓存命中率与命中 token 数的采集、聚合与看板展示

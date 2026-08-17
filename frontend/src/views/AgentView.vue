@@ -797,7 +797,7 @@ interface AgentForm {
   systemPrompt: string
   userPromptTemplate: string
   endpointUrl: string
-  runtimeType: 'OPENCLAW' | 'CODEX_CLI' | 'CLAUDE_CODE_CLI' | 'OPENCODE_CLI' | 'PI_RUNTIME' | 'HERMES_LEGACY' | null
+  runtimeType: 'OPENCLAW' | 'CODEX_CLI' | 'CLAUDE_CODE_CLI' | 'OPENCODE_CLI' | 'PI_RUNTIME' | null
   runtimeRegistryCode: string
   runtimeAgentRef: string
   runtimeSessionKeyTemplate: string

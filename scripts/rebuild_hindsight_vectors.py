@@ -476,7 +476,6 @@ def main() -> int:
     postgres_user = env.get("POSTGRES_USER", "aiclub")
     postgres_port = int(env.get("POSTGRES_PORT", "5432"))
     hindsight_port = int(env.get("HINDSIGHT_PORT", "18888"))
-    hermes_port = int(env.get("HERMES_PORT", "18080"))
     backend_port = int(env.get("BACKEND_PORT", "8080"))
 
     try:
@@ -496,7 +495,7 @@ def main() -> int:
             capture_output=True,
         )
 
-        run_compose(ctx, ["stop", "hermes", "hindsight"], "停止 Hermes 和 Hindsight，避免重建过程中写入旧向量")
+        run_compose(ctx, ["stop", "hindsight"], "停止 Hindsight，避免重建过程中写入旧向量")
         run_psql(
             ctx,
             postgres_user,
@@ -533,8 +532,6 @@ def main() -> int:
             "激活平台 Wiki 页面同步任务",
         )
 
-        run_compose(ctx, ["up", "-d", "hermes"], "重新启动 Hermes 容器")
-        wait_for_port(hermes_port, "Hermes", min(args.wait_seconds, 120))
         wait_for_rebuild_completion(ctx, postgres_user, backend_port, args.wait_seconds)
 
         after_rebuild_counts = run_psql(

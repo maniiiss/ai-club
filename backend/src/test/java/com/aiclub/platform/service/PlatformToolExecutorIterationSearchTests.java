@@ -532,7 +532,7 @@ class PlatformToolExecutorIterationSearchTests {
                 user.getUsername(),
                 user.getNickname(),
                 Set.of(user.getRoles().stream().findFirst().orElseThrow().getCode()),
-                Set.of("project:view", "task:view", "task:manage", "hermes:chat")
+                Set.of("project:view", "task:view", "task:manage", "assistant:chat")
         ));
     }
 }

@@ -121,18 +121,18 @@ class HindsightClientServiceTests {
 
         service.retainAssistantConversationMemory(
                 7L,
-                "hermes-conversation:conversation-1:turn:1",
+                "assistant-conversation:conversation-1:turn:1",
                 "Assistant 会话记忆：当前阻塞",
                 "用户问题：当前最大的阻塞是什么\n\n助手回答：发布时间没有对齐。",
-                List.of("hermes", "source:hermes", "user:7", "project:12"),
+                List.of("assistant", "source:assistant", "user:7", "project:12"),
                 Map.of("memoryType", "conversation_turn", "projectId", 12L)
         );
 
-        assertThat(lastRequestUri.get()).contains("/banks/git-ai-club%3Ahermes%3Auser%3A7/memories");
-        assertThat(lastRequestBody.get()).contains("\"context\":\"hermes\"");
-        assertThat(lastRequestBody.get()).contains("\"source\":\"hermes\"");
-        assertThat(lastRequestBody.get()).contains("\"document_id\":\"hermes-conversation:conversation-1:turn:1\"");
-        assertThat(lastRequestBody.get()).contains("\"tags\":[\"hermes\",\"source:hermes\",\"user:7\",\"project:12\"]");
+        assertThat(lastRequestUri.get()).contains("/banks/git-ai-club%3Aassistant%3Auser%3A7/memories");
+        assertThat(lastRequestBody.get()).contains("\"context\":\"assistant\"");
+        assertThat(lastRequestBody.get()).contains("\"source\":\"assistant\"");
+        assertThat(lastRequestBody.get()).contains("\"document_id\":\"assistant-conversation:conversation-1:turn:1\"");
+        assertThat(lastRequestBody.get()).contains("\"tags\":[\"assistant\",\"source:assistant\",\"user:7\",\"project:12\"]");
         assertThat(lastRequestBody.get()).doesNotContain("\"async\"");
     }
 
@@ -141,17 +141,17 @@ class HindsightClientServiceTests {
         HindsightClientService service = createService();
 
         List<HindsightClientService.MemoryRecallHit> hits = service.recallMemories(
-                "git-ai-club:hermes:user:7",
+                "git-ai-club:assistant:user:7",
                 "我明天有什么事情",
                 List.of("project:12"),
                 1
         );
 
         assertThat(hits).hasSize(1);
-        assertThat(hits.get(0).documentId()).isEqualTo("hermes-conversation:conversation-1:turn:1");
+        assertThat(hits.get(0).documentId()).isEqualTo("assistant-conversation:conversation-1:turn:1");
         assertThat(hits.get(0).title()).isEqualTo("Assistant 会话记忆：明天安排");
         assertThat(hits.get(0).snippet()).contains("我明天要去趟公司");
-        assertThat(lastRequestUri.get()).contains("/git-ai-club%3Ahermes%3Auser%3A7/memories/recall");
+        assertThat(lastRequestUri.get()).contains("/git-ai-club%3Aassistant%3Auser%3A7/memories/recall");
         assertThat(lastRequestBody.get()).doesNotContain("\"limit\"");
         assertThat(lastRequestBody.get()).contains("\"budget\":\"mid\"");
     }
@@ -277,18 +277,18 @@ class HindsightClientServiceTests {
                       }
                     }
                     """;
-        } else if (path.contains("git-ai-club%3Ahermes%3Auser%3A7") && path.endsWith("/memories/recall")) {
+        } else if (path.contains("git-ai-club%3Aassistant%3Auser%3A7") && path.endsWith("/memories/recall")) {
             body = """
                     {
                       "results": [
                         {
-                          "document_id": "hermes-conversation:conversation-1:turn:1",
+                          "document_id": "assistant-conversation:conversation-1:turn:1",
                           "title": "Assistant 会话记忆：明天安排",
                           "snippet": "我明天要去趟公司，拿一下电脑。",
                           "score": 0.96
                         },
                         {
-                          "document_id": "hermes-conversation:conversation-2:turn:1",
+                          "document_id": "assistant-conversation:conversation-2:turn:1",
                           "title": "Assistant 会话记忆：后天安排",
                           "snippet": "后天同步发布计划。",
                           "score": 0.72

@@ -88,6 +88,31 @@ class ModelConfigServiceIntegrationTests {
         assertThat(embeddingPage.records()).extracting(AiModelConfigSummary::modelType).containsOnly(ModelConfigService.MODEL_TYPE_EMBEDDING);
     }
 
+    /** 平台输入能力由管理员配置并归一化，缺失或重复文本能力不能改变下游契约。 */
+    @Test
+    void shouldNormalizeConfiguredInputModalities() {
+        AiModelConfigSummary model = modelConfigService.createConfig(new AiModelConfigRequest(
+                "视觉模型",
+                ModelConfigService.MODEL_TYPE_CHAT,
+                ModelConfigService.PROVIDER_OPENAI,
+                "https://api.openai.com/v1",
+                "vision-model",
+                ModelConfigService.OPENAI_API_MODE_AUTO,
+                "vision-key",
+                "支持图片输入",
+                true,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                List.of("image", "text", "image")
+        ));
+
+        assertThat(model.inputModalities()).containsExactly("text", "image");
+    }
+
     /**
      * Embedding 模型测试应调用 embeddings 接口，并从返回向量中提取维度信息。
      */

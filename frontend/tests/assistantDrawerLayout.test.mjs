@@ -19,7 +19,7 @@ test('uses desktop default drawer state when fullscreen is off', async () => {
 
   assert.deepEqual(resolveAssistantDrawerPresentation({ isMobileViewport: false, desktopFullscreen: false }), {
     size: '880px',
-    classNames: ['hermes-drawer'],
+    classNames: ['assistant-drawer'],
     panelColumns: '164px minmax(0, 1fr)'
   })
 })
@@ -29,7 +29,7 @@ test('uses full width drawer state when desktop fullscreen is on', async () => {
 
   assert.deepEqual(resolveAssistantDrawerPresentation({ isMobileViewport: false, desktopFullscreen: true }), {
     size: '100%',
-    classNames: ['hermes-drawer', 'is-desktop-fullscreen'],
+    classNames: ['assistant-drawer', 'is-desktop-fullscreen'],
     panelColumns: '220px minmax(0, 1fr)'
   })
 })
@@ -39,7 +39,7 @@ test('forces mobile drawer state regardless of desktop fullscreen flag', async (
 
   assert.deepEqual(resolveAssistantDrawerPresentation({ isMobileViewport: true, desktopFullscreen: true }), {
     size: '100%',
-    classNames: ['hermes-drawer', 'is-mobile'],
+    classNames: ['assistant-drawer', 'is-mobile'],
     panelColumns: '164px minmax(0, 1fr)'
   })
 })

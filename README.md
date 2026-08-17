@@ -6,7 +6,7 @@
 
 **把项目、迭代、需求、测试、代码仓库、流水线、运行观测、知识沉淀与智能体协作，收口到同一个项目视角下。**
 
-让研发团队围绕一个项目持续完成「规划 → 开发 → 测试 → 发布 → 观测 → 复盘」的工程闭环，并通过 Hermes 对话式智能助手把 AI 代理真正接入日常工程流程。
+让研发团队围绕一个项目持续完成「规划 → 开发 → 测试 → 发布 → 观测 → 复盘」的工程闭环，并通过 Assistant 对话式智能助手把 AI 代理真正接入日常工程流程。
 
 <br/>
 
@@ -46,10 +46,10 @@ AI Club 面向软件研发团队，目标**不是替代单一研发工具，而�
 平台围绕三个核心理念构建：
 
 - **统一项目视角** — 迭代、工作项、测试计划、代码仓库、流水线、运行实例、知识库都挂在项目维度，跨工具上下文不再割裂。
-- **受控的 AI 协作** — Hermes 不直接读写数据库，而是通过 MCP 工具受控访问平台数据；写操作默认生成「待确认动作卡片」，由用户确认后才执行。
+- **受控的 AI 协作** — Assistant 不直接读写数据库，而是通过 MCP 工具受控访问平台数据；写操作默认生成「待确认动作卡片」，由用户确认后才执行。
 - **可追踪与可治理** — 异步任务、自动合并、流水线、自动化测试、巡检执行全程状态可追踪，敏感凭据一律密文存储，关键操作进入审计日志。
 
-> 平台已经从最初的三模块脚手架，演进为包含 **管理控制台 + 公众端 + 业务后端 + 代码处理服务 + Hermes 智能协作网关 + Hindsight 记忆服务 + 向量检索 + 内置流水线底座** 的完整工程系统。
+> 平台已经从最初的三模块脚手架，演进为包含 **管理控制台 + 公众端 + 业务后端 + 代码处理服务 + Assistant 智能协作网关 + Hindsight 记忆服务 + 向量检索 + 内置流水线底座** 的完整工程系统。
 
 ---
 
@@ -80,7 +80,7 @@ AI Club 面向软件研发团队，目标**不是替代单一研发工具，而�
 <td width="50%" valign="top">
 
 ### 🧠 AI 协作
-- **Hermes 对话助手** — 贯穿平台、上下文感知、动作卡片确认
+- **Assistant 对话助手** — 贯穿平台、上下文感知、动作卡片确认
 - **需求 AI 助手** — 标准化需求、拆解子任务、生成测试用例
 - **API 测试用例生成** — 基于接口资产生成可审核的 AI 建议
 - **模型管理 + 对比测试** — Token 计量、跨模型 Benchmark
@@ -120,11 +120,11 @@ flowchart TD
     BE --> DB[(PostgreSQL<br/>业务库 + 记忆库)]
     BE --> RD[(Redis)]
     BE --> MN[(MinIO)]
-    BE --> HM[Hermes<br/>智能协作网关]
+    BE --> PI[pi-runtime<br/>PI_RUNTIME 统一助手运行时]
     BE --> CP[code-processing<br/>FastAPI 代码处理 / MCP 网关]
     BE --> WP[Woodpecker<br/>内置流水线底座]
-    HM --> HS[Hindsight<br/>记忆与检索]
-    HM -.MCP.-> CP
+    PI --> HS[Hindsight<br/>记忆与检索]
+    PI -.MCP.-> CP
     CP --> BE
     BE --> QD[(Qdrant<br/>Wiki 向量检索)]
     CP --> GN[GitNexus<br/>全仓代码图谱]
@@ -135,15 +135,15 @@ flowchart TD
 | `frontend` | Vue 3 + Element Plus 管理控制台，面向私有化后台与平台治理 |
 | `frontend-public` | React + Vite 公众端，面向公开注册、项目协作与 SaaS 化体验 |
 | `backend` | Spring Boot 业务后端，负责核心业务、权限、持久化、工具编排与动作卡片 |
-| `code-processing` | FastAPI 代码处理服务，负责代码扫描、MR 审查、GitNexus 托管，并以 MCP Server 向 Hermes 暴露平台工具 |
-| `hermes` | 对话式智能协作网关，通过 API Server + MCP 接入平台工具 |
-| `hindsight` | 记忆与检索服务，为 Hermes 提供用户会话记忆能力 |
+| `code-processing` | FastAPI 代码处理服务，负责代码扫描、MR 审查、GitNexus 托管，并以 MCP Server 向 Assistant 暴露平台工具 |
+| `pi-runtime` | PI_RUNTIME 状态化助手运行时，承载统一聊天、流式事件和工具调用 |
+| `hindsight` | 记忆与检索服务，为 Assistant 提供用户会话记忆能力 |
 | `woodpecker` | 默认启用的内置流水线底座(server + agent) |
 | `postgres` | 统一 PostgreSQL，承载业务库 `ai_agent_platform` 与记忆库 `hindsight` |
 | `qdrant` | Wiki 知识检索的专用向量后端 |
 | `redis` / `minio` | 缓存与会话支持 / 文件与执行产物对象存储 |
 
-> 关键设计：`code-processing` 同时是「代码分析服务」与「MCP 工具网关」；Hermes 通过它受控访问平台数据，写操作以待确认动作卡片落地。完整说明见 [docs/architecture.md](docs/architecture.md)。
+> 关键设计：`code-processing` 同时是「代码分析服务」与「MCP 工具网关」；Assistant 通过它受控访问平台数据，写操作以待确认动作卡片落地。完整说明见 [docs/architecture.md](docs/architecture.md)。
 
 ---
 
@@ -155,7 +155,7 @@ flowchart TD
 | 公众端 | React 18 · Vite · TypeScript · React Router · Zustand · Tailwind CSS |
 | 后端 | Spring Boot 3 · Spring Web · Spring Data JPA · Flyway · PostgreSQL · Redis |
 | 代码处理 | Python · FastAPI · GitNexus CLI · Playwright |
-| 智能协作 | Hermes(API Server + MCP) · Hindsight 记忆服务 |
+| 智能协作 | PI_RUNTIME（统一 RuntimeChatService 链路）· Hindsight 记忆服务 |
 | 检索 | Qdrant 向量库 · 数据库关键词候选 · 专用 Reranker 混合检索 |
 | 流水线 | Woodpecker(内置 provider) · Jenkins(外部兼容) |
 | 基础设施 | PostgreSQL · Redis · MinIO · Docker Compose |
@@ -197,10 +197,10 @@ bash ./scripts/start-linux.sh
 
 源码模式脚本会自动完成：
 
-1. 启动 `postgres`、`redis`、`minio`、`qdrant`、`hindsight`、`gitnexus-web`、`hermes`、`woodpecker-server`、`woodpecker-agent` 容器(显式设置 `WOODPECKER_ENABLED=false` 时跳过 Woodpecker)
+1. 启动 `postgres`、`redis`、`minio`、`qdrant`、`hindsight`、`gitnexus-web`、`woodpecker-server`、`woodpecker-agent` 依赖容器（显式设置 `WOODPECKER_ENABLED=false` 时跳过 Woodpecker）
 2. 安装管理端与公众端前端依赖
 3. 检查并创建 `code-processing/.venv`
-4. 启动 `code-processing`、`backend`、`frontend`、`frontend-public`
+4. 按 `pi-runtime` → `code-processing` → `backend` → 前端的顺序启动本地源码服务；Pi Runtime 不在源码模式中作为 Docker 容器运行
 5. 将日志写入项目根目录 `.run-logs/`
 
 ### 全量 Docker 模式(测试/服务器部署)
@@ -301,7 +301,7 @@ uvicorn app.main:app --reload --port 9000
 | Frontend 公众端 | `http://localhost:5175` |
 | Backend | `http://localhost:8080` |
 | Code Processing | `http://localhost:9000` |
-| Hermes | `http://localhost:18080` |
+| Assistant | `http://localhost:18080` |
 | Qdrant | `http://localhost:16333` |
 | Hindsight | `http://localhost:18888` |
 | GitNexus Web UI | `http://localhost:5174` |
@@ -384,7 +384,7 @@ bash ./scripts/harness-linux.sh <target>
 ## 🛣️ 后续规划
 
 - 在后端逐步引入更清晰的分层(`domain / application / infrastructure / interface`)，收敛偏重的 `service` 层。
-- 为 Hermes、执行中心、仓库扫描、GitLab 管理分别补齐专项架构文档与时序说明。
+- 为 Assistant、执行中心、仓库扫描、GitLab 管理分别补齐专项架构文档与时序说明。
 - 推进原生 API 工作台(`api-studio`)闭环。
 - 扩展可观测性中心,补充更多健康维度与项目级 SLA 汇总。
 - 把项目只读分享页升级为更完整的发布记录视图(版本号、关联 MR、上线说明)。

@@ -19,7 +19,7 @@ import java.time.LocalDateTime;
  * 业务意图：把用户主动上传的长期参考文件与一次性会话附件区分开，作为个人知识库参与 Assistant 召回。
  */
 @Entity
-@Table(name = "hermes_file_library_item")
+@Table(name = "assistant_file_library_item")
 public class AssistantFileLibraryItemEntity {
 
     @Id

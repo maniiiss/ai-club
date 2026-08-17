@@ -66,13 +66,13 @@ class DocumentServiceTests(unittest.TestCase):
         upload_public_image.assert_called_once()
 
     @patch("app.services.document_service.MarkItDown")
-    def test_should_strip_data_uri_images_for_hermes_file_library_before_indexing(self, markitdown_cls):
+    def test_should_strip_data_uri_images_for_assistant_file_library_before_indexing(self, markitdown_cls):
         markitdown_cls.return_value.convert_stream.return_value = _FakeMarkItDownResult(
             "# 述职报告\n\n![](data:image/png;base64,ZmFrZS1pbWFnZQ==)\n\n主导AI配价智能体从0到1开发。",
             "述职报告",
         )
 
-        result = convert_document_to_markdown("demo.pptx", b"fake", "HERMES_FILE_LIBRARY", 200000)
+        result = convert_document_to_markdown("demo.pptx", b"fake", "ASSISTANT_FILE_LIBRARY", 200000)
 
         self.assertIn("主导AI配价智能体从0到1开发", result.markdown)
         self.assertNotIn("data:image/png;base64", result.markdown)
@@ -125,7 +125,7 @@ class DocumentServiceTests(unittest.TestCase):
             "# 标题\n![图片](http://example.com/very/long/image/url)\n正文",
             "",
         )
-        result = convert_document_to_markdown("demo.pdf", b"fake", "HERMES_ATTACHMENT", 10)
+        result = convert_document_to_markdown("demo.pdf", b"fake", "ASSISTANT_ATTACHMENT", 10)
 
         self.assertTrue(result.truncated)
         self.assertEqual("# 标题", result.markdown)

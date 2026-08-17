@@ -118,7 +118,7 @@ export interface AgentPayload {
   systemPrompt?: string
   userPromptTemplate?: string
   endpointUrl?: string
-  runtimeType?: 'OPENCLAW' | 'CODEX_CLI' | 'CLAUDE_CODE_CLI' | 'OPENCODE_CLI' | 'PI_RUNTIME' | 'HERMES_LEGACY' | null
+  runtimeType?: 'OPENCLAW' | 'CODEX_CLI' | 'CLAUDE_CODE_CLI' | 'OPENCODE_CLI' | 'PI_RUNTIME' | null
   runtimeRegistryCode?: string | null
   runtimeFallbackCodesJson?: string
   toolPolicyJson?: string

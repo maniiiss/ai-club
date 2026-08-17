@@ -44,7 +44,7 @@ export interface PrepareAttachmentOptions {
 	cwd: string;
 	/** 是否自动压缩图片到内联 provider 上限。默认 true。 */
 	autoResizeImages?: boolean;
-	/** 文档抽取文本字符上限。默认 15000（对齐后端 HERMES_ATTACHMENT 场景）。 */
+	/** 文档抽取文本字符上限。默认 15000（对齐后端 ASSISTANT_ATTACHMENT 场景）。 */
 	maxDocChars?: number;
 }
 

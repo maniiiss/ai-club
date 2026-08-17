@@ -13,7 +13,7 @@ import { Button } from '@/src/components/ui/button';
 import { MessageBubble } from './MessageBubble';
 import { ExecutionActivity, ExecutionTimer, type TraceItem } from './ExecutionActivity';
 import { ConversationTimeline } from './ConversationTimeline';
-import { getAdditionalScrollTail, getConversationFollowScrollTop, getConversationScrollBehavior, scrollMessageToSafeZone, shouldAnchorNewMessage } from './conversation-scroll';
+import { clampScrollTopToContainer, getAdditionalScrollTail, getConversationFollowScrollTop, getConversationScrollBehavior, scrollMessageToSafeZone, shouldAnchorNewMessage } from './conversation-scroll';
 import styles from './ChatView.module.css';
 
 // 加载态与标题栏共用 Tauri 应用图标，避免引用不存在的根目录图片。
@@ -443,6 +443,28 @@ export function ChatView() {
 		}
 		if (!navigatingTimeline.current) updateTimelineFocus();
 	}, [conversationMessages, isStreaming, updateTimelineFocus]);
+
+	/**
+	 * 回复结束后取消发送阶段专用的人工尾部留白，避免浏览器已到物理底部，
+	 * 但滚动判断仍把这段留白当成“未到最新消息”，导致回到底部按钮常驻。
+	 */
+	useLayoutEffect(() => {
+		if (!newMessageId || isStreaming || retainedCompletedUserId) return;
+		const container = containerRef.current;
+		newMessageExtraSpace.current = 0;
+		newMessageAnchorTop.current = 0;
+		contentRef.current?.style.setProperty('--gp-new-message-extra-space', '0px');
+		setNewMessageId(null);
+		if (!container) return;
+
+		// 清理 padding 后保留用户当前阅读位置；若位置被压到滚动容器底部则恢复底部跟随。
+		const maxScrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+		container.scrollTop = clampScrollTopToContainer(container.scrollTop, container.scrollHeight, container.clientHeight);
+		const atBottom = maxScrollTop - container.scrollTop < 80;
+		stickToBottom.current = atBottom;
+		scrollMode.current = atBottom ? 'bottom' : 'manual';
+		setShowScrollToBottom(!atBottom);
+	}, [isStreaming, newMessageId, retainedCompletedUserId]);
 
 	return (
 		<div className={styles.surface} data-new-message={newMessageId ? 'true' : undefined}>

@@ -241,7 +241,7 @@ class ChatRoomServiceTests {
         });
         when(chatRoomRepository.save(any(ChatRoomEntity.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        ChatMessageSummary message = service.sendMessage(41L, new SendChatMessageRequest("@hermes 汇总一下", List.of()));
+        ChatMessageSummary message = service.sendMessage(41L, new SendChatMessageRequest("@assistant 汇总一下", List.of()));
 
         assertThat(message.id()).isEqualTo(101L);
         assertThat(message.mentionsAssistant()).isTrue();
@@ -265,7 +265,7 @@ class ChatRoomServiceTests {
     }
 
     private CurrentUserInfo currentUser(Long id) {
-        return new CurrentUserInfo(id, "user-" + id, "用户" + id, "", "", "", "", true, List.of(), List.of(), List.of("chat:view", "chat:manage", "hermes:chat"), List.of());
+        return new CurrentUserInfo(id, "user-" + id, "用户" + id, "", "", "", "", true, List.of(), List.of(), List.of("chat:view", "chat:manage", "assistant:chat"), List.of());
     }
 
     private UserEntity user(Long id, String username, String nickname) {
@@ -306,21 +306,21 @@ class ChatRoomServiceTests {
         return entity;
     }
 
-    // ---- @hermes 提及识别边界 ----
-    // 业务意图：只有当 @hermes 独立成一个 token（尾部是空白或字符串结尾）时才算助手提及，
-    // 避免 @hermes-dev、@hermes队长 之类的用户名被误判触发 Assistant 回复。
+    // ---- @assistant 提及识别边界 ----
+    // 业务意图：只有当 @assistant 独立成一个 token（尾部是空白或字符串结尾）时才算助手提及，
+    // 避免 @assistant-dev、@assistant队长 之类的用户名被误判触发 Assistant 回复。
     @Test
     void containsAssistantMention_matchesStandaloneToken() {
-        assertThat(ChatRoomService.containsAssistantMention("@hermes 帮我看下")).isTrue();
-        assertThat(ChatRoomService.containsAssistantMention("请 @hermes")).isTrue();
+        assertThat(ChatRoomService.containsAssistantMention("@assistant 帮我看下")).isTrue();
+        assertThat(ChatRoomService.containsAssistantMention("请 @assistant")).isTrue();
         assertThat(ChatRoomService.containsAssistantMention("请 @Assistant 看看")).isTrue();
     }
 
     @Test
     void containsAssistantMention_ignoresUsernamesThatStartWithAssistant() {
-        assertThat(ChatRoomService.containsAssistantMention("@hermes-dev 请看")).isFalse();
-        assertThat(ChatRoomService.containsAssistantMention("@hermes队长 你好")).isFalse();
-        assertThat(ChatRoomService.containsAssistantMention("@hermes.log 上传")).isFalse();
-        assertThat(ChatRoomService.containsAssistantMention("邮箱 foo@hermes.io")).isFalse();
+        assertThat(ChatRoomService.containsAssistantMention("@assistant-dev 请看")).isFalse();
+        assertThat(ChatRoomService.containsAssistantMention("@assistant队长 你好")).isFalse();
+        assertThat(ChatRoomService.containsAssistantMention("@assistant.log 上传")).isFalse();
+        assertThat(ChatRoomService.containsAssistantMention("邮箱 foo@assistant.io")).isFalse();
     }
 }

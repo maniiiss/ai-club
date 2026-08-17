@@ -32,11 +32,7 @@ const readBool = (name, fallback) => {
   return ['1', 'true', 'yes', 'on'].includes(value)
 }
 
-const readAiEnv = (name, hermesName = '') => {
-  const value = readEnv(name)
-  if (value) return value
-  return readBool('GITNEXUS_AI_FALLBACK_TO_HERMES', true) && hermesName ? readEnv(hermesName) : ''
-}
+const readAiEnv = (name) => readEnv(name)
 
 const chineseSystemPrompt = '你是 GitNexus 的代码理解助手。最终回答必须使用简体中文；表格标题、总结、步骤说明和结论都使用中文。代码符号、文件路径、类名、方法名和错误信息保持原文。'
 
@@ -112,8 +108,8 @@ const handleGitNexusAiProxy = async (req, res, urlPath) => {
     return
   }
 
-  const baseUrl = readAiEnv('GITNEXUS_AI_BASE_URL', 'HERMES_LLM_BASE_URL').replace(/\/+$/, '')
-  const apiKey = readAiEnv('GITNEXUS_AI_API_KEY', 'HERMES_LLM_API_KEY')
+  const baseUrl = readAiEnv('GITNEXUS_AI_BASE_URL').replace(/\/+$/, '')
+  const apiKey = readAiEnv('GITNEXUS_AI_API_KEY')
   if (!baseUrl || !apiKey) {
     writeJson(res, 503, { error: { message: 'GitNexus AI proxy is missing base URL or API key' } })
     return

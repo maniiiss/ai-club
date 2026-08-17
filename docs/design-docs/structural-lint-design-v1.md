@@ -190,7 +190,7 @@ rules:
 
 # 文件大小白名单（不检查行数限制）
 size_whitelist:
-  - "backend/src/main/java/com/aiclub/platform/service/HermesChatService.java"
+  - "backend/src/main/java/com/aiclub/platform/service/AssistantChatService.java"
   - "backend/src/main/java/com/aiclub/platform/service/ExecutionWorkflowService.java"
 
 # 增量检查基准（只检查此 commit 之后变更的文件）
@@ -231,7 +231,7 @@ cross_service_clients:
   → TaskController 直接 import 了 TaskRepository，应通过 TaskService 间接访问
   → 修复：移除 import com.aiclub.platform.repository.TaskRepository，改为注入 TaskService
 
-[WARN]  SIZE-001: service/HermesChatService.java
+[WARN]  SIZE-001: service/AssistantChatService.java
   → 文件共 523 行，超过阈值 500 行
   → 修复：考虑拆分为更小的职责单元，或将工具方法提取到 util 包
 

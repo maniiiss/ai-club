@@ -40,7 +40,7 @@ public class AssistantFileLibraryController {
      * 查询当前用户的个人文件库。
      */
     @GetMapping
-    @RequirePermission("hermes:chat")
+    @RequirePermission("assistant:chat")
     public ApiResponse<List<AssistantFileLibraryItemSummary>> list(@RequestParam(required = false) String query) {
         return ApiResponse.success(assistantFileLibraryService.list(query));
     }
@@ -49,7 +49,7 @@ public class AssistantFileLibraryController {
      * 上传文档并写入个人文件库索引。
      */
     @PostMapping("/upload")
-    @RequirePermission("hermes:chat")
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantFileLibraryItemSummary> upload(@RequestParam("file") MultipartFile file) {
         return ApiResponse.success(assistantFileLibraryService.upload(file));
     }
@@ -58,7 +58,7 @@ public class AssistantFileLibraryController {
      * 更新当前用户文件库条目的标题、描述或启停状态。
      */
     @PatchMapping("/{id}")
-    @RequirePermission("hermes:chat")
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantFileLibraryItemSummary> update(@PathVariable Long id,
                                                             @Valid @RequestBody UpdateAssistantFileLibraryItemRequest request) {
         return ApiResponse.success(assistantFileLibraryService.update(id, request));
@@ -68,7 +68,7 @@ public class AssistantFileLibraryController {
      * 为兼容部分代理或环境不支持 PATCH 的情况，额外开放 PUT 更新入口。
      */
     @PutMapping("/{id}")
-    @RequirePermission("hermes:chat")
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantFileLibraryItemSummary> updateByPut(@PathVariable Long id,
                                                                  @Valid @RequestBody UpdateAssistantFileLibraryItemRequest request) {
         return ApiResponse.success(assistantFileLibraryService.update(id, request));
@@ -78,7 +78,7 @@ public class AssistantFileLibraryController {
      * 删除当前用户自己的文件库条目。
      */
     @DeleteMapping("/{id}")
-    @RequirePermission("hermes:chat")
+    @RequirePermission("assistant:chat")
     public ApiResponse<Void> delete(@PathVariable Long id) {
         assistantFileLibraryService.delete(id);
         return new ApiResponse<>(true, "ok", null);
@@ -88,7 +88,7 @@ public class AssistantFileLibraryController {
      * 重新转换并刷新当前用户文件库条目的 Qdrant 向量索引。
      */
     @PostMapping("/{id}/reindex")
-    @RequirePermission("hermes:chat")
+    @RequirePermission("assistant:chat")
     public ApiResponse<AssistantFileLibraryItemSummary> reindex(@PathVariable Long id) {
         return ApiResponse.success(assistantFileLibraryService.reindex(id));
     }

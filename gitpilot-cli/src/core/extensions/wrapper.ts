@@ -16,12 +16,12 @@ import type { RegisteredTool } from "./types.ts";
  */
 export function wrapRegisteredTool(registeredTool: RegisteredTool, runner: ExtensionRunner): AgentTool {
 	const tool = wrapToolDefinition(registeredTool.definition, () => runner.createContext());
-	const execute = tool.execute;
 	return {
 		...tool,
 		execute: async (toolCallId, params, signal, onUpdate) => {
 			const activeBefore = runner.getActiveTools();
-			const result = await execute(toolCallId, params, signal, onUpdate);
+			const result = await runner.executeTool<any>(registeredTool.definition.name, toolCallId, params, signal, (contextOptions) =>
+				registeredTool.definition.execute(toolCallId, params, signal, onUpdate, runner.createContext(contextOptions)));
 			const activeAfter = runner.getActiveTools();
 			if (!activeBefore.every((name) => activeAfter.includes(name))) return result;
 
