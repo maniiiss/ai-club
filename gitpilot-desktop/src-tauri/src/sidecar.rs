@@ -102,7 +102,8 @@ pub struct SidecarBridge {
 impl SidecarBridge {
 	/// 启动 sidecar 子进程。
 	pub fn spawn(app: AppHandle, exe: &str, cwd: &str) -> Result<Self, String> {
-		let mut child = Command::new(exe)
+		let mut command = Command::new(exe);
+		command
 			.current_dir(cwd)
 			// Tauri 安装包将资源放在 resources/theme 与 resources/export-html；
 			// Bun 二进制默认按自身目录寻找 theme，因此显式指定资源根目录，保证
@@ -110,7 +111,17 @@ impl SidecarBridge {
 			.env("PI_PACKAGE_DIR", cwd)
 			.stdin(Stdio::piped())
 			.stdout(Stdio::piped())
-			.stderr(Stdio::inherit())
+			.stderr(Stdio::inherit());
+		// sidecar 是 Bun 编译的控制台子系统程序；GUI 主程序直接 spawn 它时，
+		// Windows 会为子进程新建一个控制台窗口（即用户看到的“pi 黑窗口”）。
+		// 用 CREATE_NO_WINDOW 明确禁止创建该窗口，保持桌面端后台无感知运行。
+		#[cfg(target_os = "windows")]
+		{
+			use std::os::windows::process::CommandExt;
+			const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+			command.creation_flags(CREATE_NO_WINDOW);
+		}
+		let mut child = command
 			.spawn()
 			.map_err(|e| format!("启动 sidecar 失败: {e}"))?;
 

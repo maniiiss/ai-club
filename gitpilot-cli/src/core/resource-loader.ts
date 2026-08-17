@@ -41,6 +41,17 @@ export interface ResourceLoaderReloadOptions {
 	resolveProjectTrust?: (input: { extensionsResult: LoadExtensionsResult }) => Promise<boolean>;
 }
 
+/**
+ * GitPilot 内置的 MCP 适配器包名。
+ *
+ * 该包既是 GitPilot 的运行时依赖，也通过 mode-extensions 以 `gitpilot-mcp-<mode>`
+ * 内联扩展加载（带按模式的 MCP 配置快照）。若用户又用 `npm:pi-mcp-adapter` 单独安装
+ * 同一适配器，它会被自动发现为独立扩展，与内联版本重复注册 `mcp`/`mcpScript` 工具和
+ * `--mcp-config` 标志，导致扩展冲突被当作致命错误、sidecar/CLI 启动即退出。
+ * 因此加载扩展前需把这份独立副本从候选路径里去掉。
+ */
+const GITPILOT_MCP_ADAPTER_PACKAGE = "pi-mcp-adapter";
+
 export interface ResourceLoader {
 	getExtensions(): LoadExtensionsResult;
 	getSkills(): { skills: Skill[]; diagnostics: ResourceDiagnostic[] };
@@ -409,9 +420,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 		const cliEnabledPrompts = getEnabledPaths(cliExtensionPaths.prompts);
 		const cliEnabledThemes = getEnabledPaths(cliExtensionPaths.themes);
 
-		const extensionPaths = this.noExtensions
-			? cliEnabledExtensions
-			: this.mergePaths(cliEnabledExtensions, enabledExtensions);
+		const extensionPaths = this.dedupeStandaloneMcpAdapter(
+			this.noExtensions ? cliEnabledExtensions : this.mergePaths(cliEnabledExtensions, enabledExtensions),
+		);
 
 		const extensionsResult = await this.loadFinalExtensionSet(extensionPaths, preTrustExtensions);
 		for (const p of this.additionalExtensionPaths) {
@@ -508,9 +519,9 @@ export class DefaultResourceLoader implements ResourceLoader {
 		});
 		const enabledExtensions = resolvedPaths.extensions.filter((r) => r.enabled).map((r) => r.path);
 		const cliEnabledExtensions = cliExtensionPaths.extensions.filter((r) => r.enabled).map((r) => r.path);
-		const extensionPaths = this.noExtensions
-			? cliEnabledExtensions
-			: this.mergePaths(cliEnabledExtensions, enabledExtensions);
+		const extensionPaths = this.dedupeStandaloneMcpAdapter(
+			this.noExtensions ? cliEnabledExtensions : this.mergePaths(cliEnabledExtensions, enabledExtensions),
+		);
 		const extensionsResult = await loadExtensionsCached(extensionPaths, this.cwd, this.eventBus);
 		if (!options.includeInlineFactories) {
 			return extensionsResult;
@@ -524,6 +535,30 @@ export class DefaultResourceLoader implements ResourceLoader {
 
 	private resolveExtensionLoadPath(path: string): string {
 		return resolvePath(path, this.cwd, { normalizeUnicodeSpaces: true });
+	}
+
+	/** 判断扩展路径是否指向独立安装的 GitPilot 内置 MCP 适配器包（跨平台兼容 win 反斜杠/posix 正斜杠）。 */
+	private isStandaloneMcpAdapterPath(extensionPath: string): boolean {
+		return extensionPath.split(/[\\/]+/).includes(GITPILOT_MCP_ADAPTER_PACKAGE);
+	}
+
+	/**
+	 * 过滤掉与 GitPilot 内置 `gitpilot-mcp-<mode>` 重复的独立 MCP 适配器扩展路径。
+	 *
+	 * 业务意图：仅当 GitPilot 通过 mode-extensions 提供内联 MCP 扩展时才做去重；
+	 * 否则职业扩展需要保留原样（例如不以 GitPilot 内联注入的自定义加载路径）。
+	 */
+	private dedupeStandaloneMcpAdapter(paths: string[]): string[] {
+		if (paths.length === 0) {
+			return paths;
+		}
+		const hasInlineGitPilotMcp = this.extensionFactories.some(
+			(factory) => typeof factory !== "function" && factory.name?.startsWith("gitpilot-mcp-"),
+		);
+		if (!hasInlineGitPilotMcp) {
+			return paths;
+		}
+		return paths.filter((path) => !this.isStandaloneMcpAdapterPath(path));
 	}
 
 	private async loadFinalExtensionSet(
