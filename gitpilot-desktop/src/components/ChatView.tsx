@@ -130,8 +130,6 @@ export function buildConversationPresentation(messages: UIMessage[], retainedCom
 				} : file);
 			}
 		}
-		// 改动文件汇总放在执行过程末尾，与运行中实时面板一致。
-		for (const file of filesByPath.values()) traceItems.push({ type: 'file', file });
 		executionByUserId.set(user.id, {
 			durationMs,
 			steps: [...stepsById.values()],
@@ -141,9 +139,20 @@ export function buildConversationPresentation(messages: UIMessage[], retainedCom
 			traceItems,
 		});
 		processMessageIdsByUserId.set(user.id, processMessageIds);
-		visibleMessages.push(...(user.id === retainedCompletedUserId
+		const visibleSegment = user.id === retainedCompletedUserId
 			? segment
-			: segment.filter((message) => !processMessageIds.has(message.id))));
+			: segment.filter((message) => !processMessageIds.has(message.id));
+		visibleMessages.push(...visibleSegment);
+		// 文件结果必须位于最终正文/停止提示之后，只在本轮已收敛且非动画保留态时追加。
+		if (user.id !== retainedCompletedUserId && filesByPath.size > 0) {
+			visibleMessages.push({
+				id: `changed-files-${user.id}`,
+				role: 'assistant',
+				text: '',
+				kind: 'changed_files',
+				changedFiles: [...filesByPath.values()],
+			});
+		}
 		segment = [];
 	};
 

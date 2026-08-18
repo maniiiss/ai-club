@@ -13,6 +13,8 @@ describe('聊天内执行摘要', () => {
 		expect(getExecutionActivityLabel(run([{ id: 'tool-1', kind: 'read', status: 'running', title: 'read', args: '{"path":"src/App.tsx"}', startedAt: 1 }]), true)).toBe('read src/App.tsx');
 		expect(getExecutionActivityLabel(run([{ id: 'tool-1', kind: 'edit', status: 'succeeded', title: 'edit', args: '{"path":"crm-ai/tests/test_api_chat.py"}', startedAt: 1 }]), true)).toBe('正在准备…');
 		expect(getExecutionActivityLabel(run([]), true)).toBe('正在准备…');
+		// 切换会话恢复 responding 阶段时，沿用既有“正在准备…”兜底，不引入工具调用生成文案。
+		expect(getExecutionActivityLabel({ ...run([]), phase: 'responding' }, true)).toBe('正在准备…');
 		expect(getExecutionActivityLabel({ ...run([]), lastDeltaKind: 'thinking', thinking: '正在判断调用关系' }, true)).toBe('正在思考');
 		expect(getExecutionActivityLabel(run([{ id: 'tool-1', kind: 'read', status: 'succeeded', title: 'read_file', startedAt: 1 }], 'completed'), false)).toBeNull();
 	});
@@ -64,6 +66,14 @@ describe('聊天内执行摘要', () => {
 		expect(html).not.toContain('divider');
 	});
 
+	it('执行批次中间态不展示改动文件', () => {
+		const steps = [{ id: 'edit-1', kind: 'edit' as const, status: 'succeeded' as const, title: 'edit', args: '{"path":"src/App.tsx"}', startedAt: 1, endedAt: 2 }];
+		const html = renderToStaticMarkup(createElement(ExecutionBatch, { steps }));
+
+		expect(html).not.toContain('改动文件');
+		expect(html).toContain('edit src/App.tsx');
+	});
+
 	it('完成后在同一头部位置把运行计时替换为真实总耗时', () => {
 		expect(getExecutionTimingLabel(true, 1_000, undefined, 17_000)).toBe('运行中 16秒');
 		expect(getExecutionTimingLabel(false, undefined, 16_000, 17_000)).toBe('总耗时 16秒');
@@ -75,5 +85,6 @@ describe('聊天内执行摘要', () => {
 		expect(html).toContain('总耗时 16秒');
 		expect(html).toContain('divider');
 		expect(html).toContain('aria-expanded="false"');
+		expect(html).not.toContain('改动文件');
 	});
 });

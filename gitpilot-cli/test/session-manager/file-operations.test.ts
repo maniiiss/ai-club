@@ -324,20 +324,25 @@ describe("SessionManager custom flat session directory", () => {
 		const agentDir = join(tempDir, "gitpilot-agent");
 		const existingCwd = join(tempDir, "existing-project");
 		const removedCwd = join(tempDir, "removed-project");
+		const ephemeralRuntimeCwd = join(tmpdir(), `pi-runtime-cwd-b-fixture-${Date.now()}`);
 		mkdirSync(existingCwd, { recursive: true });
 		mkdirSync(removedCwd, { recursive: true });
+		mkdirSync(ephemeralRuntimeCwd, { recursive: true });
 
 		vi.stubEnv("GITPILOT_CODING_AGENT_DIR", agentDir);
 		try {
 			const current = SessionManager.create(existingCwd, undefined, { persistImmediately: true });
 			const stale = SessionManager.create(removedCwd, undefined, { persistImmediately: true });
+			const ephemeral = SessionManager.create(ephemeralRuntimeCwd, undefined, { persistImmediately: true });
 			rmSync(removedCwd, { recursive: true, force: true });
 
 			const sessions = await SessionManager.listAll();
 			expect(sessions.map((item) => item.path)).toContain(current.getSessionFile());
 			expect(sessions.map((item) => item.path)).not.toContain(stale.getSessionFile());
+			expect(sessions.map((item) => item.path)).not.toContain(ephemeral.getSessionFile());
 		} finally {
 			vi.unstubAllEnvs();
+			rmSync(ephemeralRuntimeCwd, { recursive: true, force: true });
 		}
 	});
 });

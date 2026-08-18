@@ -1,10 +1,9 @@
 /** 聊天流内的 Agent 执行摘要，所有信息均来自已归并的 sidecar 真实事件。 */
 import { useEffect, useState } from 'react';
-import { Brain, CheckCircle2, ChevronRight, FileDiff, FilePen, FileText, ListChecks, Terminal, Wrench } from 'lucide-react';
+import { Brain, CheckCircle2, ChevronRight, FilePen, FileText, ListChecks, Terminal, Wrench } from 'lucide-react';
 import { formatDuration, getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionRun, type ExecutionStep } from '@/src/store/workbench';
 import { Button } from '@/src/components/ui/button';
 import { Hint } from '@/src/components/ui/tooltip';
-import type { ChangedFile } from '@/src/store/changed-files';
 import styles from './ExecutionActivity.module.css';
 
 export function getExecutionActivityLabel(execution: ExecutionRun, isStreaming: boolean): string | null {
@@ -70,15 +69,6 @@ export function describeExecutionBatch(steps: ExecutionStep[]): string {
 	return labels.length > 0 ? labels.join('、') : `调用了${steps.length}个工具`;
 }
 
-/** 将单个改动文件归纳为日志流里的一行普通文字，与思考、步骤保持同一风格。 */
-function describeChangedFile(file: ChangedFile): string {
-	const verb = file.status === 'added' ? '新增' : file.status === 'deleted' ? '删除' : '修改';
-	const parts = [`${verb} ${file.path}`];
-	if (file.added > 0) parts.push(`+${file.added}`);
-	if (file.removed > 0) parts.push(`-${file.removed}`);
-	return parts.join(' ');
-}
-
 /** 按步骤类型匹配功能图标（lucide-react，shadcn-ui 推荐图标库）。 */
 function ExecutionStepIcon({ kind }: { kind: ExecutionStep['kind'] }) {
 	const map: Partial<Record<ExecutionStep['kind'], typeof FileText>> = {
@@ -128,10 +118,9 @@ function TraceStep({ step }: { step: ExecutionStep }) {
 export type TraceItem =
 	| { type: 'thinking'; text: string }
 	| { type: 'step'; step: ExecutionStep }
-	| { type: 'text'; text: string }
-	| { type: 'file'; file: ChangedFile };
+	| { type: 'text'; text: string };
 
-/** 执行过程日志流：按真实输出顺序交错思考/步骤/正文/改动文件；详情点击展开。 */
+/** 执行过程日志流：按真实输出顺序交错思考/步骤/正文；改动文件只在最终结果卡展示。 */
 function ExecutionTrace({ items }: { items: TraceItem[] }) {
 	if (items.length === 0) return null;
 	return (
@@ -144,15 +133,6 @@ function ExecutionTrace({ items }: { items: TraceItem[] }) {
 						return <TraceStep key={item.step.id ?? `s-${index}`} step={item.step} />;
 					case 'text':
 						return <div key={`p-${index}`} className={styles.progressText}>{item.text}</div>;
-					case 'file':
-						return (
-							<div key={`f-${index}-${item.file.path}`} className={styles.traceStep}>
-								<span className={styles.traceStepTitle}>
-								<FileDiff size={13} aria-hidden="true" className={styles.traceStepIcon} />
-									<span className={styles.traceStepText}>{describeChangedFile(item.file)}</span>
-								</span>
-							</div>
-						);
 				}
 			})}
 		</div>
@@ -163,17 +143,15 @@ function ExecutionTrace({ items }: { items: TraceItem[] }) {
  * 已完成执行批次：折叠标题直接说明真实操作，避免使用没有信息量的“执行过程”占位文案。
  * 总结（助手正文）在 ExecutionBatch 外，不折叠。
  */
-export function ExecutionBatch({ steps, thinking, changedFiles }: {
+export function ExecutionBatch({ steps, thinking }: {
 	steps: ExecutionStep[];
 	thinking?: string;
-	changedFiles?: ChangedFile[];
 }) {
 	const [expanded, setExpanded] = useState(false);
 	const summaryLabel = steps.length === 1 ? describeExecutionStep(steps[0]) : describeExecutionBatch(steps);
 	const items: TraceItem[] = [];
 	if (thinking?.trim()) items.push({ type: 'thinking', text: thinking.trim() });
 	for (const step of steps) if (step.kind !== 'complete') items.push({ type: 'step', step });
-	for (const file of changedFiles ?? []) items.push({ type: 'file', file });
 	return (
 		<section className={styles.root} aria-label="已完成的 Agent 执行批次">
 			<Button type="button" variant="unstyled" size="sm" className={styles.summary} onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>

@@ -61,18 +61,25 @@ describe('对话流消息筛选', () => {
 		const runningMessages: UIMessage[] = [
 			{ id: 'user', role: 'user', text: '检查项目', kind: 'text' },
 			{ id: 'text-1', role: 'assistant', text: '先读取文档', kind: 'text' },
-			{ id: 'exec-1', role: 'assistant', text: '', kind: 'execution', executionSteps: [{ id: 'read', kind: 'read', status: 'succeeded', title: 'read', startedAt: 1, endedAt: 2 }] },
+			{
+				id: 'exec-1', role: 'assistant', text: '', kind: 'execution',
+				executionSteps: [{ id: 'read', kind: 'read', status: 'succeeded', title: 'read', startedAt: 1, endedAt: 2 }],
+				changedFiles: [{ path: 'src/App.tsx', status: 'modified', added: 2, removed: 1, editCount: 1, editable: true, diff: '@@\n-old\n+new' }],
+			},
 		];
 		const running = buildConversationPresentation(runningMessages);
 		expect(running.messages.map((message) => message.id)).toEqual(['user', 'text-1', 'exec-1']);
+		expect(running.messages.some((message) => message.kind === 'changed_files')).toBe(false);
 
 		const completed = buildConversationPresentation([
 			{ ...runningMessages[0], meta: { executionDurationMs: 8_000 } },
 			...runningMessages.slice(1),
 		]);
-		expect(completed.messages.map((message) => message.id)).toEqual(['user', 'text-1']);
+		expect(completed.messages.map((message) => message.id)).toEqual(['user', 'text-1', 'changed-files-user']);
 		expect(completed.executionByUserId.get('user')).toMatchObject({ durationMs: 8_000 });
 		expect(completed.executionByUserId.get('user')?.steps.map((step) => step.id)).toEqual(['read']);
+		expect(completed.executionByUserId.get('user')?.changedFiles).toMatchObject([{ path: 'src/App.tsx', added: 2, removed: 1 }]);
+		expect(completed.messages.at(-1)).toMatchObject({ kind: 'changed_files', changedFiles: [{ path: 'src/App.tsx' }] });
 	});
 
 	it('完成后把中间正文一并收进总耗时，仅保留最后正式总结', () => {

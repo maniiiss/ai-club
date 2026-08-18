@@ -161,4 +161,33 @@ describe("GitPilot 自动执行计划", () => {
 		await handlers.get("input")?.[0]({ type: "input", text: "继续处理剩余问题", source: "rpc" }, context);
 		expect((await handlers.get("before_agent_start")?.[0]({ type: "before_agent_start", systemPrompt: "base" }, context))?.systemPrompt).toContain("update_plan");
 	});
+
+	it("正常完成后在 agent_settled 收起计划 loading", async () => {
+		const handlers = new Map<string, Array<(event: any, context: any) => unknown>>();
+		const tools = new Map<string, any>();
+		const statuses: Array<string | undefined> = [];
+		const widgets: Array<string[] | undefined> = [];
+		const fakePi = {
+			appendEntry: () => {},
+			registerTool: (tool: any) => tools.set(tool.name, tool),
+			on: (event: string, handler: (event: any, context: any) => unknown) => handlers.set(event, [...(handlers.get(event) ?? []), handler]),
+		} as any;
+		await createAutoPlanExtension().factory(fakePi);
+		const context = {
+			ui: {
+				setStatus: (_key: string, value: string | undefined) => statuses.push(value),
+				setWidget: (_key: string, value: string[] | undefined) => widgets.push(value),
+			},
+			sessionManager: { getBranch: () => [] },
+		} as any;
+
+		await handlers.get("input")?.[0]({ type: "input", text: "实现并验证一项多文件改造", source: "rpc" }, context);
+		await tools.get("update_plan").execute("plan-1", {
+			steps: [{ title: "修改实现", status: "running" }, { title: "运行验证", status: "pending" }],
+		}, undefined, undefined, context);
+		await handlers.get("agent_settled")?.[0]({ type: "agent_settled" }, context);
+
+		expect(statuses.at(-1)).toBeUndefined();
+		expect(widgets.at(-1)).toBeUndefined();
+	});
 });

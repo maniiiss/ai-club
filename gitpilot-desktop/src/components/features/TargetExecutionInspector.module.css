@@ -1,7 +1,8 @@
 .root { position: relative; display: flex; width: 100%; height: 100%; min-width: 0; flex-direction: column; background: linear-gradient(180deg, var(--gp-panel-deep) 0%, var(--gp-surface) 28%, var(--gp-surface) 100%); color: var(--gp-text); }
 .root::before { position: absolute; top: 0; bottom: 0; left: 0; width: 1px; background: linear-gradient(180deg, var(--gp-warm), transparent 42%, var(--gp-accent)); content: ''; opacity: .46; pointer-events: none; }
-.tabs { display: flex; min-width: 0; flex: 0 0 34px; align-items: end; gap: 3px; overflow-x: auto; border-bottom: 1px solid var(--gp-border); padding: 5px 7px 0; scrollbar-width: thin; }
-.tab { display: inline-flex; min-width: 0; max-width: 150px; height: 28px; flex: 0 1 auto; align-items: center; gap: 5px; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; background: transparent; padding: 0 7px; color: var(--gp-text-muted); font-size: calc(10px * var(--desktop-font-scale)); white-space: nowrap; cursor: pointer; }
+/* CODE 右侧页签保持内容宽度，空间不足时由页签栏横向滚动。 */
+.tabs { display: flex; min-width: 0; flex: 0 0 34px; align-items: end; gap: 3px; overflow-x: auto; overflow-y: hidden; border-bottom: 1px solid var(--gp-border); padding: 5px 7px 0; scrollbar-width: thin; }
+.tab { display: inline-flex; min-width: max-content; height: 28px; flex: 0 0 auto; align-items: center; gap: 5px; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; background: transparent; padding: 0 7px; color: var(--gp-text-muted); font-size: calc(10px * var(--desktop-font-scale)); white-space: nowrap; cursor: pointer; }
 .tab > span { overflow: hidden; text-overflow: ellipsis; }
 .tab:hover { background: var(--gp-surface-hover); color: var(--gp-text-secondary); }
 .tabActive, .tabActive:hover { border-color: var(--gp-border-strong); background: var(--gp-surface); color: var(--gp-text); box-shadow: inset 0 2px 0 var(--gp-accent); }

@@ -1023,11 +1023,10 @@ export function agentMessagesToUi(messages: unknown[], isStreaming = false): UIM
 }
 
 /**
- * 从消息历史恢复“当前段”（最后一个 user 消息之后）已完成的工具步骤。
+ * 从消息历史恢复“当前段”尚未归档到聊天流的最后一批工具步骤。
  *
- * 运行中会话切回时 agentMessagesToUi(isStreaming=true) 不归档最后一段，
- * 这些步骤既不在正文批次、也不在权威快照 activeTools（快照只含仍在运行的工具），
- * 需要由执行面板承接，否则切回后会丢失工具执行历史。
+ * 运行中会话切回时 agentMessagesToUi(isStreaming=true) 会在下一条 assistant 消息到达时归档前一批工具，
+ * 但最后一批工具仍留在实时面板；这里只恢复那一批，避免把已显示的历史摘要重复累计到最后一条。
  */
 export function buildRestoredExecutionSteps(messages: unknown[]): ExecutionStep[] {
 	let lastUser = -1;
@@ -1038,17 +1037,24 @@ export function buildRestoredExecutionSteps(messages: unknown[]): ExecutionStep[
 		}
 	}
 	if (lastUser < 0) return [];
-	const steps: ExecutionStep[] = [];
+	let pendingSteps: ExecutionStep[] = [];
 	for (let i = lastUser + 1; i < messages.length; i += 1) {
 		const msg = messages[i] as { role?: string; timestamp?: unknown };
-		if (msg.role !== 'assistant') continue;
-		const ts = messageTimestamp(msg) ?? 0;
-		// 消息历史不携带精确工具耗时，用 assistant 消息时间戳近似单步计时。
-		for (const step of parseExecutionStepsFromMessages(messages, i)) {
-			steps.push({ ...step, startedAt: ts, endedAt: ts });
+		if (msg.role === 'assistant') {
+			// 与 agentMessagesToUi 保持同一边界：新的 assistant 消息到达时，上一批工具已经在聊天流归档。
+			// 这里只保留最后一条 assistant 消息产生的 pendingSteps，避免切换后把历史批次再次归入实时面板。
+			const timestamp = messageTimestamp(msg) ?? 0;
+			// 消息历史不携带精确工具耗时，用所属 assistant 消息时间戳近似单步计时。
+			pendingSteps = parseExecutionStepsFromMessages(messages, i)
+				.map((step) => ({ ...step, startedAt: timestamp, endedAt: timestamp }));
+			continue;
+		}
+		if (msg.role === 'toolResult' && (msg as { toolName?: unknown }).toolName === 'plan_mode_complete') {
+			// 计划完成结果会触发 agentMessagesToUi 归档当前批次，不能再作为实时步骤恢复。
+			pendingSteps = [];
 		}
 	}
-	return steps;
+	return pendingSteps;
 }
 
 // ============================================================================
@@ -1574,11 +1580,27 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			if (!response.success) throw new Error(response.error || '停止失败');
 			const data = response.command === 'abort' ? response.data : undefined;
 			const clearedCount = (data?.clearedSteering ?? 0) + (data?.clearedFollowUp ?? 0);
+			const execution = useWorkbenchStore.getState().execution;
+			const durationMs = execution.startedAt != null ? Math.max(0, Date.now() - execution.startedAt) : undefined;
+			// sidecar 已确认停止后，先把本地已收到但尚未归档的 edit/command 步骤写入聊天记录。
+			// 这样即使没有后续 agent_settled 事件，用户仍能看到停止前实际修改过的文件。
+			appendUnreportedExecutionBatch(set);
 			set((state) => {
-				const messages = state.guidanceQueue.reduce(
+				let messages = state.guidanceQueue.reduce(
 					(current, item) => updateGuidanceMessageStatus(current, item, 'cancelled'),
 					state.messages,
 				);
+				if (durationMs != null) {
+					for (let index = messages.length - 1; index >= 0; index -= 1) {
+						if (messages[index].role !== 'user') continue;
+						messages = [...messages];
+						messages[index] = {
+							...messages[index],
+							meta: { ...(messages[index].meta ?? {}), executionDurationMs: durationMs },
+						};
+						break;
+					}
+				}
 				return {
 					// 停止会清空尚未消费的列表项；系统消息会说明取消数量。
 					guidanceQueue: [],

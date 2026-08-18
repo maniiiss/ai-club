@@ -4,7 +4,7 @@
  * 该 store 只保存布局与 sidecar 已经推送到渲染层的执行事件，不能访问文件、Shell 或网络。
  */
 import { create } from 'zustand';
-import type { AgentSessionEvent, AgentExecutionSnapshot, RpcExtensionUIRequest } from '@/src/rpc/types';
+import type { AgentExecutionPhase, AgentSessionEvent, AgentExecutionSnapshot, RpcExtensionUIRequest } from '@/src/rpc/types';
 
 export type ExecutionKind = 'plan' | 'read' | 'edit' | 'command' | 'verify' | 'complete' | 'other';
 export type ExecutionStatus = 'running' | 'succeeded' | 'failed' | 'waiting';
@@ -57,6 +57,8 @@ export interface ExecutionRun {
 	id: string;
 	status: 'idle' | 'running' | 'completed' | 'stopped' | 'failed';
 	lastPrompt: string | null;
+	/** sidecar 权威执行阶段；切换会话时用于恢复与原会话一致的实时状态。 */
+	phase?: AgentExecutionPhase;
 	/** sidecar 推送的真实思考增量，仅在当前执行中的思考面板展示。 */
 	thinking?: string;
 	/**
@@ -270,17 +272,59 @@ function toolEvent(event: AgentSessionEvent): {
 
 /** 将 sidecar 生命周期事件归并为一条可审阅的工具步骤。 */
 export function reduceExecutionEvent(run: ExecutionRun, event: AgentSessionEvent, now = Date.now()): ExecutionRun {
+	// phase 与 lastDeltaKind 分别记录权威生命周期阶段和可展示的最近增量，避免切换会话后只能依赖旧事件回放。
+	const phaseForEvent = (): AgentExecutionPhase | undefined => {
+		switch (event.type) {
+			case 'agent_start':
+				return 'preparing';
+			case 'message_update': {
+				const inner = event.assistantMessageEvent as { type?: unknown } | undefined;
+				const innerType = typeof inner?.type === 'string' ? inner.type : '';
+				if (innerType === 'thinking_delta' || innerType.startsWith('thinking')) return 'thinking';
+				if (innerType === 'text_delta' || innerType.startsWith('text') || innerType.startsWith('toolcall')) return 'responding';
+				return run.phase;
+			}
+			case 'tool_execution_start':
+			case 'tool_execution_update':
+				return 'tool';
+			case 'tool_execution_end': {
+				// 并行工具中只结束其中一个时，权威阶段仍然是 tool；全部结束才进入 settling。
+				const endedToolCallId = typeof event.toolCallId === 'string' ? event.toolCallId : undefined;
+				const hasActiveTool = run.steps.some((step) =>
+					step.toolCallId !== endedToolCallId && (step.status === 'running' || step.status === 'waiting'));
+				return hasActiveTool ? 'tool' : 'settling';
+			}
+			case 'compaction_start':
+				return 'compacting';
+			case 'compaction_end':
+			case 'auto_retry_end':
+				return 'preparing';
+			case 'auto_retry_start':
+				return 'retrying';
+			case 'queue_update': {
+				const steering = Array.isArray(event.steering) ? event.steering : [];
+				const followUp = Array.isArray(event.followUp) ? event.followUp : [];
+				if (steering.length > 0 || followUp.length > 0) return 'queued_continuation';
+				return run.phase === 'queued_continuation' ? 'preparing' : run.phase;
+			}
+			default:
+				return run.phase;
+		}
+	};
+	const phase = phaseForEvent();
+	const withPhase = (next: ExecutionRun): ExecutionRun => phase === undefined || next.phase === phase ? next : { ...next, phase };
+
 	// thinking_delta 与正文 text_delta 同属 message_update；仅保留 sidecar 的真实思考文本，绝不从工具或模型正文猜测。
 	if (event.type === 'message_update') {
 		const inner = event.assistantMessageEvent as { type?: unknown; delta?: unknown } | undefined;
 		if (inner?.type === 'thinking_delta' && typeof inner.delta === 'string' && inner.delta) {
-			return { ...run, thinking: `${run.thinking ?? ''}${inner.delta}`, lastDeltaKind: 'thinking' };
+			return withPhase({ ...run, thinking: `${run.thinking ?? ''}${inner.delta}`, lastDeltaKind: 'thinking' });
 		}
 		// 正文增量到达即表示模型已开始输出回答，执行面板此时不应再展示“正在思考”。
 		if (inner?.type === 'text_delta') {
-			return { ...run, lastDeltaKind: 'text' };
+			return withPhase({ ...run, lastDeltaKind: 'text' });
 		}
-		return run;
+		return withPhase(run);
 	}
 
 	// turn_end 只表示一个模型回合结束；后台工具、重试或队列回合仍可能继续。
@@ -290,14 +334,15 @@ export function reduceExecutionEvent(run: ExecutionRun, event: AgentSessionEvent
 		return {
 			...run,
 			status: run.status === 'failed' ? 'failed' : 'completed',
+			phase: 'idle',
 			endedAt: now,
 			steps: [...run.steps, { id: `complete-${now}`, kind: 'complete', status: 'succeeded', title: '回合完成', startedAt: now, endedAt: now }],
 		};
 	}
 
-	if (event.type !== 'tool_execution_start' && event.type !== 'tool_execution_update' && event.type !== 'tool_execution_end') return run;
+	if (event.type !== 'tool_execution_start' && event.type !== 'tool_execution_update' && event.type !== 'tool_execution_end') return withPhase(run);
 	const data = toolEvent(event);
-	if (!data) return run;
+	if (!data) return withPhase(run);
 	const index = run.steps.findIndex((step) => step.toolCallId === data.toolCallId);
 	const existing = index >= 0 ? run.steps[index] : undefined;
 	const step: ExecutionStep = {
@@ -316,6 +361,7 @@ export function reduceExecutionEvent(run: ExecutionRun, event: AgentSessionEvent
 	const steps = index < 0 ? [...run.steps, step] : run.steps.map((item, itemIndex) => (itemIndex === index ? step : item));
 	return {
 		...run,
+		phase,
 		// 单个工具失败可能被 Agent 自主重试或绕过，不能提前把整轮任务判定为失败并阻断 agent_settled 写入结束时间。
 		status: run.status,
 		// 收到真实工具事件后，当前阶段不再是此前保留的 thinking_delta。
@@ -329,6 +375,7 @@ function createRun(prompt: string, startedAt = Date.now(), restored = false): Ex
 		id: `${restored ? 'restored-run' : 'run'}-${startedAt}`,
 		status: 'running',
 		lastPrompt: prompt,
+		phase: 'preparing',
 		thinking: '',
 		steps: [],
 		reportedStepIds: [],
@@ -500,7 +547,12 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 			id: snapshot.runId ?? `run-${snapshot.updatedAt}`,
 			status: snapshot.status,
 			lastPrompt: prompt ?? null,
+			phase: snapshot.phase,
 			thinking: '',
+			// 快照不携带思考正文，只恢复不会引入新文案的阶段标记；已有思考文本仍由实时事件维护。
+			lastDeltaKind: snapshot.phase === 'tool' || snapshot.phase === 'settling'
+				? 'tool'
+				: snapshot.phase === 'thinking' ? 'thinking' : undefined,
 			steps,
 			reportedStepIds: [],
 			startedAt: snapshot.startedAt,
@@ -536,18 +588,19 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 		const reportedStepIds = [...new Set([...(state.execution.reportedStepIds ?? []), ...stepIds])];
 		return { execution: { ...state.execution, reportedStepIds } };
 	}),
-	markExecutionStopped: () => set((state) => ({ execution: { ...state.execution, status: 'stopped' } })),
-	resetExecution: () => set({ execution: { id: 'idle', status: 'idle', lastPrompt: null, steps: [] }, selectedStepId: null, contentDrawer: null }),
+	markExecutionStopped: () => set((state) => ({ execution: { ...state.execution, status: 'stopped', phase: 'idle' } })),
+	resetExecution: () => set({ execution: { id: 'idle', status: 'idle', lastPrompt: null, phase: 'idle', steps: [] }, selectedStepId: null, contentDrawer: null }),
 	resetThinking: () => set((state) => ({ execution: { ...state.execution, thinking: '' } })),
 	addApprovalStep: (request) => {
 		const now = Date.now();
 		const detail = 'message' in request ? request.message : 'title' in request ? request.title : 'sidecar 正在等待用户输入';
 		const step: ExecutionStep = { id: `approval-${request.id}`, kind: 'other', status: 'waiting', title: '等待用户确认', args: detail, startedAt: now };
-		set((state) => ({ execution: { ...state.execution, steps: [...state.execution.steps, step] }, selectedStepId: step.id }));
+		set((state) => ({ execution: { ...state.execution, phase: 'waiting_confirmation', steps: [...state.execution.steps, step] }, selectedStepId: step.id }));
 	},
 	resolveApprovalStep: (requestId) => set((state) => ({
 		execution: {
 			...state.execution,
+			phase: state.execution.phase === 'waiting_confirmation' ? 'preparing' : state.execution.phase,
 			steps: state.execution.steps.map((step) => step.id === `approval-${requestId}` ? { ...step, status: 'succeeded', endedAt: Date.now() } : step),
 		},
 	})),

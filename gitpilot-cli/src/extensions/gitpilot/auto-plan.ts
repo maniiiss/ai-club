@@ -177,6 +177,12 @@ export function createAutoPlanExtension(): InlineExtension {
 
 			const persist = () => pi.appendEntry(STATE_ENTRY_TYPE, state);
 			const refreshUi = (ctx: ExtensionContext) => renderPlanUi(ctx, state.steps);
+			/** 任务已离开执行态，清理输入框上的瞬时计划，避免最后一步持续显示为进行中。 */
+			const clearPlan = (ctx: ExtensionContext) => {
+				state = { decisionPending: false, steps: [] };
+				persist();
+				refreshUi(ctx);
+			};
 
 			pi.registerTool({
 				name: "update_plan",
@@ -289,11 +295,15 @@ export function createAutoPlanExtension(): InlineExtension {
 				const assistant = [...event.messages].reverse().find((message) => message.role === "assistant");
 				const stopReason = assistant && "stopReason" in assistant ? assistant.stopReason : undefined;
 				if (stopReason !== "aborted" || (state.steps.length === 0 && !state.decisionPending)) return;
-				// 中途停止不是完成计划；直接撤销瞬时清单，避免下一次输入继承旧步骤，
-				// 同时让 TUI/Desktop 的状态条和 widget 在 agent_end 收尾时停止 loading。
-				state = { decisionPending: false, steps: [] };
-				persist();
-				refreshUi(ctx);
+				// 中途停止不是完成计划；直接撤销瞬时清单，避免下一次输入继承旧步骤。
+				// 正常完成则由下方 agent_settled 统一收尾，确保重试和排队回合已结束。
+				clearPlan(ctx);
+			});
+
+			pi.on("agent_settled", (_event, ctx) => {
+				if (state.steps.length === 0 && !state.decisionPending) return;
+				// agent_settled 才代表重试、压缩和队列回合全部结束，正常完成也必须收起计划。
+				clearPlan(ctx);
 			});
 
 			pi.on("session_shutdown", (_event, ctx) => {

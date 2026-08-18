@@ -260,7 +260,7 @@ describe('桌面会话生命周期契约', () => {
 		expect(state.rpcCapabilities).toContain('session_execution_snapshot_v1');
 		expect(state.messages.some((message) => message.role === 'user' && message.text.includes('分析日志'))).toBe(true);
 		// 执行态由权威快照重建：runId/startedAt 来自快照，而非消息时间戳推断。
-		expect(useWorkbenchStore.getState().execution).toMatchObject({ runId: 'run-xyz', status: 'running', startedAt: 8_000, lastSequence: 7 });
+		expect(useWorkbenchStore.getState().execution).toMatchObject({ runId: 'run-xyz', status: 'running', phase: 'tool', startedAt: 8_000, lastSequence: 7 });
 	});
 
 	it('切回运行中会话时把当前段已完成工具步骤恢复到执行面板', async () => {
@@ -302,7 +302,7 @@ describe('桌面会话生命周期契约', () => {
 
 		// 当前段（最后一个 user 之后）的已完成工具步骤由消息历史恢复到执行面板，不丢失。
 		const executionState = useWorkbenchStore.getState().execution;
-		expect(executionState).toMatchObject({ runId: 'run-xyz', status: 'running' });
+		expect(executionState).toMatchObject({ runId: 'run-xyz', status: 'running', phase: 'responding' });
 		expect(executionState.steps).toHaveLength(1);
 		expect(executionState.steps[0]).toMatchObject({ toolCallId: 'call_1', kind: 'read', status: 'succeeded', title: 'read' });
 	});
@@ -407,6 +407,32 @@ describe('桌面会话生命周期契约', () => {
 		expect(useSessionStore.getState().extensionStatuses).toEqual(new Map());
 		expect(useSessionStore.getState().extensionWidgets).toEqual(new Map());
 		expect(useSessionStore.getState().isStreaming).toBe(false);
+	});
+
+	it('停止 Agent 后归档已完成编辑，并为本轮写入总耗时', async () => {
+		rpcMocks.abort.mockResolvedValue({ success: true, command: 'abort', data: { clearedSteering: 0, clearedFollowUp: 0 } });
+		useSessionStore.setState({
+			isStreaming: true,
+			messages: [{ id: 'user-1', role: 'user', text: '修复页面问题', kind: 'text' }],
+			_streamingAssistantId: null,
+		});
+		useWorkbenchStore.setState({
+			execution: {
+				id: 'run-1', status: 'running', phase: 'tool', lastPrompt: '修复页面问题', startedAt: Date.now() - 1_000,
+				steps: [{
+					id: 'edit-1', kind: 'edit', status: 'succeeded', title: 'edit', args: '{"path":"src/App.tsx"}', startedAt: 1,
+					result: JSON.stringify({ details: { diff: '--- a/src/App.tsx\n+++ b/src/App.tsx\n@@\n-old\n+new' } }),
+				}],
+			},
+		});
+
+		await useSessionStore.getState().abort();
+
+		const messages = useSessionStore.getState().messages;
+		const executionMessage = messages.find((message) => message.kind === 'execution');
+		expect(executionMessage?.changedFiles).toMatchObject([{ path: 'src/App.tsx', added: 1, removed: 1 }]);
+		expect(messages.find((message) => message.id === 'user-1')?.meta?.executionDurationMs).toEqual(expect.any(Number));
+		expect(messages.some((message) => message.role === 'system' && message.text.includes('任务已停止'))).toBe(true);
 	});
 
 	it('实时 Agent 事件按来源会话过滤，后台任务不会写入当前正文', async () => {

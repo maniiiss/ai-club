@@ -55,7 +55,7 @@ describe('历史消息回放', () => {
 		expect(messages.map((message) => message.text)).toEqual(['/plan 设计登录', '开始规划。']);
 	});
 
-	it('恢复运行中 Goal 任务时不把内部提示当作当前段边界', () => {
+	it('恢复运行中 Goal 任务时不把内部提示当作边界，但只保留最后未归档批次', () => {
 		const steps = buildRestoredExecutionSteps([
 			{ role: 'user', content: [{ type: 'text', text: '/goal 修复登录' }] },
 			{ role: 'assistant', content: [{ type: 'toolCall', id: 'old', name: 'read', arguments: {} }] },
@@ -63,7 +63,8 @@ describe('历史消息回放', () => {
 			{ role: 'assistant', content: [{ type: 'toolCall', id: 'current', name: 'edit', arguments: {} }] },
 		]);
 
-		expect(steps.map((step) => step.toolCallId)).toEqual(['old', 'current']);
+		// 内部 Goal 提示不切断任务，但新的 assistant 消息会让 old 批次归档，实时面板只恢复 current。
+		expect(steps.map((step) => step.toolCallId)).toEqual(['current']);
 	});
 
 	it('切回运行中任务时从最后一条用户消息恢复计时起点', () => {
@@ -76,7 +77,7 @@ describe('历史消息回放', () => {
 		expect(seed).toEqual({ prompt: '继续检查项目', startedAt: 5_000 });
 	});
 
-	it('运行中会话切回时从消息历史恢复当前段的已完成工具步骤', () => {
+	it('运行中会话切回时不重复恢复已归档到聊天流的工具步骤', () => {
 		const steps = buildRestoredExecutionSteps([
 			{ role: 'user', content: [{ type: 'text', text: '检查项目' }], timestamp: '2026-08-03T10:00:00Z' },
 			{ role: 'assistant', content: [{ type: 'toolCall', id: 'call_1', name: 'read', arguments: { path: 'README.md' } }], timestamp: '2026-08-03T10:00:05Z' },
@@ -84,14 +85,26 @@ describe('历史消息回放', () => {
 			{ role: 'assistant', content: [{ type: 'text', text: '部分回答' }], timestamp: '2026-08-03T10:00:10Z' },
 		]);
 
-		expect(steps).toHaveLength(1);
-		expect(steps[0]).toMatchObject({
-			toolCallId: 'call_1',
-			kind: 'read',
-			status: 'succeeded',
-			title: 'read',
-			startedAt: new Date('2026-08-03T10:00:05Z').getTime(),
-		});
+		// call_1 会由 agentMessagesToUi 在“部分回答”到达时生成历史执行摘要，实时面板不能再次恢复它。
+		expect(steps).toEqual([]);
+	});
+
+	it('切换运行中会话时只恢复最后一批尚未归档的工具步骤', () => {
+		const steps = buildRestoredExecutionSteps([
+			{ role: 'user', content: [{ type: 'text', text: '检查项目' }], timestamp: '2026-08-03T10:00:00Z' },
+			{ role: 'assistant', content: [{ type: 'toolCall', id: 'batch_1', name: 'bash', arguments: {} }], timestamp: '2026-08-03T10:00:01Z' },
+			{ role: 'toolResult', toolCallId: 'batch_1', content: [{ type: 'text', text: 'ok' }], timestamp: '2026-08-03T10:00:02Z' },
+			{ role: 'assistant', content: [{ type: 'text', text: '第一批已完成' }], timestamp: '2026-08-03T10:00:03Z' },
+			{ role: 'assistant', content: [{ type: 'toolCall', id: 'batch_2', name: 'read', arguments: { path: 'README.md' } }], timestamp: '2026-08-03T10:00:04Z' },
+			{ role: 'toolResult', toolCallId: 'batch_2', content: [{ type: 'text', text: '内容' }], timestamp: '2026-08-03T10:00:05Z' },
+			{ role: 'assistant', content: [{ type: 'text', text: '继续检查' }], timestamp: '2026-08-03T10:00:06Z' },
+			{ role: 'assistant', content: [{ type: 'toolCall', id: 'pending', name: 'edit', arguments: { path: 'README.md' } }], timestamp: '2026-08-03T10:00:07Z' },
+			{ role: 'toolResult', toolCallId: 'pending', content: [{ type: 'text', text: '已修改' }], timestamp: '2026-08-03T10:00:08Z' },
+		]);
+
+		// 前两批已由历史回放归档；切换后仅把最后仍在进行中的批次交给实时执行面板。
+		expect(steps.map((step) => step.toolCallId)).toEqual(['pending']);
+		expect(steps[0]).toMatchObject({ startedAt: new Date('2026-08-03T10:00:07Z').getTime() });
 	});
 
 	it('只恢复最后一个 user 消息之后的工具步骤，不包含已完成段', () => {

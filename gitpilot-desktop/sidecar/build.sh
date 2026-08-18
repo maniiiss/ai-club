@@ -21,14 +21,16 @@ RES="$DESKTOP/src-tauri/resources"
 # 目标三元组（与 Tauri externalBin 命名约定一致）
 TARGET="x86_64-pc-windows-msvc"
 
-echo "==> 编译 sidecar (bun --compile, target=bun-windows-x64)"
+echo "==> 编译 sidecar (bun --compile, target=bun-windows-x64-baseline)"
 mkdir -p "$BIN"
 # Bun 单文件二进制中的 import.meta.url 指向虚拟目录；先对精确锁定的扩展
 # 应用资源路径兼容补丁，令其运行时读取 Tauri resources 中的内置配置。
 node "$CLI/scripts/prepare-plannotator-package.mjs"
+# target 用 baseline：默认 bun-windows-x64 需要 CPU 支持 AVX2，在无 AVX2 的旧
+# CPU/虚拟机上会 Illegal instruction 崩溃；baseline 产物兼容更多机器。
 bun build "$CLI/src/rpc-entry.ts" \
   --compile \
-  --target=bun-windows-x64 \
+  --target=bun-windows-x64-baseline \
   --external='@anthropic-ai/claude-agent-sdk' \
   --external='@opencode-ai/sdk' \
   --outfile="$BIN/gitpilot-rpc-$TARGET.exe"

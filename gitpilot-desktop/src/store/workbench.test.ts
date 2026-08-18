@@ -41,8 +41,10 @@ describe('Agent 工作台执行事件', () => {
 	it('按最近一次增量标记思考/回答阶段，供执行面板区分“正在思考”与正文输出', () => {
 		const thinking = reduceExecutionEvent(runningRun(), { type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: '分析' } }, 100);
 		expect(thinking.lastDeltaKind).toBe('thinking');
+		expect(thinking.phase).toBe('thinking');
 		const answering = reduceExecutionEvent(thinking, { type: 'message_update', assistantMessageEvent: { type: 'text_delta', delta: '回答' } }, 120);
 		expect(answering.lastDeltaKind).toBe('text');
+		expect(answering.phase).toBe('responding');
 		// 正文阶段不丢失此前累积的思考文本。
 		expect(answering.thinking).toBe('分析');
 	});
@@ -53,7 +55,9 @@ describe('Agent 工作台执行事件', () => {
 		const ended = reduceExecutionEvent(started, { type: 'tool_execution_end', toolCallId: 'tool-1', toolName: 'bash', result: 'passed', isError: false }, 140);
 
 		expect(started).toMatchObject({ lastDeltaKind: 'tool', thinking: '准备执行命令' });
+		expect(started.phase).toBe('tool');
 		expect(ended).toMatchObject({ lastDeltaKind: 'tool', thinking: '准备执行命令' });
+		expect(ended.phase).toBe('settling');
 	});
 
 	it('单个工具失败不提前终止整轮，agent_settled 仍写入真实结束时间', () => {
@@ -236,6 +240,7 @@ describe('Agent 工作台本地交互状态', () => {
 		expect(execution).toMatchObject({
 			id: 'run-abc',
 			status: 'running',
+			phase: 'tool',
 			lastPrompt: '分析日志',
 			startedAt: 1_000,
 			runId: 'run-abc',
@@ -269,6 +274,23 @@ describe('Agent 工作台本地交互状态', () => {
 		// 已完成步骤在前、运行中工具在后，且同 toolCallId 不重复。
 		expect(execution.steps.map((step) => step.toolCallId)).toEqual(['t-done', 't-running']);
 		expect(execution.steps[1]).toMatchObject({ toolCallId: 't-running', status: 'running', title: 'bash' });
+	});
+
+	it('切换恢复 settling 阶段时保留已有工具结果整理状态，不新增阶段文案', () => {
+		useWorkbenchStore.getState().hydrateExecutionSnapshot({
+			runId: 'run-settling',
+			status: 'running',
+			phase: 'settling',
+			startedAt: 1_000,
+			updatedAt: 5_000,
+			sequence: 42,
+			activeTools: [],
+		}, '整理结果');
+
+		expect(useWorkbenchStore.getState().execution).toMatchObject({
+			phase: 'settling',
+			lastDeltaKind: 'tool',
+		});
 	});
 
 	it('序号守卫丢弃已被快照覆盖的旧序号事件与旧 run 事件', () => {

@@ -14,11 +14,12 @@ import {
 	writeFileSync,
 } from "fs";
 import { readdir, stat } from "fs/promises";
+import { tmpdir } from "os";
 import { join, resolve } from "path";
 import { createInterface } from "readline";
 import { StringDecoder } from "string_decoder";
 import { getAgentDir as getDefaultAgentDir, getSessionsDir } from "../config.ts";
-import { normalizePath, resolvePath } from "../utils/paths.ts";
+import { getCwdRelativePath, normalizePath, resolvePath } from "../utils/paths.ts";
 import {
 	type BashExecutionMessage,
 	type CustomMessage,
@@ -642,6 +643,16 @@ function getSessionHeaderCwd(header: SessionHeader): string | undefined {
 
 function sessionCwdMatches(cwd: string | undefined, resolvedCwd: string): boolean {
 	return cwd !== undefined && cwd !== "" && resolvePath(cwd) === resolvedCwd;
+}
+
+/**
+ * 测试运行时会把会话写入系统临时目录（例如 pi-runtime-cwd-*）。
+ * 这些会话只用于验证 Agent 生命周期，不能在用户登录后的历史任务列表中展示。
+ */
+function isEphemeralRuntimeCwd(cwd: string): boolean {
+	const relative = getCwdRelativePath(cwd, tmpdir());
+	if (relative === undefined || relative === ".") return false;
+	return relative.split(/[\\/]/).some((segment) => /^pi-runtime-cwd-/i.test(segment));
 }
 
 /** Exported for testing */
@@ -1723,6 +1734,7 @@ export class SessionManager {
 				if (!info) return false;
 				// 已删除的临时执行目录不能再被恢复为桌面任务；这也避免测试临时会话
 				// 污染生产侧栏。项目目录删除后同样不可切换，因此不保留失效条目。
+				if (isEphemeralRuntimeCwd(info.cwd)) return false;
 				return !info.cwd || existsSync(resolvePath(info.cwd));
 			});
 			sessions.sort((a, b) => b.modified.getTime() - a.modified.getTime());
