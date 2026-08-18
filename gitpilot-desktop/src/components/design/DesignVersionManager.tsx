@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
-import { CheckCircle2, ChevronDown, CloudUpload, FileCode2, History, RotateCcw, Upload, X } from 'lucide-react';
+import { Check, CheckCircle2, ChevronDown, CloudUpload, FileCode2, History, RotateCcw, Upload, X } from 'lucide-react';
 import { Button } from '@/src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/src/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/src/components/ui/dropdown-menu';
 import type { DesignSnapshot } from '@/src/design/design-types';
 import { rpc } from '@/src/rpc/bridge';
 import { useDesignStore } from '@/src/store/design';
 import styles from './DesignVersionManager.module.css';
+import dropdownStyles from './DesignVersionManagerDropdown.module.css';
 
 type PlatformProject = { id: number; name: string; status?: string };
 type Confirmation = 'revert' | 'upload' | null;
@@ -85,6 +87,7 @@ export function DesignVersionManager({ open, onOpenChange }: { open: boolean; on
 	}, [open, projects.length]);
 
 	const selectedRevision = revisions.find((revision) => revision.id === selectedRevisionId) ?? null;
+	const selectedPlatformProject = projects.find((project) => String(project.id) === platformProjectId);
 	const selectedSize = snapshotSize(historicalSnapshot);
 	const existingUpload = selectedRevisionId ? uploadRecords.find((record) => record.revisionId === selectedRevisionId && record.projectId === Number(platformProjectId)) : undefined;
 	const selectRevision = (revisionId: string) => {
@@ -131,10 +134,10 @@ export function DesignVersionManager({ open, onOpenChange }: { open: boolean; on
 					<section className={styles.detail}>
 						{selectedRevision ? <><div className={styles.detailHeading}><div><span>修订详情</span><h3>{selectedRevision.summary || selectedRevision.id}</h3></div><code>{selectedRevision.id}</code></div>
 							<div className={styles.metaGrid}><span>创建时间<strong>{formatTime(selectedRevision.createdAt)}</strong></span><span>文件数量<strong>{historicalSnapshot?.files.length ?? '-'} 个</strong></span><span>快照大小<strong>{historicalSnapshot ? formatBytes(selectedSize) : '-'}</strong></span><span>来源<strong>{selectedRevision.kind === 'rollback' ? `回滚 ${selectedRevision.sourceRevisionId ?? ''}` : selectedRevision.kind === 'initial' ? '初始创建' : '设计修改'}</strong></span></div>
-							<div className={styles.fileList}><div><FileCode2 size={14} /><span>文件清单</span></div>{loadingRevision ? <p>读取历史快照...</p> : historicalSnapshot?.files.map((file) => <code key={file.path}>{file.path}</code>)}</div>
-							<div className={styles.actions}><Button type="button" size="sm" variant="outline" disabled={loadingRevision || submitting || !historicalSnapshot} onClick={() => setConfirmation('revert')}><RotateCcw />回滚到此修订</Button></div>
+							<div className={`${styles.fileList} ${dropdownStyles.fileListTuned}`}><div><FileCode2 size={14} /><span>文件清单</span></div>{loadingRevision ? <p>读取历史快照...</p> : historicalSnapshot?.files.map((file) => <code key={file.path}>{file.path}</code>)}</div>
+							<div className={styles.actions}><Button type="button" size="sm" variant="outline" className={dropdownStyles.rollbackButton} disabled={loadingRevision || submitting || !historicalSnapshot} onClick={() => setConfirmation('revert')}><RotateCcw />回滚到此修订</Button></div>
 							<details className={styles.uploadPanel}><summary className={styles.uploadHeading}><CloudUpload size={15} /><div><strong>上传到 GitPilot Web</strong><span>{existingUpload ? `已上传为 Web 版本 v${existingUpload.versionNumber}` : '上传为项目草稿，不会激活版本'}</span></div><ChevronDown className={styles.uploadChevron} size={15} aria-hidden="true" /></summary><div className={styles.uploadBody}>
-								<label>Web 项目<select value={platformProjectId} onChange={(event) => setPlatformProjectId(event.target.value)} disabled={loadingProjects || submitting}><option value="">{loadingProjects ? '正在读取项目...' : '选择 Web 项目'}</option>{projects.map((project) => <option value={project.id} key={project.id}>{project.name}{project.status ? ` · ${project.status}` : ''}</option>)}</select></label>
+								<label>Web 项目<DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="outline" size="sm" className={`${dropdownStyles.trigger} focus-visible:outline-none focus-visible:ring-0`} disabled={loadingProjects || submitting} aria-label="选择 Web 项目"><span className={dropdownStyles.value}>{selectedPlatformProject ? <><strong>{selectedPlatformProject.name}</strong>{selectedPlatformProject.status && <small>· {selectedPlatformProject.status}</small>}</> : loadingProjects ? '正在读取项目...' : '选择 Web 项目'}</span><ChevronDown size={14} aria-hidden="true" /></Button></DropdownMenuTrigger><DropdownMenuContent align="start" className={dropdownStyles.menu}>{projects.length > 0 ? projects.map((project) => <DropdownMenuItem key={project.id} className={`${dropdownStyles.item} ${String(project.id) === platformProjectId ? dropdownStyles.itemActive : ''}`} onSelect={() => setPlatformProjectId(String(project.id))}><span className={dropdownStyles.itemCopy}><strong>{project.name}</strong>{project.status && <small>{project.status}</small>}</span>{String(project.id) === platformProjectId && <Check size={14} className={dropdownStyles.itemCheck} aria-hidden="true" />}</DropdownMenuItem>) : <DropdownMenuItem disabled>{loadingProjects ? '正在读取项目...' : '暂无可用 Web 项目'}</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></label>
 								<label>版本标题<input value={title} maxLength={120} onChange={(event) => setTitle(event.target.value)} placeholder={snapshot.document.name} disabled={submitting} /></label>
 								<label>更新说明<textarea value={summary} maxLength={1000} onChange={(event) => setSummary(event.target.value)} placeholder={selectedRevision.summary} disabled={submitting} /></label>
 								<div className={styles.uploadFooter}><span>{historicalSnapshot?.files.length ?? 0} 个文件 · {formatBytes(selectedSize)} / 10 MB</span><Button type="button" size="sm" disabled={!canUpload || submitting} onClick={() => setConfirmation('upload')}><Upload />{existingUpload ? '重新确认上传' : '上传草稿'}</Button></div>

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { isTauriEnv, onDesignEvent, rpc } from '@/src/rpc/bridge';
-import type { AgentSessionEvent, DesignPatch, DesignRpcFile, DesignRpcSnapshot, DesignStreamLine } from '@/src/rpc/types';
-import { createDefaultProjectGuidelines, createDemoSnapshot, DESIGN_TARGETS, DESIGN_VIEWPORT_PRESETS, type DesignDocument, type DesignExecution, type DesignExecutionStep, type DesignFileName, type DesignIntake, type DesignMessage, type DesignPlan, type DesignPreset, type DesignPreviewMode, type DesignProjectGuidelines, type DesignSnapshot, type DesignTarget, type DesignTodoItem, type DesignUploadRecord, type DesignViewport } from '@/src/design/design-types';
+import type { DesignAgentEvent, DesignPatch, DesignRpcFile, DesignRpcSnapshot, DesignStreamLine } from '@/src/rpc/types';
+import { createDefaultProjectGuidelines, createDemoSnapshot, DESIGN_TARGETS, DESIGN_VIEWPORT_PRESETS, type DesignDocument, type DesignExecution, type DesignExecutionStep, type DesignFileName, type DesignMessage, type DesignPlan, type DesignPreset, type DesignPreviewMode, type DesignProjectGuidelines, type DesignSnapshot, type DesignTarget, type DesignTodoItem, type DesignUploadRecord, type DesignViewport } from '@/src/design/design-types';
 import { synchronizeDesignPages } from '@/src/design/design-pages';
 
 const STORAGE_KEY_PREFIX = 'gitpilot-desktop.design-snapshot';
@@ -12,36 +12,8 @@ const CURRENT_PROJECT_KEY = 'gitpilot-desktop.design-current-project';
 const LEGACY_CURRENT_PROJECT_KEY = 'gitpilot-desktop.currentProject';
 const LEGACY_MIGRATED_KEY = 'gitpilot-desktop.design-project-migrated';
 const MISSING_DESIGN_WORKSPACE_ERROR = '当前项目还没有 Design 工作区';
+const DESIGN_THINKING_MAX_CHARS = 12_000;
 const newId = () => `design-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-
-/** 首轮需求确认对应的执行轨道；只在用户确认后交给 Pi Design Agent 推进。 */
-function createDesignTodos(): DesignTodoItem[] {
-	return [
-		{ id: 'direction', text: '锁定视觉方向与令牌', state: 'active' },
-		{ id: 'structure', text: '搭建页面骨架与内容层级', state: 'pending' },
-		{ id: 'interaction', text: '实现表单交互与状态反馈', state: 'pending' },
-		{ id: 'responsive', text: '完成响应式适配与多断点验证', state: 'pending' },
-		{ id: 'delivery', text: '预交付检查与导出准备', state: 'pending' },
-	];
-}
-
-function startDesignTodos(todos: DesignTodoItem[]): DesignTodoItem[] {
-	const source = todos.length > 0 ? todos : createDesignTodos();
-	return source.map((todo, index) => ({ ...todo, state: index === 0 ? 'done' : index === 1 ? 'active' : todo.state === 'done' ? 'done' : 'pending' }));
-}
-
-/** 每一个真实 revision 都推进一个阶段；人工待办保持原样，避免覆盖用户自己的进度判断。 */
-function advanceDesignTodos(todos: DesignTodoItem[]): DesignTodoItem[] {
-	const activeIndex = todos.findIndex((todo) => todo.state === 'active');
-	if (activeIndex < 0) return todos;
-	return todos.map((todo, index) => index === activeIndex ? { ...todo, state: 'done' } : index === activeIndex + 1 && todo.state === 'pending' ? { ...todo, state: 'active' } : todo);
-}
-
-function buildIntakePrompt(intake: DesignIntake): string {
-	const confirmed = Object.fromEntries(Object.entries(intake.answers).filter(([, value]) => Boolean(value?.trim())));
-	if (Object.keys(confirmed).length === 0) return intake.sourcePrompt;
-	return `${intake.sourcePrompt}\n\n设计确认（请作为本次生成的内部约束，不要在正文重复此 JSON）：\n${JSON.stringify(confirmed, null, 2)}`;
-}
 
 export interface DesignProjectEntry {
 	name: string;
@@ -137,6 +109,7 @@ interface DesignProjectBucket {
 	selectedElementId: string | null;
 	messages: DesignMessage[];
 	pendingPlan: DesignPlan | null;
+	pendingClarification: { clarificationId: string; question: string; context?: string; options: string[] } | null;
 	pendingApproval: { approvalId: string; reason: string; patch: DesignPatch } | null;
 	execution: DesignExecution;
 	queuedPrompts: Array<{ id: string; text: string }>;
@@ -147,7 +120,6 @@ interface DesignProjectBucket {
 	isProjectStarted: boolean;
 	selectedPresetId: string | null;
 	pendingPreset: PendingDesignPreset | null;
-	intake: DesignIntake | null;
 	todos: DesignTodoItem[];
 	uploadRecords: DesignUploadRecord[];
 }
@@ -179,16 +151,18 @@ function cachedWorkspaceSnapshot(path: string, bucket: Partial<DesignProjectBuck
 	return cached.context?.designId && cached.context.projectPath === path ? cached : undefined;
 }
 
-function saveBucket(state: Pick<DesignState, keyof DesignProjectBucket | 'projectPath'>): void {
+type DesignBucketState = Pick<DesignState, keyof DesignProjectBucket | 'projectPath'>;
+
+function saveBucket(state: DesignBucketState): void {
 	try {
 		const bucket: DesignProjectBucket = {
 			snapshot: state.snapshot, activePageId: state.activePageId, activeFile: state.activeFile, activeTab: state.activeTab,
 			target: state.target, viewport: state.viewport, zoom: state.zoom, previewMode: state.previewMode, selectedElementId: state.selectedElementId,
-			messages: state.messages, pendingPlan: state.pendingPlan, pendingApproval: state.pendingApproval, execution: state.execution,
+			messages: state.messages, pendingPlan: state.pendingPlan, pendingClarification: state.pendingClarification, pendingApproval: state.pendingApproval, execution: state.execution,
 			queuedPrompts: state.queuedPrompts, streamingAssistantId: state.streamingAssistantId, isGenerating: state.isGenerating,
 			error: state.error, hasWorkspace: state.hasWorkspace, isProjectStarted: state.isProjectStarted,
 		selectedPresetId: state.selectedPresetId, pendingPreset: state.pendingPreset,
-		intake: state.intake, todos: state.todos,
+		todos: state.todos,
 		uploadRecords: state.uploadRecords,
 		};
 		localStorage.setItem(bucketStorageKey(state.projectPath), JSON.stringify(bucket));
@@ -295,8 +269,14 @@ function updateAssistantMessage(messages: DesignMessage[], text: string, replace
 	return next;
 }
 
-function applyToolEvent(execution: DesignExecution, event: AgentSessionEvent): DesignExecution {
-	const data = event as { toolCallId?: unknown; toolName?: unknown; args?: unknown; partialResult?: unknown; result?: unknown; isError?: unknown };
+/** 限制实时思考摘要的内存占用；完整结果仍由 Agent 消息和修订快照保存。 */
+function appendCappedText(current: string, delta: string, maxChars: number): string {
+	const next = `${current}${delta}`;
+	return next.length <= maxChars ? next : next.slice(-maxChars);
+}
+
+function applyToolEvent(execution: DesignExecution, event: DesignAgentEvent): DesignExecution {
+	const data = event as { toolCallId?: unknown; toolName?: unknown; summary?: unknown; isError?: unknown };
 	if (typeof data.toolCallId !== 'string' || typeof data.toolName !== 'string') return execution;
 	const index = execution.steps.findIndex((step) => step.toolCallId === data.toolCallId);
 	const existing = index >= 0 ? execution.steps[index] : undefined;
@@ -304,9 +284,8 @@ function applyToolEvent(execution: DesignExecution, event: AgentSessionEvent): D
 		id: existing?.id ?? data.toolCallId,
 		toolCallId: data.toolCallId,
 		toolName: data.toolName,
+		summary: typeof data.summary === 'string' ? data.summary : existing?.summary,
 		status: event.type === 'tool_execution_end' ? (data.isError === true ? 'failed' : 'succeeded') : existing?.status ?? 'running',
-		args: existing?.args ?? data.args,
-		result: event.type === 'tool_execution_end' ? data.result : data.partialResult ?? existing?.result,
 		startedAt: existing?.startedAt ?? Date.now(),
 		endedAt: event.type === 'tool_execution_end' ? Date.now() : existing?.endedAt,
 	};
@@ -331,6 +310,7 @@ export interface DesignState {
 	selectedElementId: string | null;
 	messages: DesignMessage[];
 	pendingPlan: DesignPlan | null;
+	pendingClarification: { clarificationId: string; question: string; context?: string; options: string[] } | null;
 	pendingApproval: { approvalId: string; reason: string; patch: DesignPatch } | null;
 	execution: DesignExecution;
 	queuedPrompts: Array<{ id: string; text: string }>;
@@ -343,9 +323,7 @@ export interface DesignState {
 	selectedPresetId: string | null;
 	/** 仅在 workspace 创建前存在，确保首次 prompt 前先写入预设 guidelines。 */
 	pendingPreset: PendingDesignPreset | null;
-	/** 首轮需求确认只在首个 Agent run 前存在；确认后保留摘要供当前项目恢复。 */
-	intake: DesignIntake | null;
-	/** 当前设计交付轨道，独立于 sidecar revision，便于用户手动校正进度。 */
+	/** 仅由 Design Agent 在复杂任务中创建的执行计划；简单任务保持为空。 */
 	todos: DesignTodoItem[];
 	/** 已成功同步到 Web 的不可变版本关联，按本地修订和远端项目去重保存。 */
 	uploadRecords: DesignUploadRecord[];
@@ -355,6 +333,8 @@ export interface DesignState {
 	setZoom: (zoom: number) => void;
 	setPreviewMode: (mode: DesignPreviewMode) => void;
 	setActivePage: (pageId: string) => void;
+	/** 页面名称是 Design 快照元数据，通过 sidecar 修订保存，避免项目重载后丢失。 */
+	renamePage: (pageId: string, name: string) => Promise<void>;
 	setActiveFile: (file: DesignFileName) => void;
 	saveProjectGuidelines: (guidelines: DesignProjectGuidelines) => Promise<void>;
 	applyPreset: (preset: DesignPreset) => Promise<void>;
@@ -367,15 +347,9 @@ export interface DesignState {
 	hydrateSnapshot: () => Promise<void>;
 	applyStreamEvent: (event: DesignStreamLine) => void;
 	applyPatch: (pageId: string, patch: DesignPatch) => Promise<void>;
+	respondClarification: (answer: string) => Promise<void>;
 	applyPlan: () => Promise<void>;
 	dismissPlan: () => void;
-	setIntakeStep: (step: number) => void;
-	updateIntakeAnswers: (answers: Partial<DesignIntake['answers']>) => void;
-	confirmIntake: () => Promise<void>;
-	skipIntake: () => Promise<void>;
-	cycleTodo: (id: string) => void;
-	addTodo: (text: string) => void;
-	removeTodo: (id: string) => void;
 	sendPrompt: (text: string) => Promise<void>;
 	stop: () => Promise<void>;
 	approve: (approved: boolean) => Promise<void>;
@@ -393,10 +367,14 @@ export interface DesignState {
 	resetProject: () => void;
 }
 
-function updatePatchedSnapshot(snapshot: DesignSnapshot, files: DesignRpcFile[], revisionId: string, summary: string): DesignSnapshot {
+/** 合并 patch 事件的增量文件，未改动文件保留当前引用，避免每次执行都复制完整项目。 */
+function updatePatchedSnapshot(snapshot: DesignSnapshot, changedFiles: DesignRpcFile[], removedPaths: string[], revisionId: string, summary: string): DesignSnapshot {
 	const previousRevisionId = snapshot.document.revisions?.at(-1)?.id;
 	const revisions = [...(snapshot.document.revisions ?? []), { id: revisionId, prompt: summary, summary, createdAt: new Date().toISOString(), parentRevisionId: previousRevisionId, kind: 'patch' as const }];
-	const nextFiles = files as DesignSnapshot['files'];
+	const fileByPath = new Map(snapshot.files.map((file) => [file.path, file]));
+	for (const path of removedPaths) fileByPath.delete(path);
+	for (const file of changedFiles) fileByPath.set(file.path, file as DesignSnapshot['files'][number]);
+	const nextFiles = [...fileByPath.values()];
 	const pages = synchronizeDesignPages(snapshot.document.pages, nextFiles);
 	const fileMetadata = nextFiles.map(({ content: _content, ...file }) => file);
 	return { document: { ...snapshot.document, version: snapshot.document.version + 1, pages, files: fileMetadata, revisions }, files: nextFiles, context: snapshot.context, guidelines: snapshot.guidelines };
@@ -436,6 +414,8 @@ export const useDesignStore = create<DesignState>((set, get) => {
 			isGenerating: true,
 			error: null,
 			streamingAssistantId: null,
+			pendingClarification: null,
+			todos: [],
 		}));
 		try {
 			const projectPath = get().projectPath;
@@ -447,23 +427,6 @@ export const useDesignStore = create<DesignState>((set, get) => {
 			set((state) => ({ execution: { ...state.execution, status: 'failed', phase: 'idle', endedAt: Date.now() }, isGenerating: false, error: error instanceof Error ? error.message : String(error), messages: [...state.messages, { id: newId(), kind: 'error', text: `生成失败：${error instanceof Error ? error.message : String(error)}` }] }));
 		}
 	};
-	const submitIntake = async (status: Extract<DesignIntake['status'], 'confirmed' | 'skipped'>): Promise<void> => {
-		const intake = get().intake;
-		if (!intake || intake.status !== 'pending') return;
-		if (status === 'confirmed' && (!intake.answers.productType || !intake.answers.visualTone || !intake.answers.layout)) {
-			set({ error: '请先完成页面目标、视觉基调和版式偏好的确认。' });
-			return;
-		}
-		const committed: DesignIntake = { ...intake, status, confirmedAt: Date.now() };
-		set((state) => ({
-			intake: committed,
-			todos: startDesignTodos(state.todos),
-			messages: [...state.messages, { id: newId(), kind: 'user', text: intake.sourcePrompt, status: 'sent' }],
-			error: null,
-		}));
-		await startPrompt(status === 'confirmed' ? buildIntakePrompt(committed) : intake.sourcePrompt, false);
-	};
-
 	return {
 		snapshot: initialSnapshot,
 		projects: initialProjects,
@@ -480,6 +443,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
 		selectedElementId: savedBucket?.selectedElementId ?? null,
 		messages: savedBucket?.messages ?? [{ id: 'welcome', kind: 'assistant', text: '描述你想要的页面，我会把它变成适配手机和桌面的 HTML 原型。' }],
 		pendingPlan: savedBucket?.pendingPlan ?? null,
+		pendingClarification: savedBucket?.pendingClarification ?? null,
 		pendingApproval: savedBucket?.pendingApproval ?? null,
 		execution: savedBucket?.execution ?? initialExecution(),
 		queuedPrompts: savedBucket?.queuedPrompts ?? [],
@@ -490,7 +454,6 @@ export const useDesignStore = create<DesignState>((set, get) => {
 		isProjectStarted: savedBucket?.isProjectStarted ?? readStarted(initialProjectPath),
 		selectedPresetId: savedBucket?.selectedPresetId ?? null,
 		pendingPreset: savedBucket?.pendingPreset ?? null,
-		intake: savedBucket?.intake ?? null,
 		todos: savedBucket?.todos ?? [],
 		uploadRecords: savedBucket?.uploadRecords ?? [],
 		setTab: (activeTab) => set({ activeTab }),
@@ -502,6 +465,23 @@ export const useDesignStore = create<DesignState>((set, get) => {
 		setZoom: (zoom) => set({ zoom }),
 		setPreviewMode: (previewMode) => set({ previewMode }),
 		setActivePage: (activePageId) => set({ activePageId, activeTab: 'preview', selectedElementId: null }),
+		renamePage: async (pageId, name) => {
+			try {
+				const projectPath = get().projectPath;
+				if (!projectPath) throw new Error('请先选择项目目录');
+				const nextName = name.trim();
+				if (!nextName) throw new Error('页面名称不能为空');
+				if (!get().snapshot.document.pages.some((page) => page.id === pageId)) throw new Error(`Design 页面不存在：${pageId}`);
+				const response = await rpc.designRenamePage({ projectPath, designId: get().snapshot.document.id, pageId, name: nextName, baseRevisionId: get().snapshot.document.revisions.at(-1)?.id ?? '' });
+				if (!response.success || response.command !== 'design_rename_page' || !response.data.snapshot) throw new Error(response.success ? 'Design 页面重命名未返回最新快照' : response.error);
+				const snapshot = toDesignSnapshot(response.data.snapshot);
+				saveSnapshot(snapshot, projectPath);
+				set({ snapshot, error: null });
+			} catch (error) {
+				set({ error: error instanceof Error ? error.message : String(error) });
+				throw error;
+			}
+		},
 		setActiveFile: (activeFile) => set({ activeFile }),
 		saveProjectGuidelines: async (guidelines) => {
 			try {
@@ -560,11 +540,11 @@ export const useDesignStore = create<DesignState>((set, get) => {
 			const nextPath = projects.find((project) => project.hasWorkspace)?.path ?? null;
 			if (!nextPath) {
 				saveDesignProjectPath(null);
-				set({ projects, projectPath: null, activeProjectKey: projectKey(null), hasWorkspace: false, isProjectStarted: false, selectedPresetId: null, pendingPreset: null, intake: null, todos: [], uploadRecords: [] });
+				set({ projects, projectPath: null, activeProjectKey: projectKey(null), hasWorkspace: false, isProjectStarted: false, selectedPresetId: null, pendingPreset: null, pendingClarification: null, todos: [], uploadRecords: [] });
 				return;
 			}
 			saveDesignProjectPath(nextPath);
-			set({ projects, projectPath: nextPath, activeProjectKey: projectKey(nextPath), hasWorkspace: false, isProjectStarted: false, selectedPresetId: null, pendingPreset: null, intake: null, todos: [], uploadRecords: [] });
+			set({ projects, projectPath: nextPath, activeProjectKey: projectKey(nextPath), hasWorkspace: false, isProjectStarted: false, selectedPresetId: null, pendingPreset: null, pendingClarification: null, todos: [], uploadRecords: [] });
 			void get().openProjectHistory(nextPath);
 		},
 		switchProject: async (path) => {
@@ -615,7 +595,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
 				isProjectStarted: saved?.isProjectStarted ?? readStarted(nextPath),
 				selectedPresetId: saved?.selectedPresetId ?? null,
 				pendingPreset: saved?.pendingPreset ?? null,
-				intake: saved?.intake ?? null,
+				pendingClarification: saved?.pendingClarification ?? null,
 				todos: saved?.todos ?? [],
 				uploadRecords: saved?.uploadRecords ?? [],
 			});
@@ -635,7 +615,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
 			saveDesignProjects(projects);
 			saveDesignProjectPath(nextPath);
 			saveStarted(nextPath);
-			set({ projects, snapshot: cached, projectPath: nextPath, activeProjectKey: projectKey(nextPath), activePageId: saved?.activePageId ?? cached.document.entryPageId, activeFile: saved?.activeFile ?? cached.files[0]?.path ?? 'index.html', activeTab: saved?.activeTab ?? 'preview', target: saved?.target ?? 'desktop', viewport: saved?.viewport ?? { width: DESIGN_TARGETS.desktop.width, height: DESIGN_TARGETS.desktop.height }, zoom: saved?.zoom ?? 100, previewMode: saved?.previewMode ?? 'original', selectedElementId: saved?.selectedElementId ?? null, messages: saved?.messages ?? [{ id: 'welcome', kind: 'assistant', text: '描述你想要的页面，我会把它变成适配手机和桌面的 HTML 原型。' }], pendingPlan: saved?.pendingPlan ?? null, pendingApproval: saved?.pendingApproval ?? null, execution: saved?.execution ?? initialExecution(), queuedPrompts: saved?.queuedPrompts ?? [], streamingAssistantId: saved?.streamingAssistantId ?? null, isGenerating: saved?.isGenerating ?? false, error: null, hasWorkspace: true, isProjectStarted: true, selectedPresetId: saved?.selectedPresetId ?? null, pendingPreset: saved?.pendingPreset ?? null, intake: saved?.intake ?? null, todos: saved?.todos ?? [], uploadRecords: saved?.uploadRecords ?? [] });
+			set({ projects, snapshot: cached, projectPath: nextPath, activeProjectKey: projectKey(nextPath), activePageId: saved?.activePageId ?? cached.document.entryPageId, activeFile: saved?.activeFile ?? cached.files[0]?.path ?? 'index.html', activeTab: saved?.activeTab ?? 'preview', target: saved?.target ?? 'desktop', viewport: saved?.viewport ?? { width: DESIGN_TARGETS.desktop.width, height: DESIGN_TARGETS.desktop.height }, zoom: saved?.zoom ?? 100, previewMode: saved?.previewMode ?? 'original', selectedElementId: saved?.selectedElementId ?? null, messages: saved?.messages ?? [{ id: 'welcome', kind: 'assistant', text: '描述你想要的页面，我会把它变成适配手机和桌面的 HTML 原型。' }], pendingPlan: saved?.pendingPlan ?? null, pendingClarification: saved?.pendingClarification ?? null, pendingApproval: saved?.pendingApproval ?? null, execution: saved?.execution ?? initialExecution(), queuedPrompts: saved?.queuedPrompts ?? [], streamingAssistantId: saved?.streamingAssistantId ?? null, isGenerating: saved?.isGenerating ?? false, error: null, hasWorkspace: true, isProjectStarted: true, selectedPresetId: saved?.selectedPresetId ?? null, pendingPreset: saved?.pendingPreset ?? null, todos: saved?.todos ?? [], uploadRecords: saved?.uploadRecords ?? [] });
 			await get().hydrateSnapshot();
 		},
 		hydrateSnapshot: async () => {
@@ -645,13 +625,13 @@ export const useDesignStore = create<DesignState>((set, get) => {
 			const cached = saved?.snapshot ?? loadSnapshot(projectPath);
 			if (!projectPath) {
 				if (generation !== hydrateGeneration) return;
-				set({ snapshot: cached, projectPath: null, activeProjectKey: projectKey(null), activePageId: cached.document.entryPageId, hasWorkspace: false, isProjectStarted: false, selectedPresetId: null, pendingPreset: null, intake: null, todos: [], uploadRecords: [], execution: initialExecution(), queuedPrompts: [], pendingApproval: null, isGenerating: false });
+			set({ snapshot: cached, projectPath: null, activeProjectKey: projectKey(null), activePageId: cached.document.entryPageId, hasWorkspace: false, isProjectStarted: false, selectedPresetId: null, pendingPreset: null, pendingClarification: null, todos: [], uploadRecords: [], execution: initialExecution(), queuedPrompts: [], pendingApproval: null, isGenerating: false });
 				return;
 			}
 			if (generation !== hydrateGeneration || get().projectPath !== projectPath) return;
 			const previousStarted = get().isProjectStarted;
 			const hasWorkspace = get().hasWorkspace || hasCachedWorkspace(projectPath, saved);
-			set({ snapshot: cached, projectPath, activeProjectKey: projectKey(projectPath), activePageId: saved?.activePageId ?? cached.document.entryPageId, activeFile: saved?.activeFile ?? cached.files[0]?.path ?? 'index.html', activeTab: saved?.activeTab ?? 'preview', target: saved?.target ?? 'desktop', viewport: saved?.viewport ?? { width: DESIGN_TARGETS.desktop.width, height: DESIGN_TARGETS.desktop.height }, zoom: saved?.zoom ?? 100, previewMode: saved?.previewMode ?? 'original', selectedElementId: saved?.selectedElementId ?? null, messages: saved?.messages ?? [{ id: 'welcome', kind: 'assistant', text: '描述你想要的页面，我会把它变成适配手机和桌面的 HTML 原型。' }], pendingPlan: saved?.pendingPlan ?? null, pendingApproval: saved?.pendingApproval ?? null, execution: saved?.execution ?? initialExecution(), queuedPrompts: saved?.queuedPrompts ?? [], streamingAssistantId: saved?.streamingAssistantId ?? null, isGenerating: saved?.isGenerating ?? false, error: null, hasWorkspace, isProjectStarted: previousStarted || saved?.isProjectStarted || readStarted(projectPath), selectedPresetId: saved?.selectedPresetId ?? null, pendingPreset: saved?.pendingPreset ?? null, intake: saved?.intake ?? null, todos: saved?.todos ?? [], uploadRecords: saved?.uploadRecords ?? [] });
+			set({ snapshot: cached, projectPath, activeProjectKey: projectKey(projectPath), activePageId: saved?.activePageId ?? cached.document.entryPageId, activeFile: saved?.activeFile ?? cached.files[0]?.path ?? 'index.html', activeTab: saved?.activeTab ?? 'preview', target: saved?.target ?? 'desktop', viewport: saved?.viewport ?? { width: DESIGN_TARGETS.desktop.width, height: DESIGN_TARGETS.desktop.height }, zoom: saved?.zoom ?? 100, previewMode: saved?.previewMode ?? 'original', selectedElementId: saved?.selectedElementId ?? null, messages: saved?.messages ?? [{ id: 'welcome', kind: 'assistant', text: '描述你想要的页面，我会把它变成适配手机和桌面的 HTML 原型。' }], pendingPlan: saved?.pendingPlan ?? null, pendingClarification: saved?.pendingClarification ?? null, pendingApproval: saved?.pendingApproval ?? null, execution: saved?.execution ?? initialExecution(), queuedPrompts: saved?.queuedPrompts ?? [], streamingAssistantId: saved?.streamingAssistantId ?? null, isGenerating: saved?.isGenerating ?? false, error: null, hasWorkspace, isProjectStarted: previousStarted || saved?.isProjectStarted || readStarted(projectPath), selectedPresetId: saved?.selectedPresetId ?? null, pendingPreset: saved?.pendingPreset ?? null, todos: saved?.todos ?? [], uploadRecords: saved?.uploadRecords ?? [] });
 			try {
 				const response = await rpc.designOpen(projectPath);
 				if (generation !== hydrateGeneration || get().projectPath !== projectPath) return;
@@ -688,10 +668,14 @@ export const useDesignStore = create<DesignState>((set, get) => {
 						const bucket = loadBucket(line.projectPath) ?? {};
 						if (line.type === 'design_run_settled') {
 							const snapshot = toDesignSnapshot(line.snapshot);
-							localStorage.setItem(bucketStorageKey(line.projectPath), JSON.stringify({ ...bucket, snapshot, hasWorkspace: true, isProjectStarted: true, isGenerating: false, execution: { ...(bucket.execution ?? initialExecution()), status: 'completed', phase: 'idle', runId: line.runId ?? null, requestId: line.requestId, sequence: line.sequence, endedAt: Date.now() } }));
+							localStorage.setItem(bucketStorageKey(line.projectPath), JSON.stringify({ ...bucket, snapshot, todos: [], hasWorkspace: true, isProjectStarted: true, isGenerating: false, execution: { ...(bucket.execution ?? initialExecution()), status: 'completed', phase: 'idle', runId: line.runId ?? null, requestId: line.requestId, sequence: line.sequence, endedAt: Date.now() } }));
 						} else if (line.type === 'design_patch_applied' && bucket.snapshot) {
-							const snapshot = updatePatchedSnapshot(bucket.snapshot, line.files, line.revisionId, line.summary);
-							localStorage.setItem(bucketStorageKey(line.projectPath), JSON.stringify({ ...bucket, snapshot, todos: advanceDesignTodos(bucket.todos ?? []) }));
+							const snapshot = updatePatchedSnapshot(bucket.snapshot, line.changedFiles, line.removedPaths, line.revisionId, line.summary);
+							localStorage.setItem(bucketStorageKey(line.projectPath), JSON.stringify({ ...bucket, snapshot }));
+						} else if (line.type === 'design_error') {
+							localStorage.setItem(bucketStorageKey(line.projectPath), JSON.stringify({ ...bucket, todos: [], isGenerating: false, execution: { ...(bucket.execution ?? initialExecution()), status: 'failed', phase: 'idle', runId: line.runId ?? null, requestId: line.requestId, sequence: line.sequence, endedAt: Date.now() } }));
+						} else if (line.type === 'design_plan_updated') {
+							localStorage.setItem(bucketStorageKey(line.projectPath), JSON.stringify({ ...bucket, todos: line.steps }));
 						}
 					} catch { /* 后台归档失败不影响当前项目事件路由 */ }
 				}
@@ -709,7 +693,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
 				const event = line.event;
 				if (event.type === 'message_update') {
 					const inner = event.assistantMessageEvent as { type?: string; delta?: string } | undefined;
-					if (inner?.type === 'thinking_delta' && inner.delta) set((current) => ({ execution: { ...current.execution, status: 'running', phase: 'thinking', lastDeltaKind: 'thinking', thinking: `${current.execution.thinking}${inner.delta}` } }));
+					if (inner?.type === 'thinking_delta' && inner.delta) set((current) => ({ execution: { ...current.execution, status: 'running', phase: 'thinking', lastDeltaKind: 'thinking', thinking: appendCappedText(current.execution.thinking, inner.delta!, DESIGN_THINKING_MAX_CHARS) } }));
 					else if (inner?.type === 'text_delta' && inner.delta) set((current) => ({ execution: { ...current.execution, status: 'running', phase: 'responding', lastDeltaKind: 'text' }, messages: updateAssistantMessage(current.messages, inner.delta!, false) }));
 					return;
 				}
@@ -721,11 +705,19 @@ export const useDesignStore = create<DesignState>((set, get) => {
 				if (event.type === 'tool_execution_start' || event.type === 'tool_execution_update' || event.type === 'tool_execution_end') set((current) => ({ execution: { ...applyToolEvent(current.execution, event), status: 'running' } }));
 				return;
 			}
+			if (line.type === 'design_clarification_required') {
+				set((current) => ({ pendingClarification: { clarificationId: line.clarificationId, question: line.question, context: line.context, options: line.options }, execution: { ...current.execution, status: 'awaiting_clarification', phase: 'awaiting_clarification' } }));
+				return;
+			}
+			if (line.type === 'design_plan_updated') {
+				set((current) => ({ todos: line.steps, execution: { ...current.execution, status: 'running', phase: 'thinking' } }));
+				return;
+			}
 			if (line.type === 'design_patch_applied') {
 				if (get().snapshot.document.revisions.some((revision) => revision.id === line.revisionId)) return;
-				const snapshot = updatePatchedSnapshot(get().snapshot, line.files, line.revisionId, line.summary);
+				const snapshot = updatePatchedSnapshot(get().snapshot, line.changedFiles, line.removedPaths, line.revisionId, line.summary);
 				saveSnapshot(snapshot, get().projectPath);
-				set((current) => ({ snapshot, todos: advanceDesignTodos(current.todos), execution: { ...current.execution, status: 'running', phase: 'applying_patch' } }));
+				set((current) => ({ snapshot, execution: { ...current.execution, status: 'running', phase: 'applying_patch' } }));
 				return;
 			}
 			if (line.type === 'design_approval_required') {
@@ -733,13 +725,13 @@ export const useDesignStore = create<DesignState>((set, get) => {
 				return;
 			}
 			if (line.type === 'design_error') {
-				set((current) => ({ error: line.error, isGenerating: false, execution: { ...current.execution, status: 'failed', phase: 'idle', endedAt: Date.now() } }));
+				set((current) => ({ pendingClarification: null, todos: [], error: line.error, isGenerating: false, execution: { ...current.execution, status: 'failed', phase: 'idle', endedAt: Date.now() } }));
 				return;
 			}
 			if (line.type === 'design_run_settled') {
 				const snapshot = toDesignSnapshot(line.snapshot);
 				saveSnapshot(snapshot, get().projectPath);
-				set((current) => ({ snapshot, pendingApproval: null, isGenerating: false, execution: { ...current.execution, status: 'completed', phase: 'idle', endedAt: Date.now() } }));
+				set((current) => ({ snapshot, todos: [], pendingClarification: null, pendingApproval: null, isGenerating: false, execution: { ...current.execution, status: 'completed', phase: 'idle', endedAt: Date.now() } }));
 				const next = get().queuedPrompts[0];
 				if (next) {
 					set((current) => ({
@@ -764,21 +756,21 @@ export const useDesignStore = create<DesignState>((set, get) => {
 				if (!response.success || response.command !== 'design_apply_patch') throw new Error(response.success ? 'Design patch 未返回快照' : response.error);
 				const snapshot = toDesignSnapshot(response.data.snapshot);
 				saveSnapshot(snapshot, projectPath);
-				set((state) => ({ snapshot, todos: advanceDesignTodos(state.todos), error: null }));
+				set({ snapshot, error: null });
+			} catch (error) { set({ error: error instanceof Error ? error.message : String(error) }); }
+		},
+		respondClarification: async (answer) => {
+			const clarification = get().pendingClarification;
+			if (!clarification) return;
+			try {
+				const projectPath = get().projectPath;
+				if (!projectPath) throw new Error('请先选择项目目录');
+				const response = await rpc.designClarificationResponse({ projectPath, designId: get().snapshot.document.id, clarificationId: clarification.clarificationId, answer: answer.trim() });
+				if (!response.success || response.command !== 'design_clarification_response') throw new Error(response.success ? 'Design 澄清未返回确认结果' : response.error);
+				set((state) => ({ pendingClarification: null, execution: { ...state.execution, status: 'running', phase: 'thinking' }, error: null }));
 			} catch (error) { set({ error: error instanceof Error ? error.message : String(error) }); }
 		},
 		dismissPlan: () => set({ pendingPlan: null }),
-		setIntakeStep: (step) => set((state) => state.intake?.status === 'pending' ? { intake: { ...state.intake, step: Math.max(0, Math.min(3, step)) } } : {}),
-		updateIntakeAnswers: (answers) => set((state) => state.intake?.status === 'pending' ? { intake: { ...state.intake, answers: { ...state.intake.answers, ...answers } } } : {}),
-		confirmIntake: async () => submitIntake('confirmed'),
-		skipIntake: async () => submitIntake('skipped'),
-		cycleTodo: (id) => set((state) => ({ todos: state.todos.map((todo) => todo.id !== id ? todo : { ...todo, state: todo.state === 'pending' ? 'active' : todo.state === 'active' ? 'done' : 'pending' }) })),
-		addTodo: (text) => {
-			const trimmed = text.trim();
-			if (!trimmed) return;
-			set((state) => ({ todos: [...state.todos, { id: `custom-${newId()}`, text: trimmed, state: 'pending' }] }));
-		},
-		removeTodo: (id) => set((state) => ({ todos: state.todos.filter((todo) => todo.id !== id) })),
 		sendPrompt: async (text) => {
 			const prompt = text.trim();
 			if (!prompt) return;
@@ -799,7 +791,9 @@ export const useDesignStore = create<DesignState>((set, get) => {
 				const queuedIds = new Set(state.queuedPrompts.map((item) => item.id));
 				return {
 					queuedPrompts: [],
+					pendingClarification: null,
 					pendingApproval: null,
+					todos: [],
 					isGenerating: false,
 					execution: { ...state.execution, status: 'stopped', phase: 'idle', endedAt: Date.now() },
 					messages: [...state.messages.map((message) => message.kind === 'user' && queuedIds.has(message.id) ? { ...message, status: 'cancelled' as const } : message), { id: newId(), kind: 'assistant', text: '任务已停止；已完成的设计修改不会自动回滚。' }],
@@ -891,13 +885,13 @@ export const useDesignStore = create<DesignState>((set, get) => {
 					projects,
 					snapshot,
 					projectPath,
-				activeProjectKey: projectKey(projectPath),
-				activePageId: snapshot.document.entryPageId,
-				previewMode: 'original',
-				hasWorkspace: true,
+					activeProjectKey: projectKey(projectPath),
+					activePageId: snapshot.document.entryPageId,
+					previewMode: 'original',
+					hasWorkspace: true,
 					isProjectStarted: true,
-					intake: { sourcePrompt: prompt.trim(), step: 0, status: 'pending', answers: {} },
-					todos: createDesignTodos(),
+					pendingClarification: null,
+					todos: [],
 					error: null,
 				});
 				if (pendingPreset) {
@@ -905,7 +899,8 @@ export const useDesignStore = create<DesignState>((set, get) => {
 					await get().saveProjectGuidelines({ ...pendingPreset.guidelines, updatedAt: new Date().toISOString() });
 					set({ selectedPresetId: pendingPreset.id, pendingPreset: null, error: null });
 				}
-				// 首轮仅创建工作区并打开需求确认卡，确认后才启动 Pi Design Agent。
+				// 工作区创建和预设保存完成后立即启动 Agent；需求澄清由 Agent 按需调用工具。
+				await startPrompt(prompt, true);
 			} catch (error) {
 				// 创建失败时留在入口，让用户能修正目录或重试；不能把失败状态伪装成工作页。
 				set({ error: error instanceof Error ? error.message : String(error) });
@@ -924,6 +919,36 @@ onDesignEvent((event) => useDesignStore.getState().applyStreamEvent(event));
  * 每个项目只保存自己的 Design bucket；项目切换前 hydrateSnapshot 会先落盘旧 bucket，
  * 这里负责覆盖流式消息、队列和执行快照等后续变化，保证切回时能恢复现场。
  */
-useDesignStore.subscribe((state) => {
-	if (state.projectPath) saveBucket(state);
+/**
+ * 流式 Design 事件可能每几十毫秒更新一次；持久化完整快照和消息不能同步跟随每个 token。
+ * 业务意图：保留最终状态的可靠恢复，同时把 localStorage 序列化从热路径移出，避免卡顿和 OOM。
+ */
+useDesignStore.subscribe((state, previous) => {
+	if (!state.projectPath) return;
+	// 流式正文、thinking 和工具步骤只改变运行时字段；这些高频更新等任务终态再一起落盘。
+	// 页面选择、计划、审批和澄清等用户可感知状态变化仍会进入节流持久化。
+	const onlyStreamingFieldsChanged = state.isGenerating &&
+		state.projectPath === previous.projectPath &&
+		state.snapshot === previous.snapshot &&
+		state.projects === previous.projects &&
+		state.activePageId === previous.activePageId &&
+		state.activeFile === previous.activeFile &&
+		state.activeTab === previous.activeTab &&
+		state.target === previous.target &&
+		state.viewport === previous.viewport &&
+		state.zoom === previous.zoom &&
+		state.previewMode === previous.previewMode &&
+		state.selectedElementId === previous.selectedElementId &&
+		state.pendingPlan === previous.pendingPlan &&
+		state.pendingClarification === previous.pendingClarification &&
+		state.pendingApproval === previous.pendingApproval &&
+		state.queuedPrompts === previous.queuedPrompts &&
+		state.error === previous.error &&
+		state.hasWorkspace === previous.hasWorkspace &&
+		state.isProjectStarted === previous.isProjectStarted &&
+		state.selectedPresetId === previous.selectedPresetId &&
+		state.pendingPreset === previous.pendingPreset &&
+		state.uploadRecords === previous.uploadRecords;
+	if (onlyStreamingFieldsChanged) return;
+	saveBucket(state);
 });

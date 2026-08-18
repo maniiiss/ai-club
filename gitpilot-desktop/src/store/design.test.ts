@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createDefaultProjectGuidelines, createDemoSnapshot, DESIGN_TARGETS, DESIGN_VIEWPORT_PRESETS, type DesignPreset } from '@/src/design/design-types';
 import { rpc } from '@/src/rpc/bridge';
-import type { AgentSessionEvent, DesignStreamLine } from '@/src/rpc/types';
+import type { DesignAgentEvent, DesignStreamLine } from '@/src/rpc/types';
 import { listDesignProjectHistory, useDesignStore } from './design';
 
 const localStorageData = new Map<string, string>();
@@ -89,7 +89,7 @@ function resetStore(): void {
 		isProjectStarted: false,
 		selectedPresetId: null,
 		pendingPreset: null,
-		intake: null,
+		pendingClarification: null,
 		todos: [],
 		uploadRecords: [],
 	});
@@ -99,8 +99,8 @@ function line(line: Omit<Extract<DesignStreamLine, { type: 'design_event' }>, 'd
 	return { ...line, projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, emittedAt: Date.now() };
 }
 
-function agentEvent(event: unknown): AgentSessionEvent {
-	return event as AgentSessionEvent;
+function agentEvent(event: unknown): DesignAgentEvent {
+	return event as DesignAgentEvent;
 }
 
 describe('Design Mode snapshot', () => {
@@ -132,6 +132,18 @@ describe('Design Mode snapshot', () => {
 		useDesignStore.getState().setPreviewMode('browser');
 		expect(useDesignStore.getState().previewMode).toBe('browser');
 		expect(JSON.parse(localStorage.getItem(bucketKey('project-test')) ?? '{}').previewMode).toBe('browser');
+	});
+
+	it('通过 sidecar 修订保存页面重命名并同步当前 bucket', async () => {
+		const current = useDesignStore.getState().snapshot;
+		const nextSnapshot = { ...current, document: { ...current.document, version: current.document.version + 1, pages: current.document.pages.map((page) => page.id === 'home' ? { ...page, name: '登录页' } : page) } };
+		const rename = vi.spyOn(rpc, 'designRenamePage').mockResolvedValue({ id: 'rename-page', type: 'response', command: 'design_rename_page', success: true, data: { designId, snapshot: nextSnapshot as never } } as never);
+
+		await useDesignStore.getState().renamePage('home', ' 登录页 ');
+
+		expect(rename).toHaveBeenCalledWith({ projectPath: 'project-test', designId, pageId: 'home', name: '登录页', baseRevisionId: current.document.revisions.at(-1)?.id ?? '' });
+		expect(useDesignStore.getState().snapshot.document.pages[0].name).toBe('登录页');
+		expect(JSON.parse(localStorage.getItem(bucketKey('project-test')) ?? '{}').snapshot.document.pages[0].name).toBe('登录页');
 	});
 
 	it('只把已有 Design Workspace 的项目派生为历史，并按最近打开时间排序', () => {
@@ -201,7 +213,7 @@ describe('Design Mode snapshot', () => {
 		expect(state).toMatchObject({ projectPath: 'project-a', activeFile: fileA, activeTab: 'preview', messages: [{ id: 'a', kind: 'assistant', text: '项目 A' }] });
 	});
 
-	it('首次需求先进入确认卡，确认后才启动 Pi Design 运行', async () => {
+	it('新需求直接启动 Agent，只有 Agent 推送计划时才出现真实待办', async () => {
 		const current = useDesignStore.getState().snapshot;
 		vi.spyOn(rpc, 'designCreate').mockResolvedValue({
 			id: 'create', type: 'response', command: 'design_create', success: true,
@@ -211,23 +223,39 @@ describe('Design Mode snapshot', () => {
 
 		await useDesignStore.getState().startProject('设计一个登录页');
 
-		expect(useDesignStore.getState()).toMatchObject({ isProjectStarted: true, error: null, intake: { status: 'pending', step: 0, sourcePrompt: '设计一个登录页' } });
-		expect(useDesignStore.getState().todos[0]).toMatchObject({ id: 'direction', state: 'active' });
-		expect(prompt).not.toHaveBeenCalled();
-
-		useDesignStore.getState().updateIntakeAnswers({ productType: '面向客户的产品页面', visualTone: 'Editorial light', layout: '居中单焦点内容' });
-		await useDesignStore.getState().confirmIntake();
-
+		expect(useDesignStore.getState()).toMatchObject({ isProjectStarted: true, error: null, pendingClarification: null, todos: [] });
 		expect(useDesignStore.getState().messages.at(-1)).toMatchObject({ kind: 'user', text: '设计一个登录页', status: 'sent' });
-		expect(useDesignStore.getState().todos.slice(0, 2)).toMatchObject([{ id: 'direction', state: 'done' }, { id: 'structure', state: 'active' }]);
-		expect(prompt).toHaveBeenCalledWith(expect.objectContaining({ prompt: expect.stringContaining('"visualTone": "Editorial light"') }));
+		expect(prompt).toHaveBeenCalledWith(expect.objectContaining({ prompt: '设计一个登录页' }));
 
-		const files = useDesignStore.getState().snapshot.files.map((file) => ({ path: file.path, language: file.language, content: file.content ?? '' }));
-		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), operationId: 'intake-patch', revisionId: 'rev-intake', pageId: 'home', summary: '完成页面骨架', files });
-		expect(useDesignStore.getState().todos.slice(0, 3)).toMatchObject([{ state: 'done' }, { state: 'done' }, { state: 'active' }]);
+		const changedFiles = [useDesignStore.getState().snapshot.files[0]].map((file) => ({ path: file.path, language: file.language, content: file.content ?? '' }));
+		useDesignStore.getState().applyStreamEvent({ type: 'design_plan_updated', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), steps: [{ id: 'design-step-1', text: '搭建页面骨架', state: 'active' }, { id: 'design-step-2', text: '验证响应式布局', state: 'pending' }] });
+		expect(useDesignStore.getState().todos).toEqual([{ id: 'design-step-1', text: '搭建页面骨架', state: 'active' }, { id: 'design-step-2', text: '验证响应式布局', state: 'pending' }]);
+		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 2, emittedAt: Date.now(), operationId: 'plan-patch', revisionId: 'rev-plan', pageId: 'home', summary: '完成页面骨架', changedFiles, removedPaths: [] });
+		expect(useDesignStore.getState().todos[0]).toMatchObject({ state: 'active' });
 		const persisted = JSON.parse(localStorage.getItem(bucketKey('project-test')) ?? '{}');
-		expect(persisted.intake).toMatchObject({ status: 'confirmed', answers: { visualTone: 'Editorial light' } });
-		expect(persisted.todos[0]).toMatchObject({ id: 'direction', state: 'done' });
+		expect(persisted.pendingClarification).toBeNull();
+		expect(persisted.todos[0]).toMatchObject({ id: 'design-step-1', state: 'active' });
+	});
+
+	it('Design 任务结束后收起输入框上方的临时计划', () => {
+		const current = useDesignStore.getState().snapshot;
+		useDesignStore.getState().applyStreamEvent({ type: 'design_plan_updated', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), steps: [{ id: 'design-step-1', text: '完成页面设计', state: 'active' }] });
+		expect(useDesignStore.getState().todos).toHaveLength(1);
+
+		useDesignStore.getState().applyStreamEvent({ type: 'design_run_settled', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 2, emittedAt: Date.now(), snapshot: { document: current.document as unknown as Record<string, unknown>, files: current.files, context: { projectId: 'project-test', projectPath: 'project-test', designId } } });
+		expect(useDesignStore.getState().todos).toEqual([]);
+	});
+
+	it('Agent 发现关键歧义时暂停，并在回答后恢复同一次运行', async () => {
+		const prompt = vi.spyOn(rpc, 'designPrompt').mockResolvedValue({ id: 'prompt', type: 'response', command: 'design_prompt', success: true, data: { requestId, runId } } as never);
+		await useDesignStore.getState().sendPrompt('设计一个工作台');
+		useDesignStore.getState().applyStreamEvent({ type: 'design_clarification_required', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), clarificationId: 'clarification-1', question: '主要服务哪类用户？', context: '这会影响信息密度和导航层级。', options: ['管理员', '普通成员'] });
+		expect(useDesignStore.getState()).toMatchObject({ pendingClarification: { clarificationId: 'clarification-1', question: '主要服务哪类用户？' }, execution: { status: 'awaiting_clarification', phase: 'awaiting_clarification' } });
+		const response = vi.spyOn(rpc, 'designClarificationResponse').mockResolvedValue({ id: 'answer', type: 'response', command: 'design_clarification_response', success: true } as never);
+		await useDesignStore.getState().respondClarification('管理员');
+		expect(response).toHaveBeenCalledWith({ projectPath: 'project-test', designId, clarificationId: 'clarification-1', answer: '管理员' });
+		expect(useDesignStore.getState()).toMatchObject({ pendingClarification: null, execution: { status: 'running', phase: 'thinking' } });
+		expect(prompt).toHaveBeenCalledTimes(1);
 	});
 
 	it('新项目先保存待应用预设规范，再发送首次设计请求', async () => {
@@ -249,8 +277,6 @@ describe('Design Mode snapshot', () => {
 		await useDesignStore.getState().applyPreset(presetFixture());
 		expect(useDesignStore.getState()).toMatchObject({ selectedPresetId: 'neutral-modern', pendingPreset: { id: 'neutral-modern' } });
 		await useDesignStore.getState().startProject('设计一个登录页');
-		useDesignStore.getState().updateIntakeAnswers({ productType: '品牌或营销页面', visualTone: 'Cinematic dark', layout: '沉浸式全屏叙事' });
-		await useDesignStore.getState().confirmIntake();
 
 		expect(calls).toEqual(['create', 'guidelines', 'prompt']);
 		expect(useDesignStore.getState()).toMatchObject({ selectedPresetId: 'neutral-modern', pendingPreset: null, snapshot: { guidelines: { brand: { name: 'Neutral Modern' } } } });
@@ -306,8 +332,6 @@ describe('Design Mode snapshot', () => {
 		useDesignStore.setState({ projectPath: 'design-project', activeProjectKey: encodeURIComponent('design-project') });
 
 		await useDesignStore.getState().startProject('使用 Design 目录');
-		useDesignStore.getState().updateIntakeAnswers({ productType: '业务管理工作台', visualTone: 'Quiet utility', layout: '模块化工作台' });
-		await useDesignStore.getState().confirmIntake();
 
 		expect(rpc.designCreate).toHaveBeenCalledWith('design-project', 'GitPilot Design');
 		expect(prompt).toHaveBeenCalledWith(expect.objectContaining({ projectPath: 'design-project' }));
@@ -342,38 +366,58 @@ describe('Design Mode snapshot', () => {
 	it('工具阶段覆盖 thinking 提示，并拒绝乱序/重复 sequence', () => {
 		const store = useDesignStore.getState();
 		store.applyStreamEvent(line({ type: 'design_event', event: agentEvent({ type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: '分析中' } }), sequence: 1 }));
-		store.applyStreamEvent(line({ type: 'design_event', event: agentEvent({ type: 'tool_execution_start', toolCallId: 'tool-1', toolName: 'design_apply_patch', args: {} }), sequence: 2 }));
-		store.applyStreamEvent(line({ type: 'design_event', event: agentEvent({ type: 'tool_execution_start', toolCallId: 'tool-duplicate', toolName: 'ignored', args: {} }), sequence: 1 }));
+		store.applyStreamEvent(line({ type: 'design_event', event: agentEvent({ type: 'tool_execution_start', toolCallId: 'tool-1', toolName: 'design_apply_patch', summary: '修改 pages/home/index.html · 3 KB' }), sequence: 2 }));
+		store.applyStreamEvent(line({ type: 'design_event', event: agentEvent({ type: 'tool_execution_start', toolCallId: 'tool-duplicate', toolName: 'ignored' }), sequence: 1 }));
 		const state = useDesignStore.getState();
 		expect(state.execution.phase).toBe('tool');
 		expect(state.execution.steps).toHaveLength(1);
+		expect(state.execution.steps[0]).toMatchObject({ summary: '修改 pages/home/index.html · 3 KB' });
 		expect(state.execution.sequence).toBe(2);
+	});
+
+	it('工具事件只保留展示摘要，不在 Design store 留存 patch 正文或工具输出', () => {
+		const store = useDesignStore.getState();
+		const largePayload = 'x'.repeat(128_000);
+		store.applyStreamEvent(line({ type: 'design_event', event: agentEvent({ type: 'tool_execution_start', toolCallId: 'tool-memory', toolName: 'design_apply_patch', summary: '修改 pages/home/styles.css · 125 KB', args: { operations: [{ content: largePayload }] } }), sequence: 1 }));
+		store.applyStreamEvent(line({ type: 'design_event', event: agentEvent({ type: 'tool_execution_end', toolCallId: 'tool-memory', toolName: 'design_apply_patch', result: largePayload }), sequence: 2 }));
+		const step = useDesignStore.getState().execution.steps[0] as unknown as Record<string, unknown>;
+		expect(step).toMatchObject({ summary: '修改 pages/home/styles.css · 125 KB', status: 'succeeded' });
+		expect(step).not.toHaveProperty('args');
+		expect(step).not.toHaveProperty('result');
 	});
 
 	it('patch 事件立即更新 snapshot，旧 request 不会重复修改', () => {
 		const current = useDesignStore.getState().snapshot;
 		const files = current.files.map((file) => file.path.endsWith('/styles.css') ? { ...file, content: `${file.content}\n.patch{color:red}` } : file);
-		const rpcFiles = files.map((file) => ({ path: file.path, language: file.language, content: file.content ?? '' }));
-		const currentRpcFiles = current.files.map((file) => ({ path: file.path, language: file.language, content: file.content ?? '' }));
-		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), operationId: 'op-1', revisionId: 'rev-2', pageId: 'home', summary: '增加强调色', files: rpcFiles });
-		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 2, emittedAt: Date.now(), operationId: 'op-1-retry', revisionId: 'rev-2', pageId: 'home', summary: '重复修改', files: currentRpcFiles });
-		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId: 'old-request', runId, sequence: 3, emittedAt: Date.now(), operationId: 'op-old', revisionId: 'rev-old', pageId: 'home', summary: '旧任务', files: currentRpcFiles });
+		const changedFiles = files.filter((file) => file.path.endsWith('/styles.css')).map((file) => ({ path: file.path, language: file.language, content: file.content ?? '' }));
+		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), operationId: 'op-1', revisionId: 'rev-2', pageId: 'home', summary: '增加强调色', changedFiles, removedPaths: [] });
+		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 2, emittedAt: Date.now(), operationId: 'op-1-retry', revisionId: 'rev-2', pageId: 'home', summary: '重复修改', changedFiles: [], removedPaths: [] });
+		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId: 'old-request', runId, sequence: 3, emittedAt: Date.now(), operationId: 'op-old', revisionId: 'rev-old', pageId: 'home', summary: '旧任务', changedFiles: [], removedPaths: [] });
 		const state = useDesignStore.getState();
 		expect(state.snapshot.files.find((file) => file.path.endsWith('/styles.css'))?.content).toContain('.patch{color:red}');
+		expect(state.snapshot.files.find((file) => file.path.endsWith('/index.html'))?.content).toBe(current.files.find((file) => file.path.endsWith('/index.html'))?.content);
 		expect(state.snapshot.document.version).toBe(current.document.version + 1);
 	});
 
 	it('patch 事件返回多个页面文件时同步更新右侧页面树', () => {
-		const current = useDesignStore.getState().snapshot;
-		const files = [
-			...current.files,
+		const changedFiles = [
 			{ id: 'qcc-login-index', path: 'pages/qcc-login/index.html', language: 'html' as const, content: '<main />' },
 			{ id: 'qcc-login-css', path: 'pages/qcc-login/styles.css', language: 'css' as const, content: '.login{}' },
 		];
-		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), operationId: 'op-pages', revisionId: 'rev-pages', pageId: 'home', summary: '创建登录页', files });
+		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), operationId: 'op-pages', revisionId: 'rev-pages', pageId: 'home', summary: '创建登录页', changedFiles, removedPaths: [] });
 
 		const page = useDesignStore.getState().snapshot.document.pages.find((item) => item.id === 'qcc-login');
 		expect(page).toMatchObject({ name: 'qcc-login', route: '/qcc-login', entryFileId: 'qcc-login-index', fileIds: ['qcc-login-index', 'qcc-login-css'] });
+	});
+
+	it('patch 增量会移除已删除或已重命名的旧文件路径', () => {
+		const current = useDesignStore.getState().snapshot;
+		const removedPath = current.files.find((file) => file.path.endsWith('/main.js'))?.path;
+		expect(removedPath).toBeTruthy();
+		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), operationId: 'op-remove', revisionId: 'rev-remove', pageId: 'home', summary: '移除旧脚本', changedFiles: [], removedPaths: [removedPath!] });
+
+		expect(useDesignStore.getState().snapshot.files.some((file) => file.path === removedPath)).toBe(false);
+		expect(useDesignStore.getState().snapshot.files.some((file) => file.path.endsWith('/index.html'))).toBe(true);
 	});
 
 	it('查看历史修订不改变当前快照，回滚后写入新的当前修订', async () => {

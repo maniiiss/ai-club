@@ -30,7 +30,7 @@ export function TargetDesktopShell({ newSession, abort, error, clearError }: Tar
 			<TargetWorkbenchLayout
 				left={<TargetSessionSidebar />}
 				center={<TargetConversationArea />}
-				right={<TargetExecutionInspector />}
+				right={<TargetExecutionInspector showExecution={false} />}
 				bottom={<TargetExecutionOutputPanel />}
 				terminal={<TargetTerminalPanel />}
 				workspacePath={currentProjectPath}

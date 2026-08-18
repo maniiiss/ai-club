@@ -150,7 +150,7 @@
 .workspaceInspectorToggle:hover{border-color:#a9c8b5;background:#edf7f0;color:#2f7254}
 .rightPanelToggle{width:24px;height:24px;padding:0}
 .executionInspectorFrame{position:relative;min-height:0;flex:1;overflow:hidden}
-.executionInspector{height:100%;min-height:0;overflow:auto;padding:12px 11px 18px}
+.executionInspector{height:100%;min-height:0;overflow:auto;overflow-anchor:none;padding:12px 11px 18px}
 .inspectorStatus{display:flex;align-items:center;gap:9px;border:1px solid #dbe8df;border-radius:9px;background:#fff;padding:10px 11px}
 .inspectorStatusDot{width:8px;height:8px;flex:0 0 8px;border-radius:50%;background:#a1b0a7}
 .inspectorStatusRunning{background:#4eaf81;box-shadow:0 0 0 4px #e3f2e8}
@@ -158,6 +158,10 @@
 .inspectorStatus span{display:block;margin-top:3px;color:#8a9990;font-size: calc(9px * var(--desktop-font-scale))}
 .inspectorSection{margin-top:13px;border:1px solid #dfe8e2;border-radius:9px;background:#fff;padding:10px}
 .inspectorSectionHeading{display:flex;align-items:center;justify-content:space-between;color:#64766b;font-size: calc(10px * var(--desktop-font-scale));font-weight:650}
+.inspectorSectionHeadingButton{display:flex;width:100%;align-items:center;justify-content:space-between;border:0;background:transparent;padding:0;color:inherit;text-align:left;cursor:pointer}
+.inspectorSectionHeadingButton:hover .inspectorSectionHeading{color:#2e7253}
+.inspectorSectionChevron{flex:0 0 auto;margin-right:3px;transition:transform 170ms cubic-bezier(.22,.8,.25,1)}
+.inspectorSectionChevronExpanded{transform:rotate(90deg)}
 .inspectorCount{border-radius:4px;background:#edf5ef;padding:3px 5px;color:#6a9179;font: calc(9px * var(--desktop-font-scale)) var(--font-mono);font-weight:400}
 .inspectorThinking{margin:9px 0 0;color:#6d7e73;font-size: calc(10px * var(--desktop-font-scale));line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
 .inspectorSteps{display:flex;flex-direction:column;gap:6px;margin-top:9px}
@@ -509,6 +513,11 @@
 
 @media(max-width:760px){.previewModeTrigger{min-width:100px}.previewStageFit{padding:8px}.browserTab{min-width:130px}.browserBookmarks{gap:10px;padding:0 8px}.browserBookmarks span:last-child{display:none}.browserToolbar{gap:6px;padding:0 7px}.browserNavControls{gap:2px}.browserToolbarActions{display:none}}
 
+/* 业务意图：澄清卡由 Agent 按需触发，保持问题、选项和自由输入在同一张可恢复卡片内。 */
+.clarificationCard{margin:4px 0 16px;border:1px solid color-mix(in srgb,var(--design-accent) 35%,var(--design-border));border-radius:10px;background:var(--design-surface-raised);box-shadow:0 10px 25px color-mix(in srgb,var(--design-shadow) 70%,transparent);padding:12px}
+.clarificationHeader{display:flex;align-items:flex-start;gap:8px}.clarificationHeader strong{display:block;color:var(--design-text);font-size:calc(11px * var(--desktop-font-scale));font-weight:650}.clarificationHeader p{margin:3px 0 0;color:var(--design-text-muted);font-size:calc(9px * var(--desktop-font-scale));line-height:1.4}.clarificationIcon{display:grid;width:25px;height:25px;flex:0 0 25px;place-items:center;border-radius:7px;background:var(--design-accent-soft);color:var(--design-accent)}.clarificationContext{margin:10px 0 0;color:var(--design-text-muted);font-size:calc(10px * var(--desktop-font-scale));line-height:1.45}.clarificationQuestion{margin:10px 0 8px;color:var(--design-text);font-size:calc(12px * var(--desktop-font-scale));font-weight:600;line-height:1.45}.clarificationOptions{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px}.clarificationOption{border:1px solid var(--design-border);border-radius:6px;background:var(--design-surface);padding:6px 8px;color:var(--design-text-secondary);font-size:calc(10px * var(--desktop-font-scale));cursor:pointer}.clarificationOption:hover,.clarificationOption[aria-pressed="true"]{border-color:var(--design-accent);background:var(--design-accent-soft);color:var(--design-accent)}.clarificationInput{display:block;width:100%;box-sizing:border-box;resize:vertical;border:1px solid var(--design-border);border-radius:6px;background:var(--design-surface);padding:8px;color:var(--design-text);font:calc(10px * var(--desktop-font-scale))/1.5 var(--font-sans);outline:0}.clarificationInput:focus{border-color:var(--design-accent);box-shadow:0 0 0 2px var(--design-accent-soft)}.clarificationFooter{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;color:var(--design-text-muted);font-size:calc(9px * var(--desktop-font-scale))}
+.todoItem{grid-template-columns:20px minmax(0,1fr) auto}.todoState{cursor:default}
+
 /* 业务意图：右下角侧栏开关属于状态栏固定操作区，内容宽度变化时不能挤动它。 */
 .statusbar{position:relative;flex:0 0 28px;padding-right:38px}
 .statusbar>.rightPanelToggle{position:absolute;top:2px;right:4px;height:24px}
@@ -520,3 +529,32 @@
 /* 横向滚动仍可用，但不让系统滚动条占据垂直空间把页签行顶上去。 */
 .inspectorTabScroller{scrollbar-width:none}
 .inspectorTabScroller::-webkit-scrollbar{display:none}
+
+/* 业务意图：页面重命名只影响页面元数据，右键触发后直接在原列表项内编辑，保持文件目录上下文不跳转。 */
+.navigatorPage{width:100%;cursor:pointer}
+.navigatorContextMenu{min-width:128px}
+.navigatorPageRenameInput{min-width:0;flex:1;height:24px;border:0;border-bottom:1px solid var(--design-accent);outline:none;background:transparent;padding:0 2px;color:var(--design-text);font:inherit}
+.navigatorPageRenameInput:focus-visible{border-bottom-color:var(--design-accent);box-shadow:0 2px 0 var(--design-accent-soft)}
+
+/* 业务意图：页面选择与视图切换属于同一组工作区工具，统一为中性控件后，顶部信息层级更清晰。 */
+.workspaceHeader{min-height:60px;gap:12px;padding:0 20px}
+.pageSwitcher{min-width:175px;max-width:235px;min-height:36px;flex:0 1 220px;gap:0}
+.pageSwitcher .pageDot{display:none}
+.pageSwitcherTrigger{height:36px;border-radius:9px;background:var(--design-surface-raised);box-shadow:0 1px 2px color-mix(in srgb,var(--design-shadow) 35%,transparent)}
+.tabs{align-self:auto;height:36px;align-items:center;gap:2px;border:1px solid var(--design-border);border-radius:9px;background:var(--design-background);padding:3px}
+.tabs button{height:28px;border:0;border-radius:6px;padding:0 11px}
+.tabs button:hover{border-color:transparent}
+.tabs .tabActive{border:0;background:var(--design-accent-soft);box-shadow:0 1px 2px color-mix(in srgb,var(--design-shadow) 35%,transparent)}
+.tabs .tabActive:hover{background:var(--design-accent-soft)}
+.workspaceActions{align-items:center}
+
+@media(max-width:760px){.workspaceHeader{gap:8px;padding:0 12px}.pageSwitcher{min-height:36px;gap:0}.tabs{height:36px}.tabs button{padding-right:9px;padding-left:9px}}
+@property --landing-logo-pointer-x{syntax:'<percentage>';inherits:true;initial-value:50%}
+@property --landing-logo-pointer-y{syntax:'<percentage>';inherits:true;initial-value:50%}
+/* 业务意图：初次扫光和鼠标点亮共用同一层局部描边，只照亮文字轮廓的一小段，不给整行铺色。 */
+.landingLogo>span:last-child{--landing-logo-pointer-x:50%;--landing-logo-pointer-y:50%;--landing-logo-highlight:var(--landing-logo-a);--landing-logo-filter:none;position:relative;display:inline-block;color:var(--landing-text)}
+.landingLogo>span:last-child::after{content:'GitPilot Design';position:absolute;inset:0;pointer-events:none;color:transparent;font:inherit;letter-spacing:inherit;line-height:inherit;white-space:nowrap;-webkit-text-fill-color:transparent;-webkit-text-stroke:1.25px var(--landing-logo-highlight);mask-image:radial-gradient(ellipse 8% 150% at var(--landing-logo-pointer-x) var(--landing-logo-pointer-y),#000 0%,transparent 58%),radial-gradient(ellipse 3.5% 85% at calc(var(--landing-logo-pointer-x) + 4%) calc(var(--landing-logo-pointer-y) - 11%),#000 0%,transparent 68%),radial-gradient(ellipse 3% 75% at calc(var(--landing-logo-pointer-x) - 4%) calc(var(--landing-logo-pointer-y) + 12%),#000 0%,transparent 66%);-webkit-mask-image:radial-gradient(ellipse 8% 150% at var(--landing-logo-pointer-x) var(--landing-logo-pointer-y),#000 0%,transparent 58%),radial-gradient(ellipse 3.5% 85% at calc(var(--landing-logo-pointer-x) + 4%) calc(var(--landing-logo-pointer-y) - 11%),#000 0%,transparent 68%),radial-gradient(ellipse 3% 75% at calc(var(--landing-logo-pointer-x) - 4%) calc(var(--landing-logo-pointer-y) + 12%),#000 0%,transparent 66%);mask-repeat:no-repeat;-webkit-mask-repeat:no-repeat;filter:var(--landing-logo-filter);opacity:0;animation:landingLogoContourTravel 2.6s cubic-bezier(.22,.61,.36,1) both}
+.landingLogoPointerActive{color:var(--landing-text);filter:none}
+.landingLogo>span:last-child.landingLogoPointerActive::after{animation:none;opacity:1;mask-size:100% 100%,100% 100%,100% 100%;-webkit-mask-size:100% 100%,100% 100%,100% 100%;mask-composite:add,add;-webkit-mask-composite:source-over,source-over}
+@keyframes landingLogoContourTravel{from{--landing-logo-pointer-x:-10%;--landing-logo-pointer-y:50%;filter:blur(2.5px) drop-shadow(0 0 10px color-mix(in srgb,var(--landing-logo-b) 36%,transparent));opacity:0}18%{opacity:.9}46%{filter:blur(.35px) drop-shadow(0 0 8px color-mix(in srgb,var(--landing-logo-a) 34%,transparent));opacity:1}72%{opacity:.78}to{--landing-logo-pointer-x:110%;--landing-logo-pointer-y:50%;filter:blur(2px);opacity:0}}
+@media(prefers-reduced-motion:reduce){.landingLogo>span:last-child::after{animation:none;opacity:0;filter:none}.landingLogo>span:last-child.landingLogoPointerActive::after{opacity:1}}

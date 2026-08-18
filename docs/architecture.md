@@ -10,6 +10,8 @@
 > Code/Work 的 Web 项目绑定由 sidecar 内置 `gitpilot-project-binding-{mode}` extension 承担：`/project` 通过平台 CLI 令牌查询受 `cli:project:read` scope 保护的 `/api/cli/projects`，把项目清单作为对话上下文交给智能体；用户确认后，智能体调用 `gitpilot_project_bind` 将权威项目摘要、工作区用途和本地规则识别出的 `frameworkProfiles/technologyStack` 写入当前 cwd 的 `.gitpilot/project-binding.json`。`gitpilot_framework_detect` 与 `/framework refresh` 可离线刷新档案；每轮请求前 extension 只追加精简框架摘要和对应 Coding 约束，识别成功的快开 Skill 安装到项目级 `.gitpilot/skills` 且不覆盖用户同名 Skill。平台令牌只留在 sidecar，React 不直接请求平台。
 > GitPilot 将 `cross-agent-harness` 作为随 sidecar 发布的内置 Skill：资源在 `gitpilot-cli/src/bundled-skills/` 维护，Node 构建复制到 `dist/`，Bun sidecar 复制到 Tauri `resources/skills/`。每位用户首次创建 AgentSession 服务时，平台仅在 `~/.gitpilot/agent/skills/cross-agent-harness/` 不存在时复制完整 Skill 包；已有用户同名目录永不覆盖，并继续由既有资源加载器发现。
 
+Design 页面名称重命名属于 Design 快照元数据变更：Desktop 通过 `design_rename_page` RPC 携带当前 revision 写入 sidecar，sidecar 生成新的不可变 revision 并更新 `.gitpilot/design/<designId>/design.json`；右侧页面列表只负责右键触发和原位编辑，不直接修改文件 manifest。
+
 ## 1. 项目定位
 
 AI Club 是一个面向 AI 代理协作与工程管理的多服务平台，目标是把“项目、工作项、执行任务、测试计划、代码仓库、模型配置、智能体协作”统一放到同一套业务平台中管理。

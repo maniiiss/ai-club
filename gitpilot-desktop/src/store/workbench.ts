@@ -6,6 +6,15 @@
 import { create } from 'zustand';
 import type { AgentExecutionPhase, AgentSessionEvent, AgentExecutionSnapshot, RpcExtensionUIRequest } from '@/src/rpc/types';
 
+/** 从右侧 Code 文件树带入输入框的请求；只传路径元数据，内容仍由 sidecar 附件链路按需读取。 */
+export interface ProjectFileAttachmentRequest {
+	id: string;
+	path: string;
+	name: string;
+	workspacePath: string;
+	sessionPath: string;
+}
+
 export type ExecutionKind = 'plan' | 'read' | 'edit' | 'command' | 'verify' | 'complete' | 'other';
 export type ExecutionStatus = 'running' | 'succeeded' | 'failed' | 'waiting';
 
@@ -36,6 +45,8 @@ export interface RightPanelTabsState {
 	plans: RightPanelPlanTab[];
 	/** 执行过程是可关闭的工具页签，可由右侧 + 菜单再次打开。 */
 	executionOpen: boolean;
+	/** Code 项目文件树是可关闭的工具页签，可由右侧 + 菜单再次打开。 */
+	filesOpen: boolean;
 	activeTabId: string | null;
 }
 
@@ -77,7 +88,7 @@ export interface ExecutionRun {
 	endedAt?: number;
 	/** 当前 run 在 sidecar 的权威 runId（仅 hydrateExecutionSnapshot 后存在），用于序号守卫。 */
 	runId?: string;
-	/** 已应用的最新事件序号（仅 hydrateExecutionSnapshot 后存在），丢弃 sequence <= lastSequence 的旧事件。 */
+	/** 已应用的最新事件游标（仅 hydrateExecutionSnapshot 后存在）；普通事件丢弃旧游标，终态事件例外。 */
 	lastSequence?: number;
 }
 
@@ -198,19 +209,20 @@ export function normalizeRightPanelTabs(value: Partial<RightPanelTabsState> | nu
 		}
 	}
 	const executionOpen = value?.executionOpen !== false;
+	const filesOpen = value?.filesOpen === true;
 	const requestedActive = typeof value?.activeTabId === 'string' ? value.activeTabId : null;
-	const activeTabId = requestedActive === 'execution' && executionOpen || requestedActive && plans.some((tab) => tab.id === requestedActive)
+	const activeTabId = requestedActive === 'execution' && executionOpen || requestedActive === 'files' && filesOpen || requestedActive && plans.some((tab) => tab.id === requestedActive)
 		? requestedActive
-		: executionOpen ? 'execution' : plans[0]?.id ?? null;
-	return { plans, executionOpen, activeTabId };
+		: executionOpen ? 'execution' : filesOpen ? 'files' : plans[0]?.id ?? null;
+	return { plans, executionOpen, filesOpen, activeTabId };
 }
 
 function loadRightPanelTabs(): RightPanelTabsState {
 	try {
 		const stored = localStorage.getItem(RIGHT_PANEL_TABS_KEY);
-		return stored ? normalizeRightPanelTabs(JSON.parse(stored) as Partial<RightPanelTabsState>) : { plans: [], executionOpen: true, activeTabId: 'execution' };
+		return stored ? normalizeRightPanelTabs(JSON.parse(stored) as Partial<RightPanelTabsState>) : { plans: [], executionOpen: true, filesOpen: false, activeTabId: 'execution' };
 	} catch {
-		return { plans: [], executionOpen: true, activeTabId: 'execution' };
+		return { plans: [], executionOpen: true, filesOpen: false, activeTabId: 'execution' };
 	}
 }
 
@@ -392,6 +404,8 @@ export function getUnreportedExecutionSteps(execution: ExecutionRun): ExecutionS
 interface WorkbenchStore {
 	layout: LayoutPreferences;
 	rightPanelTabs: RightPanelTabsState;
+	/** 等待输入框消费的项目文件附件请求，按会话与工作目录隔离。 */
+	projectFileAttachmentRequests: ProjectFileAttachmentRequest[];
 	execution: ExecutionRun;
 	selectedStepId: string | null;
 	globalPaletteOpen: boolean;
@@ -402,8 +416,11 @@ interface WorkbenchStore {
 	/** 每个会话只保留最新计划的完整快照，显示于右侧执行栏的独立 Tab。 */
 	openPlanPanelTab: (plan: Omit<RightPanelPlanTab, 'id' | 'kind'>) => void;
 	openExecutionPanelTab: () => void;
+	openProjectFilesPanel: () => void;
 	activateRightPanelTab: (tabId: string) => void;
 	closeRightPanelTab: (tabId: string) => void;
+	queueProjectFileAttachments: (requests: ProjectFileAttachmentRequest[]) => void;
+	consumeProjectFileAttachmentRequests: (sessionPath: string, workspacePath: string | null) => ProjectFileAttachmentRequest[];
 	/** 会话列表刷新后移除来源已不存在的右侧计划页签。 */
 	reconcileRightPanelTabs: (sessionPaths: string[]) => void;
 	beginExecution: (prompt: string) => void;
@@ -439,6 +456,7 @@ interface WorkbenchStore {
 export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 	layout: loadLayout(),
 	rightPanelTabs: loadRightPanelTabs(),
+	projectFileAttachmentRequests: [],
 	execution: { id: 'idle', status: 'idle', lastPrompt: null, steps: [] },
 	selectedStepId: null,
 	globalPaletteOpen: false,
@@ -476,9 +494,17 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 		saveRightPanelTabs(rightPanelTabs);
 		set({ rightPanelTabs, layout });
 	},
+	openProjectFilesPanel: () => {
+		const state = get().rightPanelTabs;
+		const layout = normalizeLayoutPreferences({ ...get().layout, rightCollapsed: false });
+		saveLayout(layout);
+		const rightPanelTabs = { ...state, filesOpen: true, activeTabId: 'files' };
+		saveRightPanelTabs(rightPanelTabs);
+		set({ rightPanelTabs, layout });
+	},
 	activateRightPanelTab: (tabId) => {
 		const state = get().rightPanelTabs;
-		if (state.activeTabId === tabId || tabId === 'execution' && !state.executionOpen || tabId !== 'execution' && !state.plans.some((tab) => tab.id === tabId)) return;
+		if (state.activeTabId === tabId || tabId === 'execution' && !state.executionOpen || tabId === 'files' && !state.filesOpen || tabId !== 'execution' && tabId !== 'files' && !state.plans.some((tab) => tab.id === tabId)) return;
 		const rightPanelTabs = { ...state, activeTabId: tabId };
 		saveRightPanelTabs(rightPanelTabs);
 		set({ rightPanelTabs });
@@ -486,8 +512,15 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 	closeRightPanelTab: (tabId) => {
 		const state = get().rightPanelTabs;
 		if (tabId === 'execution') {
-			const activeTabId = state.activeTabId === 'execution' ? state.plans[0]?.id ?? null : state.activeTabId;
+			const activeTabId = state.activeTabId === 'execution' ? state.filesOpen ? 'files' : state.plans[0]?.id ?? null : state.activeTabId;
 			const rightPanelTabs = { ...state, executionOpen: false, activeTabId };
+			saveRightPanelTabs(rightPanelTabs);
+			set({ rightPanelTabs });
+			return;
+		}
+		if (tabId === 'files') {
+			const activeTabId = state.activeTabId === 'files' ? state.plans[0]?.id ?? (state.executionOpen ? 'execution' : null) : state.activeTabId;
+			const rightPanelTabs = { ...state, filesOpen: false, activeTabId };
 			saveRightPanelTabs(rightPanelTabs);
 			set({ rightPanelTabs });
 			return;
@@ -496,7 +529,7 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 		if (index < 0) return;
 		const plans = state.plans.filter((tab) => tab.id !== tabId);
 		const activeTabId = state.activeTabId === tabId
-			? plans[index]?.id ?? plans[index - 1]?.id ?? (state.executionOpen ? 'execution' : null)
+			? plans[index]?.id ?? plans[index - 1]?.id ?? (state.executionOpen ? 'execution' : state.filesOpen ? 'files' : null)
 			: state.activeTabId;
 		const rightPanelTabs = { ...state, plans, activeTabId };
 		saveRightPanelTabs(rightPanelTabs);
@@ -506,13 +539,40 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 		const available = new Set(sessionPaths);
 		const state = get().rightPanelTabs;
 		const plans = state.plans.filter((tab) => available.has(tab.sourceSessionPath));
-		const activeTabId = state.activeTabId === 'execution' && state.executionOpen || plans.some((tab) => tab.id === state.activeTabId)
+		const activeTabId = state.activeTabId === 'execution' && state.executionOpen || state.activeTabId === 'files' && state.filesOpen || plans.some((tab) => tab.id === state.activeTabId)
 			? state.activeTabId
-			: state.executionOpen ? 'execution' : plans[0]?.id ?? null;
+			: state.executionOpen ? 'execution' : state.filesOpen ? 'files' : plans[0]?.id ?? null;
 		if (plans.length === state.plans.length && activeTabId === state.activeTabId) return;
 		const rightPanelTabs = { ...state, plans, activeTabId };
 		saveRightPanelTabs(rightPanelTabs);
 		set({ rightPanelTabs });
+	},
+	queueProjectFileAttachments: (requests) => {
+		if (requests.length === 0) return;
+		set((state) => {
+			const existing = new Set(state.projectFileAttachmentRequests.map((request) => `${request.sessionPath}\u0000${request.workspacePath}\u0000${request.path.replace(/\\/g, '/')}`));
+			const next = [...state.projectFileAttachmentRequests];
+			for (const request of requests) {
+				if (!request.id || !request.path || !request.name || !request.workspacePath || !request.sessionPath) continue;
+				const key = `${request.sessionPath}\u0000${request.workspacePath}\u0000${request.path.replace(/\\/g, '/')}`;
+				if (existing.has(key)) continue;
+				existing.add(key);
+				next.push(request);
+			}
+			return { projectFileAttachmentRequests: next };
+		});
+	},
+	consumeProjectFileAttachmentRequests: (sessionPath, workspacePath) => {
+		const matched: ProjectFileAttachmentRequest[] = [];
+		set((state) => {
+			const remaining = state.projectFileAttachmentRequests.filter((request) => {
+				const isMatch = request.sessionPath === sessionPath && request.workspacePath === workspacePath;
+				if (isMatch) matched.push(request);
+				return !isMatch;
+			});
+			return { projectFileAttachmentRequests: remaining };
+		});
+		return matched;
 	},
 	beginExecution: (prompt) => set({ execution: createRun(prompt), selectedStepId: null, contentDrawer: null }),
 	restoreRunningExecution: (prompt, startedAt, priorSteps) => {
@@ -567,11 +627,18 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 		const eventRunId = typeof event.runId === 'string' ? event.runId : undefined;
 		const eventSequence = typeof event.sequence === 'number' ? event.sequence : undefined;
 		// 序号守卫（设计文档 §8.4/§10.1）：仅当事件携带 runId+sequence 时启用，
-		// 丢弃旧 run 事件和已被 snapshot 覆盖的旧序号事件，解决切换竞态。
+		// 丢弃旧 run 事件和已被 snapshot 覆盖的普通事件，解决切换竞态；
+		// agent_settled 即使与前一个事件共享游标也必须保留，因为它是终态边界。
 		// 旧 sidecar 事件不带元数据，守卫自动放行，保留原行为。
 		if (eventRunId !== undefined && eventSequence !== undefined) {
 			if (current.runId !== undefined && current.runId !== eventRunId) return; // 旧 run 事件
-			if (current.runId === eventRunId && current.lastSequence !== undefined && eventSequence <= current.lastSequence) return; // 已应用
+			// agent_settled 是执行生命周期的终态边界。扩展在收口前可能追加
+			// entry_appended（例如多步骤任务清理 auto-plan），两者会共享 settle 后的
+			// 最终快照序号；不能让前一个普通事件把真正的收口事件判成重复事件。
+			if (current.runId === eventRunId
+				&& current.lastSequence !== undefined
+				&& eventSequence <= current.lastSequence
+				&& event.type !== 'agent_settled') return; // 已应用
 		}
 		const reduced = reduceExecutionEvent(current, event);
 		// 推进 lastSequence（仅同 run 事件），并在新 run 首个携带元数据的事件时绑定 runId。

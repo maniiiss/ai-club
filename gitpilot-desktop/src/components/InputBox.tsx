@@ -25,6 +25,7 @@ import { ExtensionUIConfirmCard, ExtensionUISelectCard, isActionSelect } from '.
 import { isHostActionCommand } from './host-actions';
 import { ModelPicker } from './ModelPicker';
 import { useWorkbenchStore } from '@/src/store/workbench';
+import { PROJECT_FILE_DRAG_MIME } from '@/src/store/project-files';
 import { useSettingsDialogStore } from '@/src/store/settings';
 import { isTauriEnv, rpc } from '@/src/rpc/bridge';
 import type { AttachmentInput, PreparedAttachment, RpcSlashCommand, RpcWorkItemSummary } from '@/src/rpc/types';
@@ -116,6 +117,7 @@ function mergePreparedAttachments(previous: PreparedAttachment[], next: Prepared
 
 export function InputBox() {
 	const composerSessionPath = useSessionStore((s) => s.selectedSessionPath ?? s.sessionState?.sessionFile ?? '__new__');
+	const composerWorkspacePath = useSessionStore((s) => s.currentProjectPath);
 	const setComposerDraft = useSessionStore((s) => s.setComposerDraft);
 	const getComposerDraft = useSessionStore((s) => s.getComposerDraft);
 	const isStreaming = useSessionStore((s) => s.isStreaming);
@@ -146,6 +148,8 @@ export function InputBox() {
 	const isStopping = useSessionStore((s) => s.isStopping);
 	const composerPrefill = useWorkbenchStore((s) => s.composerPrefill);
 	const consumeComposerPrefill = useWorkbenchStore((s) => s.consumeComposerPrefill);
+	const projectFileAttachmentRequests = useWorkbenchStore((s) => s.projectFileAttachmentRequests);
+	const consumeProjectFileAttachmentRequests = useWorkbenchStore((s) => s.consumeProjectFileAttachmentRequests);
 
 	const [text, setText] = useState('');
 	/** 从命令面板选中的命令名（输入框不显示 / 前缀，发送时自动补上） */
@@ -168,6 +172,7 @@ export function InputBox() {
 	const hasActionSelectRef = useRef(false);
 	const isStreamingRef = useRef(isStreaming);
 	const sendRef = useRef<(modeOverride?: GuidanceMode) => Promise<void>>(async () => undefined);
+	const addInputsRef = useRef<(items: AttachmentInput[]) => Promise<void>>(async () => undefined);
 	showPaletteRef.current = showPalette;
 	hasActionSelectRef.current = hasPendingActionSelect;
 	isStreamingRef.current = isStreaming;
@@ -309,6 +314,43 @@ export function InputBox() {
 			setPrepareError(err instanceof Error ? err.message : String(err));
 		} finally {
 			setPreparing(false);
+		}
+	};
+	addInputsRef.current = addInputs;
+
+	// 文件树点击“添加”只进入当前会话/工作目录的队列；输入框在这里消费后才触发受控文件读取。
+	useEffect(() => {
+		if (!composerWorkspacePath || projectFileAttachmentRequests.length === 0) return;
+		const requests = projectFileAttachmentRequests.filter((request) => request.sessionPath === composerSessionPath && request.workspacePath === composerWorkspacePath);
+		if (requests.length === 0) return;
+		const consumed = consumeProjectFileAttachmentRequests(composerSessionPath, composerWorkspacePath);
+		if (consumed.length > 0) void addInputsRef.current(consumed.map((request) => ({ path: request.path, name: request.name })));
+	}, [composerSessionPath, composerWorkspacePath, consumeProjectFileAttachmentRequests, projectFileAttachmentRequests]);
+
+	/** 浏览器拖拽只接受文件树自定义协议；系统文件拖拽仍由 Tauri 原生事件处理。 */
+	const onDragOver = (event: React.DragEvent<HTMLDivElement>) => {
+		if (!event.dataTransfer.types.includes(PROJECT_FILE_DRAG_MIME)) return;
+		event.preventDefault();
+		event.dataTransfer.dropEffect = 'copy';
+		setIsDragOver(true);
+	};
+	const onDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+		if (event.currentTarget === event.target) setIsDragOver(false);
+	};
+	const onDrop = (event: React.DragEvent<HTMLDivElement>) => {
+		if (!event.dataTransfer.types.includes(PROJECT_FILE_DRAG_MIME)) return;
+		event.preventDefault();
+		setIsDragOver(false);
+		try {
+			const raw = event.dataTransfer.getData(PROJECT_FILE_DRAG_MIME);
+			const payload = JSON.parse(raw) as { path?: unknown; name?: unknown; workspacePath?: unknown; sessionPath?: unknown };
+			if (typeof payload.path !== 'string' || typeof payload.name !== 'string' || payload.workspacePath !== composerWorkspacePath || payload.sessionPath !== composerSessionPath) {
+				setPrepareError('文件来自其他项目或任务，未添加到当前对话。');
+				return;
+			}
+			void addInputs([{ path: payload.path, name: payload.name }]);
+		} catch {
+			setPrepareError('无法识别拖入的项目文件。');
 		}
 	};
 
@@ -496,7 +538,7 @@ export function InputBox() {
 	}, [attachments, guidanceMode, selectedCommand, setComposerDraft, text]);
 
 	return (
-		<div ref={rootRef} className={`${styles.root} ${isDragOver ? styles.dragOver : ''}`}>
+		<div ref={rootRef} className={`${styles.root} ${isDragOver ? styles.dragOver : ''}`} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
 			<ExtensionUIConfirmCard />
 			<ExtensionUISelectCard />
 			{showPalette && !hasPendingConfirm && !hasPendingActionSelect && <CommandPalette commands={commands} query={text.slice(1)} onPick={pickCommand} onDismiss={() => setShowPalette(false)} />}

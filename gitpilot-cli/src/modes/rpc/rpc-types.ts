@@ -38,6 +38,19 @@ export interface RpcPlatformConnection {
 export interface WorkConversationMessage { role: "user" | "assistant"; content: string }
 export interface WorkResearchSource { id: string; title: string; url: string; snippet: string; publishedAt?: string }
 export interface WorkFileSnapshot { path: string; name: string; type: string; size: number; updatedAt: number; content?: string }
+/** Code 右侧文件树的只读条目；文件内容仍由现有附件预处理链路按需读取。 */
+export interface CodeProjectFileEntry {
+	path: string;
+	name: string;
+	kind: "file" | "directory";
+	size?: number;
+	updatedAt?: number;
+}
+export interface CodeProjectFileList {
+	rootPath: string;
+	entries: CodeProjectFileEntry[];
+	truncated: boolean;
+}
 /** Design 文件是项目级工作区内的 canonical 资源，path 永远相对 .gitpilot/design。 */
 export interface DesignRpcFile {
 	id?: string;
@@ -93,9 +106,22 @@ export type DesignPatchOperation =
 	| { op: "delete_file"; path: string };
 export interface DesignPatch { baseRevisionId: string; operations: DesignPatchOperation[]; affectedPaths?: string[]; summary?: string; risk?: "safe" | "high"; operationId?: string }
 export interface DesignStreamMetadata extends DesignProjectContext { requestId: string; runId?: string; sequence: number; emittedAt: number }
-export interface DesignStreamEvent extends DesignStreamMetadata { type: "design_event"; event: AgentSessionEvent }
-export interface DesignPatchAppliedEvent extends DesignStreamMetadata { type: "design_patch_applied"; operationId: string; revisionId: string; pageId: string; summary: string; files: DesignRpcFile[] }
+/**
+ * 发往 Desktop 的 Design 执行事件是原始 Agent 事件的轻量投影。
+ * 业务意图：patch 参数与工具原始输出可能包含整份页面代码，不能跨进程传输或驻留在 UI 状态中。
+ */
+export type DesignAgentEvent =
+	| { type: "message_update"; assistantMessageEvent: { type: "thinking_delta" | "text_delta"; delta: string } }
+	| { type: "message_end"; message: { role: "assistant"; content: Array<{ type: "text"; text: string }> } }
+	| { type: "tool_execution_start" | "tool_execution_update" | "tool_execution_end"; toolCallId: string; toolName: string; summary?: string; isError?: boolean };
+export interface DesignStreamEvent extends DesignStreamMetadata { type: "design_event"; event: DesignAgentEvent }
+export interface DesignPatchAppliedEvent extends DesignStreamMetadata { type: "design_patch_applied"; operationId: string; revisionId: string; pageId: string; summary: string; changedFiles: DesignRpcFile[]; removedPaths: string[] }
 export interface DesignApprovalRequiredEvent extends DesignStreamMetadata { type: "design_approval_required"; approvalId: string; pageId: string; patch: DesignPatch; reason: string }
+/** Design Agent 发现关键歧义时暂停当前工具调用，等待 Desktop 返回用户决策。 */
+export interface DesignClarificationRequiredEvent extends DesignStreamMetadata { type: "design_clarification_required"; clarificationId: string; question: string; context?: string; options: string[] }
+/** 仅在复杂任务中由 Agent 主动维护的右侧执行计划。 */
+export interface DesignPlanStep { id: string; text: string; state: "pending" | "active" | "done" }
+export interface DesignPlanUpdatedEvent extends DesignStreamMetadata { type: "design_plan_updated"; steps: DesignPlanStep[]; explanation?: string }
 export interface DesignRunSettledEvent extends DesignStreamMetadata { type: "design_run_settled"; snapshot: DesignRpcSnapshot }
 export interface DesignErrorEvent extends DesignStreamMetadata { type: "design_error"; error: string }
 
@@ -173,6 +199,7 @@ export type RpcCommand =
 	| { id?: string; type: "new_session"; parentSession?: string; cwd?: string }
 	// Attachments（桌面端上传附件预解析：路径或内联 base64 -> 文本/图片，结果随下一条 prompt 注入）
 	| { id?: string; type: "prepare_attachments"; items: AttachmentInput[] }
+	| { id?: string; type: "code_file_list" }
 	| { id?: string; type: "new_work_session"; taskId: string }
 	| { id?: string; type: "work_prompt"; taskId: string; message: string; history?: WorkConversationMessage[]; research?: boolean }
 	| { id?: string; type: "work_abort"; requestId?: string }
@@ -184,10 +211,12 @@ export type RpcCommand =
 	| { id?: string; type: "work_prepare_attachments"; items: AttachmentInput[] }
 	| { id?: string; type: "design_open"; projectPath: string }
 	| { id?: string; type: "design_save_guidelines"; projectPath: string; designId: string; guidelines: DesignProjectGuidelines }
+	| { id?: string; type: "design_rename_page"; projectPath: string; designId: string; pageId: string; name: string; baseRevisionId: string }
 	| { id?: string; type: "design_create"; projectPath: string; name?: string }
 	| { id?: string; type: "design_get_snapshot"; projectPath: string; designId: string }
 	| { id?: string; type: "design_get_revision"; projectPath: string; designId: string; revisionId: string }
 	| { id?: string; type: "design_prompt"; projectPath: string; designId: string; pageId: string; prompt: string; baseRevisionId?: string; targetProfiles: Array<"mobile" | "tablet" | "desktop"> }
+	| { id?: string; type: "design_clarification_response"; projectPath: string; designId: string; clarificationId: string; answer: string }
 	| { id?: string; type: "design_follow_up"; projectPath: string; designId: string; message: string }
 	| { id?: string; type: "design_abort"; projectPath: string; designId: string }
 	| { id?: string; type: "design_approval_response"; projectPath: string; designId: string; approvalId: string; approved: boolean }
@@ -352,6 +381,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "new_session"; success: true; data: { cancelled: boolean } }
 	// Attachments（预解析附件，结果不触发事件流，直接随 response 返回）
 	| { id?: string; type: "response"; command: "prepare_attachments"; success: true; data: { attachments: PreparedAttachment[] } }
+	| { id?: string; type: "response"; command: "code_file_list"; success: true; data: CodeProjectFileList }
 	| { id?: string; type: "response"; command: "new_work_session"; success: true; data: { taskId: string; sessionId: string; sessionPath: string; workspacePath: string; title: string } }
 	| { id?: string; type: "response"; command: "work_prompt"; success: true; data: { requestId: string; text: string; title?: string; sources?: WorkResearchSource[] } }
 	| { id?: string; type: "response"; command: "work_abort"; success: true }
@@ -361,10 +391,11 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "work_file_delete"; success: true; data: { taskId: string; path: string } }
 	| { id?: string; type: "response"; command: "work_file_rename"; success: true; data: { taskId: string; file: WorkFileSnapshot } }
 	| { id?: string; type: "response"; command: "work_prepare_attachments"; success: true; data: { attachments: PreparedAttachment[] } }
-	| { id?: string; type: "response"; command: "design_open" | "design_create" | "design_save_guidelines"; success: true; data: { designId: string; snapshot: DesignRpcSnapshot } }
+	| { id?: string; type: "response"; command: "design_open" | "design_create" | "design_save_guidelines" | "design_rename_page"; success: true; data: { designId: string; snapshot: DesignRpcSnapshot } }
 	| { id?: string; type: "response"; command: "design_get_snapshot" | "design_get_revision" | "design_check"; success: true; data: { snapshot?: DesignRpcSnapshot; checks?: Array<{ level: "error" | "warning" | "info"; message: string }> } }
 	| { id?: string; type: "response"; command: "design_preview"; success: true; data: { snapshot?: DesignRpcSnapshot; previewHandle: DesignPreviewHandle; checks?: Array<{ level: "error" | "warning" | "info"; message: string }> } }
 	| { id?: string; type: "response"; command: "design_prompt"; success: true; data: { requestId: string; runId: string } }
+	| { id?: string; type: "response"; command: "design_clarification_response"; success: true }
 	| { id?: string; type: "response"; command: "design_follow_up"; success: true; data: { queued: true } }
 	| { id?: string; type: "response"; command: "design_abort"; success: true }
 	| { id?: string; type: "response"; command: "design_approval_response"; success: true }

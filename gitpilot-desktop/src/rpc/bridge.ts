@@ -21,6 +21,7 @@ import type {
 	DesignProjectGuidelines,
 	DesignRpcSnapshot,
 	DesignStreamLine,
+	CodeProjectFileEntry,
 	RpcSessionState,
 	RpcStreamLine,
 	ThinkingLevel,
@@ -176,6 +177,7 @@ export const rpc = {
 	followUp: (message: string, images?: ImageContent[]) => send({ type: 'follow_up', message, images }),
 	abort: (clearQueue = false) => send({ type: 'abort', clearQueue }),
 	prepareAttachments: (items: AttachmentInput[]) => send({ type: 'prepare_attachments', items }),
+	codeFileList: () => send({ type: 'code_file_list' }),
 	newWorkSession: (taskId: string) => send({ type: 'new_work_session', taskId }),
 	workPrompt: (payload: { taskId: string; message: string }) => send({ type: 'work_prompt', ...payload }, 120_000),
 	workAbort: (requestId?: string) => send({ type: 'work_abort', requestId }),
@@ -187,10 +189,12 @@ export const rpc = {
 	workPrepareAttachments: (items: AttachmentInput[]) => send({ type: 'work_prepare_attachments', items }),
 	designOpen: (projectPath: string) => send({ type: 'design_open', projectPath }),
 	designSaveGuidelines: (projectPath: string, designId: string, guidelines: DesignProjectGuidelines) => send({ type: 'design_save_guidelines', projectPath, designId, guidelines }),
+	designRenamePage: (payload: { projectPath: string; designId: string; pageId: string; name: string; baseRevisionId: string }) => send({ type: 'design_rename_page', ...payload }),
 	designCreate: (projectPath: string, name?: string) => send({ type: 'design_create', projectPath, name }),
 	designGetSnapshot: (projectPath: string, designId: string) => send({ type: 'design_get_snapshot', projectPath, designId }),
 	designGetRevision: (projectPath: string, designId: string, revisionId: string) => send({ type: 'design_get_revision', projectPath, designId, revisionId }),
 	designPrompt: (payload: { projectPath: string; designId: string; pageId: string; prompt: string; baseRevisionId?: string; targetProfiles: Array<'mobile' | 'tablet' | 'desktop'> }) => send({ type: 'design_prompt', ...payload }),
+	designClarificationResponse: (payload: { projectPath: string; designId: string; clarificationId: string; answer: string }) => send({ type: 'design_clarification_response', ...payload }),
 	designFollowUp: (projectPath: string, designId: string, message: string) => send({ type: 'design_follow_up', projectPath, designId, message }),
 	designAbort: (projectPath: string, designId: string) => send({ type: 'design_abort', projectPath, designId }),
 	designApplyPatch: (payload: { projectPath: string; designId: string; pageId: string; baseRevisionId: string; patch: Record<string, unknown> }) => send({ type: 'design_apply_patch', ...payload }),
@@ -294,6 +298,19 @@ function mockResponseFor(cmd: RpcCommand & { id: string }): RpcResponse {
 			const snapshot = mockDesignSnapshot?.document.id === cmd.designId ? { ...mockDesignSnapshot, guidelines: cmd.guidelines } : { ...createMockDesignSnapshot(cmd.designId), guidelines: cmd.guidelines };
 			mockDesignSnapshot = snapshot;
 			return { id, type: 'response', command: 'design_save_guidelines', success: true, data: { designId: cmd.designId, snapshot } };
+		}
+		case 'design_rename_page': {
+			const snapshot = mockDesignSnapshot?.document.id === cmd.designId ? mockDesignSnapshot : createMockDesignSnapshot(cmd.designId);
+			const name = cmd.name.trim();
+			if (!name) return { id, type: 'response', command: 'design_rename_page', success: false, error: '页面名称不能为空' };
+			const pages = (Array.isArray(snapshot.document.pages) ? snapshot.document.pages : []) as Array<{ id: string; [key: string]: unknown }>;
+			if (!pages.some((page) => page.id === cmd.pageId)) return { id, type: 'response', command: 'design_rename_page', success: false, error: `Design 页面不存在：${cmd.pageId}` };
+			const revisions = (Array.isArray(snapshot.document.revisions) ? snapshot.document.revisions : []) as Array<Record<string, unknown>>;
+			const revisionId = `rev-mock-${Date.now()}`;
+			const version = typeof snapshot.document.version === 'number' ? snapshot.document.version : 1;
+			const next = { ...snapshot, document: { ...snapshot.document, version: version + 1, pages: pages.map((page) => page.id === cmd.pageId ? { ...page, name } : page), revisions: [...revisions, { id: revisionId, prompt: `重命名页面 ${name}`, summary: `已将页面重命名为 ${name}。`, createdAt: new Date().toISOString(), parentRevisionId: revisions.at(-1)?.id, kind: 'patch' as const }] } };
+			mockDesignSnapshot = next;
+			return { id, type: 'response', command: 'design_rename_page', success: true, data: { designId: cmd.designId, snapshot: next } };
 		}
 		case 'design_create': {
 			const designId = `design-mock-${encodeURIComponent(cmd.projectPath)}`;
@@ -427,6 +444,16 @@ function mockResponseFor(cmd: RpcCommand & { id: string }): RpcResponse {
 				};
 			});
 			return { id, type: 'response', command: 'prepare_attachments', success: true, data: { attachments } };
+		}
+		case 'code_file_list': {
+			// 非 Tauri 预览提供稳定的文件树夹具，便于验证右侧面板与拖入对话框交互。
+			const entries: CodeProjectFileEntry[] = [
+				{ path: 'src', name: 'src', kind: 'directory' },
+				{ path: 'src/App.tsx', name: 'App.tsx', kind: 'file', size: 2_048, updatedAt: Date.now() },
+				{ path: 'src/main.tsx', name: 'main.tsx', kind: 'file', size: 1_024, updatedAt: Date.now() },
+				{ path: 'package.json', name: 'package.json', kind: 'file', size: 512, updatedAt: Date.now() },
+			];
+			return { id, type: 'response', command: 'code_file_list', success: true, data: { rootPath: 'mock-project', entries, truncated: false } };
 		}
 		case 'abort':
 			return { id, type: 'response', command: 'abort', success: true, data: { clearedSteering: 0, clearedFollowUp: 0 } };

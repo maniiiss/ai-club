@@ -144,15 +144,15 @@ export interface DesignTodoItem {
 	state: 'pending' | 'active' | 'done';
 }
 
-export type DesignExecutionStatus = 'idle' | 'starting' | 'running' | 'awaiting_approval' | 'completed' | 'stopped' | 'failed';
-export type DesignExecutionPhase = 'idle' | 'thinking' | 'responding' | 'tool' | 'applying_patch' | 'awaiting_approval';
+export type DesignExecutionStatus = 'idle' | 'starting' | 'running' | 'awaiting_clarification' | 'awaiting_approval' | 'completed' | 'stopped' | 'failed';
+export type DesignExecutionPhase = 'idle' | 'thinking' | 'responding' | 'tool' | 'applying_patch' | 'awaiting_clarification' | 'awaiting_approval';
 export interface DesignExecutionStep {
 	id: string;
 	toolCallId?: string;
 	toolName: string;
+	/** 由 sidecar 脱敏后的展示摘要，只包含文件路径、数量和体积等轻量信息。 */
+	summary?: string;
 	status: 'running' | 'succeeded' | 'failed';
-	args?: unknown;
-	result?: unknown;
 	startedAt: number;
 	endedAt?: number;
 }

@@ -1,18 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { Archive, ArrowDown, ArrowLeft, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Code2, ExternalLink, FileText, Folder, Globe2, History, Image as ImageIcon, ListChecks, Loader2, LockKeyhole, Monitor, MoreHorizontal, Palette, PanelRightClose, PanelRightOpen, Plus, RotateCcw, Save, Send, Smartphone, Sparkles, Square, Star, Tablet, Trash2, Upload, X } from 'lucide-react';
+import { Archive, ArrowDown, ArrowLeft, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Code2, ExternalLink, FileText, Folder, Globe2, History, Image as ImageIcon, ListChecks, Loader2, LockKeyhole, Monitor, MoreHorizontal, PanelRightClose, PanelRightOpen, Plus, RotateCcw, Save, Send, Smartphone, Sparkles, Square, Star, Tablet, Trash2, Upload, X } from 'lucide-react';
 import { TargetTitleBar } from '@/src/components/desktop/TargetTitleBar';
 import { ModelPicker } from '@/src/components/ModelPicker';
 import { Button } from '@/src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/src/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/src/components/ui/dropdown-menu';
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/src/components/ui/context-menu';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { createDefaultProjectGuidelines, DESIGN_TARGETS, DESIGN_VIEWPORT_PRESETS, type DesignFile, type DesignMessage, type DesignPreviewMode, type DesignProjectGuidelines, type DesignSnapshot, type DesignTarget } from '@/src/design/design-types';
+import { createDefaultProjectGuidelines, DESIGN_TARGETS, DESIGN_VIEWPORT_PRESETS, type DesignFile, type DesignPreviewMode, type DesignProjectGuidelines, type DesignSnapshot, type DesignTarget } from '@/src/design/design-types';
 import { isTauriEnv, rpc } from '@/src/rpc/bridge';
 import type { AttachmentInput, DesignPatchOperation, PreparedAttachment } from '@/src/rpc/types';
 import { listDesignProjectHistory, useDesignStore } from '@/src/store/design';
 import { useThemeStore } from '@/src/store/theme';
 import { DesignLandingBackground } from './DesignLandingBackground';
+import { DesignPlanProgressStatus } from './DesignPlanProgressStatus';
 import { DesignPresetPicker } from './DesignPresetPicker';
 import { DesignVersionManager } from './DesignVersionManager';
 import styles from './DesignShell.module.css';
@@ -153,6 +155,7 @@ function getDesignLiveStatus(execution: ReturnType<typeof useDesignStore.getStat
 	if (!isGenerating && execution.phase !== 'awaiting_approval') return null;
 	if (execution.phase === 'tool') return `正在调用 ${execution.steps.at(-1)?.toolName ?? '设计工具'}`;
 	if (execution.phase === 'applying_patch') return '正在应用设计修改';
+	if (execution.phase === 'awaiting_clarification') return '等待需求澄清';
 	if (execution.phase === 'awaiting_approval') return '等待确认设计修改';
 	if (execution.phase === 'responding') return '正在组织回答';
 	return '正在思考';
@@ -190,6 +193,43 @@ function DesignLanding() {
 			landing.removeEventListener('scroll', onScroll);
 			if (hideTimer) clearTimeout(hideTimer);
 			landing.classList.remove(styles.landingScrolling);
+		};
+	}, []);
+
+	// 标题光束跟随指针位置，使用 RAF 合并高频 pointermove，避免鼠标移动触发连续布局计算。
+	useEffect(() => {
+		const landing = landingRef.current;
+		const title = landing?.querySelector<HTMLElement>(`.${styles.landingLogo} > span:last-child`);
+		if (!title) return;
+		let frame = 0;
+		const updatePointer = (event: PointerEvent) => {
+			const rect = title.getBoundingClientRect();
+			if (!rect.width || !rect.height) return;
+			title.classList.add(styles.landingLogoPointerActive);
+			const x = Math.max(0, Math.min(100, ((event.clientX - rect.left) / rect.width) * 100));
+			const y = Math.max(0, Math.min(100, ((event.clientY - rect.top) / rect.height) * 100));
+			if (frame) window.cancelAnimationFrame(frame);
+			frame = window.requestAnimationFrame(() => {
+				title.style.setProperty('--landing-logo-pointer-x', `${x}%`);
+				title.style.setProperty('--landing-logo-pointer-y', `${y}%`);
+				title.style.setProperty('--landing-logo-highlight', 'var(--landing-logo-a)');
+				title.style.setProperty('--landing-logo-filter', 'drop-shadow(0 0 12px color-mix(in srgb,var(--landing-logo-a) 42%,transparent))');
+			});
+		};
+		const clearPointer = () => {
+			if (frame) window.cancelAnimationFrame(frame);
+			title.classList.remove(styles.landingLogoPointerActive);
+			title.style.setProperty('--landing-logo-highlight', 'transparent');
+			title.style.setProperty('--landing-logo-filter', 'none');
+		};
+		title.addEventListener('pointermove', updatePointer, { passive: true });
+		title.addEventListener('pointerenter', updatePointer, { passive: true });
+		title.addEventListener('pointerleave', clearPointer);
+		return () => {
+			if (frame) window.cancelAnimationFrame(frame);
+			title.removeEventListener('pointermove', updatePointer);
+			title.removeEventListener('pointerenter', updatePointer);
+			title.removeEventListener('pointerleave', clearPointer);
 		};
 	}, []);
 
@@ -266,51 +306,44 @@ function DesignLanding() {
 	return <div ref={landingRef} className={styles.landing} data-landing-theme={theme}><DesignLandingBackground theme={theme} /><input ref={fileInputRef} type="file" multiple className={styles.hiddenFileInput} onChange={onFileInputChange} /><div className={styles.landingContent} data-mode-animation-content><div className={styles.landingLogo}><span className={styles.landingLogoMark} aria-hidden="true"><svg viewBox="0 0 32 32" focusable="false"><path d="M6.5 23.5h4.75a3.25 3.25 0 0 0 3.25-3.25v-1.5a3.25 3.25 0 0 1 3.25-3.25H24" /><path d="m20 11.5 4.5 4-4.5 4" /><circle cx="6.5" cy="23.5" r="2.1" /><circle cx="14.5" cy="7.5" r="2.1" /></svg></span><span>GitPilot Design</span></div><p className={styles.landingSubtitle}>用自然语言，把想法变成可运行的界面</p><form className={styles.landingComposer} onSubmit={submit}><textarea value={prompt} onChange={(event) => setPrompt(event.target.value)} onKeyDown={submitOnEnter} placeholder="例如：设计一个简洁的注册流程" aria-label="设计需求" autoFocus />{attachments.length > 0 && <div className={styles.landingAttachments}>{attachments.map((attachment) => <span key={attachment.name} className={styles.landingAttachment} title={attachment.name}>{attachment.kind === 'image' ? <ImageIcon size={13} /> : <FileText size={13} />}<span>{attachment.name}</span><button type="button" onClick={() => removeAttachment(attachment.name)} aria-label={`移除附件 ${attachment.name}`}><X size={11} /></button></span>)}</div>}<div className={styles.landingComposerBar}><button type="button" className={styles.landingRoundButton} aria-label="添加附件" onClick={() => void pickFiles()} disabled={preparing}>{preparing ? <Loader2 size={16} className={styles.spin} /> : '＋'}</button><button type="button" className={styles.landingProjectContext} onClick={() => void addProject()} title="添加或切换项目" aria-label={currentProjectPath ? `当前项目 ${currentProjectPath.split(/[\\/]/).pop()}` : '添加项目'}><Folder size={14} /><strong>{currentProjectPath ? currentProjectPath.split(/[\\/]/).pop() : '未选择项目'}</strong><ChevronDown size={13} /></button><DesignPresetPicker className={styles.landingPreset} selectedPresetId={selectedPresetId} onApply={applyPreset} /><span className={styles.landingBarGrow} /><div className={styles.landingModelPicker}><ModelPicker showThinkingLevel={false} /></div><button type="submit" className={styles.landingSend} disabled={!prompt.trim() && attachments.length === 0} aria-label="开始设计"><Send size={18} /></button></div></form>{prepareError && <div className={styles.landingPrepareError}>{prepareError}<button type="button" onClick={() => setPrepareError(null)} aria-label="关闭附件错误"><X size={12} /></button></div>}<section className={styles.projectHistory} aria-labelledby="design-project-history-title"><div className={styles.projectHistoryHeader}><div className={styles.projectHistoryTitle}><h2 id="design-project-history-title">项目</h2><button type="button" className={styles.projectHistoryAdd} onClick={() => void addProject()}><Plus size={13} />添加项目</button></div><span className={styles.projectHistoryCount}>{history.length}</span></div>{history.length > 0 ? <div className={styles.projectHistoryList}>{history.map((item) => <button type="button" key={item.path} data-sidebar-menu-kind="design-project" data-project-path={item.path} className={`${styles.projectHistoryCard} ${item.path === currentProjectPath ? styles.projectHistoryCardActive : ''}`} onClick={() => void openProjectHistory(item.path)} aria-current={item.path === currentProjectPath ? 'true' : undefined}><span className={styles.projectHistoryIcon}><Folder size={17} /></span><span className={styles.projectHistoryBody}><strong>{item.name}</strong><span className={styles.projectHistoryMeta}><span>{item.pageCount} 页面</span><span>{item.fileCount} 文件</span><span>{item.revisionCount} 修订</span><span>{item.messageCount} 消息</span></span></span><time className={styles.projectHistoryTime} dateTime={item.lastActivityAt ? new Date(item.lastActivityAt).toISOString() : undefined}>{formatProjectHistoryTime(item.lastActivityAt)}</time></button>)}</div> : <p className={styles.projectHistoryEmpty}>添加项目后，已创建的 Design 工作区会显示在这里</p>}</section></div></div>;
 }
 
-function DesignPlanCard({ message, onApply, onDismiss }: { message: Extract<DesignMessage, { kind: 'plan' }>; onApply: () => void; onDismiss: () => void }) {
-	return <article className={styles.planCard}><div className={styles.planHeader}><span className={styles.planIcon}><Sparkles size={14} /></span><div><strong>{message.plan.title}</strong><small>设计方案已准备好，请确认</small></div></div><p>{message.plan.summary}</p><div className={styles.planFiles}>{message.plan.files.map((file) => <span key={file}>{file}</span>)}</div>{message.plan.risks.length > 0 && <div className={styles.planRisk}>↳ {message.plan.risks[0]}</div>}<div className={styles.planActions}><Button size="sm" variant="default" onClick={onApply}><Check size={13} />应用方案</Button><Button size="sm" variant="ghost" onClick={onDismiss}><X size={13} />暂不应用</Button></div></article>;
-}
-
-const DESIGN_INTAKE_STEPS = [
-	{ key: 'productType', question: '这次优先设计哪类页面？', options: [{ value: '品牌或营销页面', label: '品牌 / 营销', detail: '强调叙事、视觉记忆和转化路径' }, { value: '业务管理工作台', label: '内部系统', detail: '强调信息密度、效率和明确状态' }, { value: '面向客户的产品页面', label: '产品服务', detail: '平衡功能说明、信任感和引导' }, { value: '其他页面类型', label: '其他', detail: '后续在补充约束中说明' }] },
-	{ key: 'visualTone', question: '视觉基调偏好？', options: [{ value: 'Cinematic dark', label: 'Cinematic dark', detail: '深色、强对比、镜头感' }, { value: 'Editorial light', label: 'Editorial light', detail: '留白、排版、克制色彩' }, { value: 'Quiet utility', label: 'Quiet utility', detail: '专业、稳定、高信息密度' }, { value: 'Expressive color', label: 'Expressive color', detail: '明亮、活力、品牌识别' }] },
-	{ key: 'layout', question: '首选版式？', options: [{ value: '左侧品牌视觉 + 右侧核心内容', label: '分栏式', detail: '品牌展示与任务区并置' }, { value: '居中单焦点内容', label: '居中单卡', detail: '聚焦一个明确的主流程' }, { value: '沉浸式全屏叙事', label: '沉浸背景', detail: '以视觉和节奏承接内容' }, { value: '模块化工作台', label: '模块工作台', detail: '适合多任务与持续操作' }] },
-] as const;
-
-/** 首轮确认卡沿用 Pi plan-mode 的“少量关键决策”语义，但由 Desktop 保持可恢复的视觉交互。 */
-function DesignIntakeCard() {
-	const intake = useDesignStore((state) => state.intake);
-	const setIntakeStep = useDesignStore((state) => state.setIntakeStep);
-	const updateIntakeAnswers = useDesignStore((state) => state.updateIntakeAnswers);
-	const confirmIntake = useDesignStore((state) => state.confirmIntake);
-	const skipIntake = useDesignStore((state) => state.skipIntake);
-	if (!intake || intake.status !== 'pending') return null;
-	const step = Math.max(0, Math.min(3, intake.step));
-	const current = step < 3 ? DESIGN_INTAKE_STEPS[step] : null;
-	const selected = current ? intake.answers[current.key] : undefined;
-	const canContinue = step === 3 || Boolean(selected);
-	const updateSelected = (value: string) => current && updateIntakeAnswers({ [current.key]: value });
-	return <section className={styles.intakeCard} aria-label="设计需求确认">
-		<header className={styles.intakeHeader}><span className={styles.intakeIcon}><Palette size={16} /></span><div><strong>设计需求确认</strong><p>补齐会直接影响页面方向的信息，其余交给 Agent 在生成中处理。</p></div><span className={styles.intakeProgress}>{step + 1} / 4</span></header>
-		<div className={styles.intakeBody}>{current ? <><p className={styles.intakeQuestion}>{current.question}<span>（单选）</span></p><div className={current.key === 'visualTone' ? styles.intakeVisualOptions : styles.intakeOptions}>{current.options.map((option, index) => <button type="button" key={option.value} className={`${styles.intakeOption} ${selected === option.value ? styles.intakeOptionSelected : ''} ${current.key === 'visualTone' ? styles.intakeVisualOption : ''}`} onClick={() => updateSelected(option.value)} aria-pressed={selected === option.value}>{current.key === 'visualTone' && <span className={`${styles.intakeTone} ${styles[`intakeTone${index + 1}`]}`} aria-hidden="true" />}<span><strong>{option.label}</strong><small>{option.detail}</small></span>{selected === option.value && <Check size={14} aria-hidden="true" />}</button>)}</div></> : <label className={styles.intakeNotes}><span>还有哪些必须遵守的约束？<em>（可选）</em></span><textarea value={intake.answers.notes ?? ''} onChange={(event) => updateIntakeAnswers({ notes: event.target.value })} placeholder="例如：优先保证 AA 对比度；移动端保留底部主要操作；避免使用插画。" rows={4} /></label>}</div>
-		<footer className={styles.intakeFooter}><span>已记录 {Object.values(intake.answers).filter(Boolean).length} 项偏好</span><div>{step > 0 && <button type="button" className={styles.intakeTextButton} onClick={() => setIntakeStep(step - 1)}>上一步</button>}<button type="button" className={styles.intakeTextButton} onClick={() => void skipIntake()}>跳过</button><Button type="button" size="sm" disabled={!canContinue} onClick={() => step === 3 ? void confirmIntake() : setIntakeStep(step + 1)}>{step === 3 ? '确认并开始' : '下一步'}</Button></div></footer>
-	</section>;
+/**
+ * 业务意图：只有 Agent 判断需求存在关键歧义时才显示这张卡，
+ * 回答会通过 RPC 回到暂停中的同一次工具调用，不会重新开启固定首轮流程。
+ */
+function DesignClarificationCard() {
+	const request = useDesignStore((state) => state.pendingClarification);
+	const respondClarification = useDesignStore((state) => state.respondClarification);
+	const [answer, setAnswer] = useState('');
+	useEffect(() => setAnswer(''), [request?.clarificationId]);
+	if (!request) return null;
+	const submit = (event: FormEvent) => {
+		event.preventDefault();
+		if (!answer.trim()) return;
+		void respondClarification(answer);
+	};
+	return <form className={styles.clarificationCard} onSubmit={submit} aria-label="设计需求澄清">
+		<header className={styles.clarificationHeader}><span className={styles.clarificationIcon}><Sparkles size={15} /></span><div><strong>需要确认一个关键问题</strong><p>Agent 发现这个选择会影响后续设计，回答后会继续当前任务。</p></div></header>
+		{request.context && <p className={styles.clarificationContext}>{request.context}</p>}
+		<p className={styles.clarificationQuestion}>{request.question}</p>
+		{request.options.length > 0 && <div className={styles.clarificationOptions}>{request.options.map((option) => <button type="button" key={option} className={styles.clarificationOption} onClick={() => setAnswer(option)} aria-pressed={answer === option}>{option}</button>)}</div>}
+		<textarea className={styles.clarificationInput} value={answer} onChange={(event) => setAnswer(event.target.value)} placeholder="输入你的回答，也可以补充其他约束" rows={3} autoFocus />
+		<footer className={styles.clarificationFooter}><span>回答后继续执行</span><Button type="submit" size="sm" disabled={!answer.trim()}>确认并继续</Button></footer>
+	</form>;
 }
 
 function Conversation() {
-	const messages = useDesignStore((state) => state.messages);
+	const messages = useDesignStore((state) => state.messages).filter((message) => message.kind !== 'plan');
 	const projects = useDesignStore((state) => state.projects);
 	const projectPath = useDesignStore((state) => state.projectPath);
 	const switchProject = useDesignStore((state) => state.switchProject);
 	const isGenerating = useDesignStore((state) => state.isGenerating);
 	const execution = useDesignStore((state) => state.execution);
 	const pendingApproval = useDesignStore((state) => state.pendingApproval);
+	const pendingClarification = useDesignStore((state) => state.pendingClarification);
 	const queuedPrompts = useDesignStore((state) => state.queuedPrompts);
-	const pendingPlan = useDesignStore((state) => state.pendingPlan);
 	const sendPrompt = useDesignStore((state) => state.sendPrompt);
 	const stop = useDesignStore((state) => state.stop);
 	const approve = useDesignStore((state) => state.approve);
-	const applyPlan = useDesignStore((state) => state.applyPlan);
-	const dismissPlan = useDesignStore((state) => state.dismissPlan);
 	// 返回入口属于设计会话上下文，放在会话标题行内避免占用原生窗口标题栏。
 	const resetProject = useDesignStore((state) => state.resetProject);
 	const currentProject = projects.find((project) => project.path === projectPath);
@@ -318,7 +351,10 @@ function Conversation() {
 	// 当前项目可能来自旧版本缓存，未及时写入 Design 项目索引；仍要保证标题和下拉入口可用。
 	const projectOptions = projectPath && !projects.some((project) => project.path === projectPath) ? [{ name: currentProjectName, path: projectPath, hasWorkspace: false }, ...projects] : projects;
 	const [text, setText] = useState('');
-	const scrollTrigger = `${execution.runId ?? 'idle'}:${execution.sequence}:${messages.length}:${pendingPlan ? 'plan' : ''}:${pendingApproval ? 'approval' : ''}`;
+	const latestMessage = messages.at(-1);
+	// sequence 用于去重流事件，不代表会话内容变化；滚动只跟随实际可见输出，避免思考事件让会话区反复跳动。
+	const latestMessageTrigger = latestMessage ? `${latestMessage.id}:${latestMessage.kind}:${latestMessage.kind === 'result' ? latestMessage.summary.length : latestMessage.text.length}:${latestMessage.kind === 'user' ? latestMessage.status ?? '' : ''}` : '';
+	const scrollTrigger = `${execution.runId ?? 'idle'}:${messages.length}:${latestMessageTrigger}:${pendingClarification?.clarificationId ?? ''}:${pendingApproval ? 'approval' : ''}`;
 	const { viewportRef, isFollowing, scrollToLatest } = useFollowOutputScroll<HTMLDivElement>({ trigger: scrollTrigger, resetKey: execution.runId });
 	const liveStatus = getDesignLiveStatus(execution, isGenerating, queuedPrompts);
 	const submit = (event?: FormEvent) => { event?.preventDefault(); if (isGenerating) { void stop(); return; } if (!text.trim()) return; void sendPrompt(text); setText(''); };
@@ -337,7 +373,7 @@ function Conversation() {
 		textarea.addEventListener('keydown', onNativeKeyDown);
 		return () => textarea.removeEventListener('keydown', onNativeKeyDown);
 	}, [isGenerating, sendPrompt]);
-	return <aside className={styles.conversation} aria-label="设计对话"><header className={styles.conversationHeader}><div className={styles.conversationHeading}><Button type="button" variant="ghost" size="icon-sm" className={styles.backButton} onClick={resetProject} title="返回设计入口" aria-label="返回设计入口"><ArrowLeft size={16} /></Button><DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="sm" className={`${styles.projectSwitcher} focus-visible:outline-none focus-visible:ring-0`} aria-label={`当前项目：${currentProjectName}，切换项目`}><Folder size={14} aria-hidden="true" /><span>{currentProjectName}</span><ChevronDown size={13} aria-hidden="true" /></Button></DropdownMenuTrigger><DropdownMenuContent align="start" className={styles.projectSwitcherMenu}>{projectOptions.length > 0 ? projectOptions.map((project) => <DropdownMenuItem key={project.path} className={`${styles.projectSwitcherItem} ${project.path === projectPath ? styles.projectSwitcherItemActive : ""}`} onSelect={() => { if (project.path !== projectPath) void switchProject(project.path); }}><Folder size={14} aria-hidden="true" /><span className={styles.projectSwitcherItemCopy}><strong>{project.name}</strong><small>{project.hasWorkspace ? "Design 工作区" : "尚未创建 Design 工作区"}</small></span>{project.path === projectPath && <Check size={13} className={styles.projectSwitcherItemCheck} aria-label="当前项目" />}</DropdownMenuItem>) : <DropdownMenuItem disabled>暂无可切换项目</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></div></header><div className={styles.conversationScrollFrame}><div ref={viewportRef} className={`${styles.messageList} gp-scrollbar`}>{messages.map((message) => message.kind === 'plan' ? <DesignPlanCard key={message.id} message={message} onApply={() => void applyPlan()} onDismiss={dismissPlan} /> : <article key={message.id} className={`${styles.message} ${styles[`message_${message.kind}`]}`}><div className={styles.messageMeta}>{message.kind === 'user' ? `你${message.status === 'queued' ? ' · 排队中' : message.status === 'cancelled' ? ' · 已取消' : ''}` : message.kind === 'error' ? '错误' : 'GITPILOT'}</div>{message.kind === 'assistant' ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown> : <p>{message.kind === 'result' ? message.summary : message.text}</p>}{message.kind === 'result' && <span className={styles.revision}>修订版 {message.revisionId}</span>}</article>)}<DesignIntakeCard />{pendingPlan && !messages.some((message) => message.kind === 'plan' && message.plan === pendingPlan) && <DesignPlanCard message={{ id: 'pending', kind: 'plan', plan: pendingPlan }} onApply={() => void applyPlan()} onDismiss={dismissPlan} />}{liveStatus && <div className={styles.liveStatus} role="status" aria-live="polite"><span className={styles.pulse} /><span>{liveStatus}</span></div>}{pendingApproval && <div className={styles.approvalCard}><strong>需要确认高风险设计修改</strong><p>{pendingApproval.reason}</p><div><Button size="sm" onClick={() => void approve(true)}><Check size={13} />继续</Button><Button size="sm" variant="ghost" onClick={() => void approve(false)}><X size={13} />拒绝</Button></div></div>}</div>{!isFollowing && <button type="button" className={styles.scrollToLatest} onClick={scrollToLatest} title="回到最新位置" aria-label="回到最新位置"><ArrowDown size={13} /><span>回到最新</span></button>}</div><form className={styles.composer} onSubmit={submit}><textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit(); }} placeholder="描述你想设计的页面…" aria-label="设计需求" /><div className={styles.composerFooter}><span>⌘ Enter 发送</span><div className={styles.composerActions}><Button type={isGenerating ? 'button' : 'submit'} size="icon" variant={isGenerating ? 'ghost' : 'default'} onClick={isGenerating ? () => void stop() : undefined} disabled={!isGenerating && !text.trim()} className={`${styles.composerButton} ${isGenerating ? styles.composerStop : ''}`} aria-label={isGenerating ? '停止设计任务' : '发送设计需求'} title={isGenerating ? '停止' : '发送'}>{isGenerating ? <Square size={14} /> : <Send size={15} />}</Button></div></div></form></aside>;
+	return <aside className={styles.conversation} aria-label="设计对话"><header className={styles.conversationHeader}><div className={styles.conversationHeading}><Button type="button" variant="ghost" size="icon-sm" className={styles.backButton} onClick={resetProject} title="返回设计入口" aria-label="返回设计入口"><ArrowLeft size={16} /></Button><DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="sm" className={`${styles.projectSwitcher} focus-visible:outline-none focus-visible:ring-0`} aria-label={`当前项目：${currentProjectName}，切换项目`}><Folder size={14} aria-hidden="true" /><span>{currentProjectName}</span><ChevronDown size={13} aria-hidden="true" /></Button></DropdownMenuTrigger><DropdownMenuContent align="start" className={styles.projectSwitcherMenu}>{projectOptions.length > 0 ? projectOptions.map((project) => <DropdownMenuItem key={project.path} className={`${styles.projectSwitcherItem} ${project.path === projectPath ? styles.projectSwitcherItemActive : ""}`} onSelect={() => { if (project.path !== projectPath) void switchProject(project.path); }}><Folder size={14} aria-hidden="true" /><span className={styles.projectSwitcherItemCopy}><strong>{project.name}</strong><small>{project.hasWorkspace ? "Design 工作区" : "尚未创建 Design 工作区"}</small></span>{project.path === projectPath && <Check size={13} className={styles.projectSwitcherItemCheck} aria-label="当前项目" />}</DropdownMenuItem>) : <DropdownMenuItem disabled>暂无可切换项目</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></div></header><div className={styles.conversationScrollFrame}><div ref={viewportRef} className={`${styles.messageList} gp-scrollbar`}>{messages.map((message) => <article key={message.id} className={`${styles.message} ${styles[`message_${message.kind}`]}`}><div className={styles.messageMeta}>{message.kind === 'user' ? `你${message.status === 'queued' ? ' · 排队中' : message.status === 'cancelled' ? ' · 已取消' : ''}` : message.kind === 'error' ? '错误' : 'GITPILOT'}</div>{message.kind === 'assistant' ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown> : <p>{message.kind === 'result' ? message.summary : message.text}</p>}{message.kind === 'result' && <span className={styles.revision}>修订版 {message.revisionId}</span>}</article>)}<DesignClarificationCard />{liveStatus && <div className={styles.liveStatus} role="status" aria-live="polite"><span className={styles.pulse} /><span>{liveStatus}</span></div>}{pendingApproval && <div className={styles.approvalCard}><strong>需要确认高风险设计修改</strong><p>{pendingApproval.reason}</p><div><Button size="sm" onClick={() => void approve(true)}><Check size={13} />继续</Button><Button size="sm" variant="ghost" onClick={() => void approve(false)}><X size={13} />拒绝</Button></div></div>}</div>{!isFollowing && <button type="button" className={styles.scrollToLatest} onClick={scrollToLatest} title="回到最新位置" aria-label="回到最新位置"><ArrowDown size={13} /><span>回到最新</span></button>}</div><DesignPlanProgressStatus /><form className={styles.composer} onSubmit={submit}><textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit(); }} placeholder="描述你想设计的页面…" aria-label="设计需求" /><div className={styles.composerFooter}><span>⌘ Enter 发送</span><div className={styles.composerActions}><Button type={isGenerating ? 'button' : 'submit'} size="icon" variant={isGenerating ? 'ghost' : 'default'} onClick={isGenerating ? () => void stop() : undefined} disabled={!isGenerating && !text.trim()} className={`${styles.composerButton} ${isGenerating ? styles.composerStop : ''}`} aria-label={isGenerating ? '停止设计任务' : '发送设计需求'} title={isGenerating ? '停止' : '发送'}>{isGenerating ? <Square size={14} /> : <Send size={15} />}</Button></div></div></form></aside>;
 }
 
 function DeviceButton({ target, active, onClick }: { target: DesignTarget; active: boolean; onClick: () => void }) {
@@ -353,15 +389,66 @@ function DesignNavigator({ onClose }: { onClose?: () => void }) {
 	const setActiveFile = useDesignStore((state) => state.setActiveFile);
 	const setTab = useDesignStore((state) => state.setTab);
 	const applyPatch = useDesignStore((state) => state.applyPatch);
+	const renamePage = useDesignStore((state) => state.renamePage);
 	const exportDesign = useDesignStore((state) => state.exportDesign);
 	const setError = useDesignStore((state) => state.setError);
 	const importInputRef = useRef<HTMLInputElement>(null);
+	const renameInputRef = useRef<HTMLInputElement>(null);
+	const renameSubmittingRef = useRef<string | null>(null);
+	const renameCancelRef = useRef<string | null>(null);
 	const [importing, setImporting] = useState(false);
 	const [dialog, setDialog] = useState<NavigatorDialogState | null>(null);
+	const [renamingPageId, setRenamingPageId] = useState<string | null>(null);
+	const [pageNameDraft, setPageNameDraft] = useState('');
 	const activePage = snapshot.document.pages.find((page) => page.id === activePageId) ?? snapshot.document.pages[0];
 	const pageFiles = activePage ? filesForPage(snapshot, activePage.id) : [];
 	const sharedFiles = snapshot.files.filter((file) => file.scope === 'shared' || file.scope === 'asset');
 	const baseRevisionId = snapshot.document.revisions.at(-1)?.id ?? '';
+	const beginPageRename = (page: DesignSnapshot['document']['pages'][number]) => {
+		setError(null);
+		renameCancelRef.current = null;
+		setRenamingPageId(page.id);
+		setPageNameDraft(page.name);
+	};
+	const cancelPageRename = () => {
+		renameCancelRef.current = renamingPageId;
+		setRenamingPageId(null);
+		setPageNameDraft('');
+	};
+	useEffect(() => {
+		if (!renamingPageId) return;
+		const frame = window.requestAnimationFrame(() => {
+			renameInputRef.current?.focus();
+			renameInputRef.current?.select();
+		});
+		return () => window.cancelAnimationFrame(frame);
+	}, [renamingPageId]);
+	const commitPageRename = async (page: DesignSnapshot['document']['pages'][number]) => {
+		if (renameCancelRef.current === page.id) {
+			renameCancelRef.current = null;
+			return;
+		}
+		if (renameSubmittingRef.current === page.id) return;
+		const nextName = pageNameDraft.trim();
+		if (!nextName) {
+			setError('页面名称不能为空');
+			renameInputRef.current?.focus();
+			return;
+		}
+		if (nextName === page.name) {
+			cancelPageRename();
+			return;
+		}
+		renameSubmittingRef.current = page.id;
+		try {
+			await renamePage(page.id, nextName);
+			cancelPageRename();
+		} catch {
+			renameInputRef.current?.focus();
+		} finally {
+			renameSubmittingRef.current = null;
+		}
+	};
 	const submitDialog = (event: FormEvent<HTMLFormElement>) => {
 		event.preventDefault();
 		if (!dialog) return;
@@ -441,7 +528,12 @@ function DesignNavigator({ onClose }: { onClose?: () => void }) {
 	return <aside className={styles.navigator} aria-label="页面与文件">
 		<div className={styles.navigatorTopbar}><span>页面与文件</span><div className={styles.navigatorTopbarActions}><button type="button" onClick={() => void exportDesign()} title="导出 ZIP" aria-label="导出 ZIP"><Archive size={13} /></button>{onClose && <button type="button" onClick={onClose} title="收起目录" aria-label="收起目录">×</button>}</div></div>
 		<div className={styles.navigatorSection}><div className={styles.navigatorHeading}><span>页面</span><span className={styles.navigatorCount}>{snapshot.document.pages.length}</span><button type="button" onClick={() => setDialog({ kind: 'create-page', value: 'dashboard' })} title="新建页面" aria-label="新建页面"><Plus size={12} /></button></div>
-			{snapshot.document.pages.map((page) => <button type="button" key={page.id} className={`${styles.navigatorPage} ${page.id === activePageId ? styles.navigatorActive : ''}`} onClick={() => { setActivePage(page.id); onClose?.(); }}><Monitor size={13} /><span>{page.name}</span><small>{page.route}</small></button>)}
+			{snapshot.document.pages.map((page) => <ContextMenu key={page.id}>
+				<ContextMenuTrigger asChild>
+					{renamingPageId === page.id ? <div className={`${styles.navigatorPage} ${page.id === activePageId ? styles.navigatorActive : ''}`}><Monitor size={13} /><input ref={renameInputRef} className={styles.navigatorPageRenameInput} value={pageNameDraft} onChange={(event) => setPageNameDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); cancelPageRename(); } if (event.key === 'Enter') { event.preventDefault(); void commitPageRename(page); } }} onBlur={() => void commitPageRename(page)} aria-label={`重命名页面：${page.name}`} /><small>{page.route}</small></div> : <button type="button" className={`${styles.navigatorPage} ${page.id === activePageId ? styles.navigatorActive : ''}`} onClick={() => { setActivePage(page.id); onClose?.(); }}><Monitor size={13} /><span>{page.name}</span><small>{page.route}</small></button>}
+				</ContextMenuTrigger>
+				<ContextMenuContent className={styles.navigatorContextMenu}><ContextMenuItem onSelect={() => beginPageRename(page)}><span aria-hidden="true">✎</span>重命名</ContextMenuItem></ContextMenuContent>
+			</ContextMenu>)}
 		</div>
 		<div className={styles.navigatorSection}><input ref={importInputRef} type="file" multiple className={styles.hiddenFileInput} onChange={(event) => void importFiles(event)} /><div className={styles.navigatorHeading}><span>{activePage?.name ?? '当前页面'} 文件</span><span className={styles.navigatorCount}>{pageFiles.length}</span><button type="button" onClick={() => importInputRef.current?.click()} title="导入文件" aria-label="导入文件" disabled={!activePage || importing}><Upload size={12} /></button><button type="button" onClick={() => activePage && setDialog({ kind: 'create-file', pageId: activePage.id, value: 'components.js' })} title="新建文件" aria-label="新建文件" disabled={!activePage}><Plus size={12} /></button></div>
 			{pageFiles.map((file) => <div key={file.path} className={styles.navigatorFileRow}><button type="button" className={`${styles.navigatorFile} ${file.path === activeFile ? styles.navigatorActive : ''}`} onClick={() => { setActiveFile(file.path); setTab('code'); onClose?.(); }}><FileText size={12} /><span title={file.path}>{file.path.split('/').pop()}</span></button><button type="button" onClick={() => setDialog({ kind: 'rename-file', file, value: file.path })} title="重命名文件"><span>↗</span></button><button type="button" onClick={() => setDialog({ kind: 'delete-file', file, highRisk: file.id === activePage?.entryFileId || file.scope === 'shared' })} title="删除文件"><Trash2 size={11} /></button></div>)}
@@ -455,34 +547,28 @@ function DesignExecutionInspector() {
 	const execution = useDesignStore((state) => state.execution);
 	const pendingApproval = useDesignStore((state) => state.pendingApproval);
 	const queuedPrompts = useDesignStore((state) => state.queuedPrompts);
-	const messages = useDesignStore((state) => state.messages);
 	const isGenerating = useDesignStore((state) => state.isGenerating);
-	const { viewportRef, isFollowing, scrollToLatest } = useFollowOutputScroll<HTMLDivElement>({ trigger: `${execution.sequence}:${messages.length}:${execution.thinking.length}`, resetKey: execution.runId });
-	const phaseLabel = execution.status === 'failed' ? '执行失败' : execution.phase === 'tool' ? '执行设计工具' : execution.phase === 'thinking' ? '思考中' : isGenerating ? '处理中' : '已就绪';
+	// 思考正文属于过程详情，默认收起，避免流式输出时占满右侧面板；新一轮执行重新从收起状态开始。
+	const [thinkingExpanded, setThinkingExpanded] = useState(false);
+	useEffect(() => setThinkingExpanded(false), [execution.runId]);
+	const stepTrigger = execution.steps.map((step) => `${step.id}:${step.toolName}:${step.status}`).join('|');
+	// sequence 只服务于事件排序；右侧只在自身内容变化时滚动，避免无可见更新的事件抢占视口。
+	const scrollTrigger = `${execution.runId ?? 'idle'}:${execution.status}:${execution.phase}:${isGenerating}:${execution.thinking.length}:${execution.thinking.slice(-64)}:${stepTrigger}:${queuedPrompts.length}:${pendingApproval?.approvalId ?? ''}:${pendingApproval?.reason.length ?? 0}`;
+	const { viewportRef, isFollowing, scrollToLatest } = useFollowOutputScroll<HTMLDivElement>({ trigger: scrollTrigger, resetKey: execution.runId });
+	const phaseLabel = execution.status === 'failed' ? '执行失败' : execution.phase === 'awaiting_clarification' ? '等待需求澄清' : execution.phase === 'awaiting_approval' ? '等待确认设计修改' : execution.phase === 'tool' ? '执行设计工具' : execution.phase === 'thinking' ? '思考中' : isGenerating ? '处理中' : '已就绪';
 	const showStatus = phaseLabel !== '已就绪';
 	return <div className={styles.executionInspectorFrame}><div ref={viewportRef} className={styles.executionInspector}>
-		{showStatus && <div className={styles.inspectorStatus}><span className={`${styles.inspectorStatusDot} ${isGenerating ? styles.inspectorStatusRunning : ''}`} /><div><strong>{phaseLabel}</strong><span>{queuedPrompts.length > 0 ? `${queuedPrompts.length} 条消息排队中` : '当前项目独立运行'}</span></div></div>}
-		{execution.thinking && <section className={styles.inspectorSection}><div className={styles.inspectorSectionHeading}><span>思考摘要</span><span className={styles.inspectorCount}>实时</span></div><p className={styles.inspectorThinking}>{execution.thinking}</p></section>}
-		<section className={styles.inspectorSection}><div className={styles.inspectorSectionHeading}><span>工具步骤</span><span className={styles.inspectorCount}>{execution.steps.length}</span></div>{execution.steps.length > 0 ? <div className={styles.inspectorSteps}>{execution.steps.map((step) => <div key={step.id} className={styles.inspectorStep}><span className={step.status === 'running' ? styles.stepRunning : step.status === 'failed' ? styles.stepFailed : styles.stepDone}>{step.status === 'running' ? '执行中' : step.status === 'failed' ? '失败' : '完成'}</span><code>{step.toolName}</code></div>)}</div> : <p className={styles.inspectorEmpty}>发送设计需求后，工具步骤会显示在这里。</p>}</section>
+		{showStatus && <div className={styles.inspectorStatus}><span className={`${styles.inspectorStatusDot} ${isGenerating ? styles.inspectorStatusRunning : ''}`} /><div><strong>{phaseLabel}</strong>{queuedPrompts.length > 0 && <span>{queuedPrompts.length} 条消息排队中</span>}</div></div>}
+		{execution.thinking && <section className={styles.inspectorSection}>
+			<button type="button" className={styles.inspectorSectionHeadingButton} onClick={() => setThinkingExpanded((expanded) => !expanded)} aria-expanded={thinkingExpanded}>
+				<span className={styles.inspectorSectionHeading}><ChevronRight size={13} className={`${styles.inspectorSectionChevron} ${thinkingExpanded ? styles.inspectorSectionChevronExpanded : ''}`} aria-hidden="true" /><span>思考过程</span></span>
+				<span className={styles.inspectorCount}>可展开</span>
+			</button>
+			{thinkingExpanded && <p className={styles.inspectorThinking}>{execution.thinking}</p>}
+		</section>}
+		<section className={styles.inspectorSection}><div className={styles.inspectorSectionHeading}><span>工具步骤</span><span className={styles.inspectorCount}>{execution.steps.length}</span></div>{execution.steps.length > 0 ? <div className={styles.inspectorSteps}>{execution.steps.map((step) => <div key={step.id} className={styles.inspectorStep}><span className={step.status === 'running' ? styles.stepRunning : step.status === 'failed' ? styles.stepFailed : styles.stepDone}>{step.status === 'running' ? '执行中' : step.status === 'failed' ? '失败' : '完成'}</span><code title={step.summary ?? step.toolName}>{step.summary ?? step.toolName}</code></div>)}</div> : <p className={styles.inspectorEmpty}>发送设计需求后，工具步骤会显示在这里。</p>}</section>
 		{pendingApproval && <section className={`${styles.inspectorSection} ${styles.inspectorApproval}`}><div className={styles.inspectorSectionHeading}><span>待确认变更</span><span className={styles.inspectorCount}>高风险</span></div><p>{pendingApproval.reason}</p></section>}
-		<section className={styles.inspectorSection}><div className={styles.inspectorSectionHeading}><span>会话摘要</span><span className={styles.inspectorCount}>{messages.length}</span></div><p className={styles.inspectorEmpty}>{messages.length > 0 ? '对话记录已按当前项目隔离保存。' : '当前还没有设计消息。'}</p></section>
 	</div>{!isFollowing && <button type="button" className={styles.scrollToLatest} onClick={scrollToLatest} title="回到最新位置" aria-label="回到最新位置"><ArrowDown size={13} /><span>回到最新</span></button>}</div>;
-}
-
-/** 待办页签承接首轮确认后的设计节奏，用户可手动校正，避免把 Agent 推断伪装成唯一进度。 */
-function DesignTodoInspector() {
-	const todos = useDesignStore((state) => state.todos);
-	const cycleTodo = useDesignStore((state) => state.cycleTodo);
-	const addTodo = useDesignStore((state) => state.addTodo);
-	const removeTodo = useDesignStore((state) => state.removeTodo);
-	const [draft, setDraft] = useState('');
-	const done = todos.filter((todo) => todo.state === 'done').length;
-	const submit = (event: FormEvent) => {
-		event.preventDefault();
-		addTodo(draft);
-		setDraft('');
-	};
-	return <div className={`${styles.todoInspector} gp-scrollbar`}><header className={styles.todoHeader}><div><strong>待办</strong><span>当前设计推进 {done} / {todos.length || 0}</span></div><span className={styles.todoProgress}>{done}/{todos.length || 0}</span></header>{todos.length > 0 ? <div className={styles.todoList}>{todos.map((todo) => <div key={todo.id} className={`${styles.todoItem} ${todo.state === 'done' ? styles.todoDone : ''}`}><button type="button" className={`${styles.todoState} ${styles[`todoState${todo.state}`]}`} onClick={() => cycleTodo(todo.id)} aria-label={`切换待办状态：${todo.text}`} title={todo.state === 'pending' ? '设为进行中' : todo.state === 'active' ? '设为完成' : '重新打开'}>{todo.state === 'done' ? <Check size={12} /> : <span />}</button><span>{todo.text}</span><small>{todo.state === 'pending' ? '待处理' : todo.state === 'active' ? '进行中' : '已完成'}</small><button type="button" className={styles.todoRemove} onClick={() => removeTodo(todo.id)} aria-label={`删除待办 ${todo.text}`} title="删除待办"><Trash2 size={12} /></button></div>)}</div> : <p className={styles.todoEmpty}>确认需求后会生成交付待办。</p>}<form className={styles.todoAdd} onSubmit={submit}><input value={draft} onChange={(event) => setDraft(event.target.value)} placeholder="添加待办" aria-label="添加待办" /><button type="submit" aria-label="新增待办" title="新增待办" disabled={!draft.trim()}><Plus size={14} /></button></form></div>;
 }
 
 type GuidelineTokenGroup = keyof DesignProjectGuidelines['tokens'];
@@ -530,7 +616,7 @@ function DesignGuidelinesInspector() {
 	return <div className={`${styles.guidelinesInspector} gp-scrollbar`}><header className={styles.guidelinesHeader}><div><strong>项目规范</strong><span>Design Agent 会遵循这些约束</span></div><div className={styles.guidelinesActions}><DesignPresetPicker className={styles.guidelinesPreset} selectedPresetId={selectedPresetId} onApply={applyPreset} /><button type="button" className={styles.guidelinesSave} onClick={() => void save()} disabled={saving}><Save size={13} />{saving ? '保存中' : '保存'}</button></div></header><div className={styles.guidelinesForm}><label className={styles.guidelinesField}><span>品牌名称</span><input value={draft.brand.name} onChange={(event) => updateBrand('name', event.target.value)} placeholder="例如：GitPilot" /></label><label className={styles.guidelinesField}><span>设计语气</span><input value={draft.brand.tone} onChange={(event) => updateBrand('tone', event.target.value)} placeholder="清晰、专业、易使用" /></label><label className={styles.guidelinesField}><span>最低对比度</span><select value={draft.accessibility.minContrast} onChange={(event) => setDraft((current) => ({ ...current, accessibility: { minContrast: event.target.value === 'AAA' ? 'AAA' : 'AA' } }))}><option value="AA">AA</option><option value="AAA">AAA</option></select></label><GuidelineMapEditor title="颜色 Token" values={draft.tokens.colors} valuePlaceholder="#0f766e" onChange={(values) => updateTokenGroup('colors', values)} /><GuidelineMapEditor title="字体 Token" values={draft.tokens.typography} valuePlaceholder="例如：16px / 1.5" onChange={(values) => updateTokenGroup('typography', values)} /><GuidelineMapEditor title="间距 Token" values={draft.tokens.spacing} valuePlaceholder="例如：16px" onChange={(values) => updateTokenGroup('spacing', values)} /><GuidelineMapEditor title="圆角 Token" values={draft.tokens.radius} valuePlaceholder="例如：8px" onChange={(values) => updateTokenGroup('radius', values)} /><GuidelineMapEditor title="阴影 Token" values={draft.tokens.shadows} valuePlaceholder="例如：0 8px 24px #0002" onChange={(values) => updateTokenGroup('shadows', values)} /><GuidelineMapEditor title="组件规则" values={draft.components} valuePlaceholder="例如：主按钮使用品牌色" onChange={updateComponents} /><label className={styles.guidelinesField}><span>设计规则</span><textarea value={draft.rules.join('\n')} onChange={(event) => setDraft((current) => ({ ...current, rules: event.target.value.split('\n').map((rule) => rule.trim()).filter(Boolean) }))} placeholder="每行一条规则" rows={5} /></label>{saved && <span className={styles.guidelinesSaved}>已保存到当前项目</span>}</div></div>;
 }
 
-type DesignInspectorTabId = 'execution' | 'todos' | 'files' | 'guidelines';
+type DesignInspectorTabId = 'execution' | 'files' | 'guidelines';
 
 /** Design 右侧栏沿用 Code/Work 的拖拽语义：鼠标实时调整宽度，键盘方向键和 Home/End 支持无障碍操作。 */
 function DesignRightResizeHandle({ value, onChange }: { value: number; onChange: (value: number) => void }) {
@@ -560,9 +646,9 @@ function DesignRightResizeHandle({ value, onChange }: { value: number; onChange:
 
 /** 右侧 Inspector 保持挂载，通过 aria-hidden 和 CSS 合成层过渡完成展开/收起。 */
 function DesignRightInspector({ open }: { open: boolean }) {
-	const [openTabs, setOpenTabs] = useState<DesignInspectorTabId[]>(['execution', 'todos', 'files', 'guidelines']);
+	const [openTabs, setOpenTabs] = useState<DesignInspectorTabId[]>(['execution', 'files', 'guidelines']);
 	const [activeTab, setActiveTab] = useState<DesignInspectorTabId>('execution');
-	const tabDefinitions: Array<{ id: DesignInspectorTabId; label: string; icon: typeof ListChecks }> = [{ id: 'execution', label: '执行过程', icon: ListChecks }, { id: 'todos', label: '待办', icon: ListChecks }, { id: 'files', label: '文件', icon: Folder }, { id: 'guidelines', label: '规范', icon: BookOpen }];
+	const tabDefinitions: Array<{ id: DesignInspectorTabId; label: string; icon: typeof ListChecks }> = [{ id: 'execution', label: '执行过程', icon: ListChecks }, { id: 'files', label: '文件', icon: Folder }, { id: 'guidelines', label: '规范', icon: BookOpen }];
 	const openTab = (tab: DesignInspectorTabId) => { setOpenTabs((tabs) => tabs.includes(tab) ? tabs : [...tabs, tab]); setActiveTab(tab); };
 	const closeTab = (tab: DesignInspectorTabId) => {
 		setOpenTabs((tabs) => {
@@ -581,7 +667,7 @@ function DesignRightInspector({ open }: { open: boolean }) {
 				<DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="icon-sm" className={`${styles.inspectorTabAdd} focus-visible:outline-none focus-visible:ring-0`} aria-label="打开 Design 功能页签"><Plus size={15} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end">{tabDefinitions.map((tab) => { const Icon = tab.icon; return <DropdownMenuItem key={tab.id} onSelect={() => openTab(tab.id)}><Icon />{tab.label}</DropdownMenuItem>; })}</DropdownMenuContent></DropdownMenu>
 			</div>
 		</nav>
-		{openTabs.length === 0 ? <div className={styles.inspectorEmptyPanel}><ListChecks size={20} /><span>右侧面板已关闭</span><small>点击上方 + 重新打开一个面板。</small></div> : activeTab === 'files' ? <DesignNavigator /> : activeTab === 'guidelines' ? <DesignGuidelinesInspector /> : activeTab === 'todos' ? <DesignTodoInspector /> : <DesignExecutionInspector />}
+		{openTabs.length === 0 ? <div className={styles.inspectorEmptyPanel}><ListChecks size={20} /><span>右侧面板已关闭</span><small>点击上方 + 重新打开一个面板。</small></div> : activeTab === 'files' ? <DesignNavigator /> : activeTab === 'guidelines' ? <DesignGuidelinesInspector /> : <DesignExecutionInspector />}
 	</aside>;
 }
 

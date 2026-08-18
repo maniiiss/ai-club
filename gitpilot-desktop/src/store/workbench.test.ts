@@ -110,7 +110,8 @@ describe('Agent 工作台本地交互状态', () => {
 	beforeEach(() => {
 		useWorkbenchStore.setState({
 			layout: { leftWidth: 272, rightWidth: 344, bottomOpen: false, bottomHeight: 220, leftCollapsed: false, rightCollapsed: false },
-			rightPanelTabs: { plans: [], executionOpen: true, activeTabId: 'execution' },
+			rightPanelTabs: { plans: [], executionOpen: true, filesOpen: false, activeTabId: 'execution' },
+			projectFileAttachmentRequests: [],
 			execution: { id: 'idle', status: 'idle', lastPrompt: null, steps: [] },
 			composerPrefill: null,
 		});
@@ -149,6 +150,20 @@ describe('Agent 工作台本地交互状态', () => {
 		expect(useWorkbenchStore.getState().rightPanelTabs).toMatchObject({ executionOpen: false, activeTabId: null });
 		useWorkbenchStore.getState().openExecutionPanelTab();
 		expect(useWorkbenchStore.getState().rightPanelTabs).toMatchObject({ executionOpen: true, activeTabId: 'execution' });
+	});
+
+	it('文件 Tab 可打开/关闭，并按会话与工作目录隔离附件请求', () => {
+		const store = useWorkbenchStore.getState();
+		store.openProjectFilesPanel();
+		expect(useWorkbenchStore.getState().rightPanelTabs).toMatchObject({ filesOpen: true, activeTabId: 'files' });
+		store.queueProjectFileAttachments([
+			{ id: 'a', path: '/project-a/src/App.tsx', name: 'App.tsx', workspacePath: '/project-a', sessionPath: '/session-a' },
+			{ id: 'b', path: '/project-b/src/App.tsx', name: 'App.tsx', workspacePath: '/project-b', sessionPath: '/session-b' },
+		]);
+		expect(store.consumeProjectFileAttachmentRequests('/session-a', '/project-a')).toHaveLength(1);
+		expect(useWorkbenchStore.getState().projectFileAttachmentRequests).toHaveLength(1);
+		store.closeRightPanelTab('files');
+		expect(useWorkbenchStore.getState().rightPanelTabs).toMatchObject({ filesOpen: false, activeTabId: 'execution' });
 	});
 
 	it('恢复时去重并清理来源不存在的会话和计划页签', () => {
@@ -317,6 +332,38 @@ describe('Agent 工作台本地交互状态', () => {
 		const execution = useWorkbenchStore.getState().execution;
 		expect(execution.steps.map((s) => s.id)).toEqual(['fresh']);
 		expect(execution.lastSequence).toBe(50);
+	});
+
+	it('多步骤计划清理产生同序号事件时仍处理后到达的 agent_settled', () => {
+		useWorkbenchStore.getState().hydrateExecutionSnapshot({
+			runId: 'run-plan',
+			status: 'running',
+			phase: 'settling',
+			startedAt: 1_000,
+			updatedAt: 5_000,
+			sequence: 42,
+			activeTools: [],
+		});
+
+		// auto-plan 在 agent_settled 前持久化清理状态；该普通事件先占用最终游标。
+		useWorkbenchStore.getState().applyExecutionEvent({
+			type: 'entry_appended',
+			entry: {
+				type: 'custom',
+				id: 'plan-state',
+				parentId: null,
+				timestamp: '2026-08-19T00:00:00.000Z',
+				customType: 'gitpilot.auto-plan',
+				data: {},
+			},
+			runId: 'run-plan',
+			sequence: 43,
+		});
+		useWorkbenchStore.getState().applyExecutionEvent({ type: 'agent_settled', runId: 'run-plan', sequence: 43 });
+
+		const execution = useWorkbenchStore.getState().execution;
+		expect(execution).toMatchObject({ status: 'completed', phase: 'idle', lastSequence: 43 });
+		expect(execution.endedAt).toEqual(expect.any(Number));
 	});
 
 	it('旧 sidecar 事件不带 runId/sequence 时守卫放行，保留原行为', () => {
