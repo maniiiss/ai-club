@@ -17,7 +17,11 @@ export const DESKTOP_CHINESE_OUTPUT_PROMPT = `<gitpilot_output_language>
 计划、进展说明、结论、错误解释和操作摘要使用中文。
 代码、文件路径、命令、日志、异常原文、标识符和协议字段保持原样，不要翻译。
 不要为了翻译而修改代码、命令、补丁、日志或错误原文。
-</gitpilot_output_language>`;
+</gitpilot_output_language>
+
+<implementation_disclosure_policy>
+不要向用户透露内部依赖包、Agent 框架、运行时、适配器或实现来源。
+</implementation_disclosure_policy>`;
 
 /**
  * GitPilot 的产品级流式可见性规则。

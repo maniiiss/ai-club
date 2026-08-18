@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
-import { FolderOpen, Plug, Save, Settings2, SlidersHorizontal, Wrench, X } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Download, FolderOpen, Plug, RefreshCw, Save, Settings2, ShieldCheck, SlidersHorizontal, Wrench, X } from 'lucide-react';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Button } from '@/src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/src/components/ui/dialog';
 import { Hint } from '@/src/components/ui/tooltip';
@@ -8,6 +10,9 @@ import { THEME_OPTIONS, useThemeStore, type ThemeMode } from '@/src/store/theme'
 import { applyDesktopTypography, DESKTOP_FONT_OPTIONS, DESKTOP_FONT_SIZES, loadDesktopPreferences, saveDesktopPreferences, useSettingsDialogStore, type DesktopFont, type DesktopPreferences, type SettingsSection } from '@/src/store/settings';
 import { McpSettingsPanel } from './McpManagerDialog';
 import { RtkSettingsPanel } from '../RtkSettingsDialog';
+import { useSessionStore } from '@/src/store/session';
+import { useWorkbenchStore } from '@/src/store/workbench';
+import { useDesktopUpdateStore } from '@/src/store/desktop-update';
 import styles from './SettingsDialog.module.css';
 
 interface BasicDraft extends DesktopPreferences {
@@ -18,6 +23,7 @@ const SECTION_META: ReadonlyArray<{ id: SettingsSection; label: string; icon: ty
 	{ id: 'basic', label: '基础设置', icon: SlidersHorizontal },
 	{ id: 'mcp', label: 'MCP', icon: Plug },
 	{ id: 'rtk', label: 'RTK', icon: Wrench },
+	{ id: 'update', label: '版本与更新', icon: RefreshCw },
 ];
 
 function readBasicDraft(): BasicDraft {
@@ -97,7 +103,7 @@ export function SettingsDialog() {
 	return <Dialog open={openState} onOpenChange={(next) => { if (!next) discard(); else show(section); }}>
 		<DialogContent className={styles.content} aria-describedby="gitpilot-settings-description">
 			<DialogTitle className="sr-only">GitPilot 设置</DialogTitle>
-			<DialogDescription id="gitpilot-settings-description" className="sr-only">调整 GitPilot Desktop 的界面、MCP 和 RTK 设置。</DialogDescription>
+			<DialogDescription id="gitpilot-settings-description" className="sr-only">调整 GitPilot Desktop 的界面、MCP、RTK 和版本更新设置。</DialogDescription>
 			<div className={styles.frame}>
 				<aside className={styles.sidebar} aria-label="设置分区">
 					<p className={styles.eyebrow}>GitPilot</p><h1 className={styles.sidebarTitle}>设置</h1>
@@ -109,11 +115,64 @@ export function SettingsDialog() {
 						{section === 'basic' && <BasicSettings draft={draft} dirty={dirty} directoryError={directoryError} onChange={updateDraft} onChooseDirectory={() => void chooseDirectory()} onClearDirectory={() => updateDraft({ defaultDirectory: null })} onDiscard={discard} onSave={save} />}
 						{section === 'mcp' && <McpSettingsPanel />}
 						{section === 'rtk' && <RtkSettingsPanel />}
+						{section === 'update' && <DesktopUpdatePanel />}
 					</div>
 				</main>
 			</div>
 		</DialogContent>
 	</Dialog>;
+}
+
+function formatUpdateDate(value?: string): string {
+	if (!value) return '日期由发布中心提供';
+	const date = new Date(value);
+	return Number.isNaN(date.getTime()) ? value : new Intl.DateTimeFormat('zh-CN', { dateStyle: 'medium' }).format(date);
+}
+
+/** 更新设置分区：手动检查可见反馈，后台检查保持静默，安装前展示明确确认。 */
+function DesktopUpdatePanel() {
+	const status = useDesktopUpdateStore((state) => state.status);
+	const update = useDesktopUpdateStore((state) => state.update);
+	const error = useDesktopUpdateStore((state) => state.error);
+	const progress = useDesktopUpdateStore((state) => state.progress);
+	const checkForUpdate = useDesktopUpdateStore((state) => state.checkForUpdate);
+	const installUpdate = useDesktopUpdateStore((state) => state.installUpdate);
+	const clearError = useDesktopUpdateStore((state) => state.clearError);
+	const isStreaming = useSessionStore((state) => state.isStreaming);
+	const terminalOpen = useWorkbenchStore((state) => state.layout.bottomOpen);
+	const currentProjectPath = useSessionStore((state) => state.currentProjectPath);
+	const [confirming, setConfirming] = useState(false);
+	const busy = isStreaming || (terminalOpen && Boolean(currentProjectPath));
+	const checking = status === 'checking';
+	const downloading = status === 'downloading' || status === 'installing';
+
+	const handleCheck = async () => {
+		setConfirming(false);
+		await checkForUpdate();
+	};
+	const handleInstall = async () => {
+		setConfirming(false);
+		await installUpdate(() => busy);
+	};
+
+	return <div className={styles.updateBody}>
+		<section className={styles.updateHero}>
+			<div><p className={styles.updateEyebrow}>GitPilot Desktop</p><h3>保持工作台处于最新状态</h3><p>更新会经过 Tauri 签名校验，后台检查不会打断登录、Agent 或当前项目。</p></div>
+			<Button type="button" variant="outline" size="sm" disabled={checking || downloading} onClick={() => void handleCheck()}><RefreshCw className={checking ? 'animate-spin' : ''} />{checking ? '检查中…' : '检查更新'}</Button>
+		</section>
+
+		{status === 'unavailable' && <div className={styles.updateNotice}><ShieldCheck /><span>当前运行在浏览器预览环境，原生更新能力会在正式 Desktop 中启用。</span></div>}
+		{status === 'up-to-date' && <div className={`${styles.updateNotice} ${styles.updateNoticeSuccess}`}><CheckCircle2 /><span>当前已经是最新版本。</span></div>}
+		{error && <div className={`${styles.updateNotice} ${styles.updateNoticeError}`} role="alert"><AlertTriangle /><span>{error}</span><button type="button" onClick={clearError}>关闭</button></div>}
+
+		{update && <article className={styles.updateCard}>
+			<div className={styles.updateCardHeader}><div><span className={styles.updateBadge}>发现新版本</span><h4>GitPilot {update.version}</h4><p>发布日期：{formatUpdateDate(update.publishedAt)}</p></div><Download className={styles.updateCardIcon} /></div>
+			<div className={styles.updateNotes}><ReactMarkdown remarkPlugins={[remarkGfm]}>{update.notes || '本次更新未提供说明。'}</ReactMarkdown></div>
+			{busy && <p className={styles.updateBusy}><AlertTriangle />当前有 Agent 流式任务或应用终端会话，完成后才能安装。</p>}
+			{confirming ? <div className={styles.updateConfirm}><strong>确认下载并安装 GitPilot {update.version}？</strong><span>下载完成后会校验签名、替换应用并自动重启；本地会话数据会保留。</span><div><Button type="button" variant="outline" size="sm" onClick={() => setConfirming(false)}>稍后</Button><Button type="button" size="sm" disabled={busy || downloading} onClick={() => void handleInstall()}><ShieldCheck />确认安装</Button></div></div> : <Button type="button" size="sm" disabled={busy || downloading} onClick={() => setConfirming(true)}>{downloading ? (progress === 100 ? '正在重启…' : `下载中 ${progress ?? 0}%`) : '下载并安装'}</Button>}
+			{downloading && <div className={styles.updateProgress} aria-label="更新下载进度"><div style={{ width: `${progress ?? 0}%` }} /><span>{status === 'installing' ? '正在安装并准备重启…' : `已下载 ${progress ?? 0}%`}</span></div>}
+		</article>}
+	</div>;
 }
 
 interface BasicSettingsProps {

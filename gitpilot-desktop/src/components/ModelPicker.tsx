@@ -48,6 +48,14 @@ export function isMultimodalModel(model: Pick<ModelInfo, 'input'>): boolean {
 	return model.input?.includes('image') ?? false;
 }
 
+/** 仅供模型下拉列表展示计费方案；当前已选模型按钮不显示该标签。 */
+export function getModelBillingLabel(model: Pick<ModelInfo, 'billingMultiplier'>): string {
+	const multiplier = model.billingMultiplier;
+	if (typeof multiplier !== 'number' || !Number.isFinite(multiplier) || multiplier <= 0) return 'free';
+	const value = Number.isInteger(multiplier) ? String(multiplier) : multiplier.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+	return `${value}x`;
+}
+
 /** Design 入口空间有限时只保留模型选择，其他工作区继续显示思考级别。 */
 export function ModelPicker({ showThinkingLevel = true }: { showThinkingLevel?: boolean }) {
 	const sessionState = useSessionStore((s) => s.sessionState);
@@ -95,7 +103,7 @@ export function ModelPicker({ showThinkingLevel = true }: { showThinkingLevel?: 
 				<PopoverContent side="top" align="start" className={styles.modelPopover}>
 					<CommandRoot>
 					<CommandInput placeholder="搜索模型…" containerClassName={styles.search} className={styles.searchInput} style={{ outline: 'none', border: 'none', boxShadow: 'none' }} />
-						<CommandList className={styles.modelList}><CommandEmpty>{models.length === 0 ? '加载中…' : '没有匹配的模型'}</CommandEmpty>{models.map((m) => <CommandItem key={`${m.provider}:${m.id}`} value={`${m.name} ${m.provider}`} onSelect={() => { setModel(m.provider, m.id); setOpenModel(false); }} className={`${styles.modelItem} ${m.id === currentModel?.id ? styles.selected : ''}`}><span className={styles.modelCopy}><span className={styles.modelTitle}><span className={styles.modelTitleText}>{m.name}</span>{isMultimodalModel(m) && <span className={styles.multimodalBadge}>多模态</span>}</span><small>{m.provider}</small></span></CommandItem>)}</CommandList>
+						<CommandList className={styles.modelList}><CommandEmpty>{models.length === 0 ? '加载中…' : '没有匹配的模型'}</CommandEmpty>{models.map((m) => <CommandItem key={`${m.provider}:${m.id}`} value={`${m.name} ${m.provider}`} onSelect={() => { setModel(m.provider, m.id); setOpenModel(false); }} className={`${styles.modelItem} ${m.id === currentModel?.id ? styles.selected : ''}`}><span className={styles.modelCopy}><span className={styles.modelTitle}><span className={styles.modelTitleText}>{m.name}</span>{isMultimodalModel(m) && <span className={styles.multimodalBadge}>多模态</span>}<span className={styles.billingBadge}>{getModelBillingLabel(m)}</span></span><small>{m.provider}</small></span></CommandItem>)}</CommandList>
 					</CommandRoot>
 				</PopoverContent>
 			</Popover>

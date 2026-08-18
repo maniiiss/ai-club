@@ -1,6 +1,8 @@
 export type DesignFileName = string;
 export type DesignTab = 'preview' | 'code';
 export type DesignTarget = 'mobile' | 'tablet' | 'desktop';
+/** 预览展示方式：原始尺寸用于精确检查，自适应和浏览器模式用于完整查看右侧画布。 */
+export type DesignPreviewMode = 'original' | 'fit' | 'browser';
 
 /** 预览画布尺寸：既支持常用设备，也允许用户输入任意宽高。 */
 export interface DesignViewport {

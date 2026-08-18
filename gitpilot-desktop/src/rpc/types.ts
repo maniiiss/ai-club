@@ -23,6 +23,8 @@ export interface ModelInfo {
 	baseUrl?: string;
 	reasoning?: boolean;
 	input?: string[];
+	/** 平台模型相对 1x 基准价的倍率；缺失表示 free。 */
+	billingMultiplier?: number;
 	contextWindow?: number;
 	maxTokens?: number;
 	cost?: {

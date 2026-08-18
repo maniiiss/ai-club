@@ -23,6 +23,7 @@ fn main() {
 	tauri::Builder::<Wry>::default()
 		.plugin(tauri_plugin_updater::Builder::new().build())
 		.plugin(tauri_plugin_dialog::init())
+		.plugin(tauri_plugin_process::init())
 		// 关闭主窗口时仅隐藏到托盘，确保本地 Agent 在后台持续运行。
 		.on_window_event(|window, event| {
 			if let tauri::WindowEvent::CloseRequested { api, .. } = event {

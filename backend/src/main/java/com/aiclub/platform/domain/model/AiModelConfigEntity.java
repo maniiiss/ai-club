@@ -86,6 +86,12 @@ public class AiModelConfigEntity {
     @Column(name = "token_billing_enabled", nullable = false)
     private Boolean tokenBillingEnabled = Boolean.FALSE;
 
+    /**
+     * 模型相对平台 1x 基准价的计费倍率；为空或未启用计费时，桌面端按 free 展示。
+     */
+    @Column(name = "billing_multiplier", precision = 10, scale = 4)
+    private BigDecimal billingMultiplier;
+
     @Column(name = "api_key_ciphertext", nullable = false, columnDefinition = "TEXT")
     private String apiKeyCiphertext;
 
@@ -223,6 +229,14 @@ public class AiModelConfigEntity {
 
     public void setTokenBillingEnabled(Boolean tokenBillingEnabled) {
         this.tokenBillingEnabled = tokenBillingEnabled;
+    }
+
+    public BigDecimal getBillingMultiplier() {
+        return billingMultiplier;
+    }
+
+    public void setBillingMultiplier(BigDecimal billingMultiplier) {
+        this.billingMultiplier = billingMultiplier;
     }
 
     public String getApiKeyCiphertext() {

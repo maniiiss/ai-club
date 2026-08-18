@@ -511,8 +511,10 @@ export function InputBox() {
 			{isDragOver && (
 				<div className={styles.dropHint}>松开以附加文件</div>
 			)}
-			<div className={styles.surface}>
+			{/* 业务意图：步骤状态独立显示在输入框上方，避免占用编辑区内部空间。 */}
+			<div className={styles.composerStack}>
 				<PlanProgressStatus />
+				<div className={styles.surface}>
 				{visibleGuidance.length > 0 && (
 					<div className={styles.guidanceList} aria-label="已发送引导">
 						{visibleGuidance.map((item) => (
@@ -632,6 +634,7 @@ export function InputBox() {
 							</Button></Hint>
 						)}
 					</div>
+				</div>
 				</div>
 			</div>
 		</div>

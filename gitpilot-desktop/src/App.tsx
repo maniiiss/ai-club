@@ -17,6 +17,7 @@ import { DesignShell } from '@/src/components/design/DesignShell';
 import { SettingsDialog } from '@/src/components/desktop/SettingsDialog';
 import { resolveWorkbenchShortcut } from '@/src/workbench/shortcuts';
 import { useAppModeStore } from '@/src/store/app-mode';
+import { useDesktopUpdateStore } from '@/src/store/desktop-update';
 import styles from './App.module.css';
 
 export default function App() {
@@ -43,6 +44,13 @@ export default function App() {
 		void connect();
 		return () => { void disconnect(); };
 	}, [connect, disconnect, galleryRequested]);
+
+	useEffect(() => {
+		if (galleryRequested) return;
+		// 更新检查与登录和 Agent 连接解耦；网络失败只留在更新 store，不阻塞工作台首屏。
+		const timer = window.setTimeout(() => { void useDesktopUpdateStore.getState().checkForUpdate({ silent: true }); }, 3000);
+		return () => window.clearTimeout(timer);
+	}, [galleryRequested]);
 
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {

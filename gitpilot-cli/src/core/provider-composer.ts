@@ -58,6 +58,7 @@ export interface ProviderConfigInput {
 		reasoning: boolean;
 		thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
 		input: ("text" | "image")[];
+		billingMultiplier?: number;
 		cost: Model<Api>["cost"];
 		contextWindow: number;
 		maxTokens: number;

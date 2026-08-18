@@ -32,6 +32,8 @@ public record AiModelConfigSummary(
          * 是否对该模型启用 token 计费（灰度开关）。
          */
         Boolean tokenBillingEnabled,
+        /** 相对平台 1x 基准价的模型倍率；未启用或无完整计费配置时为空。 */
+        BigDecimal billingMultiplier,
         /**
          * 每千输入 token 积分单价。
          */
@@ -67,7 +69,32 @@ public record AiModelConfigSummary(
             BigDecimal cachedInputCreditPer1k
     ) {
         this(id, name, modelType, provider, apiBaseUrl, modelName, openaiApiMode, apiKeyConfigured, description,
-                enabled, contextLength, maxOutputTokens, tokenBillingEnabled, inputCreditPer1k,
+                enabled, contextLength, maxOutputTokens, tokenBillingEnabled, null, inputCreditPer1k,
                 outputCreditPer1k, cachedInputCreditPer1k, List.of("text"));
+    }
+
+    /** 兼容已增加输入模态但尚未增加倍率字段的调用方。 */
+    public AiModelConfigSummary(
+            Long id,
+            String name,
+            String modelType,
+            String provider,
+            String apiBaseUrl,
+            String modelName,
+            String openaiApiMode,
+            Boolean apiKeyConfigured,
+            String description,
+            Boolean enabled,
+            Integer contextLength,
+            Integer maxOutputTokens,
+            Boolean tokenBillingEnabled,
+            BigDecimal inputCreditPer1k,
+            BigDecimal outputCreditPer1k,
+            BigDecimal cachedInputCreditPer1k,
+            List<String> inputModalities
+    ) {
+        this(id, name, modelType, provider, apiBaseUrl, modelName, openaiApiMode, apiKeyConfigured, description,
+                enabled, contextLength, maxOutputTokens, tokenBillingEnabled, null, inputCreditPer1k,
+                outputCreditPer1k, cachedInputCreditPer1k, inputModalities);
     }
 }

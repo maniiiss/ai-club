@@ -1466,6 +1466,8 @@ export interface ProviderModelConfig {
 	thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
 	/** Supported input types. */
 	input: ("text" | "image")[];
+	/** 平台模型相对 1x 基准价的倍率，仅用于桌面端模型列表展示。 */
+	billingMultiplier?: number;
 	/** Per-million-token cost rates and optional request-wide input pricing tiers. */
 	cost: Model<Api>["cost"];
 	/** Maximum context window size in tokens. */

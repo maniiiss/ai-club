@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getThinkingLevelLabel, getThinkingLevelOptions, isBinaryThinkingMode, isMultimodalModel } from './ModelPicker';
+import { getModelBillingLabel, getThinkingLevelLabel, getThinkingLevelOptions, isBinaryThinkingMode, isMultimodalModel } from './ModelPicker';
 
 describe('思考级别展示', () => {
 	it('只有一个启用档位时显示 off/on，并保留实际提交值', () => {
@@ -35,5 +35,14 @@ describe('多模态模型展示', () => {
 		expect(isMultimodalModel({ input: ['text', 'image'] })).toBe(true);
 		expect(isMultimodalModel({ input: ['text'] })).toBe(false);
 		expect(isMultimodalModel({})).toBe(false);
+	});
+});
+
+describe('模型计费方案展示', () => {
+	it('未配置倍率时显示 free，配置倍率时显示 x 标签', () => {
+		expect(getModelBillingLabel({})).toBe('free');
+		expect(getModelBillingLabel({ billingMultiplier: 0.1 })).toBe('0.1x');
+		expect(getModelBillingLabel({ billingMultiplier: 1 })).toBe('1x');
+		expect(getModelBillingLabel({ billingMultiplier: 2 })).toBe('2x');
 	});
 });

@@ -63,6 +63,7 @@ public class ModelConfigService {
     private final TokenCipherService tokenCipherService;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+    private final ModelPricingService modelPricingService;
 
     /**
      * 智能体调用日志记录器，仅在 {@code invokePromptWithUsage} 兜底分支使用。
@@ -71,15 +72,26 @@ public class ModelConfigService {
     @Autowired(required = false)
     private AgentInvocationRecorder agentInvocationRecorder;
 
+    @Autowired
     public ModelConfigService(AiModelConfigRepository aiModelConfigRepository,
                               SelfUpgradePatrolPlanRepository selfUpgradePatrolPlanRepository,
                               TokenCipherService tokenCipherService,
-                              ObjectMapper objectMapper) {
+                              ObjectMapper objectMapper,
+                              ModelPricingService modelPricingService) {
         this.aiModelConfigRepository = aiModelConfigRepository;
         this.selfUpgradePatrolPlanRepository = selfUpgradePatrolPlanRepository;
         this.tokenCipherService = tokenCipherService;
         this.objectMapper = objectMapper;
+        this.modelPricingService = modelPricingService;
         this.httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+    }
+
+    /** 保留给只测试模型请求解析逻辑的单元测试使用，不触发模型定价换算。 */
+    public ModelConfigService(AiModelConfigRepository aiModelConfigRepository,
+                              SelfUpgradePatrolPlanRepository selfUpgradePatrolPlanRepository,
+                              TokenCipherService tokenCipherService,
+                              ObjectMapper objectMapper) {
+        this(aiModelConfigRepository, selfUpgradePatrolPlanRepository, tokenCipherService, objectMapper, null);
     }
 
     public PageResponse<AiModelConfigSummary> pageConfigs(int page, int size, String keyword, String provider, String modelType, Boolean enabled) {
@@ -373,18 +385,30 @@ public class ModelConfigService {
     }
 
     /**
-     * 应用模型 token 计费配置：单价与计费开关联动校验后写入实体。
-     * 启用计费要求输入/输出单价齐全；关闭计费时忽略单价并保留 DB 原值（不清空）。
+     * 应用模型 token 计费配置：启用倍率时由平台 1x 基准价换算实际输入/输出单价。
+     * 兼容旧版请求继续提交实际单价；关闭计费时忽略价格并保留 DB 原值（不清空）。
      */
     private void applyTokenBilling(AiModelConfigEntity entity, AiModelConfigRequest request) {
         boolean enabled = request.tokenBillingEnabled() != null && request.tokenBillingEnabled();
-        if (enabled && (request.inputCreditPer1k() == null || request.outputCreditPer1k() == null)) {
+        if (enabled && request.billingMultiplier() == null
+                && (request.inputCreditPer1k() == null || request.outputCreditPer1k() == null)) {
             throw new IllegalArgumentException("启用 token 计费必须配置输入与输出单价");
         }
         entity.setTokenBillingEnabled(enabled);
         if (enabled) {
-            entity.setInputCreditPer1k(request.inputCreditPer1k());
-            entity.setOutputCreditPer1k(request.outputCreditPer1k());
+            if (request.billingMultiplier() != null) {
+                if (modelPricingService == null) {
+                    throw new IllegalStateException("模型 1x 基准价服务未初始化");
+                }
+                modelPricingService.applyMultiplier(entity, request.billingMultiplier());
+            } else {
+                entity.setInputCreditPer1k(request.inputCreditPer1k());
+                entity.setOutputCreditPer1k(request.outputCreditPer1k());
+                if (modelPricingService != null) {
+                    entity.setBillingMultiplier(modelPricingService.deriveMultiplier(
+                            request.inputCreditPer1k(), request.outputCreditPer1k()));
+                }
+            }
             entity.setCachedInputCreditPer1k(request.cachedInputCreditPer1k());
         }
     }
@@ -414,6 +438,12 @@ public class ModelConfigService {
     }
 
     private AiModelConfigSummary toSummary(AiModelConfigEntity entity) {
+        // 计费开关关闭时即使数据库保留历史倍率，桌面端也必须按 free 展示。
+        java.math.BigDecimal displayMultiplier = Boolean.TRUE.equals(entity.getTokenBillingEnabled())
+                && entity.getInputCreditPer1k() != null
+                && entity.getOutputCreditPer1k() != null
+                ? entity.getBillingMultiplier()
+                : null;
         return new AiModelConfigSummary(
                 entity.getId(),
                 entity.getName(),
@@ -428,6 +458,7 @@ public class ModelConfigService {
                 entity.getContextLength(),
                 entity.getMaxOutputTokens(),
                 entity.getTokenBillingEnabled(),
+                displayMultiplier,
                 entity.getInputCreditPer1k(),
                 entity.getOutputCreditPer1k(),
                 entity.getCachedInputCreditPer1k(),

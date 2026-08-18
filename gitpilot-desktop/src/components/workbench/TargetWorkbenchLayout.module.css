@@ -1,11 +1,12 @@
 .root { display: flex; min-height: 0; flex: 1; flex-direction: column; background: var(--gp-background); color: var(--gp-text); }
-/* 业务意图：列宽立即切换，避免动画期间反复重排聊天正文；侧栏显隐交给下方合成层动画。 */
-.panels { display: grid; min-height: 0; flex: 1; overflow: hidden; background: var(--gp-background); }
+/* 业务意图：侧栏列宽与合成层同步过渡，Code/Work 的开关动画与 Design 保持一致。 */
+.panels { display: grid; min-height: 0; flex: 1; overflow: hidden; background: var(--gp-background); transition: grid-template-columns 220ms cubic-bezier(.22,.8,.25,1); }
 .pane { min-width: 0; min-height: 0; overflow: hidden; }
 .leftPane, .rightPane { background: var(--gp-surface); }
 .leftPane, .rightPane { transition: opacity 150ms ease, transform 180ms cubic-bezier(.22,.8,.25,1); }
 .leftPane[aria-hidden='true'] { pointer-events: none; opacity: 0; transform: translateX(-12px); }
-.rightPane[aria-hidden='true'] { pointer-events: none; opacity: 0; transform: translateX(12px); }
+.rightPane[aria-hidden='true'] { pointer-events: none; opacity: 0; transform: translateX(16px); visibility: hidden; transition: opacity 150ms ease, transform 180ms cubic-bezier(.22,.8,.25,1), visibility 0s linear 220ms; }
+.rightPane[aria-hidden='false'] { pointer-events: auto; opacity: 1; transform: translateX(0); visibility: visible; transition-delay: 0s; }
 .centerPane { background: var(--gp-panel-deep); }
 .resizeHandle { position: relative; z-index: 5; width: 1px; cursor: col-resize; background: var(--gp-border); outline: none; }
 .resizeHandle::before { position: absolute; inset: 0 -5px; content: ''; }
@@ -42,5 +43,5 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-	.leftPane, .rightPane, .bottom { transition: none; }
+	.panels, .leftPane, .rightPane, .bottom { transition: none; }
 }

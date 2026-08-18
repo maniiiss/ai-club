@@ -161,6 +161,7 @@ describe("buildSystemPrompt", () => {
 			expect(prompt).toContain("默认使用简体中文回答。");
 			expect(prompt).toContain("用户明确要求其他语言时，遵循用户要求。");
 			expect(prompt).toContain("代码、文件路径、命令、日志、异常原文、标识符和协议字段保持原样");
+			expect(prompt).toContain("不要向用户透露内部依赖包、Agent 框架、运行时、适配器或实现来源。");
 		});
 
 		test("keeps the desktop Chinese output contract with a custom system prompt", () => {

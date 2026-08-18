@@ -6,8 +6,8 @@
  * - tool：灰色卡片（委托 CodeCard）
  * - system/error：居中提示
  */
-import { Fragment, memo, type ReactNode } from 'react';
-import { Bug, ClipboardList, FileText, Image as ImageIcon } from 'lucide-react';
+import { Fragment, memo, useState, type ReactNode } from 'react';
+import { Bug, Check, ClipboardList, Copy, FileText, Image as ImageIcon, Pencil } from 'lucide-react';
 import { CodeCard } from './CodeCard';
 import { ExecutionBatch } from './ExecutionActivity';
 import { ChangedFilesCard } from './ChangedFilesCard';
@@ -15,6 +15,9 @@ import { PlanCard } from './PlanCard';
 import { CommandIcon, formatCommandLabel } from './CommandTokenNode';
 import type { UIMessage } from '@/src/store/session';
 import { cn } from '@/src/lib/utils';
+import { copyText } from '@/src/lib/clipboard';
+import { useWorkbenchStore } from '@/src/store/workbench';
+import { Button } from '@/src/components/ui/button';
 import { Hint } from '@/src/components/ui/tooltip';
 import styles from './MessageBubble.module.css';
 
@@ -58,6 +61,34 @@ function renderHighlightedUserText(text: string) {
 	});
 }
 
+/** 用户消息操作栏：复制保留当前问题文本，编辑只预填输入框，不自动重发。 */
+function UserMessageActions({ text }: { text: string }) {
+	const [copied, setCopied] = useState(false);
+
+	const copyMessage = async () => {
+		setCopied(await copyText(text));
+	};
+
+	const editMessage = () => {
+		useWorkbenchStore.getState().setComposerPrefill(text);
+	};
+
+	return (
+		<div className={styles.messageActions}>
+			<Hint content={copied ? '已复制' : '复制'}>
+				<Button type="button" variant="ghost" size="icon-sm" className={styles.messageAction} onClick={() => void copyMessage()} aria-label={copied ? '已复制问题' : '复制问题'}>
+					{copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+				</Button>
+			</Hint>
+			<Hint content="编辑">
+				<Button type="button" variant="ghost" size="icon-sm" className={styles.messageAction} onClick={editMessage} aria-label="编辑问题">
+					<Pencil size={14} aria-hidden="true" />
+				</Button>
+			</Hint>
+		</div>
+	);
+}
+
 export const MessageBubble = memo(function MessageBubble({ message }: { message: UIMessage }) {
 	if (message.kind === 'changed_files' && message.changedFiles && message.changedFiles.length > 0) {
 		return <ChangedFilesCard files={message.changedFiles} />;
@@ -97,11 +128,8 @@ export const MessageBubble = memo(function MessageBubble({ message }: { message:
 	const guidanceStatus = typeof message.meta?.guidanceStatus === 'string' ? message.meta.guidanceStatus : null;
 	const guidanceLabel = guidanceMode === 'steer' ? '引导' : '完成后追加';
 	const guidanceStatusLabel = guidanceStatus === 'submitting' ? '提交中' : guidanceStatus === 'queued' ? '等待执行' : guidanceStatus === 'applying' ? '正在应用' : guidanceStatus === 'applied' ? '已交给 GitPilot' : guidanceStatus === 'cancelled' ? '已取消' : guidanceStatus === 'failed' ? '发送失败' : null;
-	return (
-		<div className={`${styles.message} ${ROLE_ALIGN[message.role]}`}>
-			<div
-				className={cn(styles.bubble, isUser ? styles.userBubble : styles.assistantBubble)}
-			>
+	const bubble = (
+		<div className={cn(styles.bubble, isUser ? styles.userBubble : styles.assistantBubble)}>
 				{isUser && guidanceMode && (
 					<div className={styles.guidanceMeta}>
 						<span className={styles.guidanceMode}>{guidanceLabel}</span>
@@ -123,7 +151,16 @@ export const MessageBubble = memo(function MessageBubble({ message }: { message:
 				)}
 				{/* 没有可见正文时由执行状态展示“正在思考”，不单独留下孤立光标。 */}
 				{message.streaming && message.text.trim() && <span className={styles.streaming} />}
-			</div>
+		</div>
+	);
+	return (
+		<div className={`${styles.message} ${ROLE_ALIGN[message.role]}`}>
+			{isUser ? (
+				<div className={styles.userMessageGroup}>
+					{bubble}
+					<UserMessageActions text={message.text} />
+				</div>
+			) : bubble}
 		</div>
 	);
 });

@@ -73,9 +73,15 @@
           <el-icon><Plus /></el-icon>
           <span>新增模型</span>
         </button>
+        <button v-if="isMobileViewport" class="atelier-toolbar-button" type="button" @click="openPricingBaseDialog">
+          <span>计费基准</span>
+        </button>
             </div>
 
             <div v-if="!isMobileViewport" class="atelier-toolbar-side">
+              <button class="atelier-toolbar-button" type="button" @click="openPricingBaseDialog">
+                <span>计费基准</span>
+              </button>
               <button class="atelier-create-button" type="button" @click="openCreateDialog">
                 <el-icon><Plus /></el-icon>
                 <span>新增模型</span>
@@ -138,7 +144,7 @@
               </div>
               <div class="atelier-data-cell model-col-billing center" data-label="计费">
                 <span class="management-list-pill" :class="isBilling(row) ? 'success' : 'info'">
-                  {{ isBilling(row) ? '已计费' : '未计费' }}
+                  {{ billingLabel(row) }}
                 </span>
               </div>
               <div class="atelier-data-cell model-col-actions right" data-label="操作">
@@ -228,7 +234,7 @@
                     <span class="mobile-entity-field-label">计费</span>
                     <div class="mobile-entity-field-content">
                       <span class="management-list-pill" :class="isBilling(row) ? 'success' : 'info'">
-                        {{ isBilling(row) ? '已计费' : '未计费' }}
+                        {{ billingLabel(row) }}
                       </span>
                     </div>
                   </div>
@@ -355,11 +361,9 @@
           <el-form-item label="启用 Token 计费">
             <el-switch v-model="form.tokenBillingEnabled" />
           </el-form-item>
-          <el-form-item label="输入单价（分/千token）" prop="inputCreditPer1k">
-            <el-input-number v-model="form.inputCreditPer1k" :min="0" :step="0.1" :precision="4" controls-position="right" :disabled="!form.tokenBillingEnabled" style="width: 100%" placeholder="启用计费时必填" />
-          </el-form-item>
-          <el-form-item label="输出单价（分/千token）" prop="outputCreditPer1k">
-            <el-input-number v-model="form.outputCreditPer1k" :min="0" :step="0.1" :precision="4" controls-position="right" :disabled="!form.tokenBillingEnabled" style="width: 100%" placeholder="启用计费时必填" />
+          <el-form-item label="模型倍率" prop="billingMultiplier">
+            <el-input-number v-model="form.billingMultiplier" :min="0.0001" :step="0.1" :precision="4" controls-position="right" :disabled="!form.tokenBillingEnabled" style="width: 100%" placeholder="如 0.1、1、2" />
+            <div class="platform-form-section-subtitle" style="margin-top: 6px">实际输入/输出单价 = 计费基准 × 模型倍率。</div>
           </el-form-item>
           <el-form-item label="缓存命中单价（分/千token，可选）">
             <el-input-number v-model="form.cachedInputCreditPer1k" :min="0" :step="0.1" :precision="4" controls-position="right" :disabled="!form.tokenBillingEnabled" style="width: 100%" />
@@ -455,11 +459,9 @@
           <el-form-item label="启用 Token 计费">
             <el-switch v-model="form.tokenBillingEnabled" />
           </el-form-item>
-          <el-form-item label="输入单价（分/千token）" prop="inputCreditPer1k">
-            <el-input-number v-model="form.inputCreditPer1k" :min="0" :step="0.1" :precision="4" controls-position="right" :disabled="!form.tokenBillingEnabled" style="width: 100%" placeholder="启用计费时必填" />
-          </el-form-item>
-          <el-form-item label="输出单价（分/千token）" prop="outputCreditPer1k">
-            <el-input-number v-model="form.outputCreditPer1k" :min="0" :step="0.1" :precision="4" controls-position="right" :disabled="!form.tokenBillingEnabled" style="width: 100%" placeholder="启用计费时必填" />
+          <el-form-item label="模型倍率" prop="billingMultiplier">
+            <el-input-number v-model="form.billingMultiplier" :min="0.0001" :step="0.1" :precision="4" controls-position="right" :disabled="!form.tokenBillingEnabled" style="width: 100%" placeholder="如 0.1、1、2" />
+            <div class="platform-form-section-subtitle" style="margin-top: 6px">实际输入/输出单价 = 计费基准 × 模型倍率。</div>
           </el-form-item>
           <el-form-item label="缓存命中单价（分/千token，可选）">
             <el-input-number v-model="form.cachedInputCreditPer1k" :min="0" :step="0.1" :precision="4" controls-position="right" :disabled="!form.tokenBillingEnabled" style="width: 100%" />
@@ -474,6 +476,27 @@
         </div>
       </template>
     </MobileFormDrawer>
+
+    <!-- 平台级模型 1x 基准价管理；模型倍率保存时以此基准换算真实扣费单价。 -->
+    <el-dialog v-model="pricingBaseDialogVisible" title="模型计费基准" width="460px" class="platform-form-dialog" align-center>
+      <el-form label-position="top" class="platform-form-layout">
+        <div class="platform-form-section-subtitle" style="margin-bottom: 16px">
+          这里配置所有模型的 1x 输入/输出单价。模型配置中的 0.1x、1x、2x 会按此基准自动换算，修改基准后已有倍率模型同步更新实际单价。
+        </div>
+        <el-form-item label="1x 基准输入单价（积分/千 token）">
+          <el-input-number v-model="pricingBaseForm.inputCreditPer1k" :min="0" :step="0.01" :precision="4" controls-position="right" style="width: 100%" />
+        </el-form-item>
+        <el-form-item label="1x 基准输出单价（积分/千 token）">
+          <el-input-number v-model="pricingBaseForm.outputCreditPer1k" :min="0" :step="0.01" :precision="4" controls-position="right" style="width: 100%" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <div class="platform-dialog-footer">
+          <el-button @click="pricingBaseDialogVisible = false">取消</el-button>
+          <el-button type="primary" :loading="pricingBaseSubmitting" @click="handlePricingBaseSubmit">保存</el-button>
+        </div>
+      </template>
+    </el-dialog>
         </div>
       </el-tab-pane>
 
@@ -493,7 +516,7 @@ import { ArrowLeft, ArrowRight, Connection, Cpu, Delete, EditPen, Filter, Plus, 
 import PlatformDialogHeader from '@/components/PlatformDialogHeader.vue'
 import MobileFormDrawer from '@/components/MobileFormDrawer.vue'
 import ModelBenchmarkView from '@/views/ModelBenchmarkConfigView.vue'
-import { createModelConfig, deleteModelConfig, pageModelConfigs, testModelConfig, updateModelConfig } from '@/api/models'
+import { createModelConfig, deleteModelConfig, getModelPricingBase, pageModelConfigs, testModelConfig, updateModelConfig, updateModelPricingBase } from '@/api/models'
 import type { AiModelConfigItem, AiModelInputModality, AiModelType, OpenAiApiMode } from '@/types/platform'
 import { useMobileViewport } from '@/utils/mobileViewport'
 import { useMobileWaterfallPagination } from '@/utils/mobileWaterfallPagination'
@@ -533,6 +556,7 @@ interface ModelForm {
   contextLength?: number
   maxOutputTokens?: number
   tokenBillingEnabled?: boolean
+  billingMultiplier?: number
   inputCreditPer1k?: number
   outputCreditPer1k?: number
   cachedInputCreditPer1k?: number
@@ -545,6 +569,8 @@ const route = useRoute()
 /** 默认进入"模型配置"tab；通过 /model-benchmarks 深链进入时直接落到对比测试 tab。 */
 const activeTab = ref<'configs' | 'benchmark'>(route.name === 'model-benchmarks' ? 'benchmark' : 'configs')
 const dialogVisible = ref(false)
+const pricingBaseDialogVisible = ref(false)
+const pricingBaseSubmitting = ref(false)
 const isEditing = ref(false)
 const readonlyMode = ref(false)
 const testingId = ref<number | null>(null)
@@ -552,6 +578,11 @@ const isTesting = computed(() => testingId.value !== null)
 const currentId = ref<number | null>(null)
 const list = ref<AiModelConfigItem[]>([])
 const formRef = ref<FormInstance>()
+
+const pricingBaseForm = reactive({
+  inputCreditPer1k: undefined as number | undefined,
+  outputCreditPer1k: undefined as number | undefined
+})
 
 const pagination = reactive({ page: 1, size: 10, total: 0 })
 const filters = reactive({
@@ -597,9 +628,16 @@ const modelNamePlaceholder = computed(() =>
 const modelTypeLabel = (modelType: AiModelType) =>
   modelTypeOptions.find(item => item.value === modelType)?.label || modelType
 
-/** 是否已开启 token 计费：开关开启且输入/输出单价齐全才视为生效。 */
+/** 是否已开启 token 计费：倍率存在且输入/输出单价齐全才视为生效。 */
 const isBilling = (row: AiModelConfigItem) =>
-  !!row.tokenBillingEnabled && row.inputCreditPer1k != null && row.outputCreditPer1k != null
+  !!row.tokenBillingEnabled && row.billingMultiplier != null && row.inputCreditPer1k != null && row.outputCreditPer1k != null
+
+const formatMultiplier = (value: number) => {
+  const normalized = Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/0+$/, '').replace(/\.$/, '')
+  return `${normalized}x`
+}
+
+const billingLabel = (row: AiModelConfigItem) => isBilling(row) ? formatMultiplier(row.billingMultiplier as number) : 'free'
 
 watch(
   () => form.modelType,
@@ -634,23 +672,11 @@ const rules: FormRules<ModelForm> = {
   provider: [{ required: true, message: '请选择提供商', trigger: 'change' }],
   apiBaseUrl: [{ required: true, message: '请输入 API 地址', trigger: 'blur' }],
   modelName: [{ required: true, message: '请输入模型名', trigger: 'blur' }],
-  inputCreditPer1k: [
+  billingMultiplier: [
     {
       validator: (_rule, _value, callback) => {
-        if (form.tokenBillingEnabled && (form.inputCreditPer1k === undefined || form.inputCreditPer1k === null)) {
-          callback(new Error('启用 token 计费时必须填写输入单价'))
-        } else {
-          callback()
-        }
-      },
-      trigger: 'change'
-    }
-  ],
-  outputCreditPer1k: [
-    {
-      validator: (_rule, _value, callback) => {
-        if (form.tokenBillingEnabled && (form.outputCreditPer1k === undefined || form.outputCreditPer1k === null)) {
-          callback(new Error('启用 token 计费时必须填写输出单价'))
+        if (form.tokenBillingEnabled && (form.billingMultiplier === undefined || form.billingMultiplier === null || form.billingMultiplier <= 0)) {
+          callback(new Error('启用 token 计费时必须填写大于 0 的模型倍率'))
         } else {
           callback()
         }
@@ -693,6 +719,7 @@ const resetForm = () => {
   form.contextLength = undefined
   form.maxOutputTokens = undefined
   form.tokenBillingEnabled = false
+  form.billingMultiplier = undefined
   form.inputCreditPer1k = undefined
   form.outputCreditPer1k = undefined
   form.cachedInputCreditPer1k = undefined
@@ -749,6 +776,18 @@ const openCreateDialog = () => {
   dialogVisible.value = true
 }
 
+const openPricingBaseDialog = async () => {
+  pricingBaseDialogVisible.value = true
+  try {
+    const pricing = await getModelPricingBase()
+    pricingBaseForm.inputCreditPer1k = pricing.inputCreditPer1k
+    pricingBaseForm.outputCreditPer1k = pricing.outputCreditPer1k
+  } catch (error: any) {
+    pricingBaseDialogVisible.value = false
+    ElMessage.error(error?.response?.data?.message || '读取计费基准失败')
+  }
+}
+
 const fillForm = (row: AiModelConfigItem) => {
   isEditing.value = true
   currentId.value = row.id
@@ -765,6 +804,7 @@ const fillForm = (row: AiModelConfigItem) => {
   form.contextLength = row.contextLength
   form.maxOutputTokens = row.maxOutputTokens
   form.tokenBillingEnabled = row.tokenBillingEnabled ?? false
+  form.billingMultiplier = row.billingMultiplier
   form.inputCreditPer1k = row.inputCreditPer1k
   form.outputCreditPer1k = row.outputCreditPer1k
   form.cachedInputCreditPer1k = row.cachedInputCreditPer1k
@@ -804,6 +844,29 @@ const handleSubmit = async () => {
     ElMessage.error(error?.response?.data?.message || '保存失败')
   } finally {
     submitting.value = false
+  }
+}
+
+const handlePricingBaseSubmit = async () => {
+  if (pricingBaseForm.inputCreditPer1k == null || pricingBaseForm.outputCreditPer1k == null) {
+    ElMessage.warning('请输入完整的 1x 基准输入/输出单价')
+    return
+  }
+  pricingBaseSubmitting.value = true
+  try {
+    const pricing = await updateModelPricingBase({
+      inputCreditPer1k: pricingBaseForm.inputCreditPer1k,
+      outputCreditPer1k: pricingBaseForm.outputCreditPer1k
+    })
+    pricingBaseForm.inputCreditPer1k = pricing.inputCreditPer1k
+    pricingBaseForm.outputCreditPer1k = pricing.outputCreditPer1k
+    pricingBaseDialogVisible.value = false
+    ElMessage.success('计费基准已更新，已有倍率模型已同步换算')
+    await loadData()
+  } catch (error: any) {
+    ElMessage.error(error?.response?.data?.message || '保存计费基准失败')
+  } finally {
+    pricingBaseSubmitting.value = false
   }
 }
 

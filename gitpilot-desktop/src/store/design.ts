@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { isTauriEnv, onDesignEvent, rpc } from '@/src/rpc/bridge';
 import type { AgentSessionEvent, DesignPatch, DesignRpcFile, DesignRpcSnapshot, DesignStreamLine } from '@/src/rpc/types';
-import { createDefaultProjectGuidelines, createDemoSnapshot, DESIGN_TARGETS, DESIGN_VIEWPORT_PRESETS, type DesignDocument, type DesignExecution, type DesignExecutionStep, type DesignFileName, type DesignIntake, type DesignMessage, type DesignPlan, type DesignPreset, type DesignProjectGuidelines, type DesignSnapshot, type DesignTarget, type DesignTodoItem, type DesignUploadRecord, type DesignViewport } from '@/src/design/design-types';
+import { createDefaultProjectGuidelines, createDemoSnapshot, DESIGN_TARGETS, DESIGN_VIEWPORT_PRESETS, type DesignDocument, type DesignExecution, type DesignExecutionStep, type DesignFileName, type DesignIntake, type DesignMessage, type DesignPlan, type DesignPreset, type DesignPreviewMode, type DesignProjectGuidelines, type DesignSnapshot, type DesignTarget, type DesignTodoItem, type DesignUploadRecord, type DesignViewport } from '@/src/design/design-types';
 import { synchronizeDesignPages } from '@/src/design/design-pages';
 
 const STORAGE_KEY_PREFIX = 'gitpilot-desktop.design-snapshot';
@@ -11,6 +11,7 @@ const PROJECTS_KEY = 'gitpilot-desktop.design-projects';
 const CURRENT_PROJECT_KEY = 'gitpilot-desktop.design-current-project';
 const LEGACY_CURRENT_PROJECT_KEY = 'gitpilot-desktop.currentProject';
 const LEGACY_MIGRATED_KEY = 'gitpilot-desktop.design-project-migrated';
+const MISSING_DESIGN_WORKSPACE_ERROR = '当前项目还没有 Design 工作区';
 const newId = () => `design-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
 /** 首轮需求确认对应的执行轨道；只在用户确认后交给 Pi Design Agent 推进。 */
@@ -132,6 +133,7 @@ interface DesignProjectBucket {
 	target: DesignTarget;
 	viewport: DesignViewport;
 	zoom: number;
+	previewMode: DesignPreviewMode;
 	selectedElementId: string | null;
 	messages: DesignMessage[];
 	pendingPlan: DesignPlan | null;
@@ -181,7 +183,7 @@ function saveBucket(state: Pick<DesignState, keyof DesignProjectBucket | 'projec
 	try {
 		const bucket: DesignProjectBucket = {
 			snapshot: state.snapshot, activePageId: state.activePageId, activeFile: state.activeFile, activeTab: state.activeTab,
-			target: state.target, viewport: state.viewport, zoom: state.zoom, selectedElementId: state.selectedElementId,
+			target: state.target, viewport: state.viewport, zoom: state.zoom, previewMode: state.previewMode, selectedElementId: state.selectedElementId,
 			messages: state.messages, pendingPlan: state.pendingPlan, pendingApproval: state.pendingApproval, execution: state.execution,
 			queuedPrompts: state.queuedPrompts, streamingAssistantId: state.streamingAssistantId, isGenerating: state.isGenerating,
 			error: state.error, hasWorkspace: state.hasWorkspace, isProjectStarted: state.isProjectStarted,
@@ -245,6 +247,11 @@ function readStarted(projectPath: string | null | undefined): boolean {
 /** Design 工作区入口标记只是首屏缓存，存储不可用时不能阻断 sidecar 创建和页面跳转。 */
 function saveStarted(projectPath: string | null | undefined): void {
 	try { localStorage.setItem(projectCacheKey(STARTED_KEY_PREFIX, projectPath), 'true'); } catch { /* 缓存不可用不影响工作区状态 */ }
+}
+
+/** sidecar 确认工作区不存在时清理首屏启动标记，避免过期缓存再次把项目当成已创建。 */
+function clearStarted(projectPath: string | null | undefined): void {
+	try { localStorage.removeItem(projectCacheKey(STARTED_KEY_PREFIX, projectPath)); } catch { /* 缓存不可用不影响 sidecar 权威状态 */ }
 }
 
 function toDesignSnapshot(snapshot: DesignRpcSnapshot): DesignSnapshot {
@@ -319,6 +326,8 @@ export interface DesignState {
 	target: DesignTarget;
 	viewport: DesignViewport;
 	zoom: number;
+	/** 当前预览容器的展示方式；按项目保存，恢复 Design 时保持用户上次选择。 */
+	previewMode: DesignPreviewMode;
 	selectedElementId: string | null;
 	messages: DesignMessage[];
 	pendingPlan: DesignPlan | null;
@@ -344,6 +353,7 @@ export interface DesignState {
 	setTarget: (target: DesignTarget) => void;
 	setViewport: (viewport: DesignViewport) => void;
 	setZoom: (zoom: number) => void;
+	setPreviewMode: (mode: DesignPreviewMode) => void;
 	setActivePage: (pageId: string) => void;
 	setActiveFile: (file: DesignFileName) => void;
 	saveProjectGuidelines: (guidelines: DesignProjectGuidelines) => Promise<void>;
@@ -466,6 +476,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
 		target: savedBucket?.target ?? 'desktop',
 		viewport: savedBucket?.viewport ?? { width: DESIGN_TARGETS.desktop.width, height: DESIGN_TARGETS.desktop.height },
 		zoom: savedBucket?.zoom ?? 100,
+		previewMode: savedBucket?.previewMode ?? 'original',
 		selectedElementId: savedBucket?.selectedElementId ?? null,
 		messages: savedBucket?.messages ?? [{ id: 'welcome', kind: 'assistant', text: '描述你想要的页面，我会把它变成适配手机和桌面的 HTML 原型。' }],
 		pendingPlan: savedBucket?.pendingPlan ?? null,
@@ -489,6 +500,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
 		},
 		setViewport: (viewport) => set({ viewport }),
 		setZoom: (zoom) => set({ zoom }),
+		setPreviewMode: (previewMode) => set({ previewMode }),
 		setActivePage: (activePageId) => set({ activePageId, activeTab: 'preview', selectedElementId: null }),
 		setActiveFile: (activeFile) => set({ activeFile }),
 		saveProjectGuidelines: async (guidelines) => {
@@ -589,6 +601,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
 				target: saved?.target ?? 'desktop',
 				viewport: saved?.viewport ?? { width: DESIGN_TARGETS.desktop.width, height: DESIGN_TARGETS.desktop.height },
 				zoom: saved?.zoom ?? 100,
+				previewMode: saved?.previewMode ?? 'original',
 				selectedElementId: saved?.selectedElementId ?? null,
 				messages: saved?.messages ?? [{ id: 'welcome', kind: 'assistant', text: '描述你想要的页面，我会把它变成适配手机和桌面的 HTML 原型。' }],
 				pendingPlan: saved?.pendingPlan ?? null,
@@ -622,7 +635,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
 			saveDesignProjects(projects);
 			saveDesignProjectPath(nextPath);
 			saveStarted(nextPath);
-			set({ projects, snapshot: cached, projectPath: nextPath, activeProjectKey: projectKey(nextPath), activePageId: saved?.activePageId ?? cached.document.entryPageId, activeFile: saved?.activeFile ?? cached.files[0]?.path ?? 'index.html', activeTab: saved?.activeTab ?? 'preview', target: saved?.target ?? 'desktop', viewport: saved?.viewport ?? { width: DESIGN_TARGETS.desktop.width, height: DESIGN_TARGETS.desktop.height }, zoom: saved?.zoom ?? 100, selectedElementId: saved?.selectedElementId ?? null, messages: saved?.messages ?? [{ id: 'welcome', kind: 'assistant', text: '描述你想要的页面，我会把它变成适配手机和桌面的 HTML 原型。' }], pendingPlan: saved?.pendingPlan ?? null, pendingApproval: saved?.pendingApproval ?? null, execution: saved?.execution ?? initialExecution(), queuedPrompts: saved?.queuedPrompts ?? [], streamingAssistantId: saved?.streamingAssistantId ?? null, isGenerating: saved?.isGenerating ?? false, error: null, hasWorkspace: true, isProjectStarted: true, selectedPresetId: saved?.selectedPresetId ?? null, pendingPreset: saved?.pendingPreset ?? null, intake: saved?.intake ?? null, todos: saved?.todos ?? [], uploadRecords: saved?.uploadRecords ?? [] });
+			set({ projects, snapshot: cached, projectPath: nextPath, activeProjectKey: projectKey(nextPath), activePageId: saved?.activePageId ?? cached.document.entryPageId, activeFile: saved?.activeFile ?? cached.files[0]?.path ?? 'index.html', activeTab: saved?.activeTab ?? 'preview', target: saved?.target ?? 'desktop', viewport: saved?.viewport ?? { width: DESIGN_TARGETS.desktop.width, height: DESIGN_TARGETS.desktop.height }, zoom: saved?.zoom ?? 100, previewMode: saved?.previewMode ?? 'original', selectedElementId: saved?.selectedElementId ?? null, messages: saved?.messages ?? [{ id: 'welcome', kind: 'assistant', text: '描述你想要的页面，我会把它变成适配手机和桌面的 HTML 原型。' }], pendingPlan: saved?.pendingPlan ?? null, pendingApproval: saved?.pendingApproval ?? null, execution: saved?.execution ?? initialExecution(), queuedPrompts: saved?.queuedPrompts ?? [], streamingAssistantId: saved?.streamingAssistantId ?? null, isGenerating: saved?.isGenerating ?? false, error: null, hasWorkspace: true, isProjectStarted: true, selectedPresetId: saved?.selectedPresetId ?? null, pendingPreset: saved?.pendingPreset ?? null, intake: saved?.intake ?? null, todos: saved?.todos ?? [], uploadRecords: saved?.uploadRecords ?? [] });
 			await get().hydrateSnapshot();
 		},
 		hydrateSnapshot: async () => {
@@ -638,7 +651,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
 			if (generation !== hydrateGeneration || get().projectPath !== projectPath) return;
 			const previousStarted = get().isProjectStarted;
 			const hasWorkspace = get().hasWorkspace || hasCachedWorkspace(projectPath, saved);
-			set({ snapshot: cached, projectPath, activeProjectKey: projectKey(projectPath), activePageId: saved?.activePageId ?? cached.document.entryPageId, activeFile: saved?.activeFile ?? cached.files[0]?.path ?? 'index.html', activeTab: saved?.activeTab ?? 'preview', target: saved?.target ?? 'desktop', viewport: saved?.viewport ?? { width: DESIGN_TARGETS.desktop.width, height: DESIGN_TARGETS.desktop.height }, zoom: saved?.zoom ?? 100, selectedElementId: saved?.selectedElementId ?? null, messages: saved?.messages ?? [{ id: 'welcome', kind: 'assistant', text: '描述你想要的页面，我会把它变成适配手机和桌面的 HTML 原型。' }], pendingPlan: saved?.pendingPlan ?? null, pendingApproval: saved?.pendingApproval ?? null, execution: saved?.execution ?? initialExecution(), queuedPrompts: saved?.queuedPrompts ?? [], streamingAssistantId: saved?.streamingAssistantId ?? null, isGenerating: saved?.isGenerating ?? false, error: null, hasWorkspace, isProjectStarted: previousStarted || saved?.isProjectStarted || readStarted(projectPath), selectedPresetId: saved?.selectedPresetId ?? null, pendingPreset: saved?.pendingPreset ?? null, intake: saved?.intake ?? null, todos: saved?.todos ?? [], uploadRecords: saved?.uploadRecords ?? [] });
+			set({ snapshot: cached, projectPath, activeProjectKey: projectKey(projectPath), activePageId: saved?.activePageId ?? cached.document.entryPageId, activeFile: saved?.activeFile ?? cached.files[0]?.path ?? 'index.html', activeTab: saved?.activeTab ?? 'preview', target: saved?.target ?? 'desktop', viewport: saved?.viewport ?? { width: DESIGN_TARGETS.desktop.width, height: DESIGN_TARGETS.desktop.height }, zoom: saved?.zoom ?? 100, previewMode: saved?.previewMode ?? 'original', selectedElementId: saved?.selectedElementId ?? null, messages: saved?.messages ?? [{ id: 'welcome', kind: 'assistant', text: '描述你想要的页面，我会把它变成适配手机和桌面的 HTML 原型。' }], pendingPlan: saved?.pendingPlan ?? null, pendingApproval: saved?.pendingApproval ?? null, execution: saved?.execution ?? initialExecution(), queuedPrompts: saved?.queuedPrompts ?? [], streamingAssistantId: saved?.streamingAssistantId ?? null, isGenerating: saved?.isGenerating ?? false, error: null, hasWorkspace, isProjectStarted: previousStarted || saved?.isProjectStarted || readStarted(projectPath), selectedPresetId: saved?.selectedPresetId ?? null, pendingPreset: saved?.pendingPreset ?? null, intake: saved?.intake ?? null, todos: saved?.todos ?? [], uploadRecords: saved?.uploadRecords ?? [] });
 			try {
 				const response = await rpc.designOpen(projectPath);
 				if (generation !== hydrateGeneration || get().projectPath !== projectPath) return;
@@ -649,6 +662,13 @@ export const useDesignStore = create<DesignState>((set, get) => {
 					saveDesignProjects(projects);
 					saveStarted(projectPath);
 					set((state) => ({ projects, snapshot, projectPath, activeProjectKey: projectKey(projectPath), activePageId: saved?.activePageId && snapshot.document.pages.some((page) => page.id === saved.activePageId) ? saved.activePageId : snapshot.document.entryPageId, hasWorkspace: true, isProjectStarted: true, error: null, execution: state.execution }));
+				} else if (!response.success && response.command === 'design_open' && response.error === MISSING_DESIGN_WORKSPACE_ERROR) {
+					// 磁盘是 Design Workspace 的权威来源；缓存过期时必须回到入口，
+					// 否则预设选择会误走 design_save_guidelines 并显示“没有可保存规范”的错误。
+					const projects = upsertProjectEntry(get().projects, projectPath, { hasWorkspace: false });
+					saveDesignProjects(projects);
+					clearStarted(projectPath);
+					set({ projects, hasWorkspace: false, isProjectStarted: false, error: null });
 				}
 			} catch (error) {
 				if (generation !== hydrateGeneration || get().projectPath !== projectPath) return;
@@ -871,9 +891,10 @@ export const useDesignStore = create<DesignState>((set, get) => {
 					projects,
 					snapshot,
 					projectPath,
-					activeProjectKey: projectKey(projectPath),
-					activePageId: snapshot.document.entryPageId,
-					hasWorkspace: true,
+				activeProjectKey: projectKey(projectPath),
+				activePageId: snapshot.document.entryPageId,
+				previewMode: 'original',
+				hasWorkspace: true,
 					isProjectStarted: true,
 					intake: { sourcePrompt: prompt.trim(), step: 0, status: 'pending', answers: {} },
 					todos: createDesignTodos(),

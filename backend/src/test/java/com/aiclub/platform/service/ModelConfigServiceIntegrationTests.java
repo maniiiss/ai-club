@@ -4,6 +4,7 @@ import com.aiclub.platform.dto.AiModelConfigSummary;
 import com.aiclub.platform.dto.ModelTestResult;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.request.AiModelConfigRequest;
+import com.aiclub.platform.dto.request.ModelPricingBaseRequest;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,6 +28,9 @@ class ModelConfigServiceIntegrationTests {
 
     @Autowired
     private ModelConfigService modelConfigService;
+
+    @Autowired
+    private ModelPricingService modelPricingService;
 
     /**
      * 默认下拉选项应只返回对话模型，同时分页查询支持按模型类型筛选。
@@ -357,7 +361,40 @@ class ModelConfigServiceIntegrationTests {
                 false, BigDecimal.TEN, BigDecimal.TEN, null));
 
         assertThat(updated.tokenBillingEnabled()).isFalse();
+        assertThat(updated.billingMultiplier()).isNull();
         assertThat(updated.inputCreditPer1k()).isEqualByComparingTo(BigDecimal.ONE);
         assertThat(updated.outputCreditPer1k()).isEqualByComparingTo(BigDecimal.valueOf(2));
+    }
+
+    /** 新版管理端提交模型倍率时，实际扣费输入/输出单价应按平台 1x 基准价换算。 */
+    @Test
+    void shouldConvertBillingMultiplierToInputAndOutputPrices() {
+        AiModelConfigSummary created = modelConfigService.createConfig(new AiModelConfigRequest(
+                "倍率模型", ModelConfigService.MODEL_TYPE_CHAT, ModelConfigService.PROVIDER_OPENAI,
+                "https://api.openai.com/v1", "gpt-multiplier",
+                ModelConfigService.OPENAI_API_MODE_AUTO, "key", "", true, null, null,
+                true, BigDecimal.valueOf(2), null, null, null, List.of("text")));
+
+        assertThat(created.billingMultiplier()).isEqualByComparingTo(BigDecimal.valueOf(2));
+        assertThat(created.inputCreditPer1k()).isEqualByComparingTo(BigDecimal.valueOf(0.04));
+        assertThat(created.outputCreditPer1k()).isEqualByComparingTo(BigDecimal.valueOf(0.12));
+    }
+
+    /** 修改平台 1x 基准价后，已有模型仍按原倍率同步更新实际扣费单价。 */
+    @Test
+    void shouldRecalculateExistingModelPricesWhenBasePricingChanges() {
+        AiModelConfigSummary created = modelConfigService.createConfig(new AiModelConfigRequest(
+                "基准联动模型", ModelConfigService.MODEL_TYPE_CHAT, ModelConfigService.PROVIDER_OPENAI,
+                "https://api.openai.com/v1", "gpt-base-pricing",
+                ModelConfigService.OPENAI_API_MODE_AUTO, "key", "", true, null, null,
+                true, BigDecimal.valueOf(2), null, null, null, List.of("text")));
+
+        modelPricingService.updateBasePricing(new ModelPricingBaseRequest(
+                BigDecimal.valueOf(0.01), BigDecimal.valueOf(0.03)));
+
+        AiModelConfigSummary updated = modelConfigService.getConfig(created.id());
+        assertThat(updated.billingMultiplier()).isEqualByComparingTo(BigDecimal.valueOf(2));
+        assertThat(updated.inputCreditPer1k()).isEqualByComparingTo(BigDecimal.valueOf(0.02));
+        assertThat(updated.outputCreditPer1k()).isEqualByComparingTo(BigDecimal.valueOf(0.06));
     }
 }

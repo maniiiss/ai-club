@@ -86,6 +86,28 @@ npm run tauri dev     # 开发模式，热重载
 npm run tauri build   # 生产构建，产出 src-tauri/target/release 下的安装包
 ```
 
+### Windows 一键生成发布上传包
+
+双击 `scripts/build-release-windows.cmd`，或在 `gitpilot-desktop` 目录执行：
+
+```powershell
+.\scripts\build-release-windows.cmd
+```
+
+脚本会检查三处版本号、Tauri sidecar、签名密钥和发布端点，然后构建 MSI、NSIS 以及带 `.sig` 的 updater ZIP，最后整理到：
+
+```text
+gitpilot-desktop\release-artifacts\<版本号>\
+```
+
+首次运行找不到签名私钥时会询问是否生成。私钥默认保存在 `%USERPROFILE%\.tauri\gitpilot.key`，只用于本机签名，绝对不要上传；公钥会由脚本通过临时配置注入构建结果。也可以显式指定发布地址：
+
+```powershell
+.\scripts\build-release-windows.ps1 -ApiBaseUrl https://你的平台域名
+```
+
+生成目录中的六类文件分别上传到管理端“桌面版本发布”页面：MSI 安装器、MSI updater ZIP、MSI `.sig`、NSIS 安装器、NSIS updater ZIP、NSIS `.sig`。如果只想整理已有构建结果，可使用 `-SkipBuild`。
+
 ## 当前状态
 
 - ✅ 设计文档已落地并通过 spike 验证

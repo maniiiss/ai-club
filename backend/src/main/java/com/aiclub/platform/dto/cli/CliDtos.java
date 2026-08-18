@@ -2,6 +2,7 @@ package com.aiclub.platform.dto.cli;
 
 import com.aiclub.platform.dto.CurrentUserInfo;
 
+import java.math.BigDecimal;
 import java.util.List;
 
 /** GitPilot CLI 设备授权、模型列表和短期模型会话的传输对象集合。 */
@@ -39,7 +40,9 @@ public final class CliDtos {
             /** 模型最大输出 token 数，未配置时为 null，CLI 回退默认。 */
             Integer maxOutputTokens,
             /** 平台配置的输入模态，CLI 将其映射为 PI Model.input。 */
-            List<String> inputModalities
+            List<String> inputModalities,
+            /** 模型相对平台 1x 基准价的倍率；为空时桌面端显示 free。 */
+            BigDecimal billingMultiplier
     ) {
         /** 兼容未增加输入能力字段前的构造方，旧模型默认仅支持文本。 */
         public CliModelSummary(
@@ -52,7 +55,22 @@ public final class CliDtos {
                 Integer contextLength,
                 Integer maxOutputTokens
         ) {
-            this(id, name, provider, modelName, description, openaiApiMode, contextLength, maxOutputTokens, List.of("text"));
+            this(id, name, provider, modelName, description, openaiApiMode, contextLength, maxOutputTokens, List.of("text"), null);
+        }
+
+        /** 兼容已增加输入模态但尚未增加倍率字段的调用方。 */
+        public CliModelSummary(
+                Long id,
+                String name,
+                String provider,
+                String modelName,
+                String description,
+                String openaiApiMode,
+                Integer contextLength,
+                Integer maxOutputTokens,
+                List<String> inputModalities
+        ) {
+            this(id, name, provider, modelName, description, openaiApiMode, contextLength, maxOutputTokens, inputModalities, null);
         }
     }
 

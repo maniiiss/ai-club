@@ -4,9 +4,12 @@ import com.aiclub.platform.annotation.RequirePermission;
 import com.aiclub.platform.common.api.ApiResponse;
 import com.aiclub.platform.dto.AiModelConfigSummary;
 import com.aiclub.platform.dto.ModelTestResult;
+import com.aiclub.platform.dto.ModelPricingBaseSummary;
 import com.aiclub.platform.dto.PageResponse;
 import com.aiclub.platform.dto.request.AiModelConfigRequest;
+import com.aiclub.platform.dto.request.ModelPricingBaseRequest;
 import com.aiclub.platform.service.ModelConfigService;
+import com.aiclub.platform.service.ModelPricingService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -25,9 +28,23 @@ import java.util.List;
 public class ModelConfigController {
 
     private final ModelConfigService modelConfigService;
+    private final ModelPricingService modelPricingService;
 
-    public ModelConfigController(ModelConfigService modelConfigService) {
+    public ModelConfigController(ModelConfigService modelConfigService, ModelPricingService modelPricingService) {
         this.modelConfigService = modelConfigService;
+        this.modelPricingService = modelPricingService;
+    }
+
+    @GetMapping("/pricing-base")
+    @RequirePermission("model:view")
+    public ApiResponse<ModelPricingBaseSummary> pricingBase() {
+        return ApiResponse.success(modelPricingService.getBasePricing());
+    }
+
+    @PutMapping("/pricing-base")
+    @RequirePermission("model:manage")
+    public ApiResponse<ModelPricingBaseSummary> updatePricingBase(@Valid @RequestBody ModelPricingBaseRequest request) {
+        return ApiResponse.success(modelPricingService.updateBasePricing(request));
     }
 
     @GetMapping

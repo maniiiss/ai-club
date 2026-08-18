@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
 /** 统一设置窗口的三个功能分区。 */
-export type SettingsSection = 'basic' | 'mcp' | 'rtk';
+export type SettingsSection = 'basic' | 'mcp' | 'rtk' | 'update';
 
 /** 界面字体只应用于非代码类文本，代码与终端继续使用等宽字体。 */
 export type DesktopFont = 'default' | 'segoe' | 'yahei' | 'bahnschrift';

@@ -3,8 +3,13 @@
 .assistantAlign { justify-content: flex-start; }
 .systemAlign { justify-content: center; }
 .bubble { min-width: 0; color: var(--gp-text); }
-.userBubble { max-width: min(78%, 720px); border: 1px solid var(--gp-border); border-radius: 12px; background: var(--secondary); padding: 12px 16px; color: var(--secondary-foreground); box-shadow: var(--shadow-md); }
+.userMessageGroup { position: relative; display: flex; min-width: 0; max-width: min(78%, 720px); flex-direction: column; align-items: flex-end; }
+.userBubble { max-width: 100%; border: 1px solid var(--gp-border); border-radius: 12px; background: var(--secondary); padding: 12px 16px; color: var(--secondary-foreground); box-shadow: var(--shadow-md); }
 .assistantBubble { width: 100%; max-width: none; padding: 4px; }
+.messageActions { position: absolute; z-index: 1; top: calc(100% - 4px); right: 2px; display: flex; align-items: center; gap: 2px; padding-top: 4px; opacity: 0; pointer-events: none; transform: translateY(-3px); transition: opacity 140ms ease, transform 140ms ease; }
+.userMessageGroup:hover .messageActions, .userMessageGroup:focus-within .messageActions { opacity: 1; pointer-events: auto; transform: translateY(0); }
+.messageAction { width: 26px; height: 26px; padding: 0; color: var(--gp-text-muted); }
+.messageAction:hover { color: var(--gp-text); }
 .userText { white-space: pre-wrap; overflow-wrap: anywhere; }
 .highlightToken { display: inline-flex; align-items: center; gap: 4px; border: 1px solid color-mix(in srgb, var(--gp-action) 55%, var(--gp-border)); border-radius: 4px; background: color-mix(in srgb, var(--gp-action) 12%, transparent); padding: 0 4px; color: inherit; font: inherit; vertical-align: -0.1em; }
 .highlightToken svg { width: 13px; height: 13px; flex: 0 0 13px; color: var(--gp-text-muted); }
@@ -18,4 +23,4 @@
 .system { display: flex; justify-content: center; margin: 8px 0; }
 .system > span { border: 1px solid var(--gp-border); border-radius: 999px; background: var(--muted); padding: 4px 12px; color: var(--gp-text-muted); font-size: calc(12px * var(--desktop-font-scale)); }
 @keyframes pulse { 50% { opacity: .35; } }
-@media (prefers-reduced-motion: reduce) { .streaming { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .streaming, .messageActions { animation: none; transition: none; } }

@@ -114,6 +114,10 @@ public class AuthInterceptor implements HandlerInterceptor {
                 || requestUri.startsWith("/api/gitlab/public/")
                 || requestUri.startsWith("/api/common/public-files/")
                 || requestUri.startsWith("/api/public/gitpilot-cli/")
+                // Desktop updater 和 /gitpilot 下载卡片必须允许未登录旧客户端读取公开发布信息。
+                || requestUri.startsWith("/api/desktop-updates/")
+                || requestUri.startsWith("/api/desktop-releases/latest")
+                || requestUri.startsWith("/api/desktop-releases/artifacts/")
                 || requestUri.startsWith("/comment-images")
                 || requestUri.startsWith("/actuator/health")
                 || requestUri.startsWith("/error");

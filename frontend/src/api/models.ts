@@ -1,5 +1,5 @@
 import { http } from './http'
-import type { AiModelConfigItem, AiModelInputModality, AiModelType, ApiResponse, ModelTestResult, OpenAiApiMode, PageResponse } from '@/types/platform'
+import type { AiModelConfigItem, AiModelInputModality, AiModelType, ApiResponse, ModelPricingBaseItem, ModelTestResult, OpenAiApiMode, PageResponse } from '@/types/platform'
 
 export interface AiModelConfigPayload {
   name: string
@@ -17,6 +17,8 @@ export interface AiModelConfigPayload {
   maxOutputTokens?: number
   /** 是否启用 token 计费（灰度开关）。 */
   tokenBillingEnabled?: boolean
+  /** 相对平台 1x 基准价的模型倍率；启用计费时由后端换算实际输入/输出单价。 */
+  billingMultiplier?: number
   /** 每千输入 token 积分单价。 */
   inputCreditPer1k?: number
   /** 每千输出 token 积分单价。 */
@@ -69,5 +71,22 @@ export const deleteModelConfig = async (id: number) => {
 
 export const testModelConfig = async (id: number) => {
   const { data } = await http.post<ApiResponse<ModelTestResult>>(`/api/model-configs/${id}/test`)
+  return data.data
+}
+
+export interface ModelPricingBasePayload {
+  inputCreditPer1k: number
+  outputCreditPer1k: number
+}
+
+/** 获取平台级模型 1x 基准价。 */
+export const getModelPricingBase = async () => {
+  const { data } = await http.get<ApiResponse<ModelPricingBaseItem>>('/api/model-configs/pricing-base')
+  return data.data
+}
+
+/** 更新平台级模型 1x 基准价，并同步重算已有模型的实际输入/输出单价。 */
+export const updateModelPricingBase = async (payload: ModelPricingBasePayload) => {
+  const { data } = await http.put<ApiResponse<ModelPricingBaseItem>>('/api/model-configs/pricing-base', payload)
   return data.data
 }

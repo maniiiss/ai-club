@@ -2,9 +2,14 @@ package com.aiclub.platform.service;
 
 import com.aiclub.platform.domain.model.AgentInvocationLogEntity;
 import com.aiclub.platform.domain.model.AiModelConfigEntity;
+import com.aiclub.platform.domain.model.CreditGlobalConfigEntity;
 import com.aiclub.platform.dto.AgentTokenUsage;
+import com.aiclub.platform.dto.ModelPricingBaseSummary;
+import com.aiclub.platform.dto.request.ModelPricingBaseRequest;
 import com.aiclub.platform.repository.AgentInvocationLogRepository;
 import com.aiclub.platform.repository.AiModelConfigRepository;
+import com.aiclub.platform.repository.CreditGlobalConfigRepository;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,20 +38,81 @@ public class ModelPricingService {
 
     private static final BigDecimal BD_1000 = new BigDecimal("1000");
     private static final BigDecimal HALF = new BigDecimal("0.5");
+    private static final BigDecimal MIN_MULTIPLIER = new BigDecimal("0.0001");
     /** 结算状态：已回填 cost_credits 并参与终态结算。 */
     public static final String SETTLE_STATUS_SETTLED = "SETTLED";
 
     private final AiModelConfigRepository aiModelConfigRepository;
     private final AgentInvocationLogRepository agentInvocationLogRepository;
+    private final CreditGlobalConfigRepository creditGlobalConfigRepository;
     /** agent_info.budget_tokens 为空时使用的默认预算 token 数。 */
     private final int defaultBudgetTokens;
 
+    @Autowired
     public ModelPricingService(AiModelConfigRepository aiModelConfigRepository,
                                AgentInvocationLogRepository agentInvocationLogRepository,
+                               CreditGlobalConfigRepository creditGlobalConfigRepository,
                                @Value("${platform.credit.agent-default-budget-tokens:4000}") int defaultBudgetTokens) {
         this.aiModelConfigRepository = aiModelConfigRepository;
         this.agentInvocationLogRepository = agentInvocationLogRepository;
+        this.creditGlobalConfigRepository = creditGlobalConfigRepository;
         this.defaultBudgetTokens = defaultBudgetTokens;
+    }
+
+    /** 保留给不涉及平台基准价的纯换算单元测试使用。 */
+    public ModelPricingService(AiModelConfigRepository aiModelConfigRepository,
+                               AgentInvocationLogRepository agentInvocationLogRepository,
+                               int defaultBudgetTokens) {
+        this(aiModelConfigRepository, agentInvocationLogRepository, null, defaultBudgetTokens);
+    }
+
+    /** 读取平台级 1x 基准价，模型倍率和实际单价的换算基于此配置。 */
+    @Transactional
+    public ModelPricingBaseSummary getBasePricing() {
+        return toBaseSummary(requireGlobalConfig());
+    }
+
+    /**
+     * 更新平台级 1x 基准价，并同步重算已经配置倍率的模型实际输入/输出单价，确保扣费公式始终一致。
+     */
+    @Transactional
+    public ModelPricingBaseSummary updateBasePricing(ModelPricingBaseRequest request) {
+        CreditGlobalConfigEntity config = requireGlobalConfig();
+        BigDecimal oldInputBase = config.getModelBaseInputCreditPer1k();
+        BigDecimal oldOutputBase = config.getModelBaseOutputCreditPer1k();
+        BigDecimal inputBase = normalizePrice(request.inputCreditPer1k());
+        BigDecimal outputBase = normalizePrice(request.outputCreditPer1k());
+        config.setModelBaseInputCreditPer1k(inputBase);
+        config.setModelBaseOutputCreditPer1k(outputBase);
+        config.setUpdatedAt(java.time.LocalDateTime.now());
+
+        // 基准价变化后，已有模型仍按各自倍率计费；缓存命中自定义价保持原有绝对值不变。
+        for (AiModelConfigEntity model : aiModelConfigRepository.findAll()) {
+            if (!Boolean.TRUE.equals(model.getTokenBillingEnabled())) {
+                continue;
+            }
+            BigDecimal multiplier = model.getBillingMultiplier();
+            if (multiplier == null) {
+                multiplier = deriveMultiplier(model.getInputCreditPer1k(), model.getOutputCreditPer1k(), oldInputBase, oldOutputBase);
+            }
+            if (multiplier != null) {
+                applyPrices(model, inputBase, outputBase, multiplier);
+            }
+        }
+        aiModelConfigRepository.flush();
+        return toBaseSummary(creditGlobalConfigRepository.save(config));
+    }
+
+    /** 将模型倍率转换为实际输入/输出 token 单价，并保存倍率用于桌面端展示。 */
+    public void applyMultiplier(AiModelConfigEntity model, BigDecimal multiplier) {
+        CreditGlobalConfigEntity config = requireGlobalConfig();
+        applyPrices(model, config.getModelBaseInputCreditPer1k(), config.getModelBaseOutputCreditPer1k(), multiplier);
+    }
+
+    /** 兼容旧版管理端只提交实际单价的请求，按当前 1x 输入基准反推出展示倍率。 */
+    public BigDecimal deriveMultiplier(BigDecimal inputPrice, BigDecimal outputPrice) {
+        CreditGlobalConfigEntity config = requireGlobalConfig();
+        return deriveMultiplier(inputPrice, outputPrice, config.getModelBaseInputCreditPer1k(), config.getModelBaseOutputCreditPer1k());
     }
 
     /**
@@ -156,5 +222,58 @@ public class ModelPricingService {
 
     private static BigDecimal bd(Integer value) {
         return value == null ? BigDecimal.ZERO : new BigDecimal(value);
+    }
+
+    private CreditGlobalConfigEntity requireGlobalConfig() {
+        if (creditGlobalConfigRepository == null) {
+            throw new IllegalStateException("模型 1x 基准价服务未初始化");
+        }
+        return creditGlobalConfigRepository.findById(1L)
+                .orElseGet(() -> {
+                    CreditGlobalConfigEntity entity = new CreditGlobalConfigEntity();
+                    entity.setId(1L);
+                    return creditGlobalConfigRepository.save(entity);
+                });
+    }
+
+    private void applyPrices(AiModelConfigEntity model,
+                             BigDecimal inputBase,
+                             BigDecimal outputBase,
+                             BigDecimal multiplier) {
+        if (multiplier == null || multiplier.compareTo(MIN_MULTIPLIER) < 0) {
+            throw new IllegalArgumentException("模型计费倍率必须大于 0");
+        }
+        BigDecimal normalizedMultiplier = multiplier.setScale(4, RoundingMode.HALF_UP);
+        model.setBillingMultiplier(normalizedMultiplier);
+        model.setInputCreditPer1k(inputBase.multiply(normalizedMultiplier).setScale(4, RoundingMode.HALF_UP));
+        model.setOutputCreditPer1k(outputBase.multiply(normalizedMultiplier).setScale(4, RoundingMode.HALF_UP));
+    }
+
+    private BigDecimal deriveMultiplier(BigDecimal inputPrice,
+                                        BigDecimal outputPrice,
+                                        BigDecimal inputBase,
+                                        BigDecimal outputBase) {
+        if (inputPrice != null && inputBase != null && inputBase.signum() > 0) {
+            return inputPrice.divide(inputBase, 4, RoundingMode.HALF_UP);
+        }
+        if (outputPrice != null && outputBase != null && outputBase.signum() > 0) {
+            return outputPrice.divide(outputBase, 4, RoundingMode.HALF_UP);
+        }
+        return null;
+    }
+
+    private BigDecimal normalizePrice(BigDecimal value) {
+        if (value == null || value.signum() < 0) {
+            throw new IllegalArgumentException("模型 1x 基准单价不能为负");
+        }
+        return value.setScale(4, RoundingMode.HALF_UP);
+    }
+
+    private ModelPricingBaseSummary toBaseSummary(com.aiclub.platform.domain.model.CreditGlobalConfigEntity entity) {
+        return new ModelPricingBaseSummary(
+                entity.getModelBaseInputCreditPer1k(),
+                entity.getModelBaseOutputCreditPer1k(),
+                entity.getUpdatedAt() == null ? null : entity.getUpdatedAt().format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+        );
     }
 }

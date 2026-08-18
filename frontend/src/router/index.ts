@@ -34,6 +34,7 @@ import RepositoryScanRulesetView from '@/views/RepositoryScanRulesetView.vue'
 import OperationLogView from '@/views/OperationLogView.vue'
 import AssistantFeedbackView from '@/views/AssistantFeedbackView.vue'
 import PlatformReleaseView from '@/views/PlatformReleaseView.vue'
+import DesktopReleaseView from '@/views/DesktopReleaseView.vue'
 import RuntimeRegistryView from '@/views/RuntimeRegistryView.vue'
 import IterationView from '@/views/IterationView.vue'
 import ProfileView from '@/views/ProfileView.vue'
@@ -158,7 +159,8 @@ const router = createRouter({
         { path: 'scan-rulesets', name: 'scan-rulesets', component: RepositoryScanRulesetView, meta: { title: '扫描规则集', permission: 'scan:ruleset:view' } },
         { path: 'operation-logs', name: 'operation-logs', component: OperationLogView, meta: { title: '操作日志', permission: 'system:operation-log:view' } },
         { path: 'assistant-feedback', name: 'assistant-feedback', component: AssistantFeedbackView, meta: { title: 'GitPilot反馈', permission: 'system:assistant-feedback:view' } },
-        { path: 'releases', name: 'platform-releases', component: PlatformReleaseView, meta: { title: '版本发布', permission: 'system:release:view' } }
+        { path: 'releases', name: 'platform-releases', component: PlatformReleaseView, meta: { title: '版本发布', permission: 'system:release:view' } },
+        { path: 'desktop-releases', name: 'desktop-releases', component: DesktopReleaseView, meta: { title: '桌面版本发布', permission: 'system:desktop-release:view' } }
       ]
     }
   ]

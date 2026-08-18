@@ -7,6 +7,7 @@ dist/
 # Tauri 构建产物
 src-tauri/target/
 src-tauri/gen/
+release-artifacts/
 
 # sidecar 编译产物与复制资源（由 sidecar/build.sh 生成）
 src-tauri/binaries/

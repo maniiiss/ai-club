@@ -1008,6 +1008,14 @@ GitPilot 反馈与通用的“反馈与建议”入口分离，按助手消息�
 - 上传文件
 - 执行产物
 
+### 5.5 GitPilot Desktop 发布与在线升级
+
+GitPilot Desktop 发布使用独立的 `desktop_release` / `desktop_release_artifact` 领域，不复用面向平台公告的 `platform_release`。首期固定 Windows x64 stable，管理端上传已签名的 MSI、NSIS、updater ZIP 和 `.sig` 产物，后端以流式方式写入私有 MinIO，并保存大小、SHA-256、Tauri 签名和下载状态。发布前必须补齐 MSI/NSIS 两组安装器、updater 和签名六格；发布后不可编辑，撤回只阻断后续清单与下载。
+
+管理接口由 `system:desktop-release:view` / `system:desktop-release:manage` 保护，并通过操作日志审计创建、上传、发布和撤回。未登录客户端通过 `GET /api/desktop-updates/{target}/{arch}/{bundle_type}/{current_version}` 获取不带 `ApiResponse` 包装的 Tauri 动态清单；没有更高版本或没有精确匹配产物时返回 `204`。公开最新版本接口服务 `/gitpilot`，下载接口只为已发布产物生成短期 MinIO presigned URL，MinIO bucket 和对象键始终保持私有。
+
+Desktop 构建开启 Tauri updater artifact 生成并编译公钥，私钥只存在受控构建环境。React 更新 store 在启动后延迟后台检查，设置页支持手动检查、Markdown 发布说明、下载进度和确认安装；网络错误静默降级，签名校验失败阻止安装，Agent 流式执行或应用终端活跃时禁止安装，成功后由 Tauri process plugin 重启。正式设计见 `docs/design-docs/gitpilot-desktop-release-update-technical-design-v1.md`。
+
 ## 6. 运行模式
 
 ### 6.1 源码模式
@@ -1129,5 +1137,6 @@ GitPilot CLI 已改为基于 pi-coding-agent 二开的本地执行平面：
 - `docs/design-docs/public-credit-technical-design-v1.md`：公众端积分扣费技术设计（自动合并 AI 审核接入方案）
 - `docs/design-docs/agent-invocation-tracking-technical-design-v1.md`：智能体调用量统计技术设计
 - `docs/design-docs/gitpilot-cli-cloud-coding-handoff-technical-design-v1.md`：内嵌 Pi Agent Core 的 GitPilot CLI、本地会话与工作现场接力、云端 Codex/Pi 执行及结果回传技术设计
+- `docs/design-docs/gitpilot-desktop-release-update-technical-design-v1.md`：GitPilot Desktop Windows stable 发布、公开下载与在线升级技术设计
 - `docs/design-docs/data-workbench-technical-design-v1.md`：DataWorkbench 与 DataChange 技术设计
 - `AGENTS.md`：仓库级智能体工作入口

@@ -254,6 +254,9 @@ platform:
       access-key: ${PLATFORM_MINIO_ACCESS_KEY:minioadmin}
       secret-key: ${PLATFORM_MINIO_SECRET_KEY:minioadmin}
       bucket: ${PLATFORM_MINIO_BUCKET:ai-club-assets}
+  # Desktop 安装包远大于普通文档，独立限制避免上传接口复用文档大小配置。
+  desktop-release:
+    max-artifact-size: ${PLATFORM_DESKTOP_RELEASE_MAX_ARTIFACT_SIZE:300MB}
   execution:
     task:
       # 执行中心任务队列：数据库保存任务事实，RabbitMQ 只投递 executionTaskId 调度信号。

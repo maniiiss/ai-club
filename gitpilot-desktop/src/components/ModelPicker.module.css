@@ -12,5 +12,6 @@
 .modelTitle { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; }
 .modelTitleText { min-width: 0; overflow: hidden; color: var(--gp-text); font-size: calc(11px * var(--desktop-font-scale)); text-overflow: ellipsis; white-space: nowrap; }
 .multimodalBadge { flex: 0 0 auto; border: 1px solid color-mix(in srgb, var(--gp-action) 54%, var(--gp-border)); border-radius: 999px; background: color-mix(in srgb, var(--gp-action) 14%, transparent); padding: 1px 5px; color: var(--gp-action); font-size: calc(9px * var(--desktop-font-scale)); font-weight: 600; letter-spacing: .02em; line-height: 1.35; white-space: nowrap; }
+.billingBadge { flex: 0 0 auto; border: 1px solid color-mix(in srgb, var(--gp-success, #2f9e44) 52%, var(--gp-border)); border-radius: 999px; background: color-mix(in srgb, var(--gp-success, #2f9e44) 12%, transparent); padding: 1px 5px; color: var(--gp-success, #2f9e44); font-size: calc(9px * var(--desktop-font-scale)); font-weight: 600; letter-spacing: .02em; line-height: 1.35; white-space: nowrap; }
 .modelCopy > small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .modelCopy > small { margin-top: 2px; color: var(--gp-text-muted); font-size: calc(10px * var(--desktop-font-scale)); }

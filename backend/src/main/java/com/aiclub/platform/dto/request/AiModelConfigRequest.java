@@ -50,6 +50,11 @@ public record AiModelConfigRequest(
          */
         Boolean tokenBillingEnabled,
         /**
+         * 相对平台 1x 基准价的模型倍率；启用计费时优先使用倍率换算实际输入/输出单价。
+         */
+        @DecimalMin(value = "0.0001", message = "模型计费倍率必须大于 0")
+        BigDecimal billingMultiplier,
+        /**
          * 每千输入 token 积分单价；启用 token 计费时必填。
          */
         @DecimalMin(value = "0", message = "输入 token 单价不能为负")
@@ -83,12 +88,36 @@ public record AiModelConfigRequest(
             Integer contextLength,
             Integer maxOutputTokens,
             Boolean tokenBillingEnabled,
+                BigDecimal inputCreditPer1k,
+                BigDecimal outputCreditPer1k,
+                BigDecimal cachedInputCreditPer1k
+        ) {
+        this(name, modelType, provider, apiBaseUrl, modelName, openaiApiMode, apiKey, description, enabled,
+                contextLength, maxOutputTokens, tokenBillingEnabled, null, inputCreditPer1k, outputCreditPer1k,
+                cachedInputCreditPer1k, null);
+    }
+
+    /** 兼容已增加输入模态但尚未增加倍率字段的请求构造方。 */
+    public AiModelConfigRequest(
+            String name,
+            String modelType,
+            String provider,
+            String apiBaseUrl,
+            String modelName,
+            String openaiApiMode,
+            String apiKey,
+            String description,
+            Boolean enabled,
+            Integer contextLength,
+            Integer maxOutputTokens,
+            Boolean tokenBillingEnabled,
             BigDecimal inputCreditPer1k,
             BigDecimal outputCreditPer1k,
-            BigDecimal cachedInputCreditPer1k
+            BigDecimal cachedInputCreditPer1k,
+            List<String> inputModalities
     ) {
         this(name, modelType, provider, apiBaseUrl, modelName, openaiApiMode, apiKey, description, enabled,
-                contextLength, maxOutputTokens, tokenBillingEnabled, inputCreditPer1k, outputCreditPer1k,
-                cachedInputCreditPer1k, null);
+                contextLength, maxOutputTokens, tokenBillingEnabled, null, inputCreditPer1k, outputCreditPer1k,
+                cachedInputCreditPer1k, inputModalities);
     }
 }

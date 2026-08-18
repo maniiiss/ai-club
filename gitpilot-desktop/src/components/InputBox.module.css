@@ -2,6 +2,7 @@
 .root::after { position: absolute; z-index: 0; top: 100%; right: -18px; left: -18px; height: 16px; background: var(--gp-panel-deep); content: ''; pointer-events: none; }
 .root > * { pointer-events: auto; }
 /* 业务意图：使用不透明表面替代实时背景模糊，避免侧栏切换时对聊天正文做大面积重绘。 */
+.composerStack { display: flex; width: min(860px, 100%); min-width: 0; flex-direction: column; }
 .surface { position: relative; z-index: 1; display: flex; width: min(860px, 100%); min-width: 0; flex-direction: column; overflow: visible; border: 1px solid var(--gp-border-strong); border-radius: 14px; background: linear-gradient(180deg, var(--gp-surface-raised), var(--gp-surface)); padding: 12px 14px 10px; box-shadow: var(--shadow-lg), 0 0 0 1px var(--gp-accent-soft); transition: border-color 140ms ease, box-shadow 140ms ease; }
 .surface::before { position: absolute; top: 0; right: 14px; left: 14px; height: 2px; background: linear-gradient(90deg, var(--gp-accent), transparent 68%, var(--gp-warm)); content: ''; opacity: .85; }
 .surface:focus-within { border-color: color-mix(in srgb, var(--gp-accent) 65%, var(--gp-border)); box-shadow: 0 20px 54px var(--gp-shadow-color), 0 0 0 3px var(--gp-accent-soft); }

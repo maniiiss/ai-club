@@ -30,12 +30,13 @@
 	},
 	"plugins": {
 		"updater": {
-			"pubkey": "",
-			"endpoints": []
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYyMjAxQzg0MjVBNUQ4MjgKUldRbzJLVWxoQndnWXRmbmRQRnNtendDOG1LTDdzQmhmVHdDcTFVYzJpVlRCSWw4Z0FHL0d4VVAK",
+			"endpoints": ["https://platform.example/api/desktop-updates/{{target}}/{{arch}}/{{bundle_type}}/{{current_version}}"]
 		}
 	},
 	"bundle": {
 		"active": true,
+		"createUpdaterArtifacts": true,
 		"targets": ["msi", "nsis"],
 		"icon": ["icons/icon.png", "icons/icon.ico"],
 		"externalBin": ["binaries/gitpilot-rpc"],

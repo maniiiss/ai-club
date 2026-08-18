@@ -11,11 +11,13 @@ import {
   Play,
   Sparkles,
 } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { fetchLatestDesktopRelease } from '@/src/api/desktop-release'
 import { BrandMark } from '@/src/components/common/BrandMark'
+import { formatDesktopArtifactSize, selectDesktopInstaller } from '@/src/lib/desktop-release'
+import type { DesktopReleaseLatest } from '@/src/types/desktop-release'
 import './GitPilotLandingPage.css'
-
-const desktopDownloadUrl = '/downloads/gitpilot-desktop-windows-x64.exe'
 
 /** Code 模式使用本地仓库和受控工具执行，展示任务到验证的闭环。 */
 const CodeModePreview = () => (
@@ -74,6 +76,21 @@ const DesignModePreview = () => (
 
 /** GitPilot 公开介绍页，仅通过固定链接访问，不挂载到产品导航。 */
 export const GitPilotLandingPage = () => {
+  const [release, setRelease] = useState<DesktopReleaseLatest | null>(null)
+  const [releaseLoading, setReleaseLoading] = useState(true)
+  const [releaseError, setReleaseError] = useState(false)
+  useEffect(() => {
+    let cancelled = false
+    fetchLatestDesktopRelease()
+      .then((latest) => { if (!cancelled) setRelease(latest) })
+      .catch(() => { if (!cancelled) setReleaseError(true) })
+      .finally(() => { if (!cancelled) setReleaseLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+  const nsisInstaller = release ? selectDesktopInstaller(release.installers, 'nsis') : null
+  const msiInstaller = release ? selectDesktopInstaller(release.installers, 'msi') : null
+  const downloadUrl = nsisInstaller?.downloadUrl ?? msiInstaller?.downloadUrl ?? null
+  const downloadLabel = release ? `下载 Windows 版 v${release.version}` : '下载 Windows 桌面端'
   return (
     <div className="gitpilot-landing">
       <header className="gitpilot-landing__nav">
@@ -89,9 +106,10 @@ export const GitPilotLandingPage = () => {
           <h1>一个桌面端<br />三种工作方式</h1>
           <p>GitPilot Desktop 将代码任务、团队工作和界面设计置于各自清晰的工作模式中，让 Agent 在正确的上下文里持续推进。</p>
           <div className="gitpilot-landing__actions">
-            <a className="gitpilot-landing__button gitpilot-landing__button--primary" href={desktopDownloadUrl} download><ArrowDownToLine /> 下载 Windows 桌面端</a>
+            <a className={`gitpilot-landing__button gitpilot-landing__button--primary ${!downloadUrl ? 'is-disabled' : ''}`} href={downloadUrl ?? '#'} download={!downloadUrl ? undefined : true} onClick={(event) => { if (!downloadUrl) event.preventDefault() }}><ArrowDownToLine /> {downloadLabel}</a>
             <Link className="gitpilot-landing__button gitpilot-landing__button--secondary" to="/register">进入 GitPilot Web <ArrowRight /></Link>
           </div>
+          <DesktopReleaseSummary loading={releaseLoading} error={releaseError} release={release} nsisInstaller={nsisInstaller} msiInstaller={msiInstaller} />
         </section>
 
         <section className="gitpilot-landing__mode-intro">
@@ -133,7 +151,7 @@ export const GitPilotLandingPage = () => {
           <LaptopMinimal />
           <h2>从你的下一项工作开始</h2>
           <p>现在提供 Windows 版 GitPilot Desktop。</p>
-          <a className="gitpilot-landing__button gitpilot-landing__button--primary" href={desktopDownloadUrl} download><ArrowDownToLine /> 下载 Windows 桌面端</a>
+          <a className={`gitpilot-landing__button gitpilot-landing__button--primary ${!downloadUrl ? 'is-disabled' : ''}`} href={downloadUrl ?? '#'} download={!downloadUrl ? undefined : true} onClick={(event) => { if (!downloadUrl) event.preventDefault() }}><ArrowDownToLine /> {downloadLabel}</a>
         </section>
       </main>
 
@@ -144,4 +162,23 @@ export const GitPilotLandingPage = () => {
       </footer>
     </div>
   )
+}
+
+function DesktopReleaseSummary({ loading, error, release, nsisInstaller, msiInstaller }: { loading: boolean; error: boolean; release: DesktopReleaseLatest | null; nsisInstaller: ReturnType<typeof selectDesktopInstaller>; msiInstaller: ReturnType<typeof selectDesktopInstaller> }) {
+  if (loading) return <div className="gitpilot-landing__release-summary is-loading" aria-live="polite">正在读取最新稳定版…</div>
+  if (error || !release) return <div className="gitpilot-landing__release-summary is-muted" aria-live="polite">当前暂无可下载的 Windows stable 版本，请稍后再试。</div>
+  return <div className="gitpilot-landing__release-summary" aria-label="最新 Windows stable 版本">
+    <div className="gitpilot-landing__release-summary-head"><span className="gitpilot-landing__release-kicker">最新 stable</span><strong>v{release.version}</strong><span>{releaseDateLabel(release.publishedAt)}</span></div>
+    <div className="gitpilot-landing__release-links">
+      {nsisInstaller && <a href={nsisInstaller.downloadUrl} download>NSIS 安装包 <small>{formatDesktopArtifactSize(nsisInstaller.fileSize)}</small></a>}
+      {msiInstaller && <a href={msiInstaller.downloadUrl} download>MSI 备用包 <small>{formatDesktopArtifactSize(msiInstaller.fileSize)}</small></a>}
+    </div>
+    <div className="gitpilot-landing__release-checksum"><span>SHA-256</span><code>{(nsisInstaller ?? msiInstaller)?.sha256}</code></div>
+  </div>
+}
+
+function releaseDateLabel(value: string | null): string {
+  if (!value) return '待定日期'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('zh-CN', { dateStyle: 'medium' })
 }

@@ -110,6 +110,8 @@ function toModelConfig(model: CliModel): ProviderModelConfig {
 		compat: profile?.compat,
 		// PI 的 Model.input 是适配层元数据，真实能力由平台模型管理配置下发；旧接口安全回退为文本。
 		input: model.inputModalities?.length ? model.inputModalities : ["text"],
+		// 仅把倍率作为模型元数据传到桌面 RPC，PI 的 cost 仍保持 0，避免展示字段影响真实计费。
+		billingMultiplier: model.billingMultiplier,
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: model.contextLength ?? DEFAULT_CONTEXT_WINDOW,
 		maxTokens: model.maxOutputTokens ?? DEFAULT_MAX_TOKENS,

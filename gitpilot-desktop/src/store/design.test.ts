@@ -75,6 +75,7 @@ function resetStore(): void {
 		target: 'desktop',
 		viewport: { width: DESIGN_TARGETS.desktop.width, height: DESIGN_TARGETS.desktop.height },
 		zoom: 100,
+		previewMode: 'original',
 		selectedElementId: null,
 		messages: [{ id: 'welcome', kind: 'assistant', text: 'welcome' }],
 		pendingPlan: null,
@@ -125,6 +126,12 @@ describe('Design Mode snapshot', () => {
 		expect(DESIGN_VIEWPORT_PRESETS.mobile.map((preset) => preset.width)).toEqual([360, 375, 390, 430]);
 		expect(DESIGN_VIEWPORT_PRESETS.desktop.map((preset) => preset.id)).toEqual(['desktop-workspace', 'desktop-720p', 'desktop-1080p', 'desktop-2k', 'desktop-4k']);
 		expect(DESIGN_VIEWPORT_PRESETS.desktop.find((preset) => preset.id === 'desktop-4k')).toMatchObject({ width: 3840, height: 2160 });
+	});
+
+	it('persists the preview display mode in the current project bucket', () => {
+		useDesignStore.getState().setPreviewMode('browser');
+		expect(useDesignStore.getState().previewMode).toBe('browser');
+		expect(JSON.parse(localStorage.getItem(bucketKey('project-test')) ?? '{}').previewMode).toBe('browser');
 	});
 
 	it('只把已有 Design Workspace 的项目派生为历史，并按最近打开时间排序', () => {
@@ -260,6 +267,21 @@ describe('Design Mode snapshot', () => {
 		expect(rpc.designSaveGuidelines).toHaveBeenCalledWith('project-test', designId, expect.objectContaining({ brand: expect.objectContaining({ name: 'Neutral Modern' }) }));
 		expect(useDesignStore.getState()).toMatchObject({ selectedPresetId: 'neutral-modern', pendingPreset: null, snapshot: { guidelines: { tokens: { colors: { accent: '#2f6feb' } } } } });
 		expect(JSON.parse(localStorage.getItem(bucketKey('project-test')) ?? '{}')).toMatchObject({ selectedPresetId: 'neutral-modern', snapshot: { guidelines: { brand: { name: 'Neutral Modern' } } } });
+	});
+
+	it('sidecar 确认工作区已不存在时清理过期缓存，预设改为等待首次创建', async () => {
+		writeWorkspace('project-test');
+		useDesignStore.setState({ hasWorkspace: true, isProjectStarted: true });
+		vi.spyOn(rpc, 'designOpen').mockResolvedValue({ id: 'open', type: 'response', command: 'design_open', success: false, error: '当前项目还没有 Design 工作区' });
+		vi.spyOn(rpc, 'designSaveGuidelines');
+
+		await useDesignStore.getState().hydrateSnapshot();
+		expect(useDesignStore.getState()).toMatchObject({ hasWorkspace: false, isProjectStarted: false });
+
+		await useDesignStore.getState().applyPreset(presetFixture());
+		expect(useDesignStore.getState()).toMatchObject({ selectedPresetId: 'neutral-modern', pendingPreset: { id: 'neutral-modern' } });
+		expect(rpc.designSaveGuidelines).not.toHaveBeenCalled();
+		expect(JSON.parse(localStorage.getItem(bucketKey('project-test')) ?? '{}')).toMatchObject({ hasWorkspace: false, isProjectStarted: false });
 	});
 
 	it('保存项目规范后更新当前 snapshot，且下一次读取可恢复', async () => {

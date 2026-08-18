@@ -78,6 +78,8 @@ export interface CliModel {
 	maxOutputTokens?: number;
 	/** 平台管理员配置的输入模态；旧平台接口缺失时由适配层回退为 text。 */
 	inputModalities?: CliModelInputModality[];
+	/** 平台模型相对 1x 基准价的倍率；缺失表示 free。 */
+	billingMultiplier?: number;
 }
 
 export interface ModelSession {
