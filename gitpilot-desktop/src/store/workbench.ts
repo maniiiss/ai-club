@@ -47,6 +47,8 @@ export interface RightPanelTabsState {
 	executionOpen: boolean;
 	/** Code 项目文件树是可关闭的工具页签，可由右侧 + 菜单再次打开。 */
 	filesOpen: boolean;
+	/** 审查（本轮改动文件 diff）是可关闭的工具页签，可由右侧 + 菜单或聊天文件卡片再次打开。 */
+	reviewOpen: boolean;
 	activeTabId: string | null;
 }
 
@@ -210,19 +212,23 @@ export function normalizeRightPanelTabs(value: Partial<RightPanelTabsState> | nu
 	}
 	const executionOpen = value?.executionOpen !== false;
 	const filesOpen = value?.filesOpen === true;
+	const reviewOpen = value?.reviewOpen === true;
 	const requestedActive = typeof value?.activeTabId === 'string' ? value.activeTabId : null;
-	const activeTabId = requestedActive === 'execution' && executionOpen || requestedActive === 'files' && filesOpen || requestedActive && plans.some((tab) => tab.id === requestedActive)
+	const activeTabId = requestedActive === 'execution' && executionOpen
+		|| requestedActive === 'review' && reviewOpen
+		|| requestedActive === 'files' && filesOpen
+		|| requestedActive && plans.some((tab) => tab.id === requestedActive)
 		? requestedActive
-		: executionOpen ? 'execution' : filesOpen ? 'files' : plans[0]?.id ?? null;
-	return { plans, executionOpen, filesOpen, activeTabId };
+		: executionOpen ? 'execution' : reviewOpen ? 'review' : filesOpen ? 'files' : plans[0]?.id ?? null;
+	return { plans, executionOpen, filesOpen, reviewOpen, activeTabId };
 }
 
 function loadRightPanelTabs(): RightPanelTabsState {
 	try {
 		const stored = localStorage.getItem(RIGHT_PANEL_TABS_KEY);
-		return stored ? normalizeRightPanelTabs(JSON.parse(stored) as Partial<RightPanelTabsState>) : { plans: [], executionOpen: true, filesOpen: false, activeTabId: 'execution' };
+		return stored ? normalizeRightPanelTabs(JSON.parse(stored) as Partial<RightPanelTabsState>) : { plans: [], executionOpen: true, filesOpen: false, reviewOpen: false, activeTabId: 'execution' };
 	} catch {
-		return { plans: [], executionOpen: true, filesOpen: false, activeTabId: 'execution' };
+		return { plans: [], executionOpen: true, filesOpen: false, reviewOpen: false, activeTabId: 'execution' };
 	}
 }
 
@@ -417,6 +423,8 @@ interface WorkbenchStore {
 	openPlanPanelTab: (plan: Omit<RightPanelPlanTab, 'id' | 'kind'>) => void;
 	openExecutionPanelTab: () => void;
 	openProjectFilesPanel: () => void;
+	/** 打开右侧审查页签（本轮改动文件 diff），同时展开右侧栏。 */
+	openReviewPanelTab: () => void;
 	activateRightPanelTab: (tabId: string) => void;
 	closeRightPanelTab: (tabId: string) => void;
 	queueProjectFileAttachments: (requests: ProjectFileAttachmentRequest[]) => void;
@@ -502,9 +510,21 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 		saveRightPanelTabs(rightPanelTabs);
 		set({ rightPanelTabs, layout });
 	},
+	openReviewPanelTab: () => {
+		const state = get().rightPanelTabs;
+		const layout = normalizeLayoutPreferences({ ...get().layout, rightCollapsed: false });
+		saveLayout(layout);
+		const rightPanelTabs = { ...state, reviewOpen: true, activeTabId: 'review' };
+		saveRightPanelTabs(rightPanelTabs);
+		set({ rightPanelTabs, layout });
+	},
 	activateRightPanelTab: (tabId) => {
 		const state = get().rightPanelTabs;
-		if (state.activeTabId === tabId || tabId === 'execution' && !state.executionOpen || tabId === 'files' && !state.filesOpen || tabId !== 'execution' && tabId !== 'files' && !state.plans.some((tab) => tab.id === tabId)) return;
+		if (state.activeTabId === tabId
+			|| tabId === 'execution' && !state.executionOpen
+			|| tabId === 'files' && !state.filesOpen
+			|| tabId === 'review' && !state.reviewOpen
+			|| tabId !== 'execution' && tabId !== 'files' && tabId !== 'review' && !state.plans.some((tab) => tab.id === tabId)) return;
 		const rightPanelTabs = { ...state, activeTabId: tabId };
 		saveRightPanelTabs(rightPanelTabs);
 		set({ rightPanelTabs });
@@ -512,14 +532,21 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 	closeRightPanelTab: (tabId) => {
 		const state = get().rightPanelTabs;
 		if (tabId === 'execution') {
-			const activeTabId = state.activeTabId === 'execution' ? state.filesOpen ? 'files' : state.plans[0]?.id ?? null : state.activeTabId;
+			const activeTabId = state.activeTabId === 'execution' ? state.reviewOpen ? 'review' : state.filesOpen ? 'files' : state.plans[0]?.id ?? null : state.activeTabId;
 			const rightPanelTabs = { ...state, executionOpen: false, activeTabId };
 			saveRightPanelTabs(rightPanelTabs);
 			set({ rightPanelTabs });
 			return;
 		}
+		if (tabId === 'review') {
+			const activeTabId = state.activeTabId === 'review' ? state.filesOpen ? 'files' : state.plans[0]?.id ?? (state.executionOpen ? 'execution' : null) : state.activeTabId;
+			const rightPanelTabs = { ...state, reviewOpen: false, activeTabId };
+			saveRightPanelTabs(rightPanelTabs);
+			set({ rightPanelTabs });
+			return;
+		}
 		if (tabId === 'files') {
-			const activeTabId = state.activeTabId === 'files' ? state.plans[0]?.id ?? (state.executionOpen ? 'execution' : null) : state.activeTabId;
+			const activeTabId = state.activeTabId === 'files' ? state.plans[0]?.id ?? (state.reviewOpen ? 'review' : state.executionOpen ? 'execution' : null) : state.activeTabId;
 			const rightPanelTabs = { ...state, filesOpen: false, activeTabId };
 			saveRightPanelTabs(rightPanelTabs);
 			set({ rightPanelTabs });
@@ -529,7 +556,7 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 		if (index < 0) return;
 		const plans = state.plans.filter((tab) => tab.id !== tabId);
 		const activeTabId = state.activeTabId === tabId
-			? plans[index]?.id ?? plans[index - 1]?.id ?? (state.executionOpen ? 'execution' : state.filesOpen ? 'files' : null)
+			? plans[index]?.id ?? plans[index - 1]?.id ?? (state.executionOpen ? 'execution' : state.reviewOpen ? 'review' : state.filesOpen ? 'files' : null)
 			: state.activeTabId;
 		const rightPanelTabs = { ...state, plans, activeTabId };
 		saveRightPanelTabs(rightPanelTabs);
@@ -539,9 +566,12 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 		const available = new Set(sessionPaths);
 		const state = get().rightPanelTabs;
 		const plans = state.plans.filter((tab) => available.has(tab.sourceSessionPath));
-		const activeTabId = state.activeTabId === 'execution' && state.executionOpen || state.activeTabId === 'files' && state.filesOpen || plans.some((tab) => tab.id === state.activeTabId)
+		const activeTabId = state.activeTabId === 'execution' && state.executionOpen
+			|| state.activeTabId === 'review' && state.reviewOpen
+			|| state.activeTabId === 'files' && state.filesOpen
+			|| plans.some((tab) => tab.id === state.activeTabId)
 			? state.activeTabId
-			: state.executionOpen ? 'execution' : state.filesOpen ? 'files' : plans[0]?.id ?? null;
+			: state.executionOpen ? 'execution' : state.reviewOpen ? 'review' : state.filesOpen ? 'files' : plans[0]?.id ?? null;
 		if (plans.length === state.plans.length && activeTabId === state.activeTabId) return;
 		const rightPanelTabs = { ...state, plans, activeTabId };
 		saveRightPanelTabs(rightPanelTabs);

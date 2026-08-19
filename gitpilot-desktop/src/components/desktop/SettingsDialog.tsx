@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, CheckCircle2, Download, FolderOpen, Plug, RefreshCw, Save, Settings2, ShieldCheck, SlidersHorizontal, Wrench, X } from 'lucide-react';
+import { AlertTriangle, Check, CheckCircle2, ChevronDown, Download, FolderOpen, Plug, RefreshCw, Save, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Wrench, X } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button } from '@/src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/src/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/src/components/ui/dropdown-menu';
 import { Hint } from '@/src/components/ui/tooltip';
 import { isTauriEnv } from '@/src/rpc/bridge';
 import { THEME_OPTIONS, useThemeStore, type ThemeMode } from '@/src/store/theme';
 import { applyDesktopTypography, DESKTOP_FONT_OPTIONS, DESKTOP_FONT_SIZES, loadDesktopPreferences, saveDesktopPreferences, useSettingsDialogStore, type DesktopFont, type DesktopPreferences, type SettingsSection } from '@/src/store/settings';
 import { McpSettingsPanel } from './McpManagerDialog';
+import { SkillSettingsPanel } from './SkillManagerDialog';
 import { RtkSettingsPanel } from '../RtkSettingsDialog';
 import { useSessionStore } from '@/src/store/session';
 import { useWorkbenchStore } from '@/src/store/workbench';
@@ -22,6 +24,7 @@ interface BasicDraft extends DesktopPreferences {
 const SECTION_META: ReadonlyArray<{ id: SettingsSection; label: string; icon: typeof Settings2 }> = [
 	{ id: 'basic', label: '基础设置', icon: SlidersHorizontal },
 	{ id: 'mcp', label: 'MCP', icon: Plug },
+	{ id: 'skill', label: 'Skill', icon: Sparkles },
 	{ id: 'rtk', label: 'RTK', icon: Wrench },
 	{ id: 'update', label: '版本与更新', icon: RefreshCw },
 ];
@@ -103,7 +106,7 @@ export function SettingsDialog() {
 	return <Dialog open={openState} onOpenChange={(next) => { if (!next) discard(); else show(section); }}>
 		<DialogContent className={styles.content} aria-describedby="gitpilot-settings-description">
 			<DialogTitle className="sr-only">GitPilot 设置</DialogTitle>
-			<DialogDescription id="gitpilot-settings-description" className="sr-only">调整 GitPilot Desktop 的界面、MCP、RTK 和版本更新设置。</DialogDescription>
+			<DialogDescription id="gitpilot-settings-description" className="sr-only">调整 GitPilot Desktop 的界面、MCP、Skill、RTK 和版本更新设置。</DialogDescription>
 			<div className={styles.frame}>
 				<aside className={styles.sidebar} aria-label="设置分区">
 					<p className={styles.eyebrow}>GitPilot</p><h1 className={styles.sidebarTitle}>设置</h1>
@@ -114,6 +117,7 @@ export function SettingsDialog() {
 					<div className={styles.body}>
 						{section === 'basic' && <BasicSettings draft={draft} dirty={dirty} directoryError={directoryError} onChange={updateDraft} onChooseDirectory={() => void chooseDirectory()} onClearDirectory={() => updateDraft({ defaultDirectory: null })} onDiscard={discard} onSave={save} />}
 						{section === 'mcp' && <McpSettingsPanel />}
+						{section === 'skill' && <SkillSettingsPanel />}
 						{section === 'rtk' && <RtkSettingsPanel />}
 						{section === 'update' && <DesktopUpdatePanel />}
 					</div>
@@ -157,7 +161,7 @@ function DesktopUpdatePanel() {
 
 	return <div className={styles.updateBody}>
 		<section className={styles.updateHero}>
-			<div><p className={styles.updateEyebrow}>GitPilot Desktop</p><h3>保持工作台处于最新状态</h3><p>更新会经过 Tauri 签名校验，后台检查不会打断登录、Agent 或当前项目。</p></div>
+			<div><p className={styles.updateEyebrow}>GitPilot Desktop</p><h3>保持工作台处于最新状态</h3><p>更新会经过 Tauri 签名校验，后台检查不会打断登录、Agent 或当前工作空间。</p></div>
 			<Button type="button" variant="outline" size="sm" disabled={checking || downloading} onClick={() => void handleCheck()}><RefreshCw className={checking ? 'animate-spin' : ''} />{checking ? '检查中…' : '检查更新'}</Button>
 		</section>
 
@@ -187,9 +191,11 @@ interface BasicSettingsProps {
 }
 
 function BasicSettings({ draft, dirty, directoryError, onChange, onChooseDirectory, onClearDirectory, onDiscard, onSave }: BasicSettingsProps) {
+	const selectedFont = DESKTOP_FONT_OPTIONS.find((option) => option.value === draft.font) ?? DESKTOP_FONT_OPTIONS[0];
+
 	return <>
 		<div className={styles.basicBody}>
-			<section className={styles.section}><div className={styles.sectionHeading}><h3>外观</h3></div><div className={styles.fieldGrid}><div className={styles.field}><label htmlFor="desktop-font">界面字体</label><select id="desktop-font" className={styles.select} value={draft.font} onChange={(event) => onChange({ font: event.target.value as DesktopFont })}>{DESKTOP_FONT_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></div><div className={styles.field}><label>字号</label><div className={styles.sizeChoices} role="radiogroup" aria-label="界面字号">{DESKTOP_FONT_SIZES.map((size) => <button key={size} type="button" className={`${styles.sizeChoice} ${draft.fontSize === size ? styles.sizeChoiceActive : ''}`} role="radio" aria-checked={draft.fontSize === size} onClick={() => onChange({ fontSize: size })}>{size}px</button>)}</div></div></div></section>
+			<section className={styles.section}><div className={styles.sectionHeading}><h3>外观</h3></div><div className={styles.fieldGrid}><div className={styles.field}><label htmlFor="desktop-font">界面字体</label><DropdownMenu><DropdownMenuTrigger asChild><Button type="button" id="desktop-font" variant="unstyled" size="sm" className={styles.selectTrigger} aria-label="选择界面字体"><span style={{ fontFamily: selectedFont.stack }}>{selectedFont.label}</span><ChevronDown size={14} aria-hidden="true" /></Button></DropdownMenuTrigger><DropdownMenuContent align="start" className={styles.selectMenu}>{DESKTOP_FONT_OPTIONS.map((option) => <DropdownMenuItem key={option.value} className={`${styles.selectItem} ${draft.font === option.value ? styles.selectItemActive : ''}`} onSelect={() => onChange({ font: option.value as DesktopFont })}><span style={{ fontFamily: option.stack }}>{option.label}</span>{draft.font === option.value && <Check size={14} className={styles.selectItemCheck} aria-hidden="true" />}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu></div><div className={styles.field}><label>字号</label><div className={styles.sizeChoices} role="radiogroup" aria-label="界面字号">{DESKTOP_FONT_SIZES.map((size) => <button key={size} type="button" className={`${styles.sizeChoice} ${draft.fontSize === size ? styles.sizeChoiceActive : ''}`} role="radio" aria-checked={draft.fontSize === size} onClick={() => onChange({ fontSize: size })}>{size}px</button>)}</div></div></div></section>
 			<section className={styles.section}><div className={styles.sectionHeading}><h3>主题</h3></div><div className={styles.themeGrid}>{THEME_OPTIONS.map((option) => <button key={option.value} type="button" className={`${styles.themeChoice} ${draft.theme === option.value ? styles.themeChoiceActive : ''}`} onClick={() => onChange({ theme: option.value })} aria-pressed={draft.theme === option.value}><span className={`${styles.themeSwatch} ${themeSwatchClass(option.value)}`} aria-hidden="true" /><span className={styles.themeLabel}>{option.label}</span></button>)}</div></section>
 			<section className={styles.section}><div className={styles.sectionHeading}><h3>独立任务默认目录</h3></div><div className={styles.directoryRow}><div className={`${styles.directoryValue} ${!draft.defaultDirectory ? styles.directoryEmpty : ''}`} title={draft.defaultDirectory ?? undefined}>{draft.defaultDirectory ?? '未设置，将使用 GitPilot 根目录'}</div><Hint content="选择默认目录"><Button type="button" variant="outline" size="icon-sm" onClick={onChooseDirectory} aria-label="选择默认目录"><FolderOpen /></Button></Hint>{draft.defaultDirectory && <Hint content="清除默认目录"><Button type="button" variant="ghost" size="icon-sm" onClick={onClearDirectory} aria-label="清除默认目录"><X /></Button></Hint>}</div>{directoryError && <p role="alert" className="mt-2 text-xs text-[var(--destructive)]">{directoryError}</p>}</section>
 		</div>

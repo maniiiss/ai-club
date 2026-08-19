@@ -30,6 +30,7 @@ import type { Skill } from "./skills.ts";
 import { loadSkills } from "./skills.ts";
 import { createSourceInfo, type SourceInfo } from "./source-info.ts";
 import { resetTimings } from "./timings.ts";
+import { filterSkillsForMode, type SkillMode } from "../extensions/gitpilot/skill-manager.ts";
 
 export interface ResourceExtensionPaths {
 	skillPaths?: Array<{ path: string; metadata: PathMetadata }>;
@@ -148,6 +149,8 @@ export interface DefaultResourceLoaderOptions {
 	extensionFactories?: InlineExtension[];
 	noExtensions?: boolean;
 	noSkills?: boolean;
+	/** 用户级 Skill 的工作模式过滤；项目/临时 Skill 不受该过滤影响。 */
+	skillMode?: SkillMode;
 	noPromptTemplates?: boolean;
 	noThemes?: boolean;
 	noContextFiles?: boolean;
@@ -187,6 +190,8 @@ export class DefaultResourceLoader implements ResourceLoader {
 	private enabledCuratedIds: Set<CuratedExtensionId>;
 	private noExtensions: boolean;
 	private noSkills: boolean;
+	/** 未设置时沿用 CLI 原有行为；仅 Desktop Code/Work/Design 会话启用范围过滤。 */
+	private skillMode?: SkillMode;
 	private noPromptTemplates: boolean;
 	private noThemes: boolean;
 	private noContextFiles: boolean;
@@ -251,6 +256,7 @@ export class DefaultResourceLoader implements ResourceLoader {
 			this.noExtensions,
 		);
 		this.noSkills = options.noSkills ?? false;
+		this.skillMode = options.skillMode;
 		this.noPromptTemplates = options.noPromptTemplates ?? false;
 		this.noThemes = options.noThemes ?? false;
 		this.noContextFiles = options.noContextFiles ?? false;
@@ -671,7 +677,12 @@ export class DefaultResourceLoader implements ResourceLoader {
 				includeDefaults: false,
 			});
 		}
-		const resolvedSkills = this.skillsOverride ? this.skillsOverride(skillsResult) : skillsResult;
+		const modeFilteredSkills = this.skillMode
+			? filterSkillsForMode(skillsResult, this.skillMode, this.agentDir, {
+					explicitSkillPaths: this.additionalSkillPaths,
+				})
+			: skillsResult;
+		const resolvedSkills = this.skillsOverride ? this.skillsOverride(modeFilteredSkills) : modeFilteredSkills;
 		this.skills = resolvedSkills.skills.map((skill) => ({
 			...skill,
 			sourceInfo:

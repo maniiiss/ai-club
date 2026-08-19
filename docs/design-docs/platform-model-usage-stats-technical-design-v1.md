@@ -139,9 +139,10 @@ review_service._call_provider
 
 ```
 前端 ModelUsageStatsView 筛选（时间范围/模型多选/provider/项目）
-  -> api/model-usage.ts POST /api/model-usage-stats/{overview|by-model|trend|by-provider}
+  -> api/model-usage.ts POST /api/model-usage-stats/{overview|by-model|by-user|trend|by-provider}
   -> ModelUsageStatsService native SQL 聚合 agent_invocation_log
-     聚合键 (model_name, provider)，时间窗 ≤90 天（默认 7 天）
+     模型按 (model_name, provider) 聚合，排行额外关联 ai_model_config.name 作为展示名称，
+     用户 Token 按 user_id 独立聚合，时间窗 ≤90 天（默认 7 天）
   -> 返回 DTO，前端 ECharts 渲染
 ```
 
@@ -182,7 +183,8 @@ WHERE role_info.code = 'SUPER_ADMIN'
 |---|---|---|
 | `GET /options` | - | `{modelNames: [{modelName, provider}], providers: []}`（`ai_model_config` 表内模型 ∪ `agent_invocation_log` 历史 `model_name`） |
 | `POST /overview` | `ModelUsageQueryRequest` | `{totalCalls, totalTokens, inputTokens, outputTokens, successRate, avgDurationMs, p95DurationMs, activeModelCount}` |
-| `POST /by-model` | 同 | `[{modelName, provider, modelConfigId, total, success, failure, inputTokens, outputTokens, totalTokens, successRate, avgDurationMs, p95DurationMs, uniqueUsers}]` 按 total 降序 |
+| `POST /by-model` | 同 | `[{modelName, modelConfigName, provider, modelConfigId, total, success, failure, inputTokens, outputTokens, totalTokens, successRate, avgDurationMs, p95DurationMs, cachedTokens, cacheHitRate}]` 按 total 降序；`modelName` 为实际模型名，排行优先展示 `modelConfigName`，未关联配置时回退实际模型名 |
+| `POST /by-user` | 同，默认 `limit=20` 且最大为 20 | `[{userId, username, nickname, total, inputTokens, outputTokens, totalTokens, cachedTokens, cacheHitRate, lastInvokedAt}]` 按总 Token 降序，供用户 Token 用量独立区块展示 |
 | `POST /trend` | + granularity: day/week/month, 可选 modelNames | `[{bucket, total, totalTokens, success}]`，可选按模型分组 |
 | `POST /by-provider` | 同 | `[{provider, total, totalTokens, successRate, avgDurationMs}]` |
 
@@ -228,6 +230,8 @@ WHERE role_info.code = 'SUPER_ADMIN'
 - **code-processing 回传失败**：fire-and-forget + 重试 + 落账独立事务吞异常，**不影响 review/scan 主业务**。
 - **/internal/model-usage 鉴权**：走 `InternalServiceAuthenticator`（共享 Bearer Token + loopback bypass），与现有 `/internal/*` 一致，**不引入新鉴权机制**。
 - **现有 AgentUsageStatsService 不动**：`by-model` 仍 `GROUP BY model_config_id`，向后兼容；新看板用独立 `(model_name, provider)` 聚合，两套不冲突。
+- **模型与用户展示分离**：模型明细只承载模型调用指标；用户 Token 用量通过 `/by-user` 按当前筛选条件独立聚合，默认取总 Token 最高的前 20 名，避免用户名称列表挤压模型表格。
+- **模型排行展示名称**：模型统计仍按 `(model_name, provider)` 聚合，避免改变既有口径；`/by-model` 通过 `model_config_id` 关联 `ai_model_config.name` 返回 `modelConfigName`，仅供“模型调用量排行”展示，未关联配置时由前端回退实际模型名。
 - **灰度**：流式埋点与回传为新增落账，不影响主链路，可随版本上线；看板权限默认仅 SUPER_ADMIN，可控开放。
 - **日志膨胀**：流式对话是高频调用，`agent_invocation_log` 增长加速。沿用现有不做自动清理策略（单条 ~500B，1e6 条 ~500MB），保留期治理作为后续演进。
 
@@ -247,6 +251,7 @@ WHERE role_info.code = 'SUPER_ADMIN'
 - 触发 GitPilot 对话 -> `psql` 查 `agent_invocation_log` 有 `agent_type=ASSISTANT_CHAT` 记录且 `prompt_tokens/completion_tokens` 非空（provider 支持 usage 时）。
 - 触发代码审核 -> 有 `agent_type=CODE_REVIEW` 记录且 token 非空。
 - 访问 `/model-usage-stats`（SUPER_ADMIN）-> KPI 卡片 + 模型排行柱状图 + Token 分布 + 趋势折线 + 明细表格数据正确。
+- 访问 `/model-usage-stats`（SUPER_ADMIN）-> 模型明细无“独立用户”列，用户 Token 用量区块按筛选条件展示前 20 名，趋势图 Token/命中率右侧坐标轴不重叠。
 - 无权限用户 -> 路由守卫 403。
 - 看板"按 provider"分组能看到 `ASSISTANT` 通道与 `OPENAI`/`ANTHROPIC` 区分。
 

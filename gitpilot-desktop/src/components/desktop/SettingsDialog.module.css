@@ -25,7 +25,7 @@
 .eyebrow {
 	margin: 0 9px 5px;
 	color: var(--primary);
-	font-family: var(--font-mono);
+	font-family: var(--font-sans);
 	font-size: calc(10px * var(--desktop-font-scale));
 	font-weight: 700;
 	letter-spacing: .16em;
@@ -156,21 +156,81 @@
 	font-weight: 600;
 }
 
-.select {
+.selectTrigger {
+	display: flex;
 	width: 100%;
 	height: 34px;
+	align-items: center;
+	justify-content: space-between;
+	gap: 10px;
 	border: 1px solid var(--input);
 	border-radius: var(--radius-sm);
 	background: var(--background);
 	padding: 0 9px;
 	color: var(--foreground);
-	font-size: calc(12px * var(--desktop-font-scale));
-	outline: none;
+	font: 400 calc(12px * var(--desktop-font-scale)) var(--font-sans);
+	text-align: left;
 }
 
-.select:focus-visible {
+.selectTrigger:hover {
+	border-color: var(--border-strong);
+	background: var(--accent);
+}
+
+.selectTrigger:focus-visible {
 	border-color: var(--ring);
 	box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 25%, transparent);
+}
+
+.selectTrigger > span {
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.selectTrigger > svg {
+	flex: 0 0 auto;
+	color: var(--muted-foreground);
+	transition: transform 160ms ease;
+}
+
+.selectTrigger[data-state='open'] > svg {
+	transform: rotate(180deg);
+}
+
+.selectMenu {
+	width: var(--radix-dropdown-menu-trigger-width);
+	min-width: 180px;
+	padding: 5px;
+}
+
+.selectItem {
+	min-height: 34px;
+	justify-content: space-between;
+	color: var(--foreground);
+	font-size: calc(12px * var(--desktop-font-scale));
+}
+
+.selectItem:hover {
+	background: var(--accent);
+	color: var(--accent-foreground);
+}
+
+.selectItemActive {
+	background: color-mix(in srgb, var(--primary) 10%, var(--popover));
+	color: var(--primary);
+}
+
+.selectItemActive:hover {
+	background: color-mix(in srgb, var(--primary) 15%, var(--popover));
+	color: var(--primary);
+}
+
+.selectItemCheck {
+	margin-left: auto;
+	flex: 0 0 auto;
+	color: var(--primary);
 }
 
 .sizeChoices {
@@ -255,7 +315,7 @@
 	background: var(--background);
 	padding: 8px 9px;
 	color: var(--secondary-foreground);
-	font-family: var(--font-mono);
+	font-family: var(--font-sans);
 	font-size: calc(10px * var(--desktop-font-scale));
 	text-overflow: ellipsis;
 	white-space: nowrap;
@@ -294,7 +354,7 @@
 .updateEyebrow {
 	margin: 0 0 5px;
 	color: var(--primary);
-	font-family: var(--font-mono);
+	font-family: var(--font-sans);
 	font-size: calc(10px * var(--desktop-font-scale));
 	font-weight: 700;
 	letter-spacing: .12em;
@@ -368,7 +428,7 @@
 	.frame { grid-template-columns: 1fr; grid-template-rows: auto minmax(0, 1fr); }
 	.sidebar { border-right: 0; border-bottom: 1px solid var(--border); padding: 12px; }
 	.eyebrow, .sidebarTitle { display: none; }
-	.nav { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+	.nav { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 	.navItem { justify-content: center; padding: 8px 5px; }
 	.navItem span { font-size: calc(11px * var(--desktop-font-scale)); }
 	.mainHeader { padding: 15px 16px 12px; }

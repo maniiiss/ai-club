@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Agent } from "@earendil-works/pi-agent-core";
@@ -102,6 +102,7 @@ async function createRuntimeHost(options: {
 	extensionCommandHandler?: () => Promise<void>;
 }): Promise<{
 	runtimeHost: AgentSessionRuntime;
+	projectPath: string;
 	cleanup: () => Promise<void>;
 }> {
 	const tempDir = join(tmpdir(), `pi-rpc-prompt-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -167,6 +168,7 @@ async function createRuntimeHost(options: {
 
 	return {
 		runtimeHost,
+		projectPath: tempDir,
 		cleanup: async () => {
 			try {
 				if (session.isStreaming) {
@@ -190,16 +192,17 @@ async function startRpcMode(options: {
 	extensionCommandHandler?: () => Promise<void>;
 }): Promise<{
 	lineHandler: (line: string) => void;
+	projectPath: string;
 	cleanup: () => Promise<void>;
 }> {
 	rpcIo.outputLines = [];
 	rpcIo.lineHandler = undefined;
 
-	const { runtimeHost, cleanup } = await createRuntimeHost(options);
+	const { runtimeHost, projectPath, cleanup } = await createRuntimeHost(options);
 	void runRpcMode(runtimeHost);
 	await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
 
-	return { lineHandler: rpcIo.lineHandler!, cleanup };
+	return { lineHandler: rpcIo.lineHandler!, projectPath, cleanup };
 }
 
 describe("RPC prompt response semantics", () => {
@@ -331,6 +334,119 @@ describe("RPC prompt response semantics", () => {
 			]);
 		} finally {
 			releaseCommand();
+			await cleanup();
+		}
+	});
+
+	it("persists Design UI messages in the fixed conversation and applies status updates by message ID", async () => {
+		const { lineHandler, projectPath, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 0 });
+
+		try {
+			lineHandler(JSON.stringify({ id: "design-create", type: "design_create", projectPath, name: "企查查页面" }));
+			const createResponse = await vi.waitFor(() => {
+				const response = parseOutputLines(rpcIo.outputLines).find((record) => record.id === "design-create" && record.command === "design_create");
+				expect(response).toMatchObject({ success: true });
+				return response!;
+			});
+			const designId = String((createResponse.data as { designId: string }).designId);
+
+			lineHandler(JSON.stringify({ id: "design-sync-queued", type: "design_sync_messages", projectPath, designId, messages: [{ id: "qcc-1", kind: "user", text: "设计企查查页面", status: "queued" }] }));
+			await vi.waitFor(() => expect(parseOutputLines(rpcIo.outputLines).find((record) => record.id === "design-sync-queued")).toMatchObject({ success: true }));
+
+			lineHandler(JSON.stringify({ id: "design-sync-sent", type: "design_sync_messages", projectPath, designId, messages: [{ id: "qcc-1", kind: "user", text: "设计企查查页面", status: "sent" }] }));
+			const syncResponse = await vi.waitFor(() => {
+				const response = parseOutputLines(rpcIo.outputLines).find((record) => record.id === "design-sync-sent");
+				expect(response).toMatchObject({ success: true });
+				return response!;
+			});
+
+			expect((syncResponse.data as { messages: unknown[] }).messages).toEqual([{ id: "qcc-1", kind: "user", text: "设计企查查页面", status: "sent" }]);
+			expect(existsSync(join(projectPath, ".gitpilot", "sessions", designId, "conversation.jsonl"))).toBe(true);
+		} finally {
+			await cleanup();
+		}
+	});
+
+	it("Design patch 从当前页面创建新页面并同步 canonical 页面索引", async () => {
+		const { lineHandler, projectPath, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 0 });
+
+		try {
+			lineHandler(JSON.stringify({ id: "design-create-page-workspace", type: "design_create", projectPath, name: "多页面工作区" }));
+			const createResponse = await vi.waitFor(() => {
+				const response = parseOutputLines(rpcIo.outputLines).find((record) => record.id === "design-create-page-workspace" && record.command === "design_create");
+				expect(response).toMatchObject({ success: true });
+				return response!;
+			});
+			const designId = String((createResponse.data as { designId: string }).designId);
+			const initialSnapshot = (createResponse.data as { snapshot: { document: { revisions: Array<{ id: string }> } } }).snapshot;
+			const baseRevisionId = initialSnapshot.document.revisions.at(-1)?.id ?? "";
+			lineHandler(JSON.stringify({
+				id: "design-create-page-patch",
+				type: "design_apply_patch",
+				projectPath,
+				designId,
+				pageId: "home",
+				baseRevisionId,
+				patch: {
+					baseRevisionId,
+					operationId: "create-about-page",
+					affectedPaths: ["pages/about/index.html", "pages/about/styles.css", "pages/about/main.js"],
+					operations: [
+						{ op: "create_file", path: "pages/about/index.html", language: "html", content: "<!doctype html><main>About</main>" },
+						{ op: "create_file", path: "pages/about/styles.css", language: "css", content: ".about{}" },
+						{ op: "create_file", path: "pages/about/main.js", language: "javascript", content: "console.log('about')" },
+					],
+					summary: "创建 About 页面",
+				},
+			}));
+
+			const patchResponse = await vi.waitFor(() => {
+				const response = parseOutputLines(rpcIo.outputLines).find((record) => record.id === "design-create-page-patch" && record.command === "design_apply_patch");
+				expect(response).toMatchObject({ success: true });
+				return response!;
+			});
+			const snapshot = (patchResponse.data as { snapshot: { document: { pages: Array<{ id: string; fileIds: string[] }> } } }).snapshot;
+			expect(snapshot.document.pages.find((page) => page.id === "about")).toMatchObject({ id: "about" });
+			expect(existsSync(join(projectPath, "pages", "about", "index.html"))).toBe(true);
+		} finally {
+			await cleanup();
+		}
+	});
+
+	it("从旧版 .gitpilot/design 会话迁移到固定 Design conversation.jsonl", async () => {
+		const { lineHandler, projectPath, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 0 });
+		const designId = "design-legacy";
+		const legacyRoot = join(projectPath, ".gitpilot", "design", designId);
+		const legacySessionRoot = join(legacyRoot, ".session");
+		const filePath = "pages/home/index.html";
+		const document = {
+			id: designId,
+			name: "旧版页面",
+			version: 1,
+			entryPageId: "home",
+			pages: [{ id: "home", name: "Home", route: "/", entryFileId: "legacy-html", fileIds: ["legacy-html"] }],
+			files: [{ id: "legacy-html", path: filePath, language: "html", scope: "page" }],
+			revisions: [{ id: "rev-legacy", prompt: "旧版页面", summary: "旧版页面", createdAt: "2026-08-01T00:00:00.000Z", kind: "initial" }],
+		};
+		try {
+			mkdirSync(legacySessionRoot, { recursive: true });
+			writeFileSync(join(projectPath, ".gitpilot", "design", "manifest.json"), JSON.stringify({ designId }));
+			writeFileSync(join(legacyRoot, "design.json"), JSON.stringify(document));
+			mkdirSync(join(legacyRoot, "pages", "home"), { recursive: true });
+			writeFileSync(join(legacyRoot, filePath), "<main>旧版</main>");
+			writeFileSync(join(legacySessionRoot, "2026-08-01T00-00-00Z.jsonl"), `${JSON.stringify({ type: "session", version: 3, id: "legacy-session", timestamp: "2026-08-01T00:00:00.000Z", cwd: projectPath })}\n${JSON.stringify({ type: "custom", customType: "gitpilot.design-ui-message.v1", id: "legacy-ui-entry", parentId: null, timestamp: "2026-08-01T00:00:01.000Z", data: { id: "legacy-message", kind: "assistant", text: "旧版消息" } })}\n`);
+
+			lineHandler(JSON.stringify({ id: "design-open-legacy", type: "design_open", projectPath }));
+			const response = await vi.waitFor(() => {
+				const record = parseOutputLines(rpcIo.outputLines).find((item) => item.id === "design-open-legacy");
+				expect(record).toMatchObject({ success: true, command: "design_open" });
+				return record!;
+			});
+			expect((response.data as { designId: string }).designId).toBe(designId);
+			expect((response.data as { messages: Array<{ text: string }> }).messages).toEqual([{ id: "legacy-message", kind: "assistant", text: "旧版消息" }]);
+			expect(existsSync(join(projectPath, ".gitpilot", "sessions", designId, "conversation.jsonl"))).toBe(true);
+			expect((response.data as { snapshot: { files: Array<{ content?: string }> } }).snapshot.files[0]?.content).toBe("<main>旧版</main>");
+		} finally {
 			await cleanup();
 		}
 	});

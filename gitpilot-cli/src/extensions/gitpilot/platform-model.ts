@@ -39,7 +39,7 @@ export const GITPILOT_PROVIDER_ID = "gitpilot";
 // 此缓存保证异常恢复与 cache-only 调用都能返回上次拉到的模型，避免清空已就绪清单。
 let cachedPlatformModels: ProviderModelConfig[] = [];
 const DEFAULT_CONTEXT_WINDOW = 128_000;
-const DEFAULT_MAX_TOKENS = 16_384;
+const FALLBACK_MAX_OUTPUT_TOKENS = 16_384;
 
 // applyExtension（provider-composer）校验自定义 models 必填 baseUrl，否则抛
 // "baseUrl is required when defining custom models" 而丢弃全部模型。
@@ -69,6 +69,17 @@ interface ReasoningProfile {
 		requiresReasoningContentOnAssistantMessages: true;
 		thinkingFormat: "deepseek";
 	};
+}
+
+/**
+ * 读取模型管理配置的最大输出 token 数。
+ * 业务意图：Design 不单独覆盖模型预算；模型管理未提供有效值时才使用兼容旧配置的回退值。
+ */
+export function resolveMaxOutputTokens(model: Pick<CliModel, "maxOutputTokens">): number {
+	const configured = model.maxOutputTokens;
+	return typeof configured === "number" && Number.isFinite(configured) && configured > 0
+		? Math.floor(configured)
+		: FALLBACK_MAX_OUTPUT_TOKENS;
 }
 
 const REASONING_MODEL_PROFILES: Record<string, ReasoningProfile> = {
@@ -114,7 +125,7 @@ function toModelConfig(model: CliModel): ProviderModelConfig {
 		billingMultiplier: model.billingMultiplier,
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: model.contextLength ?? DEFAULT_CONTEXT_WINDOW,
-		maxTokens: model.maxOutputTokens ?? DEFAULT_MAX_TOKENS,
+		maxTokens: resolveMaxOutputTokens(model),
 	};
 }
 

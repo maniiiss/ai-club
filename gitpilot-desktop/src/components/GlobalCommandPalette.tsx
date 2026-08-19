@@ -22,7 +22,7 @@ export function GlobalCommandPalette({ onNewSession, onAbort }: GlobalCommandPal
 	const executeCommand = useSessionStore((s) => s.executeCommand);
 
 	const builtIns = useMemo<Array<WorkbenchCommand & { execute: () => void }>>(() => [
-		{ id: 'new-task', label: '新建任务', description: '在当前项目创建新的 Agent 会话', shortcut: 'Ctrl N', execute: onNewSession },
+		{ id: 'new-task', label: '新建任务', description: '在当前工作空间创建新的 Agent 会话', shortcut: 'Ctrl N', execute: onNewSession },
 		{ id: 'focus-input', label: '聚焦输入框', description: '回到任务输入区', shortcut: 'Ctrl I', execute: () => document.querySelector<HTMLTextAreaElement>('textarea')?.focus() },
 		{ id: 'model', label: '切换模型', description: '选择模型或思维级别', shortcut: 'Ctrl L', execute: requestModelPicker },
 		{ id: 'stop', label: '停止 Agent', description: '中止当前正在执行的回合', shortcut: 'Esc', execute: onAbort },

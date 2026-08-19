@@ -10,6 +10,7 @@ import com.aiclub.platform.dto.ModelUsageStatsDtos.ModelUsageOptions;
 import com.aiclub.platform.dto.ModelUsageStatsDtos.ModelUsageQueryRequest;
 import com.aiclub.platform.dto.ModelUsageStatsDtos.ProviderBreakdown;
 import com.aiclub.platform.dto.ModelUsageStatsDtos.SourceBreakdown;
+import com.aiclub.platform.dto.ModelUsageStatsDtos.UserBreakdown;
 import com.aiclub.platform.service.ModelUsageStatsService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -56,6 +57,13 @@ public class ModelUsageStatsController {
     @OperationLog(actionCode = "MODEL_USAGE_BY_MODEL", actionName = "按模型统计")
     public ApiResponse<List<ModelBreakdown>> byModel(@Valid @RequestBody ModelUsageQueryRequest request) {
         return ApiResponse.success(modelUsageStatsService.getByModel(request));
+    }
+
+    @PostMapping("/by-user")
+    @RequirePermission("system:model-usage:view")
+    @OperationLog(actionCode = "MODEL_USAGE_BY_USER", actionName = "按用户统计 Token 用量")
+    public ApiResponse<List<UserBreakdown>> byUser(@Valid @RequestBody ModelUsageQueryRequest request) {
+        return ApiResponse.success(modelUsageStatsService.getByUser(request));
     }
 
     @PostMapping("/trend")

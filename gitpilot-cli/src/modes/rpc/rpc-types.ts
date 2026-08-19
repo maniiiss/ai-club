@@ -17,6 +17,23 @@ import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { SessionEntry, SessionInfo, SessionTreeNode } from "../../core/session-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
+import type { ManagedMcpServer, McpServerDefinition } from "../../extensions/gitpilot/mcp-manager.ts";
+
+export type SkillMode = "code" | "work" | "design";
+export interface ManagedSkill {
+	id: string;
+	name: string;
+	description: string;
+	source: "builtin" | "personal";
+	filePath: string;
+	enabled: boolean;
+	modes: SkillMode[];
+	disableModelInvocation: boolean;
+}
+export interface SkillReloadResult {
+	reloadedModes: SkillMode[];
+	deferredModes: SkillMode[];
+}
 
 /** 桌面标题栏展示的登录账户摘要，令牌绝不通过 RPC 返回。 */
 export interface RpcPlatformAccount {
@@ -51,7 +68,7 @@ export interface CodeProjectFileList {
 	entries: CodeProjectFileEntry[];
 	truncated: boolean;
 }
-/** Design 文件是项目级工作区内的 canonical 资源，path 永远相对 .gitpilot/design。 */
+/** Design 文件是项目根目录下的 canonical 资源，path 永远相对项目根目录。 */
 export interface DesignRpcFile {
 	id?: string;
 	path: string;
@@ -78,6 +95,15 @@ export interface DesignProjectGuidelines {
 	updatedAt: string;
 }
 export interface DesignRpcSnapshot { document: Record<string, unknown>; files: DesignRpcFile[]; context?: DesignProjectContext; guidelines?: DesignProjectGuidelines }
+/**
+ * Design 对话气泡的轻量持久化载荷；canonical 文件和 Agent 内部消息仍由各自会话负责保存。
+ * 业务意图：桌面端重启后能够恢复用户真正看到的消息，同时不把 UI 状态塞进 localStorage。
+ */
+export type DesignRpcMessage =
+	| { id: string; kind: "user"; text: string; status?: "queued" | "sent" | "cancelled" }
+	| { id: string; kind: "assistant"; text: string }
+	| { id: string; kind: "error"; text: string }
+	| { id: string; kind: "result"; revisionId: string; summary: string };
 /** 上传 Design 修订到 Web 后返回的远端版本摘要。 */
 export interface DesignUploadResult {
 	versionId: number;
@@ -102,6 +128,7 @@ export type DesignPatchOperation =
 	| { op: "create_file"; path: string; content: string; language: DesignRpcFile["language"] }
 	| { op: "replace_file"; path: string; content: string }
 	| { op: "replace_text"; path: string; search: string; replacement: string }
+	| { op: "insert_text"; path: string; anchor: string; text: string; position: "before" | "after"; occurrence?: number }
 	| { op: "rename_file"; path: string; newPath: string }
 	| { op: "delete_file"; path: string };
 export interface DesignPatch { baseRevisionId: string; operations: DesignPatchOperation[]; affectedPaths?: string[]; summary?: string; risk?: "safe" | "high"; operationId?: string }
@@ -115,15 +142,30 @@ export type DesignAgentEvent =
 	| { type: "message_end"; message: { role: "assistant"; content: Array<{ type: "text"; text: string }> } }
 	| { type: "tool_execution_start" | "tool_execution_update" | "tool_execution_end"; toolCallId: string; toolName: string; summary?: string; isError?: boolean };
 export interface DesignStreamEvent extends DesignStreamMetadata { type: "design_event"; event: DesignAgentEvent }
-export interface DesignPatchAppliedEvent extends DesignStreamMetadata { type: "design_patch_applied"; operationId: string; revisionId: string; pageId: string; summary: string; changedFiles: DesignRpcFile[]; removedPaths: string[] }
+export interface DesignPatchAppliedEvent extends DesignStreamMetadata { type: "design_patch_applied"; operationId: string; revisionId: string; pageId: string; summary: string; changedFiles: DesignRpcFile[]; removedPaths: string[]; /** Agent run 中的增量 patch 仍是 draft，不应在 Desktop 侧新增历史 revision。 */ isDraft?: boolean }
 export interface DesignApprovalRequiredEvent extends DesignStreamMetadata { type: "design_approval_required"; approvalId: string; pageId: string; patch: DesignPatch; reason: string }
 /** Design Agent 发现关键歧义时暂停当前工具调用，等待 Desktop 返回用户决策。 */
 export interface DesignClarificationRequiredEvent extends DesignStreamMetadata { type: "design_clarification_required"; clarificationId: string; question: string; context?: string; options: string[] }
-/** 仅在复杂任务中由 Agent 主动维护的右侧执行计划。 */
+/** 复杂任务由模型通过 update_plan 提交，简单任务由 skip_plan 显式跳过。 */
 export interface DesignPlanStep { id: string; text: string; state: "pending" | "active" | "done" }
 export interface DesignPlanUpdatedEvent extends DesignStreamMetadata { type: "design_plan_updated"; steps: DesignPlanStep[]; explanation?: string }
 export interface DesignRunSettledEvent extends DesignStreamMetadata { type: "design_run_settled"; snapshot: DesignRpcSnapshot }
 export interface DesignErrorEvent extends DesignStreamMetadata { type: "design_error"; error: string }
+
+/**
+ * Design 工作区重新打开或前端重连时恢复的最小运行态。
+ * 业务意图：审批正文可能很大，不重复传回完整 patch；只恢复继续审批所需的标识和原因，
+ * 页面正文仍以 canonical snapshot 为准，避免把审批恢复变成新的大对象传输。
+ */
+export interface DesignRunRecoveryState {
+	status: "idle" | "running" | "awaiting_approval" | "awaiting_clarification";
+	phase: "idle" | "thinking" | "responding" | "tool" | "applying_patch" | "awaiting_approval" | "awaiting_clarification";
+	requestId: string | null;
+	runId: string | null;
+	sequence: number;
+	pendingApproval?: { approvalId: string; pageId: string; reason: string };
+	pendingClarification?: { clarificationId: string; question: string; context?: string; options: string[] };
+}
 
 // ============================================================================
 // 执行快照（设计文档 §8）
@@ -200,7 +242,7 @@ export type RpcCommand =
 	// Attachments（桌面端上传附件预解析：路径或内联 base64 -> 文本/图片，结果随下一条 prompt 注入）
 	| { id?: string; type: "prepare_attachments"; items: AttachmentInput[] }
 	| { id?: string; type: "code_file_list" }
-	| { id?: string; type: "new_work_session"; taskId: string }
+	| { id?: string; type: "new_work_session"; taskId: string; workspacePath?: string }
 	| { id?: string; type: "work_prompt"; taskId: string; message: string; history?: WorkConversationMessage[]; research?: boolean }
 	| { id?: string; type: "work_abort"; requestId?: string }
 	| { id?: string; type: "work_file_list"; taskId: string }
@@ -210,12 +252,14 @@ export type RpcCommand =
 	| { id?: string; type: "work_file_rename"; taskId: string; path: string; newPath: string }
 	| { id?: string; type: "work_prepare_attachments"; items: AttachmentInput[] }
 	| { id?: string; type: "design_open"; projectPath: string }
+	| { id?: string; type: "design_sync_messages"; projectPath: string; designId: string; messages: DesignRpcMessage[] }
 	| { id?: string; type: "design_save_guidelines"; projectPath: string; designId: string; guidelines: DesignProjectGuidelines }
 	| { id?: string; type: "design_rename_page"; projectPath: string; designId: string; pageId: string; name: string; baseRevisionId: string }
 	| { id?: string; type: "design_create"; projectPath: string; name?: string }
 	| { id?: string; type: "design_get_snapshot"; projectPath: string; designId: string }
 	| { id?: string; type: "design_get_revision"; projectPath: string; designId: string; revisionId: string }
-	| { id?: string; type: "design_prompt"; projectPath: string; designId: string; pageId: string; prompt: string; baseRevisionId?: string; targetProfiles: Array<"mobile" | "tablet" | "desktop"> }
+	/** uiMessageId 由 Desktop 生成并贯穿 sidecar/UI 同一条气泡，避免恢复时重复显示用户消息。 */
+	| { id?: string; type: "design_prompt"; projectPath: string; designId: string; pageId: string; prompt: string; baseRevisionId?: string; targetProfiles: Array<"mobile" | "tablet" | "desktop">; uiMessageId?: string }
 	| { id?: string; type: "design_clarification_response"; projectPath: string; designId: string; clarificationId: string; answer: string }
 	| { id?: string; type: "design_follow_up"; projectPath: string; designId: string; message: string }
 	| { id?: string; type: "design_abort"; projectPath: string; designId: string }
@@ -227,13 +271,18 @@ export type RpcCommand =
 	| { id?: string; type: "design_revert"; projectPath: string; designId: string; revisionId: string }
 	| { id?: string; type: "design_upload"; projectPath: string; designId: string; revisionId: string; platformProjectId: number; title?: string; summary?: string }
 	| { id?: string; type: "design_export"; projectPath: string; designId: string; outputPath?: string }
-	// MCP 管理仅传输写入所需的服务定义；查询响应不会返回 env、headers 或 OAuth 凭据。
+	// MCP 管理传输标准服务定义；查询响应中的 env、headers 等敏感值始终是脱敏占位符。
 	| { id?: string; type: "mcp_list" }
-	| { id?: string; type: "mcp_save_server"; name: string; definition: Record<string, unknown>; modes: Array<"code" | "work" | "design"> }
+	| { id?: string; type: "mcp_save_server"; name: string; previousName?: string; definition: McpServerDefinition; modes: Array<"code" | "work" | "design"> }
+	| { id?: string; type: "mcp_copy_server"; name: string }
 	| { id?: string; type: "mcp_delete_server"; name: string }
 	| { id?: string; type: "mcp_set_modes"; name: string; modes: Array<"code" | "work" | "design"> }
 	| { id?: string; type: "mcp_set_enabled"; name: string; enabled: boolean }
 	| { id?: string; type: "mcp_reload" }
+	| { id?: string; type: "skill_list" }
+	| { id?: string; type: "skill_set_enabled"; name: string; enabled: boolean }
+	| { id?: string; type: "skill_set_modes"; name: string; modes: SkillMode[] }
+	| { id?: string; type: "skill_reload" }
 
 	// State
 	| { id?: string; type: "get_state" }
@@ -391,7 +440,8 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "work_file_delete"; success: true; data: { taskId: string; path: string } }
 	| { id?: string; type: "response"; command: "work_file_rename"; success: true; data: { taskId: string; file: WorkFileSnapshot } }
 	| { id?: string; type: "response"; command: "work_prepare_attachments"; success: true; data: { attachments: PreparedAttachment[] } }
-	| { id?: string; type: "response"; command: "design_open" | "design_create" | "design_save_guidelines" | "design_rename_page"; success: true; data: { designId: string; snapshot: DesignRpcSnapshot } }
+	| { id?: string; type: "response"; command: "design_open" | "design_create" | "design_save_guidelines" | "design_rename_page"; success: true; data: { designId: string; snapshot: DesignRpcSnapshot; messages?: DesignRpcMessage[]; execution?: DesignRunRecoveryState } }
+	| { id?: string; type: "response"; command: "design_sync_messages"; success: true; data: { designId: string; messages: DesignRpcMessage[] } }
 	| { id?: string; type: "response"; command: "design_get_snapshot" | "design_get_revision" | "design_check"; success: true; data: { snapshot?: DesignRpcSnapshot; checks?: Array<{ level: "error" | "warning" | "info"; message: string }> } }
 	| { id?: string; type: "response"; command: "design_preview"; success: true; data: { snapshot?: DesignRpcSnapshot; previewHandle: DesignPreviewHandle; checks?: Array<{ level: "error" | "warning" | "info"; message: string }> } }
 	| { id?: string; type: "response"; command: "design_prompt"; success: true; data: { requestId: string; runId: string } }
@@ -403,8 +453,11 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "design_apply_patch" | "design_revert"; success: true; data: { snapshot: DesignRpcSnapshot } }
 	| { id?: string; type: "response"; command: "design_upload"; success: true; data: { upload: DesignUploadResult } }
 	| { id?: string; type: "response"; command: "design_export"; success: true; data: { path: string } }
-	| { id?: string; type: "response"; command: "mcp_list"; success: true; data: { servers: Array<{ name: string; source: "global" | "project" | "project-override"; enabled: boolean; modes: Array<"code" | "work" | "design">; transport: "stdio" | "http" | "unknown" }> } }
+	| { id?: string; type: "response"; command: "mcp_list"; success: true; data: { servers: ManagedMcpServer[] } }
+	| { id?: string; type: "response"; command: "mcp_copy_server"; success: true; data: { name: string } }
 	| { id?: string; type: "response"; command: "mcp_save_server" | "mcp_delete_server" | "mcp_set_modes" | "mcp_set_enabled" | "mcp_reload"; success: true }
+	| { id?: string; type: "response"; command: "skill_list"; success: true; data: { skills: ManagedSkill[]; diagnostics: Array<{ type: string; message: string; path?: string }> } }
+	| { id?: string; type: "response"; command: "skill_set_enabled" | "skill_set_modes" | "skill_reload"; success: true; data: SkillReloadResult }
 
 	// State
 	| { id?: string; type: "response"; command: "get_state"; success: true; data: RpcSessionState }

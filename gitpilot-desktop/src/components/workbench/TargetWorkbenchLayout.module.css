@@ -23,7 +23,7 @@
 .bottomResizeHandle > span { display: none; }
 .bottomHeader { display: flex; min-height: 40px; align-items: center; border-bottom: 1px solid var(--gp-border); padding: 0 10px; }
 .bottomContent { min-height: 0; flex: 1; }
-.statusbar { position: relative; display: flex; min-height: 28px; align-items: center; gap: 10px; border-top: 1px solid var(--gp-border); background: var(--gp-surface-raised); padding: 0 38px; color: var(--gp-text-muted); font-family: var(--font-mono); font-size: calc(10px * var(--desktop-font-scale)); }
+.statusbar { position: relative; display: flex; min-height: 28px; align-items: center; gap: 10px; border-top: 1px solid var(--gp-border); background: var(--gp-surface-raised); padding: 0 38px; color: var(--gp-text-muted); font-family: var(--font-sans); font-size: calc(10px * var(--desktop-font-scale)); }
 .statusbar > button { height: 24px; }
 .leftPanelToggle, .rightPanelToggle { position: absolute; top: 2px; width: 24px; height: 24px; padding: 0; }
 .leftPanelToggle { left: 4px; }

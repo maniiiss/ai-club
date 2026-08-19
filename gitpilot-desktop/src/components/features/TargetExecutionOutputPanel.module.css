@@ -1,3 +1,3 @@
 .root { display: flex; height: 100%; min-width: 0; flex-direction: column; padding: 10px 13px; background: var(--gp-surface); color: var(--gp-text); }
-.eyebrow { color: var(--gp-text-muted); font-family: var(--font-mono); font-size: calc(9px * var(--desktop-font-scale)); letter-spacing: .12em; }
+.eyebrow { color: var(--gp-text-muted); font-family: var(--font-sans); font-size: calc(9px * var(--desktop-font-scale)); letter-spacing: .12em; }
 .root pre { min-height: 0; flex: 1; margin: 5px 0 0; overflow: auto; border: 1px solid var(--gp-border); border-radius: var(--radius-sm); background: var(--gp-code-surface); padding: 9px; color: var(--gp-text-secondary); font: calc(10px * var(--desktop-font-scale))/1.55 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }

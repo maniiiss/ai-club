@@ -30,14 +30,16 @@ function sortByModified<T extends { modified?: string }>(items: T[]): T[] {
 
 /**
  * 每个任务最多归属一个最接近的项目根目录；没有归属的任务作为独立任务返回。
+ * 被用户移除的项目任务会被排除，避免它们因为项目暂时不在列表中而回落到独立任务。
  * 这样项目树和任务列表是两套互不重复的展示集合。
  */
-export function buildProjectTree(projects: ProjectTreeProject[], tasks: ProjectTreeTask[], standaloneTaskPaths: string[] = []): { projectTree: ProjectTreeNode[]; standaloneTasks: ProjectTreeTask[] } {
+export function buildProjectTree(projects: ProjectTreeProject[], tasks: ProjectTreeTask[], standaloneTaskPaths: string[] = [], removedProjectPaths: string[] = []): { projectTree: ProjectTreeNode[]; standaloneTasks: ProjectTreeTask[] } {
 	const projectTree = projects.map((project) => ({ project, tasks: [] as ProjectTreeTask[] }));
 	const standaloneTasks: ProjectTreeTask[] = [];
 	const standaloneTaskSet = new Set(standaloneTaskPaths);
 
 	for (const task of tasks) {
+		if (removedProjectPaths.some((projectPath) => isProjectPathWithin(task.cwd, projectPath))) continue;
 		if (standaloneTaskSet.has(task.path)) {
 			// 底部“任务”入口是明确的独立任务语义；即使它的 cwd 恰好落在某个项目目录内，
 			// 也不能仅凭路径前缀把它重新归入项目，否则新建任务会从底部列表跳到项目下面。

@@ -48,7 +48,7 @@
 	border-radius: 5px;
 	padding: 3px 6px;
 	color: var(--muted-foreground);
-	font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+	font-family: var(--font-sans);
 	font-size: calc(12px * var(--desktop-font-scale));
 }
 

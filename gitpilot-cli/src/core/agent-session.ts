@@ -249,6 +249,12 @@ export interface PromptOptions {
 	expandPromptTemplates?: boolean;
 	/** Image attachments */
 	images?: ImageContent[];
+	/**
+	 * 在开始 Agent 回合前先把用户消息写入会话文件。
+	 * 业务意图：Design 等需要跨进程恢复的模式，即使进程在首个 message_end 前退出，
+	 * 下一次打开会话时仍能看到用户刚提交的需求；正常 message_end 会跳过这条预写消息，避免重复。
+	 */
+	persistUserMessageBeforeRun?: boolean;
 	/** When streaming, how to queue the message: "steer" (interrupt) or "followUp" (wait). Required if streaming. */
 	streamingBehavior?: "steer" | "followUp";
 	/** Source of input for extension input event handlers. Defaults to "interactive". */
@@ -339,6 +345,11 @@ export class AgentSession {
 	private _followUpMessages: string[] = [];
 	/** Messages queued to be included with the next user prompt as context ("asides"). */
 	private _pendingNextTurnMessages: CustomMessage[] = [];
+	/**
+	 * 本轮已在 message_end 前预写入的用户消息；收到正常结束事件时只清理标记，
+	 * 不再追加第二条相同消息。回合收口后会清空，避免停止任务后的旧标记影响下一轮。
+	 */
+	private _prePersistedUserMessages: AgentMessage[] = [];
 
 	// Compaction state
 	private _compactionAbortController: AbortController | undefined = undefined;
@@ -732,7 +743,24 @@ export class AgentSession {
 				event.message.role === "toolResult"
 			) {
 				// Regular LLM message - persist as SessionMessageEntry
-				this.sessionManager.appendMessage(event.message);
+				if (event.message.role === "user") {
+					const prePersistedIndex = this._prePersistedUserMessages.findIndex(
+						(candidate) =>
+							candidate === event.message ||
+							(candidate.role === "user" &&
+								"content" in candidate &&
+								"content" in event.message &&
+								contentText(candidate.content, "") === contentText(event.message.content, "") &&
+								candidate.timestamp === event.message.timestamp),
+					);
+					if (prePersistedIndex >= 0) {
+						this._prePersistedUserMessages.splice(prePersistedIndex, 1);
+					} else {
+						this.sessionManager.appendMessage(event.message);
+					}
+				} else {
+					this.sessionManager.appendMessage(event.message);
+				}
 			}
 			// Other message types (bashExecution, compactionSummary, branchSummary) are persisted elsewhere
 
@@ -1189,7 +1217,11 @@ export class AgentSession {
 		} finally {
 			this._systemPromptOverride = undefined;
 			this._flushPendingBashMessages();
-			await this._emitAgentSettled();
+			try {
+				await this._emitAgentSettled();
+			} finally {
+				this._prePersistedUserMessages = [];
+			}
 		}
 	}
 
@@ -1387,6 +1419,17 @@ export class AgentSession {
 		}
 
 		preflightResult?.(true);
+		if (options?.persistUserMessageBeforeRun) {
+			for (const message of messages) {
+				if (message.role === "user") {
+					this.sessionManager.appendMessage(message);
+					this._prePersistedUserMessages.push(message);
+				}
+			}
+			// SessionManager 在首条 assistant 消息前默认延迟创建文件；这里是有意的
+			// 例外，确保强制退出或桌面端重启不会丢掉刚提交的 Design 需求。
+			this.sessionManager.flushToDisk();
+		}
 		await this._runAgentPrompt(messages);
 	}
 

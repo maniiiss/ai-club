@@ -31,6 +31,7 @@ idle -> starting -> thinking / responding / tool -> applying_patch
 | `design_follow_up` | 向当前 Design Agent 的 follow-up 队列追加消息 |
 | `design_abort` | 停止当前 run；已应用 patch 保留，未执行队列由 Desktop 清空 |
 | `design_approval_response` | 回应高风险 patch 的审批请求 |
+| `design_open` | 返回 canonical snapshot、消息和当前 run 的轻量恢复态；重新打开工作区时可恢复审批/澄清卡片 |
 | `design_apply_patch` | 兼容的受限 patch 入口；正常 Agent 修改使用同名 custom tool |
 | `design_generate` | 历史兼容接口，仍等待最终 snapshot 返回，Desktop 不再调用 |
 
@@ -70,6 +71,9 @@ Design store 独立维护 `runId`、`requestId`、`sequence`、阶段、thinking
 ## 7. 恢复与异常语义
 
 - 进入项目或刷新时，Desktop 先从 sidecar 获取当前项目的 Design snapshot；项目之间不共享默认模板唯一缓存。
+- `design_open` 同时返回 `execution` 轻量恢复态（`requestId`、`runId`、`sequence`、当前阶段及审批/澄清标识）；完整审批 patch 不进入恢复响应，仍以当前 canonical snapshot 为准。阶段包括思考、回答、工具调用和应用 patch。
+- Desktop hydrate 会据此恢复 `isGenerating` 和审批/澄清卡片；等待用户介入期间输入不会创建新的 `design_prompt`，避免把“继续”误当成新任务。
+- 项目切换不会把运行态视为当前项目 UI 的临时变量：Desktop 按项目保留轻量 `execution`、工具步骤和暂停点，后台事件继续更新对应项目；切回时先展示该状态，再用 `design_open.execution` 校正。
 - 断线重连后以 sidecar snapshot 为准，旧 `requestId`、旧 `runId` 和重复 `sequence` 不得重放修改。
 - 事件到达早于 `design_prompt` response 时，Desktop 暂存当前 Design run 的首个事件元数据；response 到达后完成 run 标识绑定。
 - `design_abort` 只终止 Agent 执行，不撤销已写入 revision；审批 Promise 同时被拒绝，避免运行永久挂起。
@@ -77,4 +81,4 @@ Design store 独立维护 `runId`、`requestId`、`sequence`、阶段、thinking
 
 ## 8. 验证范围
 
-Desktop store 覆盖增量正文、`message_end` 去重、thinking/tool 阶段、patch 实时刷新、sequence 与 request 丢弃、队列派发、停止保留修改和审批状态。CLI 工具覆盖白名单、revision、幂等 operation 和高风险审批。发布前运行 Desktop/CLI 测试与构建、编码检查、`git diff --check`，并在原生 Tauri 中验证 Design/Code 事件隔离和执行中追加输入。
+Desktop store 覆盖增量正文、`message_end` 去重、thinking/tool 阶段、patch 实时刷新、sequence 与 request 丢弃、项目切换后的按项目运行态恢复、队列派发、停止保留修改和审批状态。CLI 工具覆盖白名单、revision、幂等 operation、高风险审批、阶段跟踪和 `design_open` 恢复元数据。发布前运行 Desktop/CLI 测试与构建、编码检查、`git diff --check`，并在原生 Tauri 中验证 Design/Code 事件隔离和执行中追加输入。

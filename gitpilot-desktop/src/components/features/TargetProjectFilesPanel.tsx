@@ -175,17 +175,17 @@ export function TargetProjectFilesPanel() {
 		}
 	};
 
-	return <section className={styles.panel} aria-label="项目文件">
-		<header className={styles.header}>
-			<div className={styles.headerTitle}><FolderOpen size={15} /><span>项目文件</span>{entries.length > 0 && <small>{entries.filter((entry) => entry.kind === 'file').length}</small>}</div>
-			<div className={styles.headerActions}><Hint content="刷新文件树"><Button type="button" variant="ghost" size="icon-sm" onClick={() => void refresh(workspacePath)} disabled={loading || !workspacePath} aria-label="刷新项目文件"><RefreshCw size={14} className={loading ? styles.spin : ''} /></Button></Hint></div>
-		</header>
-		<div className={styles.toolbar}>
-			<div className={styles.search}><Search size={13} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索文件" aria-label="搜索项目文件" /><button type="button" onClick={() => setQuery('')} aria-label="清空搜索" className={styles.clearSearch} hidden={!query}><X size={12} /></button></div>
-		</div>
+	return <section className={styles.panel} aria-label="工作空间文件">
+	<header className={styles.header}>
+		<div className={styles.headerTitle}><FolderOpen size={15} /><span>工作空间文件</span>{entries.length > 0 && <small>{entries.filter((entry) => entry.kind === 'file').length}</small>}</div>
+		<div className={styles.headerActions}><Hint content="刷新文件树"><Button type="button" variant="ghost" size="icon-sm" onClick={() => void refresh(workspacePath)} disabled={loading || !workspacePath} aria-label="刷新工作空间文件"><RefreshCw size={14} className={loading ? styles.spin : ''} /></Button></Hint></div>
+	</header>
+	<div className={styles.toolbar}>
+		<div className={styles.search}><Search size={13} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索文件" aria-label="搜索工作空间文件" /><button type="button" onClick={() => setQuery('')} aria-label="清空搜索" className={styles.clearSearch} hidden={!query}><X size={12} /></button></div>
+	</div>
 		{selectedFiles.length > 0 && <div className={styles.selectionBar}><span>已选 {selectedFiles.length} 个文件</span><div><Button type="button" size="sm" variant="secondary" onClick={addSelected}>添加到对话框</Button><Hint content="复制相对路径"><Button type="button" size="icon-sm" variant="ghost" onClick={() => void copySelectedPath()} aria-label="复制相对路径">{copied ? <Check size={13} /> : <Copy size={13} />}</Button></Hint></div></div>}
 		{notice && <div className={styles.notice} role="status">{notice}</div>}
-		{!workspacePath ? <div className={styles.empty}><FolderOpen size={20} /><strong>尚未选择项目</strong><span>选择 Code 项目后，这里会显示只读文件树。</span></div> : loading && entries.length === 0 ? <div className={styles.empty}><Loader2 size={19} className={styles.spin} /><span>正在扫描项目文件…</span></div> : error ? <div className={styles.empty}><TriangleAlert size={20} /><strong>项目文件加载失败</strong><span>{error}</span><Button type="button" size="sm" variant="secondary" onClick={() => void refresh(workspacePath)}>重试</Button></div> : entries.length === 0 ? <div className={styles.empty}><File size={20} /><strong>项目中暂无可展示文件</strong><span>忽略目录、空目录和符号链接不会出现在列表中。</span></div> : filteredTree.length === 0 ? <div className={styles.empty}><Search size={20} /><strong>没有匹配文件</strong><span>尝试搜索文件名或相对路径。</span></div> : <ScrollArea className={styles.treeScroll} fitContent><div className={styles.tree} role="tree" aria-label="项目文件树"><FileTree nodes={filteredTree} depth={0} expanded={expanded} selected={selected} onToggle={onToggle} onSelect={selectNode} onAdd={(node) => enqueueFiles([node])} onDragStart={onDragStart} /></div></ScrollArea>}
-		{rootPath && <footer className={styles.footer}><span title={rootPath}>{rootPath}</span>{truncated && <Hint content="项目较大，文件树已达到扫描上限"><span className={styles.truncated}>仅显示部分文件</span></Hint>}</footer>}
+	{!workspacePath ? <div className={styles.empty}><FolderOpen size={20} /><strong>尚未选择工作空间</strong><span>选择 Code 工作空间后，这里会显示只读文件树。</span></div> : loading && entries.length === 0 ? <div className={styles.empty}><Loader2 size={19} className={styles.spin} /><span>正在扫描工作空间文件…</span></div> : error ? <div className={styles.empty}><TriangleAlert size={20} /><strong>工作空间文件加载失败</strong><span>{error}</span><Button type="button" size="sm" variant="secondary" onClick={() => void refresh(workspacePath)}>重试</Button></div> : entries.length === 0 ? <div className={styles.empty}><File size={20} /><strong>工作空间中暂无可展示文件</strong><span>忽略目录、空目录和符号链接不会出现在列表中。</span></div> : filteredTree.length === 0 ? <div className={styles.empty}><Search size={20} /><strong>没有匹配文件</strong><span>尝试搜索文件名或相对路径。</span></div> : <ScrollArea className={styles.treeScroll} fitContent><div className={styles.tree} role="tree" aria-label="工作空间文件树"><FileTree nodes={filteredTree} depth={0} expanded={expanded} selected={selected} onToggle={onToggle} onSelect={selectNode} onAdd={(node) => enqueueFiles([node])} onDragStart={onDragStart} /></div></ScrollArea>}
+	{rootPath && <footer className={styles.footer}><span title={rootPath}>{rootPath}</span>{truncated && <Hint content="工作空间较大，文件树已达到扫描上限"><span className={styles.truncated}>仅显示部分文件</span></Hint>}</footer>}
 	</section>;
 }

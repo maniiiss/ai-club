@@ -1,0 +1,6 @@
+.chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--gp-border); border-radius: 999px; padding: 4px 12px; color: var(--gp-text-muted); font-size: calc(11px * var(--desktop-font-scale)); }
+.chip:hover { border-color: var(--gp-border-strong); color: var(--gp-text); }
+.chipLabel { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.menu { min-width: 260px; }
+.itemCopy { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.itemCopy small { max-width: 320px; overflow: hidden; color: var(--gp-text-muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }

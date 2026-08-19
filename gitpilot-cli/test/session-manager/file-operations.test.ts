@@ -83,6 +83,18 @@ describe("loadEntriesFromFile", () => {
 		expect(entries[1].type).toBe("message");
 	});
 
+	it("reopens a fixed conversation file with persisted custom UI entries", () => {
+		const file = join(tempDir, "sessions", "design-qcc", "conversation.jsonl");
+		const session = SessionManager.open(file, join(tempDir, "sessions", "design-qcc"), tempDir);
+		session.appendCustomEntry("gitpilot.design-ui-message.v1", { id: "assistant-1", kind: "assistant", text: "已完成" });
+		session.flushToDisk();
+
+		const reopened = SessionManager.open(file, join(tempDir, "sessions", "design-qcc"), tempDir);
+		const custom = reopened.getEntries().find((entry) => entry.type === "custom");
+		expect(custom).toMatchObject({ customType: "gitpilot.design-ui-message.v1", data: { id: "assistant-1", text: "已完成" } });
+		expect(reopened.buildSessionContext().messages).toEqual([]);
+	});
+
 	it("skips malformed lines but keeps valid ones", () => {
 		const file = join(tempDir, "mixed.jsonl");
 		writeFileSync(

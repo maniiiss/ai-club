@@ -8,6 +8,12 @@ describe("Desktop 命令可见性", () => {
 		}
 	});
 
+	it("隐藏 Desktop 不提供交互入口的 Plannotator 斜杠命令", () => {
+		for (const command of ["plannotator-plan-mode", "plannotator-review", "plannotator-annotate", "plannotator-last"]) {
+			expect(isDesktopCommandVisible(command)).toBe(false);
+		}
+	});
+
 	it("保留用户主动发起的业务命令", () => {
 		expect(isDesktopCommandVisible("project")).toBe(true);
 		expect(isDesktopCommandVisible("goal")).toBe(true);

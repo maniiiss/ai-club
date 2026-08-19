@@ -11,11 +11,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import styles from './TargetContextMenu.module.css';
 
 type EditableElement = HTMLInputElement | HTMLTextAreaElement;
-type SidebarMenuKind = 'project' | 'project-task' | 'standalone-task' | 'work-task' | 'design-project';
+type SidebarMenuKind = 'project' | 'project-task' | 'standalone-task' | 'work-project' | 'work-task' | 'design-project';
 interface EditMenuState { kind: 'edit'; target: EventTarget | null; hasSelection: boolean; }
-/** Work 任务通过自身 id 删除，工作目录只负责“打开文件夹”，避免误走 Code 会话删除流程。 */
+/** Work 任务和工作空间分别通过自身 id/path 操作，避免误走 Code 会话删除流程。 */
 interface SidebarMenuState { kind: SidebarMenuKind; projectPath?: string; sessionPath?: string; cwd?: string; workTaskId?: string; }
-interface DeleteState { kind: 'project' | 'session' | 'work-task' | 'design-project'; path: string; workTaskId?: string; }
+interface DeleteState { kind: 'project' | 'session' | 'work-project' | 'work-task' | 'design-project'; path: string; workTaskId?: string; }
 type MenuState = EditMenuState | SidebarMenuState;
 
 function editableTarget(target: EventTarget | null): EditableElement | null {
@@ -30,7 +30,7 @@ function sidebarTarget(target: EventTarget | null): SidebarMenuState | null {
 	if (!(target instanceof Element)) return null;
 	const row = target.closest<HTMLElement>('[data-sidebar-menu-kind]');
 	const kind = row?.dataset.sidebarMenuKind as SidebarMenuKind | undefined;
-	if (!row || !kind || !['project', 'project-task', 'standalone-task', 'work-task', 'design-project'].includes(kind)) return null;
+	if (!row || !kind || !['project', 'project-task', 'standalone-task', 'work-project', 'work-task', 'design-project'].includes(kind)) return null;
 	return { kind, projectPath: row.dataset.projectPath, sessionPath: row.dataset.sessionPath, cwd: row.dataset.sessionCwd, workTaskId: row.dataset.workTaskId };
 }
 
@@ -50,6 +50,9 @@ export function TargetContextMenu({ children }: { children: ReactNode }) {
 	const removeProject = useSessionStore((s) => s.removeProject);
 	const removeSessionFromList = useSessionStore((s) => s.removeSessionFromList);
 	const deleteWorkTask = useWorkStore((s) => s.deleteTask);
+	const createWorkTask = useWorkStore((s) => s.createTask);
+	const selectWorkTask = useWorkStore((s) => s.selectTask);
+	const removeWorkWorkspace = useWorkStore((s) => s.removeWorkspace);
 	const removeDesignProject = useDesignStore((s) => s.removeProject);
 	const reportError = useSessionStore((s) => s.reportError);
 	const connection = useSessionStore((s) => s.connection);
@@ -82,28 +85,34 @@ export function TargetContextMenu({ children }: { children: ReactNode }) {
 	};
 
 	const requestDelete = (current: SidebarMenuState) => {
-		const path = current.kind === 'project' || current.kind === 'design-project' ? current.projectPath : current.kind === 'work-task' ? (current.cwd || current.workTaskId) : current.sessionPath;
+		const path = current.kind === 'project' || current.kind === 'work-project' || current.kind === 'design-project' ? current.projectPath : current.kind === 'work-task' ? (current.cwd || current.workTaskId) : current.sessionPath;
 		if (!path || (current.kind === 'work-task' && !current.workTaskId)) return;
 		setMenu(null);
-		setDeleteState({ kind: current.kind === 'project' ? 'project' : current.kind === 'design-project' ? 'design-project' : current.kind === 'work-task' ? 'work-task' : 'session', path, workTaskId: current.workTaskId });
+		setDeleteState({ kind: current.kind === 'project' ? 'project' : current.kind === 'work-project' ? 'work-project' : current.kind === 'design-project' ? 'design-project' : current.kind === 'work-task' ? 'work-task' : 'session', path, workTaskId: current.workTaskId });
 	};
 
 	const confirmDelete = () => {
 		if (!deleteState) return;
 		if (deleteState.kind === 'project') removeProject(deleteState.path);
+		else if (deleteState.kind === 'work-project') removeWorkWorkspace(deleteState.path);
 		else if (deleteState.kind === 'design-project') removeDesignProject(deleteState.path);
 		else if (deleteState.kind === 'work-task') deleteWorkTask(deleteState.workTaskId ?? deleteState.path);
 		else removeSessionFromList(deleteState.path);
 		setDeleteState(null);
 	};
 
-	const sidebarAction = async (action: 'new-project-task' | 'open-folder', current: SidebarMenuState) => {
+	const sidebarAction = async (action: 'new-project-task' | 'new-workspace-task' | 'open-folder', current: SidebarMenuState) => {
 		setMenu(null);
 		if (action === 'new-project-task' && current.projectPath) {
 			await newSession(current.projectPath);
 			return;
 		}
-		await revealFolder(current.kind === 'project' || current.kind === 'design-project' ? current.projectPath : current.cwd, reportError);
+		if (action === 'new-workspace-task' && current.projectPath) {
+			const task = createWorkTask(current.projectPath);
+			selectWorkTask(task.id);
+			return;
+		}
+		await revealFolder(current.kind === 'project' || current.kind === 'work-project' || current.kind === 'design-project' ? current.projectPath : current.cwd, reportError);
 	};
 
 	const shortcut = (text: string) => <span className={styles.shortcut}>{text}</span>;
@@ -124,9 +133,9 @@ export function TargetContextMenu({ children }: { children: ReactNode }) {
 				)}
 				{menu && menu.kind !== 'edit' && (
 					<ContextMenuContent className={styles.sidebarContent}>
-						{menu.kind === 'project' ? (
+						{menu.kind === 'project' || menu.kind === 'work-project' ? (
 							<>
-								<ContextMenuItem disabled={connection !== 'ready'} onSelect={() => void sidebarAction('new-project-task', menu)}><FilePlus2 />新建项目任务</ContextMenuItem>
+								<ContextMenuItem disabled={menu.kind === 'project' && connection !== 'ready'} onSelect={() => void sidebarAction(menu.kind === 'work-project' ? 'new-workspace-task' : 'new-project-task', menu)}><FilePlus2 />新建工作空间任务</ContextMenuItem>
 								<ContextMenuItem onSelect={() => void sidebarAction('open-folder', menu)}><FolderOpen />在文件夹中打开</ContextMenuItem>
 								<ContextMenuSeparator />
 								<ContextMenuItem className={styles.danger} onSelect={() => requestDelete(menu)}><Trash2 />从列表删除</ContextMenuItem>
@@ -144,7 +153,7 @@ export function TargetContextMenu({ children }: { children: ReactNode }) {
 			<Dialog open={deleteState !== null} onOpenChange={(open) => { if (!open) setDeleteState(null); }}>
 				<DialogContent aria-describedby="sidebar-delete-description">
 					<DialogHeader>
-						<DialogTitle>{deleteState?.kind === 'project' ? '删除工作目录' : deleteState?.kind === 'design-project' ? '从列表删除 Design 项目' : deleteState?.kind === 'work-task' ? '从列表删除 Work 任务' : '从列表删除任务'}</DialogTitle>
+						<DialogTitle>{deleteState?.kind === 'project' || deleteState?.kind === 'work-project' ? '删除工作目录' : deleteState?.kind === 'design-project' ? '从列表删除设计工作空间' : deleteState?.kind === 'work-task' ? '从列表删除 Work 任务' : '从列表删除任务'}</DialogTitle>
 						<DialogDescription id="sidebar-delete-description">仅从 GitPilot 侧栏列表移除，不会删除磁盘上的文件。</DialogDescription>
 					</DialogHeader>
 					<div className="px-5 py-4 text-xs text-[var(--muted-foreground)]">确认要移除“{deleteState?.path ?? ''}”吗？</div>

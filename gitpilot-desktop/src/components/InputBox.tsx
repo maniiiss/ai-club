@@ -9,7 +9,7 @@
  *   （图片走 prompt.images，文档文本以 <file> 块追加；UI 仅展示 chip 与缩略图）
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { ArrowUp, Bug, ClipboardList, CornerUpRight, FileText, Image as ImageIcon, Loader2, Pencil, Plus, Send, Square, Trash2, X } from 'lucide-react';
+import { Bug, ClipboardList, CornerUpRight, FileText, Image as ImageIcon, Loader2, Pencil, Plus, Send, Square, Trash2, X } from 'lucide-react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import Document from '@tiptap/extension-document';
 import HardBreak from '@tiptap/extension-hard-break';
@@ -115,7 +115,7 @@ function mergePreparedAttachments(previous: PreparedAttachment[], next: Prepared
 	return merged;
 }
 
-export function InputBox() {
+export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inline' }) {
 	const composerSessionPath = useSessionStore((s) => s.selectedSessionPath ?? s.sessionState?.sessionFile ?? '__new__');
 	const composerWorkspacePath = useSessionStore((s) => s.currentProjectPath);
 	const setComposerDraft = useSessionStore((s) => s.setComposerDraft);
@@ -345,12 +345,12 @@ export function InputBox() {
 			const raw = event.dataTransfer.getData(PROJECT_FILE_DRAG_MIME);
 			const payload = JSON.parse(raw) as { path?: unknown; name?: unknown; workspacePath?: unknown; sessionPath?: unknown };
 			if (typeof payload.path !== 'string' || typeof payload.name !== 'string' || payload.workspacePath !== composerWorkspacePath || payload.sessionPath !== composerSessionPath) {
-				setPrepareError('文件来自其他项目或任务，未添加到当前对话。');
+				setPrepareError('文件来自其他工作空间或任务，未添加到当前对话。');
 				return;
 			}
 			void addInputs([{ path: payload.path, name: payload.name }]);
 		} catch {
-			setPrepareError('无法识别拖入的项目文件。');
+			setPrepareError('无法识别拖入的工作空间文件。');
 		}
 	};
 
@@ -426,6 +426,18 @@ export function InputBox() {
 			}
 		}
 		if (preparing || submitting || isStopping || isFlushingGuidance) return;
+		const clearComposer = () => {
+			// 欢迎页输入框会在首条消息进入消息流后卸载；先把草稿镜像清空，避免新输入框恢复旧文本。
+			const emptyDraft = { text: '', selectedCommand: null, attachments: [], guidanceMode: 'steer' as GuidanceMode };
+			composerDraftRef.current = emptyDraft;
+			setComposerDraft(composerSessionPath, emptyDraft);
+			setText('');
+			setShowPalette(false);
+			setSelectedCommand(null);
+			editor?.commands.clearContent();
+			setAttachments([]);
+			setPrepareError(null);
+		};
 		if (isStreaming) {
 			if (isExtensionQueueCommand(msg, commands)) {
 				setPrepareError('当前任务执行期间不能排队运行扩展命令，请停止任务后再执行。');
@@ -436,14 +448,11 @@ export function InputBox() {
 			setSubmitting(false);
 			if (!accepted) return;
 		} else {
-			prompt(msg || '（仅附件）', attachments);
+			clearComposer();
+			void prompt(msg || '（仅附件）', attachments);
+			return;
 		}
-		setText('');
-		setShowPalette(false);
-		setSelectedCommand(null);
-		editor?.commands.clearContent();
-		setAttachments([]);
-		setPrepareError(null);
+		clearComposer();
 	};
 	sendRef.current = send;
 
@@ -538,7 +547,7 @@ export function InputBox() {
 	}, [attachments, guidanceMode, selectedCommand, setComposerDraft, text]);
 
 	return (
-		<div ref={rootRef} className={`${styles.root} ${isDragOver ? styles.dragOver : ''}`} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
+		<div ref={rootRef} className={`${styles.root} ${variant === 'inline' ? styles.inline : ''} ${isDragOver ? styles.dragOver : ''}`} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
 			<ExtensionUIConfirmCard />
 			<ExtensionUISelectCard />
 			{showPalette && !hasPendingConfirm && !hasPendingActionSelect && <CommandPalette commands={commands} query={text.slice(1)} onPick={pickCommand} onDismiss={() => setShowPalette(false)} />}
@@ -672,7 +681,7 @@ export function InputBox() {
 								disabled={!canSend || isSessionLoading}
 								className={styles.send}
 							>
-								<ArrowUp size={16} />
+								<Send size={16} />
 							</Button></Hint>
 						)}
 					</div>

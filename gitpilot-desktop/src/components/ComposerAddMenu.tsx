@@ -4,7 +4,7 @@
  * 业务意图：把“附加文件”和“查询我负责的工作项”放进同一个轻量入口，
  * 用户不需要记住 /requirement，也不会在选择工作项时立即触发有副作用的执行。
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Bug, ChevronDown, ClipboardList, FilePlus2, Loader2, Paperclip, RefreshCw, X } from 'lucide-react';
 import { rpc } from '@/src/rpc/bridge';
 import type { PreparedAttachment, RpcWorkItemSummary } from '@/src/rpc/types';
@@ -65,6 +65,17 @@ export function createWorkItemAttachment(item: RpcWorkItemSummary): PreparedAtta
 		text: buildWorkItemContext(item),
 		workItem: item,
 	};
+}
+
+/** 找到会裁剪弹层的工作台容器，欢迎页和消息页分别以各自的中心区作为顶部边界。 */
+function findClippingBoundary(element: HTMLElement): HTMLElement | null {
+	let parent = element.parentElement;
+	while (parent) {
+		const computed = window.getComputedStyle(parent);
+		if ([computed.overflow, computed.overflowX, computed.overflowY].some((value) => /auto|clip|hidden|scroll/.test(value))) return parent;
+		parent = parent.parentElement;
+	}
+	return null;
 }
 
 function WorkItemSection({
@@ -130,6 +141,36 @@ export function ComposerAddMenu({ open, tab, onTabChange, onPickFiles, onSelectW
 		if (!open || tab !== 'work-items') return;
 		void loadItems();
 	}, [loadItems, open, tab]);
+
+	/**
+	 * 弹层底部仍贴着输入框，但顶部不能越过当前工作台；超出的工作项内容留在弹层内部滚动。
+	 * 用布局测量而不是固定视口高度，保证欢迎页居中、窗口缩放和底部面板变化时都能正确留出空间。
+	 */
+	useLayoutEffect(() => {
+		if (!open) return;
+		const panel = panelRef.current;
+		const anchor = panel?.parentElement;
+		if (!panel || !anchor) return;
+		const boundary = findClippingBoundary(anchor);
+		const updateMaxHeight = () => {
+			const anchorTop = anchor.getBoundingClientRect().top;
+			const boundaryTop = boundary?.getBoundingClientRect().top ?? 0;
+			const safeTop = Math.max(8, boundaryTop + 8);
+			const availableHeight = Math.max(0, Math.floor(anchorTop - 10 - safeTop));
+			panel.style.setProperty('--composer-add-menu-max-height', `${availableHeight}px`);
+		};
+
+		updateMaxHeight();
+		window.addEventListener('resize', updateMaxHeight);
+		const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updateMaxHeight);
+		observer?.observe(anchor);
+		if (boundary) observer?.observe(boundary);
+		return () => {
+			window.removeEventListener('resize', updateMaxHeight);
+			observer?.disconnect();
+			panel.style.removeProperty('--composer-add-menu-max-height');
+		};
+	}, [open, tab]);
 
 	// 点击菜单外关闭；保留加号触发器自身的 click，让“打开/关闭”不会被 pointerdown 抢先抵消。
 	useEffect(() => {

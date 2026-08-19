@@ -4,10 +4,11 @@
  * 渲染累积的 UI 消息列表，自动滚动到底部。
  * 流式时保留底部跟随；用户上滚查看历史时不强制跟随。
  */
-import { Fragment, useCallback, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { ChevronDown, Sparkles } from 'lucide-react';
 import { useSessionStore, type UIMessage } from '@/src/store/session';
 import { useWorkbenchStore, type ExecutionStep } from '@/src/store/workbench';
+import { useReviewStore } from '@/src/store/review';
 import type { ChangedFile } from '@/src/store/changed-files';
 import { Button } from '@/src/components/ui/button';
 import { MessageBubble } from './MessageBubble';
@@ -189,6 +190,21 @@ export function ChatView() {
 		[baseConversationMessages, retainedCompletedUserId],
 	);
 	const conversationMessages = presentation.messages;
+	/**
+	 * 右侧「审查」页签数据源：取最近一轮 changed_files 虚拟消息，与聊天卡片保持同源一致。
+	 * 实时归档与历史回放都会经由 presentation 生成该消息，这里只做派生写入，不重复聚合。
+	 */
+	useEffect(() => {
+		let latestFiles: ChangedFile[] | null = null;
+		for (let index = conversationMessages.length - 1; index >= 0; index -= 1) {
+			const message = conversationMessages[index];
+			if (message.kind === 'changed_files' && message.changedFiles && message.changedFiles.length > 0) {
+				latestFiles = message.changedFiles;
+				break;
+			}
+		}
+		useReviewStore.getState().setReviewFiles(selectedSessionPath ?? '__new__', latestFiles ?? []);
+	}, [conversationMessages, selectedSessionPath]);
 	const lastUserIndex = useMemo(() => getLastUserMessageIndex(conversationMessages), [conversationMessages]);
 	const executionStartedAt = useWorkbenchStore((s) => s.execution.startedAt);
 	const isSessionLoading = useSessionStore((s) => s.isSessionLoading);

@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { InputEvent } from "../../src/core/extensions/index.ts";
 import type { PromptTemplate } from "../../src/core/prompt-templates.ts";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
+import { SessionManager } from "../../src/core/session-manager.ts";
 import { createTestResourceLoader } from "../utilities.ts";
 import { createHarness, getMessageText, type Harness } from "./harness.ts";
 
@@ -38,6 +39,27 @@ describe("AgentSession prompt characterization", () => {
 		expect(harness.session.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
 		expect(getMessageText(harness.session.messages[0]!)).toBe("hi");
 		expect(harness.getPendingResponseCount()).toBe(0);
+	});
+
+	it("can pre-persist a Design prompt and reopen the fixed conversation without duplicating the user message", async () => {
+		const tempDir = join(tmpdir(), `pi-design-session-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(tempDir, { recursive: true });
+		tempDirs.push(tempDir);
+		const conversationPath = join(tempDir, "conversation.jsonl");
+		const sessionManager = SessionManager.open(conversationPath, tempDir, tempDir);
+		const harness = await createHarness({ sessionManager });
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("已收到")]);
+
+		await harness.session.prompt("设计企查查页面", { persistUserMessageBeforeRun: true });
+
+		const userEntries = sessionManager.getEntries().filter((entry) => entry.type === "message" && entry.message.role === "user");
+		expect(userEntries).toHaveLength(1);
+		expect(getMessageText(userEntries[0]?.type === "message" ? userEntries[0].message : undefined)).toBe("设计企查查页面");
+
+		const reopened = SessionManager.open(conversationPath, tempDir, tempDir);
+		expect(reopened.buildSessionContext().messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+		expect(getMessageText(reopened.buildSessionContext().messages[0])).toBe("设计企查查页面");
 	});
 
 	it("handles a tool call turn and waits for the follow-up LLM response", async () => {

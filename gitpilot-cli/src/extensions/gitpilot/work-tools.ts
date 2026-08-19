@@ -5,6 +5,7 @@ import type { ToolDefinition } from "../../core/extensions/types.ts";
 import { getPlatformUrl } from "./config.ts";
 import { loadCliToken } from "./credentials.ts";
 import { requestJson } from "./api.ts";
+import { createOfficeWorkToolDefinitions } from "./office-tools.ts";
 
 const projectQuery = Type.Object({ keyword: Type.Optional(Type.String()) });
 const taskQuery = Type.Object({ projectId: Type.Optional(Type.Number()), keyword: Type.Optional(Type.String()), page: Type.Optional(Type.Number()), size: Type.Optional(Type.Number()) });
@@ -25,10 +26,11 @@ async function platform<T>(workTaskId: string, path: string, options: { method?:
 
 function result(value: unknown) { return { content: [{ type: "text" as const, text: JSON.stringify(value) }], details: undefined }; }
 
-export function createGitPilotWorkToolDefinitions(workTaskId: string, workspacePath: string): ToolDefinition[] {
+export function createGitPilotWorkToolDefinitions(workTaskId: string, workspacePath: string): Array<ToolDefinition<any, any, any>> {
 	const readTool = (name: string, description: string, parameters: any, execute: (params: any) => Promise<unknown>): ToolDefinition<any> => ({ name, label: name, description, promptSnippet: description, parameters, async execute(_id, params) { return result(await execute(params)); } });
 	const writeTool = (name: string, description: string, parameters: any, execute: (params: any) => Promise<unknown>): ToolDefinition<any> => ({ name, label: name, description, promptSnippet: description, parameters, async execute(_id, params, _signal, _update, ctx) { if (!(await ctx.ui.confirm("确认 GitPilot 公众端操作", `${name}\n\n${JSON.stringify(params)}`))) throw new Error("用户取消了公众端写操作"); return result(await execute(params)); } });
 	return [
+		...createOfficeWorkToolDefinitions(workspacePath),
 		readTool("gitpilot_project_query", "查询当前用户可访问的 GitPilot 公众端项目。", projectQuery, async (params) => platform(workTaskId, `/api/projects${params.keyword ? `?keyword=${encodeURIComponent(params.keyword)}` : ""}`)),
 		readTool("gitpilot_work_item_query", "查询当前用户有权限访问的公众端工作项。", taskQuery, async (params) => { const query = new URLSearchParams(); for (const [key, value] of Object.entries(params)) if (value != null) query.set(key, String(value)); return platform(workTaskId, `/api/tasks?${query.toString()}`); }),
 		readTool("gitpilot_work_item_get", "读取公众端工作项详情。", taskId, async (params) => platform(workTaskId, `/api/tasks/${params.taskId}`)),

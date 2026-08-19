@@ -37,7 +37,7 @@
 	"bundle": {
 		"active": true,
 		"createUpdaterArtifacts": true,
-		"targets": ["msi", "nsis"],
+		"targets": ["msi", "nsis", "app", "dmg"],
 		"icon": ["icons/icon.png", "icons/icon.ico"],
 		"externalBin": ["binaries/gitpilot-rpc"],
 		"resources": ["resources/package.json", "resources/plannotator.json", "resources/theme/*", "resources/export-html/**/*", "resources/skills/**/*"]

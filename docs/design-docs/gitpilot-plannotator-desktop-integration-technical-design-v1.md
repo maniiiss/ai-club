@@ -244,7 +244,13 @@ executing：状态条显示 N/M，步骤与工具调用关联
 
 因此 Desktop 不依赖用户电脑上的 npm 包、Bun 虚拟目录或运行时联网，同时保留用户级与项目级 Plannotator 配置的原有覆盖顺序。
 
-## 12. CODE 模式自动计划路由
+## 12. Desktop 手动命令入口边界
+
+Desktop/RPC 不向输入框命令面板暴露 Plannotator 的四个手动斜杠命令：`/plannotator-plan-mode`、`/plannotator-review`、`/plannotator-annotate` 和 `/plannotator-last`。这些命令依赖 Plannotator 的浏览器审核或交互式文件入口，与 Desktop 的原生审核边界不一致；RPC 的 `execute_command` 也复用同一可见性规则，不能通过手工构造请求绕过隐藏策略。
+
+这项限制只作用于 Desktop/RPC 的用户命令入口，不卸载 `@plannotator/pi-extension`，也不影响 Desktop 使用计划清单、`[DONE:n]` 进度事件和原生审核适配。CLI/TUI 仍保留上游手动命令。
+
+## 13. CODE 模式自动计划路由
 
 Plannotator 的手动命令仍保留，但 CODE 模式不再要求用户先记住 `/plannotator-plan-mode`。GitPilot 不在宿主侧通过关键词猜测复杂度，而是在每个 Code 回合注入一次结构化决策：由模型结合上下文判断任务是否需要计划，并调用 `skip_plan` 或 `update_plan` 表达结果。
 
@@ -255,4 +261,4 @@ Plannotator 的手动命令仍保留，但 CODE 模式不再要求用户先记�
 3. 若 Agent 试图跳过这次决策直接调用 `edit`、`write` 或修改型 Bash，扩展会阻止该调用并返回二选一指引。
 4. Agent 每完成一步更新 `update_plan`，同时可用 `[DONE:n]` 作为兼容标记；Desktop 继续使用现有悬停浮层渲染。
 
-简单问答、单点错别字修复和以 `/plan`、`/goal`、`/plannotator-*` 开头的显式模式命令不会被自动路由，避免与现有模式的工具策略冲突。自动计划不承担人工审核；需要审核/批注时仍使用 Plannotator 原生流程。
+简单问答、单点错别字修复和以 `/plan`、`/goal`、`/plannotator-*` 开头的显式模式命令不会被自动路由，避免与现有模式的工具策略冲突。自动计划不承担人工审核；CLI/TUI 需要审核/批注时仍使用 Plannotator 原生流程，Desktop 使用 GitPilot 原生计划审核适配。

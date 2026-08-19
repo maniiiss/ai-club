@@ -157,12 +157,46 @@
         <el-table-column prop="p95DurationMs" label="P95耗时" width="110" sortable>
           <template #default="{ row }">{{ formatNumber(row.p95DurationMs) }}ms</template>
         </el-table-column>
-        <el-table-column label="独立用户" min-width="180" sortable :sort-method="sortByUniqueUsers" show-overflow-tooltip>
+      </el-table>
+    </el-card>
+
+    <!-- 用户 Token 用量单独展示，避免用户维度挤占模型统计表的横向空间。 -->
+    <el-card class="table-card user-token-card" shadow="never" v-loading="loading.byUser">
+      <template #header>
+        <div class="table-card-header">
+          <span>用户 Token 用量</span>
+          <span class="table-card-tip">按总 Token 取前 20 名</span>
+        </div>
+      </template>
+      <el-table :data="byUser" stripe size="default" empty-text="暂无用户 Token 用量">
+        <el-table-column label="用户" min-width="180">
           <template #default="{ row }">
-            <span class="user-names">{{ row.uniqueUserNames || '-' }}</span>
-            <el-tag size="small" type="info" style="margin-left: 6px">{{ row.uniqueUsers }}</el-tag>
+            <div class="user-cell">
+              <strong>{{ row.nickname || row.username || '匿名/系统' }}</strong>
+              <span v-if="row.nickname && row.username" class="user-sub">{{ row.username }}</span>
+            </div>
           </template>
         </el-table-column>
+        <el-table-column prop="total" label="调用数" width="100" sortable />
+        <el-table-column prop="inputTokens" label="输入 Token" width="130" sortable>
+          <template #default="{ row }">{{ formatNumber(row.inputTokens) }}</template>
+        </el-table-column>
+        <el-table-column prop="outputTokens" label="输出 Token" width="130" sortable>
+          <template #default="{ row }">{{ formatNumber(row.outputTokens) }}</template>
+        </el-table-column>
+        <el-table-column prop="totalTokens" label="总 Token" width="130" sortable>
+          <template #default="{ row }">{{ formatNumber(row.totalTokens) }}</template>
+        </el-table-column>
+        <el-table-column prop="cachedTokens" label="缓存命中 Token" width="150" sortable>
+          <template #default="{ row }">{{ formatNumber(row.cachedTokens) }}</template>
+        </el-table-column>
+        <el-table-column label="缓存命中率" width="120" sortable>
+          <template #default="{ row }">
+            <span v-if="row.cacheHitRate != null">{{ formatPercent(row.cacheHitRate) }}</span>
+            <span v-else>-</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="lastInvokedAt" label="最近调用" min-width="180" />
       </el-table>
     </el-card>
   </div>
@@ -180,6 +214,7 @@ import {
   getModelUsageOptions,
   getModelUsageOverview,
   getModelUsageByModel,
+  getModelUsageByUser,
   getModelUsageTrend,
   getModelUsageBySource
 } from '@/api/model-usage'
@@ -189,7 +224,8 @@ import type {
   ModelTrendPoint,
   ModelUsageOptions,
   ModelUsageQueryPayload,
-  SourceBreakdown
+  SourceBreakdown,
+  UserBreakdown
 } from '@/api/model-usage'
 
 // 按需注册 ECharts 模块，避免全量引入增大打包体积。
@@ -210,9 +246,10 @@ interface Filters {
 const options = ref<ModelUsageOptions | null>(null)
 const overview = ref<ModelOverview | null>(null)
 const byModel = ref<ModelBreakdown[]>([])
+const byUser = ref<UserBreakdown[]>([])
 const bySource = ref<SourceBreakdown[]>([])
 const trend = ref<ModelTrendPoint[]>([])
-const loading = reactive({ overview: false, byModel: false, bySource: false, trend: false })
+const loading = reactive({ overview: false, byModel: false, byUser: false, bySource: false, trend: false })
 
 const filters = reactive<Filters>({
   range: defaultRange(),
@@ -281,6 +318,17 @@ async function loadByModel() {
   }
 }
 
+async function loadByUser() {
+  loading.byUser = true
+  try {
+    byUser.value = await getModelUsageByUser({ ...buildPayload(), limit: 20 })
+  } catch (e) {
+    ElMessage.error('加载用户 Token 用量失败')
+  } finally {
+    loading.byUser = false
+  }
+}
+
 async function loadBySource() {
   loading.bySource = true
   try {
@@ -306,6 +354,7 @@ async function loadTrend() {
 function reload() {
   loadOverview()
   loadByModel()
+  loadByUser()
   loadBySource()
   loadTrend()
 }
@@ -319,7 +368,8 @@ onMounted(() => {
 
 const rankingBarOption = computed(() => {
   const rows = [...byModel.value].slice(0, 15)
-  const names = rows.map((r) => r.modelName)
+  // 排行面向管理员展示可识别的配置名称；历史或系统调用没有配置时回退实际模型名。
+  const names = rows.map((r) => r.modelConfigName || r.modelName)
   const totals = rows.map((r) => r.total)
   return {
     tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' } },
@@ -378,13 +428,29 @@ const trendLineOption = computed(() => {
   return {
     tooltip: { trigger: 'axis' },
     legend: { data: ['调用数', 'Token 数', '缓存命中率'] },
-    grid: { left: '3%', right: '5%', bottom: '10%', containLabel: true },
+    grid: { left: '3%', right: 112, bottom: '10%', containLabel: true },
     dataZoom: [{ type: 'inside' }],
     xAxis: { type: 'category', data: buckets, boundaryGap: false },
     yAxis: [
       { type: 'value', name: '调用数' },
-      { type: 'value', name: 'Token' },
-      { type: 'value', name: '命中率%', min: 0, max: 100, position: 'right', splitLine: { show: false } }
+      {
+        type: 'value',
+        name: 'Token 数',
+        position: 'right',
+        offset: 56,
+        axisLabel: { formatter: (value: number) => formatNumber(value) },
+        splitLine: { show: false }
+      },
+      {
+        type: 'value',
+        name: '命中率',
+        min: 0,
+        max: 100,
+        position: 'right',
+        offset: 0,
+        axisLabel: { formatter: (value: number) => `${value}%` },
+        splitLine: { show: false }
+      }
     ],
     series: [
       { name: '调用数', type: 'line', smooth: true, data: totals, itemStyle: { color: '#409eff' } },
@@ -421,9 +487,6 @@ function sortBySuccessRate(a: ModelBreakdown, b: ModelBreakdown) {
   return (a.successRate ?? 0) - (b.successRate ?? 0)
 }
 
-function sortByUniqueUsers(a: ModelBreakdown, b: ModelBreakdown) {
-  return (a.uniqueUsers ?? 0) - (b.uniqueUsers ?? 0)
-}
 </script>
 
 <style scoped>
@@ -444,7 +507,7 @@ function sortByUniqueUsers(a: ModelBreakdown, b: ModelBreakdown) {
 }
 .kpi-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 16px;
 }
 .kpi-card {
@@ -470,8 +533,23 @@ function sortByUniqueUsers(a: ModelBreakdown, b: ModelBreakdown) {
   font-size: 12px;
   color: var(--el-text-color-secondary, #909399);
 }
-.user-names {
-  color: var(--el-text-color-primary, #303133);
+.table-card-header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.table-card-tip {
+  font-size: 12px;
+  color: var(--el-text-color-secondary, #909399);
+}
+.user-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.user-sub {
+  color: var(--el-text-color-secondary, #909399);
+  font-size: 12px;
 }
 .chart-row {
   display: grid;

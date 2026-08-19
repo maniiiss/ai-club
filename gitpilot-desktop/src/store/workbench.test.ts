@@ -110,7 +110,7 @@ describe('Agent 工作台本地交互状态', () => {
 	beforeEach(() => {
 		useWorkbenchStore.setState({
 			layout: { leftWidth: 272, rightWidth: 344, bottomOpen: false, bottomHeight: 220, leftCollapsed: false, rightCollapsed: false },
-			rightPanelTabs: { plans: [], executionOpen: true, filesOpen: false, activeTabId: 'execution' },
+			rightPanelTabs: { plans: [], executionOpen: true, filesOpen: false, reviewOpen: false, activeTabId: 'execution' },
 			projectFileAttachmentRequests: [],
 			execution: { id: 'idle', status: 'idle', lastPrompt: null, steps: [] },
 			composerPrefill: null,
@@ -164,6 +164,33 @@ describe('Agent 工作台本地交互状态', () => {
 		expect(useWorkbenchStore.getState().projectFileAttachmentRequests).toHaveLength(1);
 		store.closeRightPanelTab('files');
 		expect(useWorkbenchStore.getState().rightPanelTabs).toMatchObject({ filesOpen: false, activeTabId: 'execution' });
+	});
+
+	it('审查 Tab 可打开/关闭，关闭后激活态按 文件 → 计划 → 执行 回退', () => {
+		useWorkbenchStore.getState().openReviewPanelTab();
+		// 打开审查页签必须同时展开右侧栏，保证从聊天卡片点击文件时面板可见。
+		expect(useWorkbenchStore.getState().layout.rightCollapsed).toBe(false);
+		expect(useWorkbenchStore.getState().rightPanelTabs).toMatchObject({ reviewOpen: true, activeTabId: 'review' });
+
+		useWorkbenchStore.getState().closeRightPanelTab('review');
+		expect(useWorkbenchStore.getState().rightPanelTabs).toMatchObject({ reviewOpen: false, activeTabId: 'execution' });
+
+		useWorkbenchStore.getState().openReviewPanelTab();
+		useWorkbenchStore.getState().closeRightPanelTab('execution');
+		useWorkbenchStore.getState().closeRightPanelTab('review');
+		expect(useWorkbenchStore.getState().rightPanelTabs).toMatchObject({ reviewOpen: false, executionOpen: false, activeTabId: null });
+	});
+
+	it('旧版 localStorage 无 reviewOpen 字段时按默认关闭恢复', () => {
+		const restored = normalizeRightPanelTabs({ plans: [], executionOpen: true, filesOpen: true, activeTabId: 'files' });
+		expect(restored).toMatchObject({ executionOpen: true, filesOpen: true, reviewOpen: false, activeTabId: 'files' });
+
+		const withReview = normalizeRightPanelTabs({ executionOpen: false, filesOpen: false, reviewOpen: true, activeTabId: 'review' });
+		expect(withReview).toMatchObject({ reviewOpen: true, activeTabId: 'review' });
+
+		// activeTabId 指向已关闭页签时回退到剩余可用页签。
+		const fallback = normalizeRightPanelTabs({ executionOpen: false, filesOpen: false, reviewOpen: true, activeTabId: 'files' });
+		expect(fallback.activeTabId).toBe('review');
 	});
 
 	it('恢复时去重并清理来源不存在的会话和计划页签', () => {

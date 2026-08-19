@@ -32,6 +32,12 @@ export interface ChangedFile {
 	removed: number;
 	/** 同文件多次编辑时取最后一次 edit 的 diff。 */
 	diff?: string;
+	/**
+	 * 本轮任务中该文件每次带 diff 的编辑（按发生顺序）。
+	 * 业务意图：added/removed 是累计口径，而单次 diff 只描述当次编辑；
+	 * 审查面板需要逐轮展示全部 diff 才能与累计统计对得上。
+	 */
+	diffs?: string[];
 	editCount: number;
 	/** 是否可展开 diff（write 无 diff 时为 false）。 */
 	editable: boolean;
@@ -184,7 +190,8 @@ function mergeStatus(a: ChangeStatus, b: ChangeStatus): ChangeStatus {
 
 /**
  * 聚合编辑操作为文件项：按 path 分组，行数累计，status 取最严重，
- * diff 取最后一次 edit，editCount 递增。editable = diff 存在。
+ * diff 取最后一次 edit，diffs 保留全部带 diff 的轮次，editCount 递增。
+ * editable = 存在任一 diff。
  */
 export function aggregateChangedFiles(ops: EditOperation[]): ChangedFile[] {
 	const map = new Map<string, ChangedFile>();
@@ -197,6 +204,7 @@ export function aggregateChangedFiles(ops: EditOperation[]): ChangedFile[] {
 				added: op.added,
 				removed: op.removed,
 				diff: op.diff,
+				diffs: op.diff != null ? [op.diff] : undefined,
 				editCount: 1,
 				editable: op.diff != null,
 			});
@@ -206,6 +214,7 @@ export function aggregateChangedFiles(ops: EditOperation[]): ChangedFile[] {
 			existing.status = mergeStatus(existing.status, op.status);
 			if (op.diff != null) {
 				existing.diff = op.diff;
+				existing.diffs = [...(existing.diffs ?? []), op.diff];
 				existing.editable = true;
 			}
 			existing.editCount += 1;

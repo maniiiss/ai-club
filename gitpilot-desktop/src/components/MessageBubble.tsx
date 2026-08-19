@@ -105,6 +105,15 @@ export const MessageBubble = memo(function MessageBubble({ message }: { message:
 
 	if (message.kind === 'plan') return <PlanCard message={message} />;
 
+	if (message.kind === 'error' && message.role === 'assistant') {
+		return (
+			<div className={styles.error}>
+				<span className={styles.errorIcon} aria-hidden="true">⚠</span>
+				<span>{message.text}</span>
+			</div>
+		);
+	}
+
 	if (message.role === 'tool') {
 		return (
 			<div className={styles.tool}>

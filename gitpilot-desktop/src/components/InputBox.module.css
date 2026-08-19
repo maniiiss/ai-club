@@ -1,6 +1,9 @@
 .root { position: absolute; z-index: 30; right: 0; bottom: 16px; left: 0; display: flex; justify-content: center; padding: 0 18px; pointer-events: none; }
 .root::after { position: absolute; z-index: 0; top: 100%; right: -18px; left: -18px; height: 16px; background: var(--gp-panel-deep); content: ''; pointer-events: none; }
 .root > * { pointer-events: auto; }
+/* inline 变体用于欢迎页等静态流内布局：脱离绝对定位，回归正常文档流。 */
+.inline { position: static; z-index: auto; padding: 0; pointer-events: auto; }
+.inline::after { content: none; }
 /* 业务意图：使用不透明表面替代实时背景模糊，避免侧栏切换时对聊天正文做大面积重绘。 */
 .composerStack { display: flex; width: min(860px, 100%); min-width: 0; flex-direction: column; }
 .surface { position: relative; z-index: 1; display: flex; width: min(860px, 100%); min-width: 0; flex-direction: column; overflow: visible; border: 1px solid var(--gp-border-strong); border-radius: 14px; background: linear-gradient(180deg, var(--gp-surface-raised), var(--gp-surface)); padding: 12px 14px 10px; box-shadow: var(--shadow-lg), 0 0 0 1px var(--gp-accent-soft); transition: border-color 140ms ease, box-shadow 140ms ease; }
@@ -29,6 +32,7 @@
 .toolbar { display: flex; min-height: 32px; align-items: center; gap: 10px; margin-top: 7px; }
 .actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .send { display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: var(--gp-action); color: var(--primary-foreground); cursor: pointer; transition: background 140ms ease, transform 140ms ease, opacity 140ms ease; }
+.send svg { width: 16px; height: 16px; }
 .send:hover:not(:disabled) { background: var(--gp-action-hover); transform: translateY(-1px); }
 .send:disabled { cursor: not-allowed; opacity: .38; }
 .stop { background: color-mix(in srgb, var(--gp-danger) 18%, transparent); color: var(--gp-danger); }

@@ -10,6 +10,11 @@ const desktopHiddenAutomationCommands = new Set([
 	"search",
 	"mcp",
 	"mcp-auth",
+	// Plannotator 在桌面端不提供浏览器审核入口，避免用户从命令面板调用不可用的交互。
+	"plannotator-plan-mode",
+	"plannotator-review",
+	"plannotator-annotate",
+	"plannotator-last",
 ]);
 
 export function isDesktopCommandVisible(commandName: string): boolean {

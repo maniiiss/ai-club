@@ -31,7 +31,9 @@ public class GitPilotModelProxyController {
         proxyService.stream(sessionId, credential(request), "chat/completions", body, request, response);
     }
 
-    @PostMapping("/messages")
+    // 兼容两种客户端路径：Anthropic 官方 SDK 固定请求 baseURL + /v1/messages，而 CLI 签发给客户端的
+    // proxyBaseUrl 不含 /v1 段；为让 SDK 直接命中代理，两个路径都映射到同一核算/转发逻辑。
+    @PostMapping({"/messages", "/v1/messages"})
     public void anthropic(@PathVariable String sessionId,
                           @RequestBody String body,
                           HttpServletRequest request,

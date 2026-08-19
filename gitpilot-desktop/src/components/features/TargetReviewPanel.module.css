@@ -1,0 +1,32 @@
+/* 审查面板：与 TargetExecutionInspector 保持同一套 --gp-* token 与字号公式。 */
+.body { min-width: 0; min-height: 0; flex: 1; }
+.summary { display: flex; align-items: center; gap: 6px; padding: 10px 10px 8px; color: var(--gp-text-muted); font-size: calc(11px * var(--desktop-font-scale)); border-bottom: 1px solid var(--gp-border); }
+.summary svg { color: var(--gp-warm); flex-shrink: 0; }
+.summaryStats { margin-left: auto; white-space: nowrap; font-family: var(--font-mono); }
+.list { display: flex; min-width: 0; flex-direction: column; padding-bottom: 20px; }
+.item { display: flex; min-width: 0; flex-direction: column; border-bottom: 1px solid var(--gp-border); }
+.item:last-child { border-bottom: 0; }
+.row { display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; padding: 7px 10px; color: var(--gp-text); font-size: calc(11px * var(--desktop-font-scale)); font-family: var(--font-mono); text-align: left; cursor: default; }
+.row:hover { background: var(--gp-surface-hover); }
+.row:focus-visible { outline: none; box-shadow: inset 0 0 0 1px var(--gp-border-strong); }
+.rowEditable { cursor: pointer; }
+.status { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: var(--radius-sm); font-size: calc(10px * var(--desktop-font-scale)); font-weight: 600; flex-shrink: 0; }
+.statusModified { background: color-mix(in srgb, var(--gp-status-warning) 18%, transparent); color: var(--gp-status-warning); }
+.statusAdded { background: var(--gp-code-diff-add); color: var(--gp-status-success); }
+.statusDeleted { background: var(--gp-code-diff-del); color: var(--gp-status-error); }
+.path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--gp-text-secondary); }
+.rowEditable:hover .path, .rowEditable:focus-visible .path { color: var(--gp-text); }
+.stats { display: inline-flex; gap: 3px; font-size: calc(10px * var(--desktop-font-scale)); color: var(--gp-text-muted); flex-shrink: 0; white-space: nowrap; }
+.statsAdd { color: var(--gp-status-success); }
+.statsDel { color: var(--gp-status-error); }
+.toggle { color: var(--gp-text-muted); flex-shrink: 0; }
+.noDiff { color: var(--gp-text-muted); font-size: calc(9px * var(--desktop-font-scale)); flex-shrink: 0; white-space: nowrap; }
+.diffWrap { border-top: 1px solid var(--gp-border); max-height: 360px; overflow: auto; background: var(--gp-code-surface); }
+/* 同文件多轮编辑：每轮 diff 独立成块，标签标注轮次顺序。 */
+.diffRound { display: flex; min-width: 0; flex-direction: column; }
+.diffRound + .diffRound { border-top: 1px solid var(--gp-border-strong); }
+.diffRoundLabel { display: block; padding: 4px 10px; color: var(--gp-text-muted); background: var(--gp-overlay); font-size: calc(9px * var(--desktop-font-scale)); letter-spacing: .08em; border-top: 1px solid var(--gp-border); }
+.empty { display: flex; min-height: 0; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 5px; padding: 24px; color: var(--gp-text-muted); text-align: center; }
+.empty svg { color: var(--gp-warm); }
+.empty span { color: var(--gp-text-secondary); font-size: calc(12px * var(--desktop-font-scale)); }
+.empty p { margin: 2px 0 0; color: var(--gp-text-muted); font-size: calc(10px * var(--desktop-font-scale)); }

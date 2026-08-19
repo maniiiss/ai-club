@@ -63,8 +63,12 @@ public final class ModelUsageStatsDtos {
                                 long distinctUsers, long cachedTokens, Double cacheHitRate) {
     }
 
-    /** 模型排行明细。 */
+    /**
+     * 模型排行明细；{@code modelName} 是实际模型名，{@code modelConfigName} 用于排行展示配置名称。
+     * 未绑定模型配置的系统调用该字段为空，由前端回退显示实际模型名。
+     */
     public record ModelBreakdown(String modelName,
+                                 String modelConfigName,
                                  String provider,
                                  Long modelConfigId,
                                  long total,
@@ -76,8 +80,22 @@ public final class ModelUsageStatsDtos {
                                  long totalTokens,
                                  double avgDurationMs,
                                  long p95DurationMs,
-                                 long uniqueUsers,
-                                 String uniqueUserNames, long cachedTokens, Double cacheHitRate) {
+                                 long cachedTokens, Double cacheHitRate) {
+    }
+
+    /**
+     * 按用户聚合的 Token 用量明细；与模型明细分离，避免不同统计维度挤在同一张表中。
+     */
+    public record UserBreakdown(Long userId,
+                                String username,
+                                String nickname,
+                                long total,
+                                long inputTokens,
+                                long outputTokens,
+                                long totalTokens,
+                                long cachedTokens,
+                                Double cacheHitRate,
+                                String lastInvokedAt) {
     }
 
     /** 调用趋势单点。 */

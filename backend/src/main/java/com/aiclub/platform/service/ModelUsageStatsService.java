@@ -10,6 +10,7 @@ import com.aiclub.platform.dto.ModelUsageStatsDtos.ModelUsageQueryRequest;
 import com.aiclub.platform.dto.ModelUsageStatsDtos.OptionItem;
 import com.aiclub.platform.dto.ModelUsageStatsDtos.ProviderBreakdown;
 import com.aiclub.platform.dto.ModelUsageStatsDtos.SourceBreakdown;
+import com.aiclub.platform.dto.ModelUsageStatsDtos.UserBreakdown;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import jakarta.persistence.Query;
@@ -43,8 +44,6 @@ public class ModelUsageStatsService {
     private static final int DEFAULT_TOP_LIMIT = 20;
     private static final int MAX_TOP_LIMIT = 200;
     private static final int OPTIONS_LIMIT = 200;
-    /** 模型明细里独立用户名称列表的最大展示长度，超出截断并标注。 */
-    private static final int MAX_USER_NAMES_LENGTH = 200;
 
     @PersistenceContext
     private EntityManager entityManager;
@@ -140,11 +139,13 @@ public class ModelUsageStatsService {
 
         // 聚合键 (model_name, provider)，COALESCE 把空串/null 归为 <unknown>，
         // 让 env 配置的 Assistant 模型与 code-processing 回传模型也能正确聚合。
-        String modelNameExpr = "COALESCE(NULLIF(model_name, ''), '<unknown>')";
-        String providerExpr = "COALESCE(NULLIF(provider, ''), '<unknown>')";
+        // 同时只把配置名称作为排行展示字段返回，不改变原有实际模型维度的统计口径。
+        String modelNameExpr = "COALESCE(NULLIF(agent_invocation_log.model_name, ''), '<unknown>')";
+        String providerExpr = "COALESCE(NULLIF(agent_invocation_log.provider, ''), '<unknown>')";
         String sql = "SELECT " + modelNameExpr + " AS model_name, " +
+                "  MAX(NULLIF(mc.name, '')) AS model_config_name, " +
                 "  " + providerExpr + " AS provider, " +
-                "  MAX(model_config_id) AS model_config_id, " +
+                "  MAX(agent_invocation_log.model_config_id) AS model_config_id, " +
                 "  COUNT(*) AS total, " +
                 "  SUM(CASE WHEN status = 'SUCCESS' THEN 1 ELSE 0 END) AS success, " +
                 "  SUM(CASE WHEN status <> 'SUCCESS' THEN 1 ELSE 0 END) AS failure, " +
@@ -153,11 +154,11 @@ public class ModelUsageStatsService {
                 "  COALESCE(SUM(total_tokens), 0) AS total_tokens, " +
                 "  COALESCE(AVG(duration_ms), 0) AS avg_duration, " +
                 "  COALESCE(percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms), 0) AS p95, " +
-                "  COUNT(DISTINCT user_id) AS unique_users, " +
-                "  COALESCE(string_agg(DISTINCT NULLIF(nickname_snapshot, ''), ', '), '') AS unique_user_names, " +
                 "  COALESCE(SUM(cached_tokens), 0) AS cached_tokens, " +
                 "  CASE WHEN COALESCE(SUM(prompt_tokens), 0) = 0 THEN NULL ELSE SUM(cached_tokens) * 1.0 / SUM(prompt_tokens) END AS cache_hit_rate " +
-                "FROM agent_invocation_log " + where.sql() +
+                "FROM agent_invocation_log " +
+                "LEFT JOIN ai_model_config mc ON mc.id = agent_invocation_log.model_config_id " +
+                where.sql() +
                 " GROUP BY " + modelNameExpr + ", " + providerExpr +
                 " ORDER BY total DESC LIMIT " + limit;
         Query q = entityManager.createNativeQuery(sql);
@@ -165,19 +166,62 @@ public class ModelUsageStatsService {
         List<Object[]> rows = q.getResultList();
         List<ModelBreakdown> result = new ArrayList<>();
         for (Object[] r : rows) {
-            long total = toLong(r[3]);
-            long success = toLong(r[4]);
-            long failure = toLong(r[5]);
+            long total = toLong(r[4]);
+            long success = toLong(r[5]);
+            long failure = toLong(r[6]);
             double successRate = total == 0 ? 0.0 : (double) success / total;
             result.add(new ModelBreakdown(
-                    (String) r[0], (String) r[1],
-                    r[2] == null ? null : ((Number) r[2]).longValue(),
+                    (String) r[0], (String) r[1], (String) r[2],
+                    r[3] == null ? null : ((Number) r[3]).longValue(),
                     total, success, failure, round(successRate),
-                    toLong(r[6]), toLong(r[7]), toLong(r[8]),
-                    round(toDouble(r[9])), toLong(r[10]), toLong(r[11]),
-                    truncateUserNames((String) r[12]),
-                    toLong(r[13]),
-                    r[14] == null ? null : ((Number) r[14]).doubleValue()));
+                    toLong(r[7]), toLong(r[8]), toLong(r[9]),
+                    round(toDouble(r[10])), toLong(r[11]), toLong(r[12]),
+                    r[13] == null ? null : ((Number) r[13]).doubleValue()));
+        }
+        return result;
+    }
+
+    // ---------- by-user ----------
+
+    /**
+     * 按用户聚合当前筛选范围内的 Token 用量，独立于模型明细表展示，默认只返回消耗最高的前 20 名。
+     */
+    @SuppressWarnings("unchecked")
+    public List<UserBreakdown> getByUser(ModelUsageQueryRequest request) {
+        TimeWindow window = resolveWindow(request);
+        WhereClause where = buildWhere(request, window);
+        int limit = request.limit() == null ? DEFAULT_TOP_LIMIT : Math.max(1, Math.min(request.limit(), DEFAULT_TOP_LIMIT));
+
+        String sql = "SELECT user_id, " +
+                "  MAX(username_snapshot) AS username, " +
+                "  MAX(nickname_snapshot) AS nickname, " +
+                "  COUNT(*) AS total, " +
+                "  COALESCE(SUM(prompt_tokens), 0) AS input_tokens, " +
+                "  COALESCE(SUM(completion_tokens), 0) AS output_tokens, " +
+                "  COALESCE(SUM(total_tokens), 0) AS total_tokens, " +
+                "  COALESCE(SUM(cached_tokens), 0) AS cached_tokens, " +
+                "  CASE WHEN COALESCE(SUM(prompt_tokens), 0) = 0 THEN NULL ELSE SUM(cached_tokens) * 1.0 / SUM(prompt_tokens) END AS cache_hit_rate, " +
+                "  MAX(created_at) AS last_at " +
+                "FROM agent_invocation_log " + where.sql() +
+                " GROUP BY user_id " +
+                " ORDER BY total_tokens DESC, total DESC, last_at DESC LIMIT " + limit;
+        Query q = entityManager.createNativeQuery(sql);
+        where.applyParams(q);
+        List<Object[]> rows = q.getResultList();
+        List<UserBreakdown> result = new ArrayList<>();
+        for (Object[] r : rows) {
+            Long userId = r[0] == null ? null : ((Number) r[0]).longValue();
+            result.add(new UserBreakdown(
+                    userId,
+                    (String) r[1],
+                    (String) r[2],
+                    toLong(r[3]),
+                    toLong(r[4]),
+                    toLong(r[5]),
+                    toLong(r[6]),
+                    toLong(r[7]),
+                    r[8] == null ? null : ((Number) r[8]).doubleValue(),
+                    toTime(r[9])));
         }
         return result;
     }
@@ -327,21 +371,21 @@ public class ModelUsageStatsService {
     }
 
     private WhereClause buildWhere(ModelUsageQueryRequest request, TimeWindow window) {
-        StringBuilder sb = new StringBuilder("WHERE created_at >= :startTime AND created_at <= :endTime ");
+        StringBuilder sb = new StringBuilder("WHERE agent_invocation_log.created_at >= :startTime AND agent_invocation_log.created_at <= :endTime ");
         List<Object[]> params = new ArrayList<>();
         params.add(new Object[]{"startTime", window.start()});
         params.add(new Object[]{"endTime", window.end()});
 
         if (request.modelNames() != null && !request.modelNames().isEmpty()) {
-            sb.append("AND model_name IN (:modelNames) ");
+            sb.append("AND agent_invocation_log.model_name IN (:modelNames) ");
             params.add(new Object[]{"modelNames", request.modelNames()});
         }
         if (request.providers() != null && !request.providers().isEmpty()) {
-            sb.append("AND provider IN (:providers) ");
+            sb.append("AND agent_invocation_log.provider IN (:providers) ");
             params.add(new Object[]{"providers", request.providers()});
         }
         if (request.agentTypes() != null && !request.agentTypes().isEmpty()) {
-            sb.append("AND agent_type IN (:agentTypes) ");
+            sb.append("AND agent_invocation_log.agent_type IN (:agentTypes) ");
             params.add(new Object[]{"agentTypes", request.agentTypes()});
         }
         return new WhereClause(sb.toString(), params);
@@ -384,20 +428,6 @@ public class ModelUsageStatsService {
 
     private static double round(double v) {
         return Math.round(v * 100.0) / 100.0;
-    }
-
-    /**
-     * 截断独立用户名称列表，避免单模型用户过多导致单元格过长。
-     * 空值归为空串；超长时保留前 N 字符并标注省略。
-     */
-    private static String truncateUserNames(String names) {
-        if (names == null || names.isBlank()) {
-            return "";
-        }
-        if (names.length() <= MAX_USER_NAMES_LENGTH) {
-            return names;
-        }
-        return names.substring(0, MAX_USER_NAMES_LENGTH) + "…";
     }
 
     private static String toTime(Object o) {

@@ -176,24 +176,28 @@ function withTrustFileLock<T>(path: string, fn: () => T): T {
 
 /**
  * Returns true when cwd has project-local resources that must be gated by
- * project trust: trust-requiring entries under cwd/.pi, or .agents/skills in
+ * project trust: trust-requiring entries under cwd/.gitpilot, or .agents/skills in
  * cwd or one of its ancestors. Returns false when no such project resources
  * exist. The user/global ~/.agents/skills directory is always treated as a
  * trusted user resource and is ignored here, even when cwd is $HOME.
  */
 export function hasTrustRequiringProjectResources(cwd: string): boolean {
 	const homeDir = canonicalizePath(resolvePath(process.env.HOME || homedir()));
-	const userAgentsSkillsDir = join(homeDir, ".agents", "skills");
+	// Windows 上 homedir() 与 HOME 可能分别指向系统用户目录和测试/嵌入宿主目录；
+	// 两者对应的 .agents/skills 都属于用户级目录，不应被误判为项目资源。
+	const userAgentsSkillsDirs = new Set([
+		join(homeDir, ".agents", "skills"),
+		join(canonicalizePath(resolvePath(homedir())), ".agents", "skills"),
+	]);
 	let currentDir = canonicalizePath(resolvePath(cwd));
 
 	const configDir = join(currentDir, CONFIG_DIR_NAME);
 	if (TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES.some((entry) => existsSync(join(configDir, entry)))) {
 		return true;
 	}
-
 	while (true) {
 		const agentsSkillsDir = join(currentDir, ".agents", "skills");
-		if (agentsSkillsDir !== userAgentsSkillsDir && existsSync(agentsSkillsDir)) {
+		if (!userAgentsSkillsDirs.has(agentsSkillsDir) && existsSync(agentsSkillsDir)) {
 			return true;
 		}
 

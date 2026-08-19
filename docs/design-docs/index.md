@@ -7,6 +7,7 @@
 ## 文档分类
 
 - [GitPilot Work 协同技术设计](gitpilot-work-collaboration-technical-design-v1.md) - 独立任务目录、文件产出与公众端协同插件
+- [GitPilot Work Office Skills 技术设计](gitpilot-work-office-skills-technical-design-v1.md) - Work 模式 Word、Excel、PowerPoint 内置 Skill 与受控本地生成工具
 - [GitPilot Web 与 MCP 扩展技术设计](gitpilot-web-mcp-extensions-technical-design-v1.md) - Web 研究、MCP 模式授权、Desktop/CLI 管理与凭据边界
 
 ### 核心理念

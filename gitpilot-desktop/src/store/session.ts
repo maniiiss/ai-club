@@ -174,6 +174,16 @@ export function getAssistantMessageEndText(event: AgentSessionEvent): string | n
 	return text.trim() ? text : null;
 }
 
+/** 从 sidecar 的 message_end 中提取模型回合以 error 收尾时的错误信息（stopReason=error）。
+ * 这类消息正文为空、只有 errorMessage；桌面端据此渲染可见的 error 气泡，避免“静默不回复”。 */
+export function getAssistantErrorEndText(event: AgentSessionEvent): string | null {
+	if (event.type !== 'message_end') return null;
+	const message = event.message as { role?: unknown; stopReason?: unknown; errorMessage?: unknown } | undefined;
+	if (message?.role !== 'assistant' || message.stopReason !== 'error') return null;
+	const raw = message.errorMessage;
+	return typeof raw === 'string' && raw.trim() ? raw.trim() : null;
+}
+
 /**
  * 计划完成工具返回的是 toolResult，而不是 assistant 正文。
  * 业务意图：只把 plan_mode_complete 的最终计划提升为聊天正文，其他工具输出仍由执行面板承载。
@@ -209,6 +219,8 @@ const PROJECTS_KEY = 'gitpilot-desktop.projects';
 const CURRENT_PROJECT_KEY = 'gitpilot-desktop.currentProject';
 const MODEL_KEY = 'gitpilot-desktop.lastModel';
 const STANDALONE_TASKS_KEY = 'gitpilot-desktop.standaloneTasks';
+/** 用户从 Code 侧栏移除的工作空间；其历史任务保留在磁盘和搜索中，但不回落到未分组列表。 */
+const REMOVED_PROJECT_PATHS_KEY = 'gitpilot-desktop.removedProjectPaths';
 /** 从侧栏移除的会话路径，仅隐藏列表项，不删除磁盘上的 session 文件。 */
 const HIDDEN_SESSION_PATHS_KEY = 'gitpilot-desktop.hiddenSessionPaths';
 /** 只采纳最后一次平台探测结果，避免旧的失败请求覆盖用户刚刚重连后的成功状态。 */
@@ -265,6 +277,22 @@ function loadStandaloneTaskPaths(): string[] {
 function saveStandaloneTaskPaths(paths: string[]): void {
 	try {
 		localStorage.setItem(STANDALONE_TASKS_KEY, JSON.stringify(paths));
+	} catch {}
+}
+
+function loadRemovedProjectPaths(): string[] {
+	try {
+		const raw = localStorage.getItem(REMOVED_PROJECT_PATHS_KEY);
+		const parsed = raw ? JSON.parse(raw) : [];
+		return Array.isArray(parsed) ? parsed.filter((item): item is string => typeof item === 'string') : [];
+	} catch {
+		return [];
+	}
+}
+
+function saveRemovedProjectPaths(paths: string[]): void {
+	try {
+		localStorage.setItem(REMOVED_PROJECT_PATHS_KEY, JSON.stringify(paths));
 	} catch {}
 }
 
@@ -411,6 +439,8 @@ interface SessionStore {
 	currentProjectPath: string | null;
 	/** 明确由“新建任务”入口创建的独立会话路径。 */
 	standaloneTaskPaths: string[];
+	/** 用户移除的工作空间路径；其历史任务不在 Code 侧栏未分组列表展示。 */
+	removedProjectPaths: string[];
 	/** 用户从侧栏移除的会话路径；仅影响桌面列表展示，不触碰磁盘文件。 */
 	hiddenSessionPaths: string[];
 	thinkingLevels: ThinkingLevel[];
@@ -771,6 +801,18 @@ export function applyEvent(set: SessionSetter, e: AgentSessionEvent): void {
 
 	// 部分模型或代理只在 message_end 提供完整正文；有 text_delta 时这里负责用最终内容收口且不会重复气泡。
 	if (type === 'message_end') {
+		// 模型回合以 error 收尾（stopReason=error）时正文为空，只有 errorMessage。
+		// 必须在空正文拦截前渲染成可见错误气泡，否则桌面端会“静默不回复”。
+		const errorText = getAssistantErrorEndText(e);
+		if (errorText !== null) {
+			set((s) => {
+				const messages = s.messages.map((m) => (m.id === s._streamingAssistantId ? { ...m, streaming: false } : m));
+				const isDuplicate = messages.at(-1)?.role === 'assistant' && messages.at(-1)?.kind === 'error' && messages.at(-1)?.text === errorText;
+				if (isDuplicate) return { messages, _streamingAssistantId: null };
+				return { messages: [...messages, { id: newId(), role: 'assistant', text: errorText, kind: 'error' }], _streamingAssistantId: null };
+			});
+			return;
+		}
 		const planText = getPlanCompletionMessageEndText(e);
 		const text = getAssistantMessageEndText(e) ?? planText;
 		if (!text) return;
@@ -1089,6 +1131,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	projects: loadProjects(),
 	currentProjectPath: loadCurrentProject(),
 	standaloneTaskPaths: loadStandaloneTaskPaths(),
+	removedProjectPaths: loadRemovedProjectPaths(),
 	hiddenSessionPaths: loadHiddenSessionPaths(),
 	_streamingAssistantId: null,
 	_unsubs: [],
@@ -1711,21 +1754,25 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		const path = selected;
 		const exists = get().projects.some((p) => p.path === path);
 		const projects = exists ? get().projects : [...get().projects, { name: path.split(/[\\/]/).pop() || path, path }];
+		const removedProjectPaths = get().removedProjectPaths.filter((projectPath) => !isSameProjectPath(projectPath, path));
 		saveProjects(projects);
+		saveRemovedProjectPaths(removedProjectPaths);
 		saveCurrentProject(path);
-		set({ projects, currentProjectPath: path });
+		set({ projects, currentProjectPath: path, removedProjectPaths });
 		await get().refreshAll();
 	},
 	removeProject: (path: string) => {
 		const projects = get().projects.filter((p) => p.path !== path);
+		const removedProjectPaths = [...get().removedProjectPaths.filter((projectPath) => !isSameProjectPath(projectPath, path)), path];
 		saveProjects(projects);
+		saveRemovedProjectPaths(removedProjectPaths);
 		if (get().currentProjectPath === path) {
 			const next = projects[0]?.path ?? null;
 			saveCurrentProject(next);
-			set({ projects, currentProjectPath: next });
+			set({ projects, currentProjectPath: next, removedProjectPaths });
 			void get().refreshAll();
 		} else {
-			set({ projects });
+			set({ projects, removedProjectPaths });
 		}
 	},
 	removeSessionFromList: (sessionPath: string) => {

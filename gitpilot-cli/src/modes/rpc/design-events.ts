@@ -19,11 +19,12 @@ function summarizeDesignPatch(args: unknown): string | undefined {
 	let bytes = 0;
 	for (const operation of operations) {
 		if (!operation || typeof operation !== "object" || Array.isArray(operation)) continue;
-		const typed = operation as { path?: unknown; newPath?: unknown; content?: unknown; replacement?: unknown };
+		const typed = operation as { path?: unknown; newPath?: unknown; content?: unknown; replacement?: unknown; text?: unknown };
 		const path = typeof typed.newPath === "string" ? typed.newPath : typed.path;
 		if (typeof path === "string" && path && !paths.includes(path)) paths.push(path);
 		if (typeof typed.content === "string") bytes += Buffer.byteLength(typed.content, "utf8");
 		if (typeof typed.replacement === "string") bytes += Buffer.byteLength(typed.replacement, "utf8");
+		if (typeof typed.text === "string") bytes += Buffer.byteLength(typed.text, "utf8");
 	}
 	const pathLabel = paths.slice(0, DESIGN_TOOL_PATH_LIMIT).join("、") || "设计文件";
 	const remaining = paths.length - DESIGN_TOOL_PATH_LIMIT;

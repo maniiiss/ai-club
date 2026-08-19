@@ -123,6 +123,12 @@ export interface DesignProjectGuidelines {
 	updatedAt: string;
 }
 export interface DesignRpcSnapshot { document: Record<string, unknown>; files: DesignRpcFile[]; context?: DesignProjectContext; guidelines?: DesignProjectGuidelines }
+/** Design UI 对话气泡的 sidecar 持久化视图，不包含内部 prompt、工具参数或文件正文。 */
+export type DesignRpcMessage =
+	| { id: string; kind: 'user'; text: string; status?: 'queued' | 'sent' | 'cancelled' }
+	| { id: string; kind: 'assistant'; text: string }
+	| { id: string; kind: 'error'; text: string }
+	| { id: string; kind: 'result'; revisionId: string; summary: string };
 /** 上传 Design 修订到 Web 后返回的远端版本摘要。 */
 export interface DesignUploadResult {
 	versionId: number;
@@ -139,6 +145,7 @@ export type DesignPatchOperation =
 	| { op: 'create_file'; path: string; content: string; language: DesignRpcFile['language'] }
 	| { op: 'replace_file'; path: string; content: string }
 	| { op: 'replace_text'; path: string; search: string; replacement: string }
+	| { op: 'insert_text'; path: string; anchor: string; text: string; position: 'before' | 'after'; occurrence?: number }
 	| { op: 'rename_file'; path: string; newPath: string }
 	| { op: 'delete_file'; path: string };
 export interface DesignPatch { baseRevisionId: string; operations: DesignPatchOperation[]; affectedPaths?: string[]; summary?: string; risk?: 'safe' | 'high'; operationId?: string }
@@ -151,19 +158,39 @@ export type DesignAgentEvent =
 	| { type: 'message_end'; message: { role: 'assistant'; content: Array<{ type: 'text'; text: string }> } }
 	| { type: 'tool_execution_start' | 'tool_execution_update' | 'tool_execution_end'; toolCallId: string; toolName: string; summary?: string; isError?: boolean };
 export interface DesignStreamEvent { type: 'design_event'; projectId?: string; projectPath?: string; designId: string; requestId: string; runId?: string; sequence: number; emittedAt: number; event: DesignAgentEvent }
-export interface DesignPatchAppliedEvent { type: 'design_patch_applied'; projectId?: string; projectPath?: string; designId: string; requestId: string; runId?: string; sequence: number; emittedAt: number; operationId: string; revisionId: string; pageId: string; summary: string; changedFiles: DesignRpcFile[]; removedPaths: string[] }
+export interface DesignPatchAppliedEvent { type: 'design_patch_applied'; projectId?: string; projectPath?: string; designId: string; requestId: string; runId?: string; sequence: number; emittedAt: number; operationId: string; revisionId: string; pageId: string; summary: string; changedFiles: DesignRpcFile[]; removedPaths: string[]; /** Agent run 中的增量 patch 是 draft，终态快照才创建正式历史 revision。 */ isDraft?: boolean }
 export interface DesignApprovalRequiredEvent { type: 'design_approval_required'; projectId?: string; projectPath?: string; designId: string; requestId: string; runId?: string; sequence: number; emittedAt: number; approvalId: string; pageId: string; patch: DesignPatch; reason: string }
 /** Design Agent 发现关键歧义时暂停当前工具调用，等待用户输入后恢复同一次运行。 */
 export interface DesignClarificationRequiredEvent { type: 'design_clarification_required'; projectId?: string; projectPath?: string; designId: string; requestId: string; runId?: string; sequence: number; emittedAt: number; clarificationId: string; question: string; context?: string; options: string[] }
-/** 仅在复杂任务中由 Agent 主动维护的右侧执行计划。 */
+/** 复杂任务由模型通过 update_plan 提交，简单任务由 skip_plan 显式跳过。 */
 export interface DesignPlanStep { id: string; text: string; state: 'pending' | 'active' | 'done' }
 export interface DesignPlanUpdatedEvent { type: 'design_plan_updated'; projectId?: string; projectPath?: string; designId: string; requestId: string; runId?: string; sequence: number; emittedAt: number; steps: DesignPlanStep[]; explanation?: string }
 export interface DesignRunSettledEvent { type: 'design_run_settled'; projectId?: string; projectPath?: string; designId: string; requestId: string; runId?: string; sequence: number; emittedAt: number; snapshot: DesignRpcSnapshot }
 export interface DesignErrorEvent { type: 'design_error'; projectId?: string; projectPath?: string; designId: string; requestId: string; runId?: string; sequence: number; emittedAt: number; error: string }
+
+/**
+ * Design 工作区重新打开或前端重连时恢复的最小运行态。
+ * 业务意图：审批正文可能很大，不重复传回完整 patch；只恢复继续审批所需的标识和原因，
+ * 页面正文仍以 canonical snapshot 为准，避免把审批恢复变成新的大对象传输。
+ */
+export interface DesignRunRecoveryState {
+	status: 'idle' | 'running' | 'awaiting_approval' | 'awaiting_clarification';
+	phase: 'idle' | 'thinking' | 'responding' | 'tool' | 'applying_patch' | 'awaiting_approval' | 'awaiting_clarification';
+	requestId: string | null;
+	runId: string | null;
+	sequence: number;
+	pendingApproval?: { approvalId: string; pageId: string; reason: string };
+	pendingClarification?: { clarificationId: string; question: string; context?: string; options: string[] };
+}
 export type DesignStreamLine = DesignStreamEvent | DesignPatchAppliedEvent | DesignApprovalRequiredEvent | DesignClarificationRequiredEvent | DesignPlanUpdatedEvent | DesignRunSettledEvent | DesignErrorEvent;
 export type McpMode = 'code' | 'work' | 'design';
-/** 管理页只消费脱敏 MCP 摘要，凭据只在写入请求中短暂经过 sidecar。 */
-export interface ManagedMcpServer { name: string; source: 'global' | 'project' | 'project-override'; enabled: boolean; modes: McpMode[]; transport: 'stdio' | 'http' | 'unknown'; }
+export type McpTransport = 'stdio' | 'http' | 'sse' | 'unknown';
+/** 与 sidecar 同构的 MCP 定义；env/headers 的值在列表响应中统一是脱敏占位符。 */
+export interface McpServerDefinition { command?: string; args?: string[]; url?: string; env?: Record<string, string>; headers?: Record<string, string>; cwd?: string; httpTransport?: 'streamable-http' | 'sse'; requestTimeoutMs?: number; disabled?: boolean; [key: string]: unknown; }
+export interface ManagedMcpServer { name: string; source: 'global' | 'project' | 'project-override'; enabled: boolean; modes: McpMode[]; definition: McpServerDefinition; transport: McpTransport; }
+export type SkillMode = McpMode;
+export interface ManagedSkill { id: string; name: string; description: string; source: 'builtin' | 'personal'; filePath: string; enabled: boolean; modes: SkillMode[]; disableModelInvocation: boolean; }
+export interface SkillReloadResult { reloadedModes: SkillMode[]; deferredModes: SkillMode[]; }
 
 /** Slash 命令来源信息（最小化） */
 export interface SourceInfo {
@@ -205,6 +232,8 @@ export interface SessionListItem {
 	modified: string;
 	messageCount: number;
 	firstMessage: string;
+	/** sidecar 提供的完整历史文本；旧 sidecar 未提供时由桌面端回退到标题和首条消息。 */
+	allMessagesText?: string;
 	/** sidecar runtime 是否仍在执行，任务切换后用于保留左侧 loading 状态。 */
 	isStreaming?: boolean;
 	/** 当前会话执行摘要（仅当 sidecar 宣告 session_execution_snapshot_v1 时存在）。 */
@@ -308,7 +337,7 @@ export type RpcCommand =
 	// 附件预解析（路径或内联 base64 -> 文本/图片，结果随下一条 prompt 注入）
 	| { id?: string; type: 'prepare_attachments'; items: AttachmentInput[] }
 	| { id?: string; type: 'code_file_list' }
-	| { id?: string; type: 'new_work_session'; taskId: string }
+	| { id?: string; type: 'new_work_session'; taskId: string; workspacePath?: string }
 	| { id?: string; type: 'work_prompt'; taskId: string; message: string }
 	| { id?: string; type: 'work_abort'; requestId?: string }
 	| { id?: string; type: 'work_file_list'; taskId: string }
@@ -318,12 +347,14 @@ export type RpcCommand =
 	| { id?: string; type: 'work_file_rename'; taskId: string; path: string; newPath: string }
 	| { id?: string; type: 'work_prepare_attachments'; items: AttachmentInput[] }
 	| { id?: string; type: 'design_open'; projectPath: string }
+	| { id?: string; type: 'design_sync_messages'; projectPath: string; designId: string; messages: DesignRpcMessage[] }
 	| { id?: string; type: 'design_save_guidelines'; projectPath: string; designId: string; guidelines: DesignProjectGuidelines }
 	| { id?: string; type: 'design_rename_page'; projectPath: string; designId: string; pageId: string; name: string; baseRevisionId: string }
 	| { id?: string; type: 'design_create'; projectPath: string; name?: string }
 	| { id?: string; type: 'design_get_snapshot'; projectPath: string; designId: string }
 	| { id?: string; type: 'design_get_revision'; projectPath: string; designId: string; revisionId: string }
-	| { id?: string; type: 'design_prompt'; projectPath: string; designId: string; pageId: string; prompt: string; baseRevisionId?: string; targetProfiles: Array<'mobile' | 'tablet' | 'desktop'> }
+	/** uiMessageId 由 Desktop 生成并贯穿 sidecar/UI 同一条气泡，避免恢复时重复显示用户消息。 */
+	| { id?: string; type: 'design_prompt'; projectPath: string; designId: string; pageId: string; prompt: string; baseRevisionId?: string; targetProfiles: Array<'mobile' | 'tablet' | 'desktop'>; uiMessageId?: string }
 	| { id?: string; type: 'design_clarification_response'; projectPath: string; designId: string; clarificationId: string; answer: string }
 	| { id?: string; type: 'design_follow_up'; projectPath: string; designId: string; message: string }
 	| { id?: string; type: 'design_abort'; projectPath: string; designId: string }
@@ -336,11 +367,16 @@ export type RpcCommand =
 	| { id?: string; type: 'design_upload'; projectPath: string; designId: string; revisionId: string; platformProjectId: number; title?: string; summary?: string }
 	| { id?: string; type: 'design_export'; projectPath: string; designId: string; outputPath?: string }
 	| { id?: string; type: 'mcp_list' }
-	| { id?: string; type: 'mcp_save_server'; name: string; definition: Record<string, unknown>; modes: McpMode[] }
+	| { id?: string; type: 'mcp_save_server'; name: string; previousName?: string; definition: McpServerDefinition; modes: McpMode[] }
+	| { id?: string; type: 'mcp_copy_server'; name: string }
 	| { id?: string; type: 'mcp_delete_server'; name: string }
 	| { id?: string; type: 'mcp_set_modes'; name: string; modes: McpMode[] }
 	| { id?: string; type: 'mcp_set_enabled'; name: string; enabled: boolean }
 	| { id?: string; type: 'mcp_reload' }
+	| { id?: string; type: 'skill_list' }
+	| { id?: string; type: 'skill_set_enabled'; name: string; enabled: boolean }
+	| { id?: string; type: 'skill_set_modes'; name: string; modes: SkillMode[] }
+	| { id?: string; type: 'skill_reload' }
 	| { id?: string; type: 'get_state' }
 	// 模型
 	| { id?: string; type: 'set_model'; provider: string; modelId: string }
@@ -428,7 +464,8 @@ export type RpcResponse =
 	| { id?: string; type: 'response'; command: 'work_file_delete'; success: true; data: { taskId: string; path: string } }
 	| { id?: string; type: 'response'; command: 'work_file_rename'; success: true; data: { taskId: string; file: WorkFileSnapshot } }
 	| { id?: string; type: 'response'; command: 'work_prepare_attachments'; success: true; data: { attachments: PreparedAttachment[] } }
-	| { id?: string; type: 'response'; command: 'design_open' | 'design_create' | 'design_save_guidelines' | 'design_rename_page'; success: true; data: { designId: string; snapshot: DesignRpcSnapshot } }
+	| { id?: string; type: 'response'; command: 'design_open' | 'design_create' | 'design_save_guidelines' | 'design_rename_page'; success: true; data: { designId: string; snapshot: DesignRpcSnapshot; messages?: DesignRpcMessage[]; execution?: DesignRunRecoveryState } }
+	| { id?: string; type: 'response'; command: 'design_sync_messages'; success: true; data: { designId: string; messages: DesignRpcMessage[] } }
 	| { id?: string; type: 'response'; command: 'design_get_snapshot' | 'design_get_revision' | 'design_check'; success: true; data: { snapshot?: DesignRpcSnapshot; checks?: Array<{ level: 'error' | 'warning' | 'info'; message: string }> } }
 	| { id?: string; type: 'response'; command: 'design_preview'; success: true; data: { snapshot?: DesignRpcSnapshot; previewHandle: DesignPreviewHandle; checks?: Array<{ level: 'error' | 'warning' | 'info'; message: string }> } }
 	| { id?: string; type: 'response'; command: 'design_prompt'; success: true; data: { requestId: string; runId: string } }
@@ -441,7 +478,10 @@ export type RpcResponse =
 	| { id?: string; type: 'response'; command: 'design_upload'; success: true; data: { upload: DesignUploadResult } }
 	| { id?: string; type: 'response'; command: 'design_export'; success: true; data: { path: string } }
 	| { id?: string; type: 'response'; command: 'mcp_list'; success: true; data: { servers: ManagedMcpServer[] } }
+	| { id?: string; type: 'response'; command: 'mcp_copy_server'; success: true; data: { name: string } }
 	| { id?: string; type: 'response'; command: 'mcp_save_server' | 'mcp_delete_server' | 'mcp_set_modes' | 'mcp_set_enabled' | 'mcp_reload'; success: true }
+	| { id?: string; type: 'response'; command: 'skill_list'; success: true; data: { skills: ManagedSkill[]; diagnostics: Array<{ type: string; message: string; path?: string }> } }
+	| { id?: string; type: 'response'; command: 'skill_set_enabled' | 'skill_set_modes' | 'skill_reload'; success: true; data: SkillReloadResult }
 	| { id?: string; type: 'response'; command: 'get_state'; success: true; data: RpcSessionState }
 	| { id?: string; type: 'response'; command: 'set_model'; success: true; data: ModelInfo }
 	| { id?: string; type: 'response'; command: 'cycle_model'; success: true; data: { model: ModelInfo; thinkingLevel: ThinkingLevel; isScoped: boolean } | null }

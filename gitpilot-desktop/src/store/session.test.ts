@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyEvent, agentMessagesToUi, buildRestoredExecutionSteps, filterDesktopThinkingLevels, getAssistantMessageEndText, getPlanCompletionMessageEndText, getRunningExecutionSeed, isInternalGoalPrompt, mergeCurrentSessionIntoList, platformConnectionStateFromResponse, shouldSkipProjectSwitch, useSessionStore, type UIMessage } from './session';
+import { applyEvent, agentMessagesToUi, buildRestoredExecutionSteps, filterDesktopThinkingLevels, getAssistantErrorEndText, getAssistantMessageEndText, getPlanCompletionMessageEndText, getRunningExecutionSeed, isInternalGoalPrompt, mergeCurrentSessionIntoList, platformConnectionStateFromResponse, shouldSkipProjectSwitch, useSessionStore, type UIMessage } from './session';
 import { useWorkbenchStore } from './workbench';
 
 function applyToStreamingState(state: { messages: UIMessage[]; _streamingAssistantId: string | null; isStreaming: boolean }, event: Parameters<typeof applyEvent>[1]) {
@@ -246,6 +246,25 @@ describe('最终 assistant 正文兜底', () => {
 	it('从 message_end 读取完整正文，忽略工具调用和非 assistant 消息', () => {
 		expect(getAssistantMessageEndText({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '已完成' }, { type: 'toolCall', name: 'read' }] } })).toBe('已完成');
 		expect(getAssistantMessageEndText({ type: 'message_end', message: { role: 'toolResult', content: [{ type: 'text', text: '输出' }] } })).toBeNull();
+	});
+
+	it('提取 stopReason=error 模型回合的错误信息，其余消息返回 null', () => {
+		expect(getAssistantErrorEndText({ type: 'message_end', message: { role: 'assistant', content: [], stopReason: 'error', errorMessage: 'Connection error.' } })).toBe('Connection error.');
+		expect(getAssistantErrorEndText({ type: 'message_end', message: { role: 'assistant', content: [], stopReason: 'error', errorMessage: '   ' } })).toBeNull();
+		expect(getAssistantErrorEndText({ type: 'message_end', message: { role: 'assistant', content: [{ type: 'text', text: '正常回复' }], stopReason: 'stop' } })).toBeNull();
+		expect(getAssistantErrorEndText({ type: 'message_start', message: { role: 'assistant', stopReason: 'error', errorMessage: 'x' } })).toBeNull();
+	});
+
+	it('模型回合 error 收尾时渲染可见的 error 气泡，空正文不再静默丢弃', () => {
+		useSessionStore.setState({ messages: [], _streamingAssistantId: null });
+		const setter = (partial: unknown) => useSessionStore.setState(partial as never);
+		applyEvent(setter, { type: 'message_end', message: { role: 'assistant', content: [], stopReason: 'error', errorMessage: 'Connection error.' } });
+		applyEvent(setter, { type: 'message_end', message: { role: 'assistant', content: [], stopReason: 'error', errorMessage: 'Connection error.' } });
+
+		const messages = useSessionStore.getState().messages;
+		// 重复的连续错误只保留一条，避免自动重试重复刷屏。
+		expect(messages).toHaveLength(1);
+		expect(messages[0]).toMatchObject({ role: 'assistant', kind: 'error', text: 'Connection error.' });
 	});
 
 	it('把 plan_mode_complete 的工具结果作为最终计划正文展示', () => {

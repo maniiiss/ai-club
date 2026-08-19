@@ -451,7 +451,11 @@ export function composeModelProvider(
 		simple: boolean,
 	): AssistantMessageEventStream =>
 		lazyStream(model, async () => {
-			if (extension?.streamSimple && model.api === extension.api) {
+			// 当 provider 完全由扩展定义（无内置 base，例如 gitpilot 平台网关）时，扩展拥有该
+			// provider 的全部模型：无论 model.api 是否等于 extension.api，都应交给扩展的
+			// streamSimple 统一处理（它按 model.api 分发 OpenAI/Anthropic 协议并改写代理地址）。
+			// 否则 ANTHROPIC 协议模型会漏判到 pi-ai 内置客户端，直接用占位 baseUrl 请求而失败。
+			if (extension?.streamSimple && (model.api === extension.api || !base)) {
 				return extension.streamSimple(model, context, options as SimpleStreamOptions);
 			}
 			if (base && supportsBaseApi(model)) {

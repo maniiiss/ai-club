@@ -121,3 +121,17 @@ if (usageHandle != null) {
 ## 10. 设计文档
 
 - 本设计文档；同步更新 `docs/design-docs/index.md` 模块设计索引。
+## 11. 排查与修复记录（ANTHROPIC 平台模型“不回复”）
+
+**现象**：桌面端选择 ANTHROPIC 协议平台模型（如 `claude-opus-4.8`）后不回复，会话里大量 `Connection error.`。
+
+**根因一（主因，分发漏判）**：`gitpilot` 平台 extension 在 `platform-model.ts` 注册时声明 `api: "openai-completions"`，而 ANTHROPIC 平台模型的 `api` 是 `anthropic-messages`。`provider-composer.ts` 的 `streamWith` 原只在 `model.api === extension.api` 时才调用扩展自身的 `streamSimple`（负责签发 `gms_` 会话、把 baseUrl 改写为真实代理地址），于是 ANTHROPIC 模型落到 pi-ai 内置客户端、直接用占位 `http://gitpilot.platform.local` 请求而失败。
+修复：纯扩展 provider（无内置 base）的全部模型一律交给扩展自己的 `streamSimple` 分发。
+
+**根因二（连带，路径错配）**：Anthropic 官方 SDK 固定请求 `baseURL + /v1/messages`，而后端代理只有 `/messages` 路由，命中后返回 500 “No static resource”。
+修复：`GitPilotModelProxyController` 为 anthropic 新增 `/v1/messages` 路由别名，映射同一处理/核算逻辑。
+
+**根因三（表现，桌面端静默吞错）**：`stopReason=error`、正文为空的错误消息在桌面端被 `message_end` 空正文拦截丢弃，且 UI 完全未展示 `errorMessage`。
+修复：`session.ts` 提取错误消息并渲染为可见 `error` 气泡；`MessageBubble` 增加错误样式。
+
+**验证**：CLI 单测、后端 JUnit、桌面端 build/test 通过；重建 sidecar 后直连确认请求 URL 已从占位域名变为真实代理地址。

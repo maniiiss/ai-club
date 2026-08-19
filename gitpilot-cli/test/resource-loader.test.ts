@@ -59,6 +59,22 @@ Skill content here.`,
 			expect(skills.some((s) => s.name === "test-skill")).toBe(true);
 		});
 
+		it("should keep .gitpilot project skills available when Desktop scope disables a same-named user skill", async () => {
+			const userSkillDir = join(agentDir, "skills", "shared-skill");
+			const projectSkillDir = join(cwd, ".gitpilot", "skills", "shared-skill");
+			mkdirSync(userSkillDir, { recursive: true });
+			mkdirSync(projectSkillDir, { recursive: true });
+			writeFileSync(join(userSkillDir, "SKILL.md"), "---\nname: shared-skill\ndescription: user skill\n---\nUser skill");
+			writeFileSync(join(projectSkillDir, "SKILL.md"), "---\nname: shared-skill\ndescription: project skill\n---\nProject skill");
+			writeFileSync(join(agentDir, "skill-scopes.json"), JSON.stringify({ version: 1, skills: { "shared-skill": { enabled: false, modes: ["code"] } } }));
+
+			const loader = new DefaultResourceLoader({ cwd, agentDir, skillMode: "code" });
+			await loader.reload();
+
+			const skill = loader.getSkills().skills.find((item) => item.name === "shared-skill");
+			expect(skill?.filePath).toBe(join(projectSkillDir, "SKILL.md"));
+		});
+
 		it("should ignore extra markdown files in auto-discovered skill dirs", async () => {
 			const skillDir = join(agentDir, "skills", "pi-skills", "browser-tools");
 			mkdirSync(skillDir, { recursive: true });

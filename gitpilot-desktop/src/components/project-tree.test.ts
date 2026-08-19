@@ -49,4 +49,13 @@ describe('项目树', () => {
 		expect(projectTree[0].tasks.map((task) => task.path)).toEqual(['session-extended']);
 		expect(standaloneTasks).toEqual([]);
 	});
+
+	it('已移除工作空间的任务不会回落到独立任务列表', () => {
+		const { projectTree, standaloneTasks } = buildProjectTree([], [
+			{ path: 'session-removed', name: '已归档项目任务', firstMessage: '', cwd: 'C:\\workspace\\archived\\src', messageCount: 2 },
+		], [], ['C:\\workspace\\archived']);
+
+		expect(projectTree).toEqual([]);
+		expect(standaloneTasks).toEqual([]);
+	});
 });

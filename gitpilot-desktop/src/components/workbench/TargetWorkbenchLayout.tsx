@@ -90,7 +90,7 @@ function ResizeHandle({ side, value }: { side: ResizeSide; value: number }) {
 		if (event.key === 'Home') { event.preventDefault(); updateLayout(side === 'left' ? { leftWidth: min } : { rightWidth: min }); }
 		if (event.key === 'End') { event.preventDefault(); updateLayout(side === 'left' ? { leftWidth: max } : { rightWidth: max }); }
 	};
-	return <div className={styles.resizeHandle} role="separator" tabIndex={0} aria-orientation="vertical" aria-valuemin={min} aria-valuemax={max} aria-valuenow={value} aria-label={side === 'left' ? '调整项目导航宽度' : '调整执行面板宽度'} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onKeyDown={onKeyDown}><span /></div>;
+	return <div className={styles.resizeHandle} role="separator" tabIndex={0} aria-orientation="vertical" aria-valuemin={min} aria-valuemax={max} aria-valuenow={value} aria-label={side === 'left' ? '调整工作空间导航宽度' : '调整执行面板宽度'} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onKeyDown={onKeyDown}><span /></div>;
 }
 
 export function TargetWorkbenchLayout({
@@ -102,7 +102,7 @@ export function TargetWorkbenchLayout({
 	showBottom = true,
 	workspacePath = null,
 	statusLabel,
-	leftPanelTitle = '项目与任务',
+	leftPanelTitle = '工作空间与任务',
 	leftPanelDescription = '切换当前工作目录或会话。',
 	rightPanelTitle = '右侧窗口',
 	rightPanelDescription = '打开执行过程、计划和后续工具窗口。',
@@ -150,7 +150,7 @@ export function TargetWorkbenchLayout({
 			<Hint content={leftPanelLabel}><Button type="button" variant="ghost" size="icon-sm" className={styles.leftPanelToggle} onClick={() => updateLayout({ leftCollapsed: !layout.leftCollapsed })} aria-label={leftPanelLabel}>{layout.leftCollapsed ? <PanelLeftOpen /> : <PanelLeftClose />}</Button></Hint>
 			<Button type="button" variant="ghost" size="sm" className={styles.mobileToggle} onClick={() => setMobileLeftOpen(true)} aria-label={`打开${leftPanelTitle}`}>{leftPanelTitle}</Button>
 			{right && <Button type="button" variant="ghost" size="sm" className={styles.mobileToggle} onClick={() => setMobileRightOpen(true)} aria-label={`打开${rightPanelTitle}`}>{rightPanelTitle}</Button>}
-			{showBottom && <Hint content={terminalAvailable ? '在应用内打开当前项目终端' : '请先选择当前模式的工作目录'}><Button type="button" variant="ghost" size="icon-sm" className={terminalOpen ? styles.active : ''} disabled={!terminalAvailable} onClick={() => { if (!terminalAvailable) return; if (terminalOpen) updateLayout({ bottomOpen: false }); else { setBottomView('terminal'); updateLayout({ bottomOpen: true }); } }} aria-label="在应用内打开当前模式终端"><SquareTerminal /></Button></Hint>}
+			{showBottom && <Hint content={terminalAvailable ? '在应用内打开当前工作空间终端' : '请先选择当前模式的工作目录'}><Button type="button" variant="ghost" size="icon-sm" className={terminalOpen ? styles.active : ''} disabled={!terminalAvailable} onClick={() => { if (!terminalAvailable) return; if (terminalOpen) updateLayout({ bottomOpen: false }); else { setBottomView('terminal'); updateLayout({ bottomOpen: true }); } }} aria-label="在应用内打开当前模式终端"><SquareTerminal /></Button></Hint>}
 			<Hint content={displayedStatus}><span className={styles.path}>{displayedStatus}</span></Hint><span className={styles.grow} />
 			<Hint content={rightPanelLabel}><Button type="button" variant="ghost" size="icon-sm" className={styles.rightPanelToggle} onClick={() => updateLayout({ rightCollapsed: !layout.rightCollapsed })} aria-label={rightPanelLabel}>{layout.rightCollapsed ? <PanelRightOpen /> : <PanelRightClose />}</Button></Hint>
 		</footer>

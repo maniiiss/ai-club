@@ -11,8 +11,8 @@ function StepIcon({ state }: { state: DesignTodoItem['state'] }) {
 }
 
 /**
- * Design 计划沿用 Code 的输入框上方交互，但数据只来自 Design Agent 的 update_plan。
- * 业务意图：执行期间提供轻量进度入口，完整步骤放进悬浮层，避免把右侧栏变成固定工作流。
+ * Design 计划沿用 Code 的输入框上方交互，由模型通过结构化计划工具提交步骤。
+ * 业务意图：执行期间提供轻量进度入口，避免把复杂度判断硬编码在宿主关键词中。
  */
 export const DesignPlanProgressStatus = memo(function DesignPlanProgressStatus() {
 	const todos = useDesignStore((state) => state.todos);

@@ -18,6 +18,24 @@ Design 模式不再把“设计需求确认”作为固定首轮工作流。Agen
 
 执行中发现新的关键冲突时，Agent 可以再次调用澄清工具。澄清完成后不会新建会话，也不会把用户回答伪装成新的 Design 需求。
 
+## 上下文与 patch 策略
+
+Design Agent 首轮接收当前页面关系和 canonical 文件正文，避免简单修改还要额外执行读取片段、定位锚点和多次 patch。`design_read_file` 仍可按需读取某个文件的完整内容或指定范围，但不再是修改前的强制步骤。
+
+`design_apply_patch` 同时支持 `insert_text`、`replace_text` 和 `replace_file`。Agent 根据修改规模自行选择增量修改或整文件替换，不再强制分块插入，也不再设置 Agent 专用的 patch 文本上限；sidecar 仍保留路径校验、操作白名单和单文件 2MB 上限，避免无边界写入。
+
+每次 Design run 结束后可以释放内存中的 AgentSession，但不删除固定会话文件。Design 会话统一持久化到 `.gitpilot/sessions/<designId>/conversation.jsonl`；下一次请求重新打开同一 JSONL，恢复包含历史需求、助手回复、工具调用结果和压缩摘要在内的 Agent 上下文。Agent 开始回合前会预写用户消息，避免进程在首个 `message_end` 前退出时丢失刚提交的需求；正常结束不会重复追加。旧版 `.gitpilot/design/<designId>/.session/*.jsonl` 首次打开时按时间顺序迁移合并。
+
+canonical snapshot 负责设计文件、页面关系和 revision；Sidecar custom entry 负责 Desktop 可见的轻量 UI 消息。Desktop 的 `localStorage` 只保存当前项目、选中文件、视口和预设等轻量 UI 状态，不保存完整 snapshot、聊天消息、流式正文或工具执行数据。
+
+## 3.1 文件与 revision 持久化边界
+
+Design 的正式交付文件使用项目根目录作为唯一 canonical workspace：`pages/`、`shared/`、`assets/` 等路径直接写入项目根目录。预览、Desktop 文件树、文件管理器和导出都基于同一份相对路径，不再把正式 HTML/CSS/JS 隐藏在 `.gitpilot/design/<designId>/`。
+
+`.gitpilot/` 只保存 Design 元数据和运行辅助数据：`design.json` 保存当前文件索引与页面关系，`project-guidelines.json` 保存项目规范，`revisions/<revisionId>/files/` 保存不可变历史快照，`sessions/<designId>/` 保存 Agent 会话。Agent 执行期间的 patch 直接更新项目根目录和当前索引，但作为 draft 事件发送；一个 Design run 在 `design_run_settled` 时只创建一个正式 revision。手工 patch、页面重命名、回滚等显式用户操作仍可立即创建正式 revision。
+
+升级旧版本时，sidecar 会读取 `.gitpilot/design/` 下的旧快照，将文件复制到项目根目录并保留旧目录作为备份。目标文件已存在且内容不一致时迁移失败并报告冲突，不静默覆盖用户文件。
+
 ## 跨模块协议
 
 ### Design Agent 工具

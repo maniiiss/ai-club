@@ -157,7 +157,7 @@ describe('aggregateChangedFiles', () => {
 		];
 		const files = aggregateChangedFiles(ops);
 		expect(files).toHaveLength(1);
-		expect(files[0]).toEqual({ path: 'a.ts', status: 'modified', added: 2, removed: 1, diff: 'd', editCount: 1, editable: true });
+		expect(files[0]).toEqual({ path: 'a.ts', status: 'modified', added: 2, removed: 1, diff: 'd', diffs: ['d'], editCount: 1, editable: true });
 	});
 
 	it('同文件多次编辑合并：行数累计、status 取最严重、diff 取最后、editCount 递增', () => {
@@ -172,6 +172,20 @@ describe('aggregateChangedFiles', () => {
 		expect(files[0].status).toBe('deleted');
 		expect(files[0].diff).toBe('d2');
 		expect(files[0].editCount).toBe(2);
+	});
+
+	it('同文件多次编辑保留全部轮次 diff 序列，供审查面板逐轮展示', () => {
+		const ops = [
+			{ toolCallId: 't1', toolName: 'edit', path: 'a.ts', diff: 'd1', status: 'modified' as const, added: 1, removed: 1 },
+			{ toolCallId: 't2', toolName: 'edit', path: 'a.ts', diff: 'd2', status: 'modified' as const, added: 1, removed: 1 },
+			{ toolCallId: 't3', toolName: 'edit', path: 'a.ts', status: 'modified' as const, added: 3, removed: 0 },
+		];
+		const files = aggregateChangedFiles(ops);
+		// 前两轮有 diff，第三轮（write 降级）无 diff：序列只含有 diff 的轮次。
+		expect(files[0].diffs).toEqual(['d1', 'd2']);
+		// 单次编辑时序列只有一个元素，与 diff 字段一致。
+		const single = aggregateChangedFiles([{ toolCallId: 't4', toolName: 'edit', path: 'b.ts', diff: 'd9', status: 'modified' as const, added: 1, removed: 1 }]);
+		expect(single[0].diffs).toEqual(['d9']);
 	});
 
 	it('status 优先级 deleted > added > modified', () => {

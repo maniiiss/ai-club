@@ -84,7 +84,7 @@ export const useProjectFilesStore = create<ProjectFilesState>((set, get) => ({
 			if (response.success && response.command === 'code_file_list') {
 				set({ workspacePath, rootPath: response.data.rootPath, entries: response.data.entries, loading: false, error: null, truncated: response.data.truncated });
 			} else {
-				set({ loading: false, error: '项目文件加载失败', entries: [], rootPath: null });
+				set({ loading: false, error: '工作空间文件加载失败', entries: [], rootPath: null });
 			}
 		} catch (error) {
 			if (version !== refreshVersion) return;

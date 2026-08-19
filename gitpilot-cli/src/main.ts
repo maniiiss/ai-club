@@ -678,6 +678,9 @@ export async function main(args: string[], options?: MainOptions) {
 				noPromptTemplates: parsed.noPromptTemplates,
 				noThemes: parsed.noThemes,
 				noContextFiles: parsed.noContextFiles,
+				// Skill scope 只属于 Desktop RPC 的 Code 会话；普通 CLI 交互/打印模式
+				// 保持原有 Skill 加载行为，不被桌面端的模式分配设置意外影响。
+				skillMode: appMode === "rpc" ? "code" : undefined,
 				systemPrompt: parsed.systemPrompt,
 				// 桌面端使用 RPC 模式；语言约束放在 sidecar 的系统提示词中，
 				// 确保 Code 会话也默认用中文输出，同时不改变 CLI 交互模式的既有行为。

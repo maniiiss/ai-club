@@ -51,6 +51,8 @@ export interface ModelOverview {
 
 export interface ModelBreakdown {
   modelName: string
+  /** 模型配置名称；未关联配置的系统调用为空。 */
+  modelConfigName: string | null
   provider: string
   modelConfigId: number | null
   total: number
@@ -62,10 +64,22 @@ export interface ModelBreakdown {
   totalTokens: number
   avgDurationMs: number
   p95DurationMs: number
-  uniqueUsers: number
-  uniqueUserNames: string
   cachedTokens: number
   cacheHitRate: number | null
+}
+
+/** 按用户聚合的 Token 用量明细。 */
+export interface UserBreakdown {
+  userId: number | null
+  username: string | null
+  nickname: string | null
+  total: number
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  cachedTokens: number
+  cacheHitRate: number | null
+  lastInvokedAt: string | null
 }
 
 export interface ModelTrendPoint {
@@ -132,6 +146,14 @@ export const getModelUsageOverview = async (payload: ModelUsageQueryPayload) => 
 export const getModelUsageByModel = async (payload: ModelUsageQueryPayload) => {
   const { data } = await http.post<ApiResponse<ModelBreakdown[]>>(
     '/api/model-usage-stats/by-model',
+    cleanPayload(payload)
+  )
+  return data.data
+}
+
+export const getModelUsageByUser = async (payload: ModelUsageQueryPayload) => {
+  const { data } = await http.post<ApiResponse<UserBreakdown[]>>(
+    '/api/model-usage-stats/by-user',
     cleanPayload(payload)
   )
   return data.data

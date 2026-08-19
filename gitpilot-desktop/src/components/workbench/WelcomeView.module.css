@@ -1,0 +1,20 @@
+/* 空会话欢迎页：内容在会话窗口中垂直+水平居中，有消息时整体卸载，不影响消息态布局。
+ * 复用 Design 的 Canvas 粒子场景，但不复用 Design 外层的规则点阵。 */
+.root { position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 32px 24px; overflow: hidden; background-color: var(--landing-bg, #f7f8f7); background-image: none; }
+.root::before { position: absolute; inset: 0; background: var(--landing-glow, radial-gradient(circle at 50% 58%, rgba(255,255,255,.9), transparent 36%)); content: ''; pointer-events: none; }
+.background { position: absolute; inset: 0; z-index: 0; background: radial-gradient(circle at 72% 24%, var(--gp-accent-soft), transparent 34%), linear-gradient(180deg, transparent 0%, color-mix(in srgb, var(--landing-bg) 88%, var(--gp-panel-deep)) 100%); pointer-events: none; }
+.background > canvas { width: 100%; height: 100%; opacity: .86; }
+.hero { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+.heroIcon { display: inline-flex; width: 64px; height: 64px; align-items: center; justify-content: center; border: 1px solid var(--gp-border); border-radius: 20px; background: var(--gp-accent-soft); color: var(--gp-accent); }
+.title { margin: 0; color: var(--gp-text); font-size: calc(22px * var(--desktop-font-scale)); font-weight: 650; letter-spacing: .2px; }
+.composer { position: relative; z-index: 1; width: min(720px, 100%); }
+.chips { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; }
+.permissionChip { border: 1px solid var(--gp-border); border-radius: 999px; padding: 4px 12px; color: var(--gp-text-muted); font-size: calc(11px * var(--desktop-font-scale)); cursor: default; }
+
+/* 主题色板：与 DesignShell.landing 保持一致，靠 data-welcome-theme 切换；变量未匹配时回落到浅色默认值。 */
+.root[data-welcome-theme='current'] { --landing-bg: #0b1519; --landing-text: #e8f1f2; --landing-glow: radial-gradient(circle at 72% 27%, rgba(86,170,154,.22), transparent 35%), radial-gradient(circle at 50% 68%, rgba(13,44,50,.75), transparent 48%); }
+.root[data-welcome-theme='mono-dark'] { --landing-bg: #000; --landing-text: #fff; --landing-glow: radial-gradient(circle at 72% 27%, rgba(255,255,255,.12), transparent 35%), radial-gradient(circle at 50% 68%, rgba(255,255,255,.05), transparent 48%); }
+.root[data-welcome-theme='light'] { --landing-bg: #f7f9f8; --landing-text: #171c19; --landing-glow: radial-gradient(circle at 72% 27%, rgba(126,184,171,.13), transparent 35%), radial-gradient(circle at 50% 58%, rgba(255,255,255,.9), transparent 36%); }
+.root[data-welcome-theme='ember'] { --landing-bg: #171310; --landing-text: #f4ece3; --landing-glow: radial-gradient(circle at 72% 27%, rgba(240,164,91,.18), transparent 35%), radial-gradient(circle at 50% 68%, rgba(60,32,18,.72), transparent 48%); }
+.root[data-welcome-theme='paper'] { --landing-bg: #f8f5ee; --landing-text: #242522; --landing-glow: radial-gradient(circle at 72% 27%, rgba(176,82,58,.1), transparent 35%), radial-gradient(circle at 50% 58%, rgba(255,255,255,.92), transparent 36%); }
+.root[data-welcome-theme='glacier'] { --landing-bg: #eef3f7; --landing-text: #17212b; --landing-glow: radial-gradient(circle at 72% 27%, rgba(45,120,159,.1), transparent 35%), radial-gradient(circle at 50% 58%, rgba(255,255,255,.92), transparent 36%); }

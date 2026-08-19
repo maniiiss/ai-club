@@ -105,6 +105,12 @@ fn resolve_sidecar() -> Result<(String, String), Box<dyn std::error::Error>> {
 			"gitpilot-rpc-x86_64-pc-windows-msvc.exe",
 			"gitpilot-rpc.exe",
 		]
+	} else if cfg!(target_os = "macos") {
+		&[
+			"gitpilot-rpc-aarch64-apple-darwin",
+			"gitpilot-rpc-x86_64-apple-darwin",
+			"gitpilot-rpc",
+		]
 	} else {
 		&[
 			"gitpilot-rpc-x86_64-unknown-linux-gnu",

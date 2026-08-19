@@ -19,12 +19,15 @@ import type {
 	RpcExtensionUIRequest,
 	RpcResponse,
 	DesignProjectGuidelines,
+	DesignRpcMessage,
 	DesignRpcSnapshot,
 	DesignStreamLine,
 	CodeProjectFileEntry,
 	RpcSessionState,
 	RpcStreamLine,
 	ThinkingLevel,
+	ManagedMcpServer,
+	McpServerDefinition,
 } from './types';
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -54,6 +57,17 @@ let mockTimer: ReturnType<typeof setInterval> | null = null;
 // Mock 模式下跟踪用户选择的思考级别，使非 Tauri 预览也能反映切换结果。
 let mockThinkingLevel: ThinkingLevel = 'off';
 let mockDesignSnapshot: DesignRpcSnapshot | null = null;
+/** 非 Tauri 预览也保留一组可编辑 MCP 夹具，便于设置页联调完整配置与项目只读行为。 */
+let mockMcpServers: ManagedMcpServer[] = [
+	{
+		name: 'filesystem', source: 'global', enabled: true, modes: ['code', 'work'], transport: 'stdio',
+		definition: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem'], env: { API_KEY: '__GITPILOT_REDACTED__' }, requestTimeoutMs: 30000 },
+	},
+	{
+		name: 'team-search', source: 'project', enabled: true, modes: ['code'], transport: 'http',
+		definition: { url: 'https://mcp.example.com/mcp', httpTransport: 'streamable-http', headers: { Authorization: '__GITPILOT_REDACTED__' }, requestTimeoutMs: 30000 },
+	},
+];
 
 function createMockDesignSnapshot(designId: string, name = 'GitPilot Design'): DesignRpcSnapshot {
 	const base = createDemoSnapshot();
@@ -178,7 +192,7 @@ export const rpc = {
 	abort: (clearQueue = false) => send({ type: 'abort', clearQueue }),
 	prepareAttachments: (items: AttachmentInput[]) => send({ type: 'prepare_attachments', items }),
 	codeFileList: () => send({ type: 'code_file_list' }),
-	newWorkSession: (taskId: string) => send({ type: 'new_work_session', taskId }),
+	newWorkSession: (taskId: string, workspacePath?: string) => send({ type: 'new_work_session', taskId, workspacePath }),
 	workPrompt: (payload: { taskId: string; message: string }) => send({ type: 'work_prompt', ...payload }, 120_000),
 	workAbort: (requestId?: string) => send({ type: 'work_abort', requestId }),
 	workFileList: (taskId: string) => send({ type: 'work_file_list', taskId }),
@@ -188,12 +202,13 @@ export const rpc = {
 	workFileRename: (taskId: string, path: string, newPath: string) => send({ type: 'work_file_rename', taskId, path, newPath }),
 	workPrepareAttachments: (items: AttachmentInput[]) => send({ type: 'work_prepare_attachments', items }),
 	designOpen: (projectPath: string) => send({ type: 'design_open', projectPath }),
+	designSyncMessages: (projectPath: string, designId: string, messages: DesignRpcMessage[]) => send({ type: 'design_sync_messages', projectPath, designId, messages }),
 	designSaveGuidelines: (projectPath: string, designId: string, guidelines: DesignProjectGuidelines) => send({ type: 'design_save_guidelines', projectPath, designId, guidelines }),
 	designRenamePage: (payload: { projectPath: string; designId: string; pageId: string; name: string; baseRevisionId: string }) => send({ type: 'design_rename_page', ...payload }),
 	designCreate: (projectPath: string, name?: string) => send({ type: 'design_create', projectPath, name }),
 	designGetSnapshot: (projectPath: string, designId: string) => send({ type: 'design_get_snapshot', projectPath, designId }),
 	designGetRevision: (projectPath: string, designId: string, revisionId: string) => send({ type: 'design_get_revision', projectPath, designId, revisionId }),
-	designPrompt: (payload: { projectPath: string; designId: string; pageId: string; prompt: string; baseRevisionId?: string; targetProfiles: Array<'mobile' | 'tablet' | 'desktop'> }) => send({ type: 'design_prompt', ...payload }),
+	designPrompt: (payload: { projectPath: string; designId: string; pageId: string; prompt: string; baseRevisionId?: string; targetProfiles: Array<'mobile' | 'tablet' | 'desktop'>; uiMessageId?: string }) => send({ type: 'design_prompt', ...payload }),
 	designClarificationResponse: (payload: { projectPath: string; designId: string; clarificationId: string; answer: string }) => send({ type: 'design_clarification_response', ...payload }),
 	designFollowUp: (projectPath: string, designId: string, message: string) => send({ type: 'design_follow_up', projectPath, designId, message }),
 	designAbort: (projectPath: string, designId: string) => send({ type: 'design_abort', projectPath, designId }),
@@ -207,11 +222,16 @@ export const rpc = {
 	designUpload: (payload: { projectPath: string; designId: string; revisionId: string; platformProjectId: number; title?: string; summary?: string }) => send({ type: 'design_upload', ...payload }, 90_000),
 	designExport: (projectPath: string, designId: string, outputPath?: string) => send({ type: 'design_export', projectPath, designId, outputPath }),
 	mcpList: () => send({ type: 'mcp_list' }),
-	mcpSaveServer: (name: string, definition: Record<string, unknown>, modes: Array<'code' | 'work' | 'design'>) => send({ type: 'mcp_save_server', name, definition, modes }),
+	mcpSaveServer: (name: string, definition: McpServerDefinition, modes: Array<'code' | 'work' | 'design'>, previousName?: string) => send({ type: 'mcp_save_server', name, definition, modes, previousName }),
+	mcpCopyServer: (name: string) => send({ type: 'mcp_copy_server', name }),
 	mcpDeleteServer: (name: string) => send({ type: 'mcp_delete_server', name }),
 	mcpSetModes: (name: string, modes: Array<'code' | 'work' | 'design'>) => send({ type: 'mcp_set_modes', name, modes }),
 	mcpSetEnabled: (name: string, enabled: boolean) => send({ type: 'mcp_set_enabled', name, enabled }),
 	mcpReload: () => send({ type: 'mcp_reload' }),
+	skillList: () => send({ type: 'skill_list' }),
+	skillSetEnabled: (name: string, enabled: boolean) => send({ type: 'skill_set_enabled', name, enabled }),
+	skillSetModes: (name: string, modes: Array<'code' | 'work' | 'design'>) => send({ type: 'skill_set_modes', name, modes }),
+	skillReload: () => send({ type: 'skill_reload' }),
 	newSession: (cwd?: string, parentSession?: string) => send({ type: 'new_session', cwd, parentSession }),
 	getState: () => send({ type: 'get_state' }),
 	setModel: (provider: string, modelId: string) => send({ type: 'set_model', provider, modelId }),
@@ -347,6 +367,56 @@ function mockResponseFor(cmd: RpcCommand & { id: string }): RpcResponse {
 			}, 0);
 			return { id, type: 'response', command: 'design_prompt', success: true, data: { requestId, runId } };
 		}
+		case 'mcp_list':
+			return { id, type: 'response', command: 'mcp_list', success: true, data: { servers: mockMcpServers } };
+		case 'mcp_save_server': {
+			const previousName = cmd.previousName ?? cmd.name;
+			mockMcpServers = mockMcpServers.filter((server) => server.name !== previousName && server.name !== cmd.name);
+			const transport = typeof cmd.definition.command === 'string' && cmd.definition.command.trim() ? 'stdio' : cmd.definition.httpTransport === 'sse' ? 'sse' : 'http';
+			mockMcpServers.push({ name: cmd.name, source: 'global', enabled: cmd.definition.disabled !== true, modes: cmd.modes, transport, definition: cmd.definition });
+			return { id, type: 'response', command: 'mcp_save_server', success: true };
+		}
+		case 'mcp_copy_server': {
+			const source = mockMcpServers.find((server) => server.name === cmd.name);
+			if (!source) return { id, type: 'response', command: 'mcp_copy_server', success: false, error: `MCP 服务不存在：${cmd.name}` };
+			if (source.source === 'global') return { id, type: 'response', command: 'mcp_copy_server', success: false, error: `只能复制项目来源 MCP 服务：${cmd.name}` };
+			let name = `${source.name}-global`;
+			let suffix = 2;
+			while (mockMcpServers.some((server) => server.name === name)) name = `${source.name}-global-${suffix++}`;
+			mockMcpServers.push({ ...source, name, source: 'global', definition: { ...source.definition } });
+			return { id, type: 'response', command: 'mcp_copy_server', success: true, data: { name } };
+		}
+		case 'mcp_delete_server':
+			mockMcpServers = mockMcpServers.filter((server) => server.name !== cmd.name || server.source !== 'global');
+			return { id, type: 'response', command: 'mcp_delete_server', success: true };
+		case 'mcp_set_modes': {
+			mockMcpServers = mockMcpServers.map((server) => server.name === cmd.name && server.source === 'global' ? { ...server, modes: [...new Set(cmd.modes)] } : server);
+			return { id, type: 'response', command: 'mcp_set_modes', success: true };
+		}
+		case 'mcp_set_enabled': {
+			mockMcpServers = mockMcpServers.map((server) => server.name === cmd.name && server.source === 'global' ? { ...server, enabled: cmd.enabled, definition: { ...server.definition, disabled: !cmd.enabled } } : server);
+			return { id, type: 'response', command: 'mcp_set_enabled', success: true };
+		}
+		case 'mcp_reload':
+			return { id, type: 'response', command: 'mcp_reload', success: true };
+		case 'skill_list':
+			return {
+				id,
+				type: 'response',
+				command: 'skill_list',
+				success: true,
+				data: {
+					skills: [
+						{ id: 'cross-agent-harness', name: 'cross-agent-harness', description: '为多智能体仓库创建并维护协作规范。', source: 'builtin', filePath: 'C:/GitPilot/skills/cross-agent-harness/SKILL.md', enabled: true, modes: ['code'], disableModelInvocation: false },
+						{ id: 'frontend-review', name: 'frontend-review', description: '检查界面可访问性、布局与视觉一致性。', source: 'personal', filePath: 'C:/Users/you/.agents/skills/frontend-review/SKILL.md', enabled: true, modes: ['code', 'design'], disableModelInvocation: false },
+					],
+					diagnostics: [],
+				},
+			};
+		case 'skill_set_enabled':
+		case 'skill_set_modes':
+		case 'skill_reload':
+			return { id, type: 'response', command: cmd.type, success: true, data: { reloadedModes: ['code', 'work', 'design'], deferredModes: [] } };
 		case 'get_state':
 			return {
 				id,
