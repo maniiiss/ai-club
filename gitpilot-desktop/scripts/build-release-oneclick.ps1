@@ -1,7 +1,16 @@
+[CmdletBinding()]
+param(
+    # 发布 API 基地址或完整 updater 清单地址；构建时会注入安装包，不写回源码配置。
+    [Parameter(Mandatory = $true, HelpMessage = '请输入平台 API 地址，例如 https://release.example.com')]
+    [string]$ApiBaseUrl,
+    [Parameter(Position = 0)]
+    [string]$Version
+)
+
 # GitPilot Desktop 一键发布打包脚本（Windows PowerShell）
 # 用法：
-#   powershell -ExecutionPolicy Bypass -File scripts\build-release-oneclick.ps1 [版本号]
-#   或直接双击 scripts\build-release-oneclick.cmd
+#   powershell -ExecutionPolicy Bypass -File scripts\build-release-oneclick.ps1 [版本号] -ApiBaseUrl https://你的平台域名
+#   或直接双击 scripts\build-release-oneclick.cmd，按提示填写 API 地址
 # - 自动把版本同步到 package.json / src-tauri\Cargo.toml / src-tauri\tauri.conf.json
 # - 自动确保 Tauri 签名密钥存在（不存在则生成），并把公钥同步进 tauri.conf.json
 # - 构建 MSI + NSIS 安装器 + updater ZIP + .sig 签名，整理成后台上传六件套
@@ -19,12 +28,27 @@ function Read-SecretText {
     finally { [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr) }
 }
 function Write-Utf8NoBom { param([string]$Path, [string]$Content) [System.IO.File]::WriteAllText($Path, $Content, (New-Object System.Text.UTF8Encoding($false))) }
+# 业务意图：把发布者填写的地址统一成 Tauri 动态清单地址，避免空 endpoint 被编译进安装包。
+function Get-UpdaterEndpoint {
+    param([string]$Value)
+
+    $trimmed = $Value.Trim().TrimEnd('/')
+    if ($trimmed -notmatch '^https?://[^\s]+$') {
+        throw '错误：ApiBaseUrl 必须是 http:// 或 https:// 开头的地址。'
+    }
+    if ($trimmed -match '/api/desktop-updates/\{\{target\}\}/\{\{arch\}\}/\{\{bundle_type\}\}/\{\{current_version\}\}$') {
+        return $trimmed
+    }
+
+    return "$trimmed/api/desktop-updates/{{target}}/{{arch}}/{{bundle_type}}/{{current_version}}"
+}
 
 Set-Location (Join-Path $PSScriptRoot '..')
 
+$UpdaterEndpoint = Get-UpdaterEndpoint $ApiBaseUrl
+
 # ---------- 1. 版本号 ----------
 $SemverRegex = '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
-$Version = $args[0]
 if (-not $Version) { $Version = $env:GITPILOT_RELEASE_VERSION }
 if (-not $Version) {
     $currentVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
@@ -81,11 +105,28 @@ if ((Get-Content src-tauri\tauri.conf.json -Raw | ConvertFrom-Json).bundle.creat
 Write-Step "构建并签名（MSI + NSIS + updater ZIP + .sig）"
 $signingPassword = $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 if (-not $signingPassword) { $signingPassword = Read-SecretText '请输入签名私钥口令（无口令直接回车）' }
+$tempConfigPath = Join-Path ([System.IO.Path]::GetTempPath()) "gitpilot-tauri-release-$([guid]::NewGuid().ToString('N')).json"
+$configOverlay = [ordered]@{
+    plugins = [ordered]@{
+        updater = [ordered]@{
+            endpoints = @($UpdaterEndpoint)
+        }
+    }
+}
+Write-Utf8NoBom $tempConfigPath ($configOverlay | ConvertTo-Json -Depth 10)
+Write-Host "Updater endpoint: $UpdaterEndpoint" -ForegroundColor DarkGray
 $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content $keyPath -Raw)
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $signingPassword
-npm.cmd run tauri -- build --bundles msi,nsis
-Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY -ErrorAction SilentlyContinue
-Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ErrorAction SilentlyContinue
+try {
+    npm.cmd run tauri -- build --config $tempConfigPath --bundles msi,nsis
+}
+finally {
+    Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY -ErrorAction SilentlyContinue
+    Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $tempConfigPath) {
+        Remove-Item -LiteralPath $tempConfigPath -Force -ErrorAction SilentlyContinue
+    }
+}
 
 # ---------- 6. 整理六件套 ----------
 Write-Step "整理发布产物流入 release-artifacts\$Version"

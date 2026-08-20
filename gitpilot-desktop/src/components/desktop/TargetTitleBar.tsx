@@ -1,5 +1,5 @@
 /** 目标工作台标题栏：只保留窗口、布局和账户入口，不混入旧标题栏 DOM。 */
-import { BriefcaseBusiness, Code2, Copy, Minus, Palette, RefreshCw, Square, X } from 'lucide-react';
+import { BriefcaseBusiness, Code2, Copy, Minus, Palette, Square, X } from 'lucide-react';
 import { useEffect, useState, type MouseEvent } from 'react';
 import { closeWindow, minimizeWindow, onWindowMaximizedChange, startDraggingWindow, toggleMaximizeWindow } from '@/src/desktop/window';
 import { useSessionStore } from '@/src/store/session';
@@ -21,8 +21,6 @@ const MODE_META: ReadonlyArray<{ key: AppMode; label: string; Icon: typeof Code2
 
 export function TargetTitleBar() {
 	const reportError = useSessionStore((s) => s.reportError);
-	const isRefreshing = useSessionStore((s) => s.isRefreshing);
-	const manualRefresh = useSessionStore((s) => s.manualRefresh);
 	const mode = useAppModeStore((s) => s.mode);
 	const setMode = useAppModeStore((s) => s.setMode);
 	// 记录窗口当前是否最大化，用于在标题栏按钮上切换“放大/缩小”图标。
@@ -77,11 +75,6 @@ export function TargetTitleBar() {
 			</div>
 			<div className={styles.spacer} />
 			<div className={styles.actions} onMouseDown={(event) => event.stopPropagation()}>
-				<Hint content="刷新：同步平台模型配置与会话状态">
-					<Button variant="ghost" size="icon-sm" onClick={() => void manualRefresh()} disabled={isRefreshing} aria-label="刷新">
-						<RefreshCw className={isRefreshing ? 'animate-spin' : undefined} />
-					</Button>
-				</Hint>
 				<TargetUserMenu />
 				<span className={styles.divider} />
 				<Hint content="最小化"><Button variant="ghost" size="icon-sm" onClick={() => runWindowAction('最小化', minimizeWindow)} aria-label="最小化"><Minus /></Button></Hint>

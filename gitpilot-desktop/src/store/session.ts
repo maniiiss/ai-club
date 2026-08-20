@@ -571,9 +571,7 @@ interface SessionStore {
 	/** 用 get_session_snapshot 原子恢复当前会话消息与执行态（重连/启动后调用）。 */
 	loadSessionSnapshot: () => Promise<void>;
 	refreshPlatformConnection: () => Promise<void>;
-	/** 用户点击底栏状态时重新请求平台账户、模型与连通状态。 */
-	retryPlatformConnection: () => Promise<void>;
-	/** 标题栏手动刷新：先强制 sidecar 联网重拉平台模型清单（同步管理端新配置），再全量刷新桌面状态。 */
+	/** 用户在头像弹窗点刷新时：强制 sidecar 联网重拉平台模型清单（同步管理端新配置），再全量刷新桌面状态。 */
 	manualRefresh: () => Promise<void>;
 	refreshSessionList: () => Promise<void>;
 	setComposerDraft: (sessionPath: string, draft: ComposerDraft) => void;
@@ -1620,14 +1618,10 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		set({ platformConnection: 'disconnected' });
 	},
 
-	retryPlatformConnection: async () => {
-		set({ platformConnection: 'checking' });
-		await get().refreshAll();
-	},
-
 	manualRefresh: async () => {
 		if (get().isRefreshing) return;
-		set({ isRefreshing: true });
+		// platformConnection 置为 checking 让头像弹窗刷新按钮保持转圈与禁用反馈。
+		set({ isRefreshing: true, platformConnection: 'checking' });
 		try {
 			// 先强制 sidecar 联网重拉平台模型清单并重解析当前模型：
 			// 管理端修改 visionRouting、输入模态等能力后，只有显式联网刷新才能覆盖本地缓存。

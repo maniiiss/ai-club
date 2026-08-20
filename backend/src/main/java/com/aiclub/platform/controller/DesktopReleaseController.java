@@ -28,6 +28,7 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.net.URI;
 import java.time.Duration;
+import java.util.Optional;
 
 /**
  * GitPilot Desktop 发布中心接口。
@@ -105,9 +106,15 @@ public class DesktopReleaseController {
             @RequestParam(defaultValue = "stable") String channel,
             @RequestParam(defaultValue = "windows") String platform,
             @RequestParam(defaultValue = "x86_64") String arch) {
-        return ResponseEntity.ok()
-                .cacheControl(CacheControl.maxAge(Duration.ofMinutes(5)).cachePublic())
-                .body(ApiResponse.success(releaseService.latest(channel, platform, arch).orElse(null)));
+        Optional<DesktopReleaseLatest> latest = releaseService.latest(channel, platform, arch);
+        ResponseEntity.BodyBuilder response = ResponseEntity.ok();
+        if (latest.isPresent()) {
+            response.cacheControl(CacheControl.maxAge(Duration.ofMinutes(5)).cachePublic());
+        } else {
+            // 业务意图：发布前的“暂无版本”不能被缓存，否则管理员发布后宣传页会继续显示旧状态。
+            response.cacheControl(CacheControl.noStore());
+        }
+        return response.body(ApiResponse.success(latest.orElse(null)));
     }
 
     /** 通过短期 presigned URL 下载已发布的安装器或 updater 压缩包。 */

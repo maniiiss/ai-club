@@ -19,7 +19,7 @@ export function TargetUserMenu() {
 	const logout = useSessionStore((s) => s.logout);
 	const sidecarConnection = useSessionStore((s) => s.connection);
 	const platformConnection = useSessionStore((s) => s.platformConnection);
-	const retryPlatformConnection = useSessionStore((s) => s.retryPlatformConnection);
+	const manualRefresh = useSessionStore((s) => s.manualRefresh);
 	const [avatarFailed, setAvatarFailed] = useState(false);
 	const name = displayName(account);
 	const avatarUrl = avatarFailed ? null : resolveAvatarUrl(account);
@@ -29,7 +29,7 @@ export function TargetUserMenu() {
 	const avatar = (large = false) => <span className={`${styles.avatar} ${large ? styles.large : ''}`}>{avatarUrl ? <img src={avatarUrl} alt={`${name}的头像`} onError={() => setAvatarFailed(true)} /> : initials(name)}</span>;
 	const openWeb = async () => { if (DEPLOYMENT.webBaseUrl) await invoke('open_platform_web', { platformUrl: DEPLOYMENT.webBaseUrl }); };
 	return <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className={`${styles.trigger} focus-visible:outline-none focus-visible:ring-0`} aria-label={`账户菜单，平台${connectionLabel}`}><span className={styles.avatarWithStatus}>{account ? avatar() : <span className={styles.avatar}><UserRound size={14} /></span>}<Hint content={`平台 · ${connectionLabel}`}><span className={`${styles.statusDot} ${isConnected ? styles.statusReady : styles.statusOffline}`} aria-label={`平台${connectionLabel}`} /></Hint></span><ChevronDown size={12} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className={styles.content}>
-		<div className={styles.identityHeader}><div className={styles.identity}>{avatar(true)}<span><b>{name}</b><small>{account?.user.username ?? '正在读取账户信息…'}</small></span></div><Hint content="重新检查连接"><Button variant="ghost" size="icon-sm" className={styles.refreshButton} onClick={() => void retryPlatformConnection()} disabled={platformConnection === 'checking'} aria-label="重新检查连接"><RefreshCw className={platformConnection === 'checking' ? 'animate-spin' : undefined} /></Button></Hint></div>
+		<div className={styles.identityHeader}><div className={styles.identity}>{avatar(true)}<span><b>{name}</b><small>{account?.user.username ?? '正在读取账户信息…'}</small></span></div><Hint content="刷新：同步平台模型配置与账户状态"><Button variant="ghost" size="icon-sm" className={styles.refreshButton} onClick={() => void manualRefresh()} disabled={platformConnection === 'checking'} aria-label="刷新模型配置与账户状态"><RefreshCw className={platformConnection === 'checking' ? 'animate-spin' : undefined} /></Button></Hint></div>
 		<div className={styles.credits}><Coins size={14} /><span>积分</span><b>{account?.creditBalance ?? '—'}</b></div>
 		<DropdownMenuSeparator />
 		<DropdownMenuItem onSelect={() => useSettingsDialogStore.getState().show('basic')}><Settings2 />设置</DropdownMenuItem>
