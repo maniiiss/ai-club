@@ -24,6 +24,7 @@ export interface DesktopUpdateState {
 
 function readableError(cause: unknown): string {
 	const message = cause instanceof Error ? cause.message : String(cause);
+	if (/endpoint|not configured|未配置/i.test(message)) return '暂未配置自动更新服务，请直接下载最新安装包手动升级。';
 	if (/signature|签名|verify|校验/i.test(message)) return '更新签名校验失败，安装已阻止。请重新检查更新或联系管理员。';
 	if (/network|fetch|连接|timeout|超时/i.test(message)) return '无法连接更新服务，请检查网络后重试。';
 	return message.length > 180 ? `${message.slice(0, 177)}…` : message;

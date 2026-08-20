@@ -13,4 +13,6 @@ public interface DesktopReleaseArtifactRepository extends JpaRepository<DesktopR
 
     Optional<DesktopReleaseArtifactEntity> findByReleaseIdAndArtifactKindAndPlatformAndArchAndBundleType(
             Long releaseId, String artifactKind, String platform, String arch, String bundleType);
+
+    void deleteAllByReleaseId(Long releaseId);
 }

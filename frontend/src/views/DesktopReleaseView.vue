@@ -25,7 +25,7 @@
               <td data-label="状态"><el-tag size="small" :type="statusType(row.status)">{{ statusLabel(row.status) }}</el-tag></td>
               <td data-label="产物"><span class="desktop-release-artifact-count">{{ row.artifactCount }} / 6</span></td>
               <td data-label="发布时间"><span class="management-list-updated">{{ formatDate(row.publishedAt || row.createdAt) }}</span></td>
-              <td class="right" data-label="操作"><button class="management-list-row-button" type="button" title="查看发布详情" @click.stop="openDetail(row)"><el-icon><View /></el-icon></button></td>
+              <td class="right" data-label="操作"><button class="management-list-row-button" type="button" title="查看发布详情" @click.stop="openDetail(row)"><el-icon><View /></el-icon></button><button v-if="row.status === 'REVOKED' && canManage" class="management-list-row-button danger" type="button" title="删除已撤回记录" @click.stop="handleDeleteRow(row)"><el-icon><Delete /></el-icon></button></td>
             </tr>
             <tr v-if="!loading && !items.length"><td colspan="6"><el-empty description="暂无桌面版本草稿或发布记录" /></td></tr>
           </tbody>
@@ -42,7 +42,7 @@
         <div class="desktop-release-detail-head"><div><div class="desktop-release-detail-eyebrow">Windows x64 · stable</div><h2>GitPilot Desktop {{ detail.version }}</h2><p>{{ detail.title }} · {{ statusLabel(detail.status) }} · {{ formatDate(detail.publishedAt || detail.createdAt) }}</p></div><el-tag :type="statusType(detail.status)">{{ statusLabel(detail.status) }}</el-tag></div>
         <el-alert v-if="detail.status === 'DRAFT'" type="warning" :closable="false" show-icon title="草稿可继续替换产物；发布后版本和产物均不可编辑。" />
         <div class="desktop-release-detail-grid"><section><h3>发布说明</h3><pre class="desktop-release-notes">{{ detail.releaseNotes || '未填写发布说明' }}</pre></section><section><h3>产物矩阵 <small>{{ detail.artifacts.length }} / 6</small></h3><div class="desktop-release-artifacts"><div v-for="cell in artifactCells" :key="`${cell.kind}-${cell.bundle}`" class="desktop-release-artifact-cell" :class="{ uploaded: cell.artifact }"><div><strong>{{ artifactLabel(cell.kind) }}</strong><span>{{ cell.bundle.toUpperCase() }}</span></div><template v-if="cell.artifact"><p>{{ cell.artifact.fileName }}</p><small>{{ formatBytes(cell.artifact.fileSize) }} · SHA {{ cell.artifact.sha256.slice(0, 12) }}…</small></template><template v-else><p class="desktop-release-missing">待上传</p></template><button v-if="detail.status === 'DRAFT'" type="button" class="desktop-release-upload-button" :disabled="uploading" @click="pickArtifact(cell.kind, cell.bundle)"><el-icon><Upload /></el-icon>{{ cell.artifact ? '替换' : '上传' }}</button></div></div></section></div>
-        <div class="desktop-release-actions"><el-button v-if="detail.status === 'DRAFT'" type="primary" :disabled="!canPublish" :loading="working" @click="handlePublish">发布版本</el-button><el-button v-if="detail.status === 'PUBLISHED'" type="danger" plain :loading="working" @click="handleRevoke">撤回版本</el-button><span v-if="detail.status === 'DRAFT' && !canPublish" class="desktop-release-action-hint">上传 MSI、NSIS 的安装器、updater ZIP 和 .sig 后才能发布。</span></div>
+        <div class="desktop-release-actions"><el-button v-if="detail.status === 'DRAFT'" type="primary" :disabled="!canPublish" :loading="working" @click="handlePublish">发布版本</el-button><el-button v-if="detail.status === 'PUBLISHED'" type="danger" plain :loading="working" @click="handleRevoke">撤回版本</el-button><el-button v-if="detail.status === 'REVOKED'" type="danger" plain :loading="working" @click="handleDelete">删除记录</el-button><span v-if="detail.status === 'DRAFT' && !canPublish" class="desktop-release-action-hint">上传 MSI、NSIS 的安装器、updater ZIP 和 .sig 后才能发布。</span></div>
       </template>
     </el-drawer>
 
@@ -61,8 +61,8 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { ArrowLeft, ArrowRight, Plus, RefreshRight, Upload, View } from '@element-plus/icons-vue'
-import { createDesktopRelease, getDesktopRelease, pageDesktopReleases, publishDesktopRelease, revokeDesktopRelease, uploadDesktopReleaseArtifact } from '@/api/desktop-release'
+import { ArrowLeft, ArrowRight, Delete, Plus, RefreshRight, Upload, View } from '@element-plus/icons-vue'
+import { createDesktopRelease, deleteDesktopRelease, getDesktopRelease, pageDesktopReleases, publishDesktopRelease, revokeDesktopRelease, uploadDesktopReleaseArtifact } from '@/api/desktop-release'
 import { useAuthStore } from '@/stores/auth'
 import type { DesktopArtifactKind, DesktopBundleType, DesktopReleaseDetail, DesktopReleaseStatus, DesktopReleaseSummary } from '@/types/desktop-release'
 
@@ -128,6 +128,17 @@ const handleRevoke = async () => {
   await ElMessageBox.confirm('撤回后新客户端将无法继续下载该版本，已安装客户端不会自动降级。确认撤回吗？', '确认撤回', { type: 'warning', confirmButtonText: '确认撤回', cancelButtonText: '取消' })
   working.value = true
   try { detail.value = await revokeDesktopRelease(detail.value.id); await loadReleases(); ElMessage.success('桌面版本已撤回') } catch (error: any) { ElMessage.error(error?.response?.data?.message || '撤回桌面版本失败') } finally { working.value = false }
+}
+const handleDelete = async () => {
+  if (!detail.value) return
+  await ElMessageBox.confirm('删除后将释放该版本号，可重新创建同版本草稿，已删除的记录和产物无法恢复。确认删除吗？', '确认删除', { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' })
+  working.value = true
+  try { await deleteDesktopRelease(detail.value.id); drawerVisible.value = false; detail.value = null; await loadReleases(); ElMessage.success('已撤回的桌面版本已删除') } catch (error: any) { ElMessage.error(error?.response?.data?.message || '删除桌面版本失败') } finally { working.value = false }
+}
+const handleDeleteRow = async (row: DesktopReleaseSummary) => {
+  await ElMessageBox.confirm(`删除后将释放版本号 v${row.version}，可重新创建同版本草稿，已删除的记录和产物无法恢复。确认删除吗？`, '确认删除', { type: 'warning', confirmButtonText: '确认删除', cancelButtonText: '取消' })
+  working.value = true
+  try { await deleteDesktopRelease(row.id); if (detail.value?.id === row.id) { drawerVisible.value = false; detail.value = null } await loadReleases(); ElMessage.success('已撤回的桌面版本已删除') } catch (error: any) { ElMessage.error(error?.response?.data?.message || '删除桌面版本失败') } finally { working.value = false }
 }
 onMounted(loadReleases)
 </script>

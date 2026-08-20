@@ -24,6 +24,8 @@ import java.util.Set;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -142,6 +144,49 @@ class DesktopReleaseServiceTests {
                 .isInstanceOf(java.util.NoSuchElementException.class)
                 .hasMessageContaining("不可下载");
         verify(storageService, never()).presignedDownloadUrl(any());
+    }
+
+    @Test
+    void shouldDeleteRevokedReleaseAndCleanupArtifacts() {
+        DesktopReleaseEntity revoked = release(12L, "1.2.0", DesktopReleaseService.STATUS_REVOKED);
+        DesktopReleaseArtifactEntity first = artifact(21L, DesktopReleaseService.ARTIFACT_INSTALLER, "msi");
+        first.setObjectKey("desktop-releases/12/installer.msi");
+        DesktopReleaseArtifactEntity second = artifact(22L, DesktopReleaseService.ARTIFACT_UPDATER, "nsis");
+        second.setObjectKey("desktop-releases/12/updater.zip");
+        when(releaseRepository.findById(12L)).thenReturn(Optional.of(revoked));
+        when(artifactRepository.findAllByReleaseIdOrderByIdAsc(12L)).thenReturn(List.of(first, second));
+
+        service.deleteRevoked(12L);
+
+        verify(storageService).delete("desktop-releases/12/installer.msi");
+        verify(storageService).delete("desktop-releases/12/updater.zip");
+        verify(artifactRepository).deleteAllByReleaseId(12L);
+        verify(releaseRepository).delete(revoked);
+    }
+
+    @Test
+    void shouldNotDeleteDraftOrPublishedRelease() {
+        when(releaseRepository.findById(12L)).thenReturn(Optional.of(release(12L, "1.2.0", DesktopReleaseService.STATUS_DRAFT)));
+        assertThatThrownBy(() -> service.deleteRevoked(12L))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("不允许该操作");
+        verify(releaseRepository, never()).delete(any(DesktopReleaseEntity.class));
+        verify(artifactRepository, never()).deleteAllByReleaseId(anyLong());
+    }
+
+    @Test
+    void shouldStillDeleteRevokedReleaseWhenStorageCleanupFails() {
+        DesktopReleaseEntity revoked = release(12L, "1.2.0", DesktopReleaseService.STATUS_REVOKED);
+        DesktopReleaseArtifactEntity artifact = artifact(21L, DesktopReleaseService.ARTIFACT_INSTALLER, "msi");
+        artifact.setObjectKey("desktop-releases/12/installer.msi");
+        when(releaseRepository.findById(12L)).thenReturn(Optional.of(revoked));
+        when(artifactRepository.findAllByReleaseIdOrderByIdAsc(12L)).thenReturn(List.of(artifact));
+        doThrow(new IllegalStateException("minio down")).when(storageService).delete("desktop-releases/12/installer.msi");
+
+        service.deleteRevoked(12L);
+
+        verify(artifactRepository).deleteAllByReleaseId(12L);
+        verify(releaseRepository).delete(revoked);
     }
 
     private DesktopReleaseEntity release(Long id, String version, String status) {

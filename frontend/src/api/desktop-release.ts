@@ -42,3 +42,8 @@ export const revokeDesktopRelease = async (id: number) => {
   const { data } = await http.post<ApiResponse<DesktopReleaseDetail>>(`/api/desktop-releases/${id}/revoke`)
   return data.data
 }
+
+/** 删除已撤回的桌面版本记录，释放版本号以便重建同版本草稿。 */
+export const deleteDesktopRelease = async (id: number) => {
+  await http.delete<ApiResponse<null>>(`/api/desktop-releases/${id}`)
+}

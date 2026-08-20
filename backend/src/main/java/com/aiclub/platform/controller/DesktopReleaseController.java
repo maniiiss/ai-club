@@ -16,6 +16,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -88,6 +89,14 @@ public class DesktopReleaseController {
     @OperationLog(moduleCode = "DESKTOP_RELEASE", moduleName = "桌面版本发布", actionCode = "REVOKE", actionName = "撤回桌面版本", bizType = "DESKTOP_RELEASE", bizIdParam = "id")
     public ApiResponse<DesktopReleaseDetail> revoke(@PathVariable Long id) {
         return ApiResponse.success(releaseService.revoke(id));
+    }
+
+    @DeleteMapping("/{id}")
+    @RequirePermission("system:desktop-release:manage")
+    @OperationLog(moduleCode = "DESKTOP_RELEASE", moduleName = "桌面版本发布", actionCode = "DELETE", actionName = "删除已撤回版本", bizType = "DESKTOP_RELEASE", bizIdParam = "id")
+    public ApiResponse<Void> delete(@PathVariable Long id) {
+        releaseService.deleteRevoked(id);
+        return ApiResponse.success(null);
     }
 
     /** 公众端下载页使用的最新 stable 版本元数据。 */

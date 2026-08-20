@@ -90,7 +90,12 @@ export interface ExecutionRun {
 	endedAt?: number;
 	/** 当前 run 在 sidecar 的权威 runId（仅 hydrateExecutionSnapshot 后存在），用于序号守卫。 */
 	runId?: string;
-	/** 已应用的最新事件游标（仅 hydrateExecutionSnapshot 后存在）；普通事件丢弃旧游标，终态事件例外。 */
+	/**
+	 * 已应用的最新事件游标（会话级，单调不回退）。
+	 * hydrateExecutionSnapshot 绑定后，beginExecution 也会保留它：
+	 * 新 run 绑定 runId 之前，序号不超过该游标的事件都是上一轮 settle 后的空闲期回声，
+	 * 依据它识别并丢弃，避免把新一轮执行误绑定到旧 run。
+	 */
 	lastSequence?: number;
 }
 
@@ -604,7 +609,13 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 		});
 		return matched;
 	},
-	beginExecution: (prompt) => set({ execution: createRun(prompt), selectedStepId: null, contentDrawer: null }),
+	beginExecution: (prompt) => set((state) => ({
+		// 保留会话级事件游标：新一轮 run 绑定 runId 前，序号不超过游标的
+		// 事件都是上一轮 settle 后的空闲期回声（旧 sidecar 仍带旧 runId），必须识别丢弃。
+		execution: { ...createRun(prompt), lastSequence: state.execution.lastSequence },
+		selectedStepId: null,
+		contentDrawer: null,
+	})),
 	restoreRunningExecution: (prompt, startedAt, priorSteps) => {
 		const now = Date.now();
 		const safeStartedAt = typeof startedAt === 'number' && Number.isFinite(startedAt) && startedAt > 0 && startedAt <= now
@@ -661,7 +672,27 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 		// agent_settled 即使与前一个事件共享游标也必须保留，因为它是终态边界。
 		// 旧 sidecar 事件不带元数据，守卫自动放行，保留原行为。
 		if (eventRunId !== undefined && eventSequence !== undefined) {
-			if (current.runId !== undefined && current.runId !== eventRunId) return; // 旧 run 事件
+			const locallyTerminal = current.status === 'completed' || current.status === 'stopped' || current.status === 'failed';
+			const beyondCursor = current.lastSequence === undefined || eventSequence > current.lastSequence;
+			if (current.runId !== undefined && current.runId !== eventRunId) {
+				// 本地 run 已终态且事件序号超过已应用游标：sidecar 已开启新 run，
+				// 但桌面端没有对应的 beginExecution 边界（如扩展确认后 sendUserMessage 续跑）。
+				// 重置瞬时执行态并绑定新 run，否则整轮事件都会被当作旧 run 丢弃。
+				if (locallyTerminal && beyondCursor) {
+					const rebased = reduceExecutionEvent(
+						{ ...createRun(current.lastPrompt ?? ''), runId: eventRunId, lastSequence: current.lastSequence },
+						event,
+					);
+					const execution: ExecutionRun = {
+						...rebased,
+						runId: eventRunId,
+						lastSequence: Math.max(current.lastSequence ?? 0, eventSequence),
+					};
+					set({ execution, selectedStepId: get().selectedStepId ?? execution.steps.at(-1)?.id ?? null });
+					return;
+				}
+				return; // 旧 run 事件
+			}
 			// agent_settled 是执行生命周期的终态边界。扩展在收口前可能追加
 			// entry_appended（例如多步骤任务清理 auto-plan），两者会共享 settle 后的
 			// 最终快照序号；不能让前一个普通事件把真正的收口事件判成重复事件。
@@ -669,6 +700,10 @@ export const useWorkbenchStore = create<WorkbenchStore>()((set, get) => ({
 				&& current.lastSequence !== undefined
 				&& eventSequence <= current.lastSequence
 				&& event.type !== 'agent_settled') return; // 已应用
+			// 本地 run 尚未绑定 runId（beginExecution 刚重置）且序号不超过会话游标：
+			// 上一轮 settle 后仍带旧 runId 的空闲期回声事件，不能绑定，
+			// 否则新 run 的全部事件都会被上面的“旧 run 事件”检查丢弃。
+			if (current.runId === undefined && current.lastSequence !== undefined && eventSequence <= current.lastSequence) return;
 		}
 		const reduced = reduceExecutionEvent(current, event);
 		// 推进 lastSequence（仅同 run 事件），并在新 run 首个携带元数据的事件时绑定 runId。

@@ -16,10 +16,12 @@ class DesktopReleaseControllerPermissionTests {
         Method create = DesktopReleaseController.class.getMethod("create", com.aiclub.platform.dto.request.DesktopReleaseRequest.class);
         Method publish = DesktopReleaseController.class.getMethod("publish", Long.class);
         Method revoke = DesktopReleaseController.class.getMethod("revoke", Long.class);
+        Method delete = DesktopReleaseController.class.getMethod("delete", Long.class);
 
         assertThat(list.getAnnotation(RequirePermission.class).value()).isEqualTo("system:desktop-release:view");
         assertThat(create.getAnnotation(RequirePermission.class).value()).isEqualTo("system:desktop-release:manage");
         assertThat(publish.getAnnotation(RequirePermission.class).value()).isEqualTo("system:desktop-release:manage");
         assertThat(revoke.getAnnotation(RequirePermission.class).value()).isEqualTo("system:desktop-release:manage");
+        assertThat(delete.getAnnotation(RequirePermission.class).value()).isEqualTo("system:desktop-release:manage");
     }
 }

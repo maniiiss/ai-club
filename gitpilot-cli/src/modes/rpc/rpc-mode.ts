@@ -167,7 +167,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	/**
 	 * 为实时事件附加传输层元数据后输出（设计文档 §8.4）。
 	 * sequence 取自事件分发后刷新的执行快照，保证与 snapshot 对齐；
-	 * runId 为 null（idle 期间事件）时不参与 run 级去重。
+	 * runId 只在 run 处于 running 时附带：settle 后快照仍保留上一轮 runId，
+	 * 空闲期事件（如 auto-plan 在 input 阶段追加的 entry_appended）若原样透传，
+	 * Desktop 在 beginExecution 重置后会误把旧 runId 绑定为当前 run，
+	 * 导致下一轮事件全部被序号守卫当作旧 run 丢弃。
+	 * agent_settled 是终态边界事件，例外保留刚结束 run 的 runId 供 Desktop 收口对齐。
 	 */
 	const emitEvent = (event: AgentSessionEvent): void => {
 		const execution = session.executionSnapshot;
@@ -175,7 +179,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			...event,
 			sessionFile: session.sessionFile,
 			sessionId: session.sessionId,
-			runId: execution.runId ?? undefined,
+			runId: execution.status === "running" || event.type === "agent_settled"
+				? execution.runId ?? undefined
+				: undefined,
 			sequence: execution.sequence,
 			emittedAt: Date.now(),
 		};

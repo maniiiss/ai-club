@@ -162,6 +162,21 @@ public class DesktopReleaseService {
         return toDetail(releaseRepository.save(release));
     }
 
+    /** 删除已撤回的发布记录并清理其产物，释放版本号以便重建同版本草稿。 */
+    public void deleteRevoked(Long id) {
+        DesktopReleaseEntity release = requireRelease(id);
+        requireStatus(release, STATUS_REVOKED);
+        for (DesktopReleaseArtifactEntity artifact : artifactRepository.findAllByReleaseIdOrderByIdAsc(id)) {
+            try {
+                storageService.delete(artifact.getObjectKey());
+            } catch (RuntimeException ignored) {
+                // 业务意图：清理 MinIO 产物是尽力而为，即使对象存储异常也不能阻塞释放版本号。
+            }
+        }
+        artifactRepository.deleteAllByReleaseId(id);
+        releaseRepository.delete(release);
+    }
+
     /** 公开读取最新 stable 版本，供介绍页展示安装器和校验信息。 */
     @Transactional(Transactional.TxType.SUPPORTS)
     public Optional<DesktopReleaseLatest> latest(String channel, String platform, String arch) {

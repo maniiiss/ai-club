@@ -407,6 +407,57 @@ describe('Agent 工作台本地交互状态', () => {
 		useWorkbenchStore.getState().applyExecutionEvent({ type: 'tool_execution_start', toolCallId: 'legacy', toolName: 'bash' });
 		expect(useWorkbenchStore.getState().execution.steps.map((s) => s.id)).toEqual(['legacy']);
 	});
+
+	it('同会话二次提问：空闲期旧 runId 回声不绑定，新 run 事件正常累积', () => {
+		// 第一轮提问：run-1 正常执行并收口。
+		useWorkbenchStore.getState().beginExecution('第一个问题');
+		useWorkbenchStore.getState().applyExecutionEvent({ type: 'tool_execution_start', toolCallId: 't1', toolName: 'read', runId: 'run-1', sequence: 2 });
+		useWorkbenchStore.getState().applyExecutionEvent({ type: 'tool_execution_end', toolCallId: 't1', toolName: 'read', runId: 'run-1', sequence: 3 });
+		useWorkbenchStore.getState().applyExecutionEvent({ type: 'agent_settled', runId: 'run-1', sequence: 4 });
+
+		// 第二轮提问：桌面端立即重置执行态；sidecar 在 beginRun 之前，
+		// auto-plan 的 input 处理器追加的 entry_appended 仍携带上一轮 runId 与冻结游标。
+		useWorkbenchStore.getState().beginExecution('第二个问题');
+		useWorkbenchStore.getState().applyExecutionEvent({
+			type: 'entry_appended',
+			entry: { type: 'custom', id: 'plan-state', parentId: null, timestamp: '', customType: 'gitpilot-auto-plan', data: {} },
+			runId: 'run-1',
+			sequence: 4,
+		});
+		// 回声事件不能把新一轮绑定到旧 run。
+		expect(useWorkbenchStore.getState().execution.runId).toBeUndefined();
+
+		// sidecar beginRun 生成新 runId 后，第二轮的真实事件全部正常累积。
+		useWorkbenchStore.getState().applyExecutionEvent({ type: 'message_update', assistantMessageEvent: { type: 'thinking_delta', delta: '分析中' }, runId: 'run-2', sequence: 6 });
+		useWorkbenchStore.getState().applyExecutionEvent({ type: 'tool_execution_start', toolCallId: 't2', toolName: 'edit', runId: 'run-2', sequence: 7 });
+		useWorkbenchStore.getState().applyExecutionEvent({ type: 'tool_execution_end', toolCallId: 't2', toolName: 'edit', runId: 'run-2', sequence: 8 });
+		useWorkbenchStore.getState().applyExecutionEvent({ type: 'agent_settled', runId: 'run-2', sequence: 9 });
+
+		const execution = useWorkbenchStore.getState().execution;
+		expect(execution.runId).toBe('run-2');
+		expect(execution.thinking).toBe('分析中');
+		expect(execution.status).toBe('completed');
+		expect(getUnreportedExecutionSteps(execution).map((step) => step.id)).toEqual(['t2']);
+		expect(execution.lastSequence).toBe(9);
+	});
+
+	it('本地 run 已终态时，超过游标的新 run 事件重置并绑定（扩展确认后续跑）', () => {
+		// 第一轮完成后本地仍绑定 run-1（无 beginExecution 边界，如 /requirement 选择后的续跑）。
+		useWorkbenchStore.getState().beginExecution('第一个问题');
+		useWorkbenchStore.getState().applyExecutionEvent({ type: 'tool_execution_start', toolCallId: 't1', toolName: 'read', runId: 'run-1', sequence: 2 });
+		useWorkbenchStore.getState().applyExecutionEvent({ type: 'agent_settled', runId: 'run-1', sequence: 4 });
+
+		// 新 run 的事件序号超过已应用游标：重置瞬时执行态并绑定新 run。
+		useWorkbenchStore.getState().applyExecutionEvent({ type: 'tool_execution_start', toolCallId: 't3', toolName: 'bash', runId: 'run-2', sequence: 6 });
+		const rebound = useWorkbenchStore.getState().execution;
+		expect(rebound.runId).toBe('run-2');
+		expect(rebound.status).toBe('running');
+		expect(getUnreportedExecutionSteps(rebound).map((step) => step.id)).toEqual(['t3']);
+
+		// 旧 run 的滞留事件仍按“旧 run 事件”丢弃。
+		useWorkbenchStore.getState().applyExecutionEvent({ type: 'tool_execution_start', toolCallId: 't1-late', toolName: 'read', runId: 'run-1', sequence: 3 });
+		expect(getUnreportedExecutionSteps(useWorkbenchStore.getState().execution).map((step) => step.id)).toEqual(['t3']);
+	});
 });
 
 describe('工作台快捷键优先级', () => {

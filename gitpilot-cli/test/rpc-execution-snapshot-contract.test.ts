@@ -98,12 +98,12 @@ describe("RPC 执行快照契约", () => {
 		rpcIo.outputLines = [];
 	});
 
-	async function startRpc() {
+	async function startRpc(extraExtensionFactories: ExtensionFactory[] = []) {
 		const tempDir = join(tmpdir(), `pi-rpc-exec-${Date.now()}-${Math.random().toString(36).slice(2)}`);
 		mkdirSync(tempDir, { recursive: true });
 
 		faux = registerFauxProvider({ models: [{ id: "faux-1", reasoning: false }] });
-		faux.setResponses([fauxAssistantMessage("done")]);
+		faux.setResponses([fauxAssistantMessage("done"), fauxAssistantMessage("done again")]);
 		const authStorage = AuthStorage.inMemory();
 		await authStorage.modify(faux.getModel().provider, async () => ({ type: "api_key", key: "faux-key" }));
 
@@ -130,7 +130,7 @@ describe("RPC 执行快照契约", () => {
 			authStorage,
 			model: faux.getModel(),
 			resourceLoaderOptions: {
-				extensionFactories: [extensionFactory],
+				extensionFactories: [extensionFactory, ...extraExtensionFactories],
 				noSkills: true,
 				noPromptTemplates: true,
 				noThemes: true,
@@ -157,7 +157,7 @@ describe("RPC 执行快照契约", () => {
 			sessionManager: SessionManager.create(tempDir),
 		});
 		await runtime.session.bindExtensions({});
-		faux.setResponses([fauxAssistantMessage("done")]);
+		faux.setResponses([fauxAssistantMessage("done"), fauxAssistantMessage("done again")]);
 
 		void runRpcMode(runtime);
 
@@ -235,6 +235,45 @@ describe("RPC 执行快照契约", () => {
 		for (let i = 1; i < eventSequences.length; i += 1) {
 			expect(eventSequences[i]).toBeGreaterThanOrEqual(eventSequences[i - 1]);
 		}
+	});
+
+	it("空闲期事件不携带上一轮 runId，settled 仍携带本次 run 的 runId", async () => {
+		// 模拟 auto-plan 的行为：input 阶段（beginRun 之前）追加 custom entry，
+		// 复现“同会话第二次提问时，空闲期事件带上一轮 runId”的时序。
+		const idleEchoFactory: ExtensionFactory = (pi: ExtensionAPI) => {
+			pi.on("input", () => {
+				pi.appendEntry("test-idle-echo", {});
+			});
+		};
+		await startRpc([idleEchoFactory]);
+
+		// 第一轮：run 开始前的 entry_appended 此时 runId 本来就是 null。
+		send({ id: "p1", type: "prompt", message: "first" });
+		await waitForResponse("p1");
+		const settled1 = await waitForEvent((line) => line.type === "agent_settled");
+		expect(settled1.runId).toBeTypeOf("string");
+		rpcIo.outputLines = [];
+
+		// 第二轮：settle 后快照仍保留第一轮 runId，空闲期 entry_appended 不能透传它，
+		// 否则 Desktop 会在 beginExecution 重置后误绑定旧 run，丢弃新 run 的全部事件。
+		send({ id: "p2", type: "prompt", message: "second" });
+		await waitForResponse("p2");
+		const settled2 = await waitForEvent((line) => line.type === "agent_settled");
+
+		const idleEchoes = parsedLines().filter((line) => line.type === "entry_appended");
+		expect(idleEchoes.length).toBeGreaterThan(0);
+		for (const echo of idleEchoes) {
+			expect(echo.runId).toBeUndefined();
+			expect(echo.sequence).toBeTypeOf("number");
+		}
+
+		// agent_settled 是终态边界事件，仍携带刚结束 run 的 runId；两轮 runId 不同。
+		expect(settled2.runId).toBeTypeOf("string");
+		expect(settled2.runId).not.toBe(settled1.runId);
+
+		// 第二轮运行期间的事件携带新 run 的 runId。
+		const agentStarts = parsedLines().filter((line) => line.type === "agent_start");
+		expect(agentStarts.at(-1)?.runId).toBe(settled2.runId);
 	});
 
 	it("list_sessions 返回当前会话的执行摘要", async () => {

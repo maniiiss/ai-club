@@ -378,8 +378,11 @@ type RpcAgentSessionEvent = AgentSessionEvent & RpcSessionEventMetadata;
 兼容规则：
 
 - 保留事件原有 `type`，不新增外层 envelope，旧客户端可忽略额外字段；
-- sequence 只在同一 session 内比较；
+- `runId` 仅在 run 处于 `running` 时附带：settle 之后快照管理器仍保留上一轮 `runId`，空闲期事件（如 auto-plan 在 input 阶段追加的 `entry_appended`）必须省略 `runId`，否则 Desktop 在 `beginExecution` 重置后会误把旧 `runId` 绑定为当前 run，导致下一轮事件全部被当作旧 run 丢弃（同会话第二次提问执行过程消失的根因）；
+- `agent_settled` 是终态边界事件，例外保留刚结束 run 的 `runId` 供 Desktop 收口对齐；
+- sequence 只在同一 session 内比较，且单调递增不回退（空闲期事件不推进游标）；
 - Desktop 必须同时比较 `sessionFile + runId + sequence`，不能跨 session 直接比较序号；
+- Desktop 本地 run 已终态且事件序号超过已应用游标时，允许事件绑定新 run 并重置瞬时执行态：覆盖扩展确认后 `sendUserMessage` 直接开启新 run 等没有 `beginExecution` 边界的场景；
 - 切换期间先缓存目标 session 的事件；收到 snapshot 后丢弃 `sequence <= eventCursor` 的事件，再按序应用剩余事件。
 
 ### 8.5 后台事件策略

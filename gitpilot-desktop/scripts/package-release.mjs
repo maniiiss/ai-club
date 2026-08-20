@@ -19,8 +19,8 @@ if (!cargoVersion || packageVersion !== cargoVersion || packageVersion !== tauri
 	throw new Error(`版本不一致：package.json=${packageVersion} Cargo=${cargoVersion ?? '-'} tauri=${tauriVersion}`)
 }
 
-if (!tauriConfig.bundle?.createUpdaterArtifacts || !tauriConfig.plugins?.updater?.pubkey || !tauriConfig.plugins?.updater?.endpoints?.length) {
-	throw new Error('Tauri updater 配置不完整：需要 createUpdaterArtifacts、pubkey 和 endpoint')
+if (!tauriConfig.bundle?.createUpdaterArtifacts || !tauriConfig.plugins?.updater?.pubkey) {
+	throw new Error('Tauri updater 配置不完整：需要 createUpdaterArtifacts 和 pubkey')
 }
 
 const files = []
