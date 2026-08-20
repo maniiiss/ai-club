@@ -8,7 +8,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Hint } from '@/src/components/ui/tooltip';
 import { isTauriEnv } from '@/src/rpc/bridge';
 import { THEME_OPTIONS, useThemeStore, type ThemeMode } from '@/src/store/theme';
-import { applyDesktopTypography, DESKTOP_FONT_OPTIONS, DESKTOP_FONT_SIZES, loadDesktopPreferences, saveDesktopPreferences, useSettingsDialogStore, type DesktopFont, type DesktopPreferences, type SettingsSection } from '@/src/store/settings';
+import { applyDesktopTypography, DESKTOP_FONT_OPTIONS, DESKTOP_FONT_SIZES, loadDesktopPreferences, RTK_SETTINGS_ENABLED, saveDesktopPreferences, useSettingsDialogStore, type DesktopFont, type DesktopPreferences, type SettingsSection } from '@/src/store/settings';
 import { McpSettingsPanel } from './McpManagerDialog';
 import { SkillSettingsPanel } from './SkillManagerDialog';
 import { RtkSettingsPanel } from '../RtkSettingsDialog';
@@ -25,7 +25,7 @@ const SECTION_META: ReadonlyArray<{ id: SettingsSection; label: string; icon: ty
 	{ id: 'basic', label: '基础设置', icon: SlidersHorizontal },
 	{ id: 'mcp', label: 'MCP', icon: Plug },
 	{ id: 'skill', label: 'Skill', icon: Sparkles },
-	{ id: 'rtk', label: 'RTK', icon: Wrench },
+	...(RTK_SETTINGS_ENABLED ? [{ id: 'rtk', label: 'RTK', icon: Wrench } as const] : []),
 	{ id: 'update', label: '版本与更新', icon: RefreshCw },
 ];
 
@@ -102,6 +102,8 @@ export function SettingsDialog() {
 		}
 	};
 	const activeMeta = SECTION_META.find((item) => item.id === section) ?? SECTION_META[0];
+	// RTK 隐藏时把遗留的 rtk 分区请求回退到基础分区，避免打开空设置页。
+	const effectiveSection: SettingsSection = section === 'rtk' && !RTK_SETTINGS_ENABLED ? 'basic' : section;
 
 	return <Dialog open={openState} onOpenChange={(next) => { if (!next) discard(); else show(section); }}>
 		<DialogContent className={styles.content} aria-describedby="gitpilot-settings-description">
@@ -110,16 +112,16 @@ export function SettingsDialog() {
 			<div className={styles.frame}>
 				<aside className={styles.sidebar} aria-label="设置分区">
 					<p className={styles.eyebrow}>GitPilot</p><h1 className={styles.sidebarTitle}>设置</h1>
-					<nav className={styles.nav}>{SECTION_META.map(({ id, label, icon: Icon }) => <button key={id} type="button" className={`${styles.navItem} ${section === id ? styles.navItemActive : ''}`} aria-current={section === id ? 'page' : undefined} onClick={() => show(id)}><Icon aria-hidden="true" /><span>{label}</span></button>)}</nav>
+					<nav className={styles.nav}>{SECTION_META.map(({ id, label, icon: Icon }) => <button key={id} type="button" className={`${styles.navItem} ${effectiveSection === id ? styles.navItemActive : ''}`} aria-current={effectiveSection === id ? 'page' : undefined} onClick={() => show(id)}><Icon aria-hidden="true" /><span>{label}</span></button>)}</nav>
 				</aside>
 				<main className={styles.main}>
 					<header className={styles.mainHeader}><h2>{activeMeta.label}</h2></header>
 					<div className={styles.body}>
-						{section === 'basic' && <BasicSettings draft={draft} dirty={dirty} directoryError={directoryError} onChange={updateDraft} onChooseDirectory={() => void chooseDirectory()} onClearDirectory={() => updateDraft({ defaultDirectory: null })} onDiscard={discard} onSave={save} />}
-						{section === 'mcp' && <McpSettingsPanel />}
-						{section === 'skill' && <SkillSettingsPanel />}
-						{section === 'rtk' && <RtkSettingsPanel />}
-						{section === 'update' && <DesktopUpdatePanel />}
+						{effectiveSection === 'basic' && <BasicSettings draft={draft} dirty={dirty} directoryError={directoryError} onChange={updateDraft} onChooseDirectory={() => void chooseDirectory()} onClearDirectory={() => updateDraft({ defaultDirectory: null })} onDiscard={discard} onSave={save} />}
+						{effectiveSection === 'mcp' && <McpSettingsPanel />}
+						{effectiveSection === 'skill' && <SkillSettingsPanel />}
+						{effectiveSection === 'rtk' && RTK_SETTINGS_ENABLED && <RtkSettingsPanel />}
+						{effectiveSection === 'update' && <DesktopUpdatePanel />}
 					</div>
 				</main>
 			</div>

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { applyDesktopTypography, DEFAULT_DESKTOP_PREFERENCES, loadDesktopPreferences, normalizeDesktopPreferences, resolveStandaloneTaskDirectory, saveDesktopPreferences, useSettingsDialogStore } from './settings';
+import { applyDesktopTypography, DEFAULT_DESKTOP_PREFERENCES, loadDesktopPreferences, normalizeDesktopPreferences, resolveStandaloneTaskDirectory, RTK_SETTINGS_ENABLED, saveDesktopPreferences, useSettingsDialogStore } from './settings';
 
 function installStorage(): Map<string, string> {
 	const values = new Map<string, string>();
@@ -52,11 +52,11 @@ describe('桌面设置偏好', () => {
 		expect(resolveStandaloneTaskDirectory(null, null)).toBeNull();
 	});
 
-	it('账户入口默认打开基础分区，RTK 入口可直达对应分区', () => {
+	it('账户入口默认打开基础分区，RTK 分区当前处于隐藏状态', () => {
 		useSettingsDialogStore.getState().show();
 		expect(useSettingsDialogStore.getState()).toMatchObject({ open: true, section: 'basic' });
-		useSettingsDialogStore.getState().show('rtk');
-		expect(useSettingsDialogStore.getState()).toMatchObject({ open: true, section: 'rtk' });
+		// RTK 设置隐藏开关：恢复显示时改回 true，并允许 show('rtk') 直达对应分区。
+		expect(RTK_SETTINGS_ENABLED).toBe(false);
 		useSettingsDialogStore.getState().hide();
 		expect(useSettingsDialogStore.getState().open).toBe(false);
 	});

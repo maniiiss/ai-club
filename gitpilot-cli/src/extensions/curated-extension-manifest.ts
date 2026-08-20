@@ -44,7 +44,9 @@ export const curatedExtensions: CuratedExtensionDefinition[] = [
 		displayName: "RTK Optimizer",
 		entry: "pi-rtk-optimizer",
 		version: "0.9.0",
-		defaultEnabled: true,
+		// 默认关闭：输出压缩/命令重写改变工具输出形态，默认开箱保持原生行为；
+		// 用户可通过 settings.json bundledExtensions.rtk-optimizer: true 或 /rtk 命令显式开启。
+		defaultEnabled: false,
 		surfaces: ["cli-tui", "rpc", "desktop-native"],
 	},
 	{

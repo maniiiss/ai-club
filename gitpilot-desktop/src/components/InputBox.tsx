@@ -23,6 +23,7 @@ import { CommandPalette } from './CommandPalette';
 import { buildWorkItemPrompt, ComposerAddMenu, createWorkItemAttachment, type ComposerAddTab } from './ComposerAddMenu';
 import { ExtensionUIConfirmCard, ExtensionUISelectCard, isActionSelect } from './ExtensionUIModal';
 import { isHostActionCommand } from './host-actions';
+import { RTK_SETTINGS_ENABLED } from '@/src/store/settings';
 import { ModelPicker } from './ModelPicker';
 import { useWorkbenchStore } from '@/src/store/workbench';
 import { PROJECT_FILE_DRAG_MIME } from '@/src/store/project-files';
@@ -136,7 +137,8 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 		if (cmd.name === 'requirement') {
 			void executeCommand('requirement');
 		} else if (cmd.hostAction === 'open_rtk_settings') {
-			useSettingsDialogStore.getState().show('rtk');
+			// RTK 设置暂时隐藏时，/rtk 入口回退到基础分区，避免打开空的设置页。
+			useSettingsDialogStore.getState().show(RTK_SETTINGS_ENABLED ? 'rtk' : 'basic');
 		}
 	};
 	const sendGuidance = useSessionStore((s) => s.sendGuidance);
@@ -481,9 +483,9 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 	const pickCommand = (name: string) => {
 		setShowPalette(false);
 		const cmd = commands.find((c) => c.name === name);
-		// hostAction 路由：/rtk 打开统一设置的 RTK 分区，不调 ctx.ui.custom()
+		// hostAction 路由：/rtk 打开统一设置的 RTK 分区，不调 ctx.ui.custom()；RTK 隐藏时回退基础分区。
 		if (cmd?.hostAction === 'open_rtk_settings') {
-			useSettingsDialogStore.getState().show('rtk');
+			useSettingsDialogStore.getState().show(RTK_SETTINGS_ENABLED ? 'rtk' : 'basic');
 			return;
 		}
 		// 需求命令本身就是选择器：选中命令后立即打开需求列表，不再要求用户额外发送一次。

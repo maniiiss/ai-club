@@ -3,6 +3,12 @@ import { create } from 'zustand';
 /** 统一设置窗口的三个功能分区。 */
 export type SettingsSection = 'basic' | 'mcp' | 'skill' | 'rtk' | 'update';
 
+/**
+ * RTK 设置分区暂时隐藏：设置菜单侧边栏不再展示，/rtk 命令也回退到基础分区。
+ * 需要恢复显示时改为 true 即可。
+ */
+export const RTK_SETTINGS_ENABLED = false;
+
 /** 界面字体只应用于非代码类文本，代码与终端继续使用等宽字体。 */
 export type DesktopFont = 'default' | 'segoe' | 'yahei' | 'bahnschrift';
 export type DesktopFontSize = 12 | 13 | 14 | 15 | 16;
