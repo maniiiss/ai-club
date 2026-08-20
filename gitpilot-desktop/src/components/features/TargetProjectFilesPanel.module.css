@@ -8,7 +8,6 @@
 .headerActions button:hover:not(:disabled) { color: var(--gp-accent); }
 .toolbar { border-bottom: 1px solid var(--gp-border); padding: 8px 10px; }
 .search { display: flex; min-width: 0; height: 29px; align-items: center; gap: 6px; border: 1px solid var(--gp-border); border-radius: 7px; background: var(--gp-panel-deep); padding: 0 7px; color: var(--gp-text-muted); }
-.search:focus-within { border-color: color-mix(in srgb, var(--gp-accent) 65%, var(--gp-border)); box-shadow: 0 0 0 2px var(--gp-accent-soft); }
 .search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--gp-text); font: calc(11px * var(--desktop-font-scale))/1.4 var(--font-sans); }
 .search input::placeholder { color: var(--gp-text-dim); }
 .clearSearch { display: grid; width: 18px; height: 18px; place-items: center; border: 0; border-radius: 4px; background: transparent; color: var(--gp-text-muted); }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
 	aggregateChangedFiles,
+	changedFilesFromWorkspaceChanges,
 	parseExecutionStepsFromMessages,
 	parseDiffStats,
 	parseOpsFromMessages,
@@ -212,6 +213,22 @@ describe('aggregateChangedFiles', () => {
 		const files = aggregateChangedFiles(ops);
 		expect(files.map((f) => f.path)).toEqual(['b.ts', 'a.ts']);
 		expect(files[0].editCount).toBe(2);
+	});
+});
+
+describe('changedFilesFromWorkspaceChanges', () => {
+	it('使用任务最终净 diff，并让 write 生成的文件可审查', () => {
+		const files = changedFilesFromWorkspaceChanges({
+			version: 1,
+			source: 'git',
+			files: [{ path: 'src/new.ts', status: 'added', added: 2, removed: 0, diff: '--- /dev/null\n+++ b/src/new.ts\n+one\n+two' }],
+		});
+		expect(files).toEqual([expect.objectContaining({ path: 'src/new.ts', added: 2, editCount: 1, editable: true, diffs: ['--- /dev/null\n+++ b/src/new.ts\n+one\n+two'] })]);
+	});
+
+	it('空或旧版本结果安全降级为空列表', () => {
+		expect(changedFilesFromWorkspaceChanges(undefined)).toEqual([]);
+		expect(changedFilesFromWorkspaceChanges({ version: 2, source: 'git', files: [] } as never)).toEqual([]);
 	});
 });
 

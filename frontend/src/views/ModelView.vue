@@ -332,6 +332,10 @@
             </el-checkbox-group>
             <div class="platform-form-section-subtitle" style="margin-top: 6px">开启图片后，桌面端会把图片直接作为该模型的输入；未开启时按文本模型处理。</div>
           </el-form-item>
+          <el-form-item v-if="form.modelType === 'CHAT'" label="Vision 路由" prop="visionRouting">
+            <el-switch v-model="form.visionRouting" />
+            <div class="platform-form-section-subtitle" style="margin-top: 6px">声明上游支持 vision（如经过 9router 代理）。开启后即使未勾选图片，桌面端也会把图片内联到请求，由后端透传给上游 vision 模型。</div>
+          </el-form-item>
           <el-form-item label="上下文长度" prop="contextLength">
             <el-input-number v-model="form.contextLength" :min="0" :step="1000" controls-position="right" style="width: 100%" placeholder="如 128000" />
           </el-form-item>
@@ -429,6 +433,10 @@
               <el-checkbox label="image">图片</el-checkbox>
             </el-checkbox-group>
             <div class="platform-form-section-subtitle" style="margin-top: 6px">开启图片后，桌面端会把图片直接作为该模型的输入；未开启时按文本模型处理。</div>
+          </el-form-item>
+          <el-form-item v-if="form.modelType === 'CHAT'" label="Vision 路由" prop="visionRouting">
+            <el-switch v-model="form.visionRouting" />
+            <div class="platform-form-section-subtitle" style="margin-top: 6px">声明上游支持 vision（如经过 9router 代理）。开启后即使未勾选图片，桌面端也会把图片内联到请求，由后端透传给上游 vision 模型。</div>
           </el-form-item>
           <el-form-item label="上下文长度" prop="contextLength">
             <el-input-number v-model="form.contextLength" :min="0" :step="1000" controls-position="right" style="width: 100%" placeholder="如 128000" />
@@ -553,6 +561,8 @@ interface ModelForm {
   enabled: boolean
   /** 模型实际接受的输入模态；文本固定存在，图片由管理员选择。 */
   inputModalities: AiModelInputModality[]
+  /** 声明上游支持 vision（如经过 9router 代理）；为 true 时 CLI 在 inputModalities 不含 image 时仍内联图片。 */
+  visionRouting: boolean
   contextLength?: number
   maxOutputTokens?: number
   tokenBillingEnabled?: boolean
@@ -611,6 +621,7 @@ const form = reactive<ModelForm>({
   description: '',
   enabled: true,
   inputModalities: ['text'],
+  visionRouting: false,
   contextLength: undefined,
   maxOutputTokens: undefined
 })
@@ -716,6 +727,7 @@ const resetForm = () => {
   form.description = ''
   form.enabled = true
   form.inputModalities = ['text']
+  form.visionRouting = false
   form.contextLength = undefined
   form.maxOutputTokens = undefined
   form.tokenBillingEnabled = false
@@ -801,6 +813,7 @@ const fillForm = (row: AiModelConfigItem) => {
   form.description = row.description
   form.enabled = row.enabled
   form.inputModalities = row.modelType === 'CHAT' && row.inputModalities?.length ? [...row.inputModalities] : ['text']
+  form.visionRouting = row.visionRouting ?? false
   form.contextLength = row.contextLength
   form.maxOutputTokens = row.maxOutputTokens
   form.tokenBillingEnabled = row.tokenBillingEnabled ?? false

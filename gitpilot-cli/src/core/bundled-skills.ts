@@ -19,9 +19,12 @@ interface BundledSkillDefinition {
  *
  * Office 三件套只默认进入 Work：它们会调用受限的本地文档工具，不应挤占
  * Code/Design 模式的常规上下文；用户仍可从 Skill 工作台将其分配到其他模式。
+ * gitnexus 只默认进入 Code：它指导模型用 GitNexus MCP 知识图谱做代码理解、
+ * 影响分析与重构护航，对 Work/Design 模式没有意义。
  */
 const BUNDLED_SKILLS: readonly BundledSkillDefinition[] = [
 	{ name: "cross-agent-harness", defaultModes: ["code"] },
+	{ name: "gitnexus", defaultModes: ["code"] },
 	{ name: "office-docx", defaultModes: ["work"] },
 	{ name: "office-xlsx", defaultModes: ["work"] },
 	{ name: "office-pptx", defaultModes: ["work"] },

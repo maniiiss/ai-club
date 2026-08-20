@@ -37,6 +37,12 @@ describe('聊天内执行摘要', () => {
 		expect(getExecutionActivityLabel({ ...run([{ id: 'tool-1', kind: 'command', status: 'succeeded', title: 'bash', startedAt: 1 }]), lastDeltaKind: 'tool', thinking: '准备执行命令' }, true)).toBe('正在整理工具结果…');
 	});
 
+	it('压缩状态优先于普通执行阶段并保留成功/失败文案', () => {
+		expect(getExecutionActivityLabel({ ...run([]), phase: 'compacting' }, true)).toBe('正在压缩上下文');
+		expect(getExecutionActivityLabel({ ...run([]), phase: 'thinking', compactionNotice: 'success' }, true)).toBe('上下文已压缩');
+		expect(getExecutionActivityLabel({ ...run([]), status: 'completed', compactionNotice: 'failure', compactionError: 'provider error' }, false)).toBe('上下文压缩失败');
+	});
+
 	it('展开步骤时显示真实工具参数中的文件或命令', () => {
 		expect(describeExecutionStep({ id: 'read', kind: 'read', status: 'succeeded', title: 'read', args: '{"path":"src/App.tsx"}', startedAt: 1 })).toBe('read src/App.tsx');
 		expect(describeExecutionStep({ id: 'bash', kind: 'command', status: 'succeeded', title: 'bash', args: '{"command":"cd crm-ai; npm test"}', startedAt: 1 })).toBe('bash cd crm-ai; npm test');

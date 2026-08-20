@@ -77,6 +77,7 @@ cp "$CLI/src/core/export-html/template."* "$RES/export-html/" 2>/dev/null || tru
 cp "$CLI/src/core/export-html/vendor/"* "$RES/export-html/vendor/" 2>/dev/null || true
 cp "$CLI/node_modules/@plannotator/pi-extension/plannotator.json" "$RES/plannotator.json"
 cp -R "$CLI/src/bundled-skills/cross-agent-harness" "$RES/skills/"
+cp -R "$CLI/src/bundled-skills/gitnexus" "$RES/skills/"
 cp -R "$CLI/src/bundled-skills/kuaikai-platform" "$RES/skills/"
 cp -R "$CLI/src/bundled-skills/office-docx" "$RES/skills/"
 cp -R "$CLI/src/bundled-skills/office-xlsx" "$RES/skills/"

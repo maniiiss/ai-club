@@ -192,7 +192,7 @@ public class GitPilotCliService {
         return modelConfigService.listEnabledOptions(ModelConfigService.MODEL_TYPE_CHAT).stream()
                 .filter(item -> Boolean.TRUE.equals(item.enabled()))
                 .filter(item -> "OPENAI".equalsIgnoreCase(item.provider()) || "ANTHROPIC".equalsIgnoreCase(item.provider()))
-                .map(item -> new CliModelSummary(item.id(), item.name(), item.provider(), item.modelName(), item.description(), item.openaiApiMode(), item.contextLength(), item.maxOutputTokens(), item.inputModalities(), item.billingMultiplier()))
+                .map(item -> new CliModelSummary(item.id(), item.name(), item.provider(), item.modelName(), item.description(), item.openaiApiMode(), item.contextLength(), item.maxOutputTokens(), item.inputModalities(), item.billingMultiplier(), item.visionRouting()))
                 .toList();
     }
 

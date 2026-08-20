@@ -59,6 +59,14 @@ import {
 	type ExecutionRunEntryV1,
 } from "./agent-execution-state.ts";
 import {
+	persistWorkspaceChangeArtifact,
+	restoreWorkspaceChangeSetFromEntries,
+	WorkspaceChangeTracker,
+	type WorkspaceChangeArtifactRef,
+	type WorkspaceChangeSet,
+} from "./workspace-changes.ts";
+import {
+	type CompactionInstructions,
 	type CompactionResult,
 	calculateContextTokens,
 	collectEntriesForBranchSummary,
@@ -152,7 +160,7 @@ export type AgentSessionEvent =
 			messages: AgentMessage[];
 			willRetry: boolean;
 	  }
-	| { type: "agent_settled" }
+	| { type: "agent_settled"; workspaceChanges?: WorkspaceChangeSet }
 	| {
 			type: "queue_update";
 			steering: readonly string[];
@@ -213,6 +221,8 @@ export interface AgentSessionConfig {
 	customTools?: ToolDefinition[];
 	/** Canonical model/auth runtime used by coding-agent internals. */
 	modelRuntime: ModelRuntime;
+	/** 追加到 Pi 默认压缩提示的领域规则；回调在每次压缩时动态求值。 */
+	compactionInstructions?: CompactionInstructions;
 	/** Initial active built-in tool names. Default: [read, bash, edit, write] */
 	initialActiveToolNames?: string[];
 	/** Optional allowlist of tool names. When provided, only these tool names are exposed. */
@@ -334,6 +344,10 @@ export class AgentSession {
 	 * 在 `_emit` 中随每个事件更新，保证 suspended session 也持续刷新。
 	 */
 	private readonly _executionSnapshot = new AgentExecutionSnapshotManager();
+	/** 当前会话最近一次已收口任务的最终工作区改动，供 RPC 快照恢复桌面审查卡片。 */
+	private _lastWorkspaceChanges: WorkspaceChangeSet | undefined;
+	/** 每个 run 独立建立临时 Git index，任务结束后立即清理。 */
+	private readonly _workspaceChangeTracker: WorkspaceChangeTracker;
 	/** 标记当前 run 是否被 abort 中断，供 settle 时判定 stopped 终态。 */
 	private _runAborted = false;
 	/** 不可恢复错误（如压缩重试后仍上下文溢出）的强制失败原因，供 settle 时判定 failed 终态。 */
@@ -391,6 +405,8 @@ export class AgentSession {
 	private _extensionErrorUnsubscriber?: () => void;
 
 	private _modelRuntime: ModelRuntime;
+	/** 当前模式的压缩提示配置；不改变 Pi 默认摘要结构。 */
+	private readonly _compactionInstructions?: CompactionInstructions;
 
 	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool> = new Map();
@@ -411,7 +427,13 @@ export class AgentSession {
 		this._resourceLoader = config.resourceLoader;
 		this._customTools = config.customTools ?? [];
 		this._cwd = config.cwd;
+		this._workspaceChangeTracker = new WorkspaceChangeTracker(this._cwd);
+		this._lastWorkspaceChanges = restoreWorkspaceChangeSetFromEntries(
+			this.sessionManager.getEntries(),
+			this.sessionManager.getSessionFile(),
+		);
 		this._modelRuntime = config.modelRuntime;
+		this._compactionInstructions = config.compactionInstructions;
 		this._extensionRunnerRef = config.extensionRunnerRef;
 		this._initialActiveToolNames = config.initialActiveToolNames;
 		this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
@@ -577,6 +599,9 @@ export class AgentSession {
 
 	/** Emit an event to all listeners */
 	private _emit(event: AgentSessionEvent): void {
+		if (event.type === "tool_execution_start") {
+			this._workspaceChangeTracker.recordToolArguments(event.args);
+		}
 		// 权威执行快照在事件分发前更新，保证 suspended session 也持续刷新，
 		// 且 RPC 监听器读到的 snapshot.sequence 与本事件对齐。
 		this._executionSnapshot.applyEvent(event);
@@ -613,18 +638,35 @@ export class AgentSession {
 	}
 
 	private async _emitAgentSettled(): Promise<void> {
+		// 必须在 settle 清空运行态前完成工作区收敛，并把结果附在终态事件上，
+		// 这样 Desktop 收到的文件列表与本次任务真正的最终状态严格一致。
+		let workspaceChanges: WorkspaceChangeSet | undefined;
+		try {
+			workspaceChanges = await this._workspaceChangeTracker.finalize();
+		} catch {
+			// Git 收口失败时由 Desktop 保留工具级降级统计，不能阻断 Agent settle。
+			workspaceChanges = undefined;
+		}
+		this._lastWorkspaceChanges = workspaceChanges;
+		let workspaceChangeArtifact: WorkspaceChangeArtifactRef | undefined;
+		const runSnapshot = this._executionSnapshot.getSnapshot();
+		if (workspaceChanges && runSnapshot.runId) {
+			workspaceChangeArtifact = persistWorkspaceChangeArtifact(this.sessionManager.getSessionFile(), workspaceChanges);
+		}
+		// Git 收口期间仍保持 isStreaming，避免用户在 final tree 生成前启动下一轮
+		// 并让 beginRun 清理当前临时 index；等结果已准备好后再开放空闲态。
 		this._isAgentRunActive = false;
 		// 收口当前 run：写入终态、endedAt，并追加一条低频 settled custom entry。
 		if (this._executionSnapshot.isRunning) {
 			const outcome = this._resolveRunOutcome();
 			this._executionSnapshot.settle(outcome.status, outcome.lastError);
-			this._appendExecutionRunEntry();
+			this._appendExecutionRunEntry(workspaceChangeArtifact);
 		}
 		this._runAborted = false;
 		this._runForcedFailure = undefined;
 		try {
 			await this._extensionRunner.emit({ type: "agent_settled" });
-			this._emit({ type: "agent_settled" });
+			this._emit({ type: "agent_settled", workspaceChanges });
 		} finally {
 			this._resolveIdleWaitIfIdle();
 		}
@@ -655,7 +697,7 @@ export class AgentSession {
 	 * run settled 时追加 `gitpilot.execution-run.v1` custom entry，
 	 * 用于应用退出后恢复精确总耗时。仅在每个 run 结束时追加一次，持久化失败不影响 settle。
 	 */
-	private _appendExecutionRunEntry(): void {
+	private _appendExecutionRunEntry(workspaceChanges?: WorkspaceChangeArtifactRef): void {
 		const snapshot = this._executionSnapshot.getSnapshot();
 		if (!snapshot.runId || snapshot.startedAt === undefined || snapshot.endedAt === undefined) {
 			return;
@@ -671,6 +713,7 @@ export class AgentSession {
 			endedAt: snapshot.endedAt,
 			rootUserTimestamp: snapshot.rootUserTimestamp,
 			lastSequence: snapshot.sequence,
+			workspaceChanges,
 		};
 		try {
 			this.sessionManager.appendCustomEntry(EXECUTION_RUN_ENTRY_CUSTOM_TYPE, entry);
@@ -1019,6 +1062,11 @@ export class AgentSession {
 		return this._executionSnapshot.getSummary();
 	}
 
+	/** 最近一次任务收口后的最终工作区改动，供 RPC 快照恢复审查结果。 */
+	get workspaceChanges(): WorkspaceChangeSet | undefined {
+		return this._lastWorkspaceChanges;
+	}
+
 	/**
 	 * 回写扩展等待用户确认的状态（如 extension UI pending request）。
 	 * 由 RPC/Extension UI bridge 调用，仅在 running 时生效。
@@ -1207,8 +1255,10 @@ export class AgentSession {
 		// 开始一次新的权威 run：生成 runId、记录 startedAt、重置终态标记。
 		this._runAborted = false;
 		this._runForcedFailure = undefined;
+		this._lastWorkspaceChanges = undefined;
 		this._executionSnapshot.beginRun(this._extractRootUserTimestamp(messages));
 		this._isAgentRunActive = true;
+		await this._workspaceChangeTracker.beginRun();
 		try {
 			await this.agent.prompt(messages);
 			while (await this._handlePostAgentRun()) {
@@ -1959,6 +2009,13 @@ export class AgentSession {
 	// Compaction
 	// =========================================================================
 
+	/** 将模式级规则与本次手动压缩传入的补充说明合并，保持默认提示作为主体。 */
+	private _resolveCompactionInstructions(customInstructions?: string): string | undefined {
+		const configured = typeof this._compactionInstructions === "function" ? this._compactionInstructions() : this._compactionInstructions;
+		const parts = [configured?.trim(), customInstructions?.trim()].filter((part): part is string => Boolean(part));
+		return parts.length > 0 ? parts.join("\n\n") : undefined;
+	}
+
 	/**
 	 * Manually compact the session context.
 	 * Aborts current agent operation first.
@@ -1989,6 +2046,7 @@ export class AgentSession {
 				}
 				throw new Error("无需压缩（会话过小）");
 			}
+			const effectiveInstructions = this._resolveCompactionInstructions(customInstructions);
 
 			let extensionCompaction: CompactionResult | undefined;
 			let fromExtension = false;
@@ -1998,7 +2056,7 @@ export class AgentSession {
 					type: "session_before_compact",
 					preparation,
 					branchEntries: pathEntries,
-					customInstructions,
+					customInstructions: effectiveInstructions,
 					reason: "manual",
 					willRetry: false,
 					signal: this._compactionAbortController.signal,
@@ -2034,7 +2092,7 @@ export class AgentSession {
 					this.model,
 					apiKey,
 					headers,
-					customInstructions,
+					effectiveInstructions,
 					this._compactionAbortController.signal,
 					this.thinkingLevel,
 					this.agent.streamFunction,
@@ -2263,6 +2321,7 @@ export class AgentSession {
 			this._emit({ type: "compaction_start", reason });
 			this._autoCompactionAbortController = new AbortController();
 			started = true;
+			const effectiveInstructions = this._resolveCompactionInstructions();
 
 			let extensionCompaction: CompactionResult | undefined;
 			let fromExtension = false;
@@ -2272,7 +2331,7 @@ export class AgentSession {
 					type: "session_before_compact",
 					preparation,
 					branchEntries: pathEntries,
-					customInstructions: undefined,
+					customInstructions: effectiveInstructions,
 					reason,
 					willRetry,
 					signal: this._autoCompactionAbortController.signal,
@@ -2315,7 +2374,7 @@ export class AgentSession {
 					this.model,
 					apiKey,
 					headers,
-					undefined,
+					effectiveInstructions,
 					this._autoCompactionAbortController.signal,
 					this.thinkingLevel,
 					this.agent.streamFunction,

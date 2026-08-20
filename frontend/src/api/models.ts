@@ -13,6 +13,8 @@ export interface AiModelConfigPayload {
   enabled: boolean
   /** 模型可接收的输入模态；未勾选图片时平台仅向下游声明 text。 */
   inputModalities: AiModelInputModality[]
+  /** 声明上游支持 vision（如经过 9router 代理）；为 true 时 CLI 在 inputModalities 不含 image 时仍内联图片，由后端透传给上游。 */
+  visionRouting?: boolean
   contextLength?: number
   maxOutputTokens?: number
   /** 是否启用 token 计费（灰度开关）。 */

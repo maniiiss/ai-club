@@ -6,6 +6,7 @@
  * 不访问文件系统或 Shell，纯函数便于单测。
  */
 import { classifyExecutionKind, type ExecutionStep } from '@/src/store/workbench';
+import type { WorkspaceChangeSet } from '@/src/rpc/types';
 
 /** 文件变更状态标记，对齐 Git 惯例。 */
 export type ChangeStatus = 'modified' | 'added' | 'deleted';
@@ -221,6 +222,25 @@ export function aggregateChangedFiles(ops: EditOperation[]): ChangedFile[] {
 		}
 	}
 	return [...map.values()];
+}
+
+/**
+ * 将 sidecar 计算出的任务级 Git diff 转为桌面端统一 ChangedFile。
+ * 业务意图：最终卡片只展示 baseline -> final 的净增删行数，同一文件多次
+ * edit 不再累加中间过程；workspace diff 天然带正文，因此 write 文件也可点击审查。
+ */
+export function changedFilesFromWorkspaceChanges(changes?: WorkspaceChangeSet): ChangedFile[] {
+	if (!changes || typeof changes !== 'object' || changes.version !== 1 || changes.source !== 'git' || !Array.isArray(changes.files)) return [];
+	return changes.files.map((file) => ({
+		path: file.path,
+		status: file.status,
+		added: file.added,
+		removed: file.removed,
+		diff: file.diff,
+		diffs: file.diff ? [file.diff] : undefined,
+		editCount: 1,
+		editable: Boolean(file.diff),
+	}));
 }
 
 /** 将工具参数/结果序列化为 ExecutionStep.args/result 用的字符串，与 workbench.stringifyPayload 对齐。 */

@@ -136,6 +136,7 @@ SidecarBridge
 | `set_model` / `cycle_model` | `/model` 面板 / Ctrl+L | 平台 CHAT 模型列表 |
 | `set_thinking_level` / `cycle_thinking_level` | 思维级别选择器 | |
 | `get_available_models` | 模型面板打开时 | 拉取平台已配置 CHAT 模型 |
+| `refresh_models` | 标题栏头像旁刷新按钮 | 强制 sidecar 联网重拉平台模型清单并重解析当前选中模型，让管理端新配置（visionRouting、输入模态等）无需重启 sidecar 即可生效 |
 | `export_html` | 会话菜单"导出" | 复用 CLI 的 export-html |
 | `slash` | 命令面板选中项 | 执行 extension 注册的 slash 命令 |
 | `extension_ui_response` | React 模态返回 | 响应扩展 UI 请求 |

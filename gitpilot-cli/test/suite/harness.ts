@@ -73,6 +73,8 @@ export interface HarnessOptions {
 	resourceLoader?: ResourceLoader;
 	extensionFactories?: Array<InlineExtension | CreateTestExtensionsResultInput>;
 	withConfiguredAuth?: boolean;
+	/** 模式级压缩追加提示；用于验证手动、阈值和 overflow 三条压缩入口。 */
+	compactionInstructions?: string | (() => string | undefined);
 }
 
 export interface Harness {
@@ -188,6 +190,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		allowedToolNames: options.allowedToolNames,
 		excludedToolNames: options.excludedToolNames,
 		extensionRunnerRef,
+		compactionInstructions: options.compactionInstructions,
 	});
 
 	const events: AgentSessionEvent[] = [];

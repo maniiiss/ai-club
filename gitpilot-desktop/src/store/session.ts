@@ -31,13 +31,16 @@ import type {
 	PreparedAttachment,
 	RpcExtensionUIRequest,
 	RpcSessionState,
+	RpcDesktopSessionSnapshot,
 	RpcSlashCommand,
 	SessionListItem,
 	ThinkingLevel,
+	WorkspaceChangeSet,
 } from '@/src/rpc/types';
 import { getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionStep } from '@/src/store/workbench';
-import { aggregateChangedFiles, parseExecutionStepsFromMessages, parseOpsFromMessages, parseOpsFromSteps, type ChangedFile, type EditOperation } from '@/src/store/changed-files';
+import { aggregateChangedFiles, changedFilesFromWorkspaceChanges, parseExecutionStepsFromMessages, parseOpsFromMessages, parseOpsFromSteps, type ChangedFile, type EditOperation } from '@/src/store/changed-files';
 import { loadDesktopPreferences, resolveStandaloneTaskDirectory } from '@/src/store/settings';
+import { useAppModeStore, type AppMode } from '@/src/store/app-mode';
 import { isProjectPathWithin, isSameProjectPath, isTemporaryWorkspacePath } from '@/src/utils/project-path';
 
 // ============================================================================
@@ -104,6 +107,99 @@ export interface ComposerDraft {
 
 function newId(): string {
 	return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * 会话消息流的事件游标。
+ *
+ * 业务意图：Workbench 已经用同一组元数据保护工具步骤，但聊天正文也必须共享这条
+ * session/run/sequence 边界；否则旧 run 的 message_update 会把新 run 的正文继续拼接，
+ * 旧 run 的 turn_end 还会提前 flush 当前 run 的工具批次。
+ */
+export interface SessionEventCursor {
+	sessionFile?: string;
+	runId?: string;
+	lastSequence?: number;
+	/** 当前 run 是否已经收到 agent_settled；终态后同 run 的迟到事件全部丢弃。 */
+	settled?: boolean;
+}
+
+/**
+ * 判断并推进消息流游标。
+ * 返回 null 表示事件是旧会话、旧 run、重复序号或快照已覆盖的迟到事件。
+ * 未携带完整 runId+sequence 的旧 sidecar 事件保持兼容，直接放行且不推进游标。
+ */
+export function advanceSessionEventCursor(
+	cursor: SessionEventCursor,
+	event: AgentSessionEvent,
+	currentSessionFile?: string | null,
+): SessionEventCursor | null {
+	const eventSessionFile = typeof event.sessionFile === 'string' ? event.sessionFile : undefined;
+	const eventRunId = typeof event.runId === 'string' ? event.runId : undefined;
+	const eventSequence = typeof event.sequence === 'number' && Number.isFinite(event.sequence) ? event.sequence : undefined;
+
+	const hasRunMetadata = Boolean(eventRunId) && eventSequence !== undefined;
+	// 携带完整运行元数据的事件必须有明确前台会话；idle 期 session_info_changed 等
+	// 事件仍允许在首条消息落盘前到达，以便刷新会话标题和路径。
+	if (eventSessionFile && !currentSessionFile && hasRunMetadata) return null;
+	if (eventSessionFile && currentSessionFile && eventSessionFile !== currentSessionFile) return null;
+	if (eventSessionFile && cursor.sessionFile && eventSessionFile !== cursor.sessionFile) return null;
+
+	// 旧 sidecar 没有完整元数据，沿用历史行为，不把不完整字段写进新游标。
+	if (!eventRunId || eventSequence === undefined) return cursor;
+
+	const boundSessionFile = eventSessionFile ?? cursor.sessionFile ?? currentSessionFile ?? undefined;
+	const base: SessionEventCursor = { ...cursor, sessionFile: boundSessionFile };
+
+	if (base.runId && base.runId !== eventRunId) {
+		// 活跃 run 期间不允许另一个 run 抢占正文；只有明确收到旧 run 的 settled，
+		// 且新事件序号严格更大时，才把它识别为同一 session 的下一轮执行。
+		if (!base.settled || (base.lastSequence !== undefined && eventSequence <= base.lastSequence)) return null;
+		return { ...base, runId: eventRunId, lastSequence: eventSequence, settled: event.type === 'agent_settled' };
+	}
+
+	if (base.runId === eventRunId) {
+		// settled 是终态边界；同 run 的后续回声不能再次修改正文或工具批次。
+		if (base.settled) return null;
+		if (base.lastSequence !== undefined) {
+			if (eventSequence < base.lastSequence) return null;
+			// auto-plan 等扩展可能在 settle 前后产生同游标事件，只有真正的
+			// agent_settled 允许占用这个重复序号作为终态边界。
+			if (eventSequence === base.lastSequence && event.type !== 'agent_settled') return null;
+		}
+		return { ...base, lastSequence: Math.max(base.lastSequence ?? 0, eventSequence), settled: event.type === 'agent_settled' };
+	}
+
+	// 快照可能只恢复了 session 级序号而尚未绑定当前 run；不允许回放游标之前的事件。
+	if (base.lastSequence !== undefined && eventSequence <= base.lastSequence) return null;
+	return { ...base, runId: eventRunId, lastSequence: eventSequence, settled: event.type === 'agent_settled' };
+}
+
+/** 从原子快照建立消息流游标；快照里的 eventCursor 是已被消息/执行态覆盖的上界。 */
+export function sessionEventCursorFromSnapshot(snapshot: Pick<RpcDesktopSessionSnapshot, 'session' | 'execution' | 'eventCursor'>): SessionEventCursor {
+	const runId = typeof snapshot.execution.runId === 'string' ? snapshot.execution.runId : undefined;
+	const sequence = typeof snapshot.eventCursor === 'number' && Number.isFinite(snapshot.eventCursor)
+		? snapshot.eventCursor
+		: snapshot.execution.sequence;
+	return {
+		sessionFile: snapshot.session.sessionFile,
+		runId,
+		lastSequence: typeof sequence === 'number' && Number.isFinite(sequence) ? sequence : undefined,
+		settled: Boolean(runId) && snapshot.execution.status !== 'running',
+	};
+}
+
+/** 当前 RPC 订阅唯一对应前台会话；切换/重连时由快照原子重置。 */
+let activeSessionEventCursor: SessionEventCursor = {};
+
+/** 低频 get_state 不能把实时事件已经推进的游标回退；切换到不同会话/run 时允许重绑定。 */
+function bindSessionEventCursor(next: SessionEventCursor): void {
+	const current = activeSessionEventCursor;
+	if (current.sessionFile === next.sessionFile
+		&& current.lastSequence !== undefined
+		&& next.lastSequence !== undefined
+		&& next.lastSequence < current.lastSequence) return;
+	activeSessionEventCursor = next;
 }
 
 /**
@@ -217,7 +313,9 @@ export function filterDesktopThinkingLevels(raw: readonly unknown[]): ThinkingLe
 // 项目列表与当前项目的本地持久化（localStorage）
 const PROJECTS_KEY = 'gitpilot-desktop.projects';
 const CURRENT_PROJECT_KEY = 'gitpilot-desktop.currentProject';
-const MODEL_KEY = 'gitpilot-desktop.lastModel';
+function getModelKey(mode: AppMode): string {
+	return `gitpilot-desktop.lastModel.${mode}`;
+}
 const STANDALONE_TASKS_KEY = 'gitpilot-desktop.standaloneTasks';
 /** 用户从 Code 侧栏移除的工作空间；其历史任务保留在磁盘和搜索中，但不回落到未分组列表。 */
 const REMOVED_PROJECT_PATHS_KEY = 'gitpilot-desktop.removedProjectPaths';
@@ -367,9 +465,9 @@ export function mergeCurrentSessionIntoList(
 }
 
 /** 仅保存 provider/id，模型详情始终以 sidecar 当前返回的可用列表为准。 */
-function loadLastModel(): { provider: string; id: string } | null {
+function loadLastModel(mode: AppMode): { provider: string; id: string } | null {
 	try {
-		const raw = localStorage.getItem(MODEL_KEY);
+		const raw = localStorage.getItem(getModelKey(mode));
 		const parsed = raw ? (JSON.parse(raw) as { provider?: unknown; id?: unknown }) : null;
 		return typeof parsed?.provider === 'string' && typeof parsed.id === 'string' ? { provider: parsed.provider, id: parsed.id } : null;
 	} catch {
@@ -377,9 +475,9 @@ function loadLastModel(): { provider: string; id: string } | null {
 	}
 }
 
-function saveLastModel(model: ModelInfo): void {
+function saveLastModel(model: ModelInfo, mode: AppMode): void {
 	try {
-		localStorage.setItem(MODEL_KEY, JSON.stringify({ provider: model.provider, id: model.id }));
+		localStorage.setItem(getModelKey(mode), JSON.stringify({ provider: model.provider, id: model.id }));
 	} catch {}
 }
 
@@ -412,6 +510,8 @@ interface SessionStore {
 	/** 平台后端可用性：只有后端可达且当前令牌有效时才为 connected。 */
 	platformConnection: PlatformConnectionState;
 	error: string | null;
+	/** 标题栏手动刷新进行中：刷新按钮转圈并防止重复触发。 */
+	isRefreshing: boolean;
 
 	// 会话状态
 	sessionState: RpcSessionState | null;
@@ -473,6 +573,8 @@ interface SessionStore {
 	refreshPlatformConnection: () => Promise<void>;
 	/** 用户点击底栏状态时重新请求平台账户、模型与连通状态。 */
 	retryPlatformConnection: () => Promise<void>;
+	/** 标题栏手动刷新：先强制 sidecar 联网重拉平台模型清单（同步管理端新配置），再全量刷新桌面状态。 */
+	manualRefresh: () => Promise<void>;
 	refreshSessionList: () => Promise<void>;
 	setComposerDraft: (sessionPath: string, draft: ComposerDraft) => void;
 	getComposerDraft: (sessionPath: string) => ComposerDraft | undefined;
@@ -494,6 +596,8 @@ interface SessionStore {
 	removeProject: (path: string) => void;
 	removeSessionFromList: (sessionPath: string) => void;
 	setModel: (provider: string, modelId: string) => Promise<void>;
+	/** 按 mode 应用该 mode 上次选中的模型（mode 切换时调用）。 */
+	applyModeModel: (mode: AppMode) => Promise<void>;
 	setThinkingLevel: (level: ThinkingLevel) => Promise<void>;
 	exportHtml: () => Promise<void>;
 	respondExtensionUI: (req: RpcExtensionUIRequest, value: { value: string } | { confirmed: boolean } | { cancelled: true }) => Promise<void>;
@@ -743,6 +847,36 @@ function appendUnreportedExecutionBatch(set: SessionSetter): void {
 	useWorkbenchStore.getState().resetThinking();
 }
 
+/** 将 sidecar 的最终净 diff 作为当前任务的结果消息写入聊天流。 */
+function appendWorkspaceChangesMessage(set: SessionSetter, changes?: WorkspaceChangeSet): void {
+	const changedFiles = changedFilesFromWorkspaceChanges(changes);
+	if (changedFiles.length === 0) return;
+	set((state) => {
+		const previous = state.messages.at(-1);
+		if (previous?.kind === 'changed_files' && sameChangedFiles(previous.changedFiles ?? [], changedFiles)) return {};
+		return {
+			messages: [...state.messages, { id: `workspace-changes-${newId()}`, role: 'assistant', text: '', kind: 'changed_files', changedFiles }],
+		};
+	});
+}
+
+/** 快照恢复时补回任务级最终 diff，避免重启后重新按工具中间结果推断。 */
+function appendWorkspaceChangesToMessages(messages: UIMessage[], changes?: WorkspaceChangeSet): UIMessage[] {
+	const changedFiles = changedFilesFromWorkspaceChanges(changes);
+	if (changedFiles.length === 0) return messages;
+	const previous = messages.at(-1);
+	if (previous?.kind === 'changed_files' && sameChangedFiles(previous.changedFiles ?? [], changedFiles)) return messages;
+	return [...messages, { id: `workspace-changes-${newId()}`, role: 'assistant', text: '', kind: 'changed_files', changedFiles }];
+}
+
+function sameChangedFiles(a: ChangedFile[], b: ChangedFile[]): boolean {
+	return a.length === b.length && a.every((file, index) => {
+		const other = b[index];
+		return file.path === other?.path && file.status === other.status && file.added === other.added
+			&& file.removed === other.removed && file.diff === other.diff;
+	});
+}
+
 /**
  * 新正文到来时，先把上一段正文与其间发生的工具调用切开。
  * 工具专用回合没有正文 message_end，不能等待该事件，否则后续正文会错误拼入前一段。
@@ -848,6 +982,7 @@ export function applyEvent(set: SessionSetter, e: AgentSessionEvent): void {
 
 	// agent_settled 是 sidecar 透传的真实空闲边界，包含工具执行、自动重试、压缩和后续回合。
 	if (type === 'agent_settled') {
+		const workspaceChanges = (e as { workspaceChanges?: WorkspaceChangeSet }).workspaceChanges;
 		const execution = useWorkbenchStore.getState().execution;
 		const durationMs = execution.startedAt != null && execution.endedAt != null
 			? Math.max(0, execution.endedAt - execution.startedAt)
@@ -861,11 +996,17 @@ export function applyEvent(set: SessionSetter, e: AgentSessionEvent): void {
 					break;
 				}
 			}
-			return { messages, _streamingAssistantId: null, isStreaming: false };
+			return {
+				messages,
+				_streamingAssistantId: null,
+				isStreaming: false,
+				sessionState: s.sessionState ? { ...s.sessionState, workspaceChanges } : s.sessionState,
+			};
 		});
 		// 极少数工具可能在最后一段正文之后才结束；收敛时补建批次，不能让这些真实操作消失。
 		// 总耗时固定回填到本轮 user 消息，执行批次只负责展示真实工具步骤。
 		appendUnreportedExecutionBatch(set);
+		appendWorkspaceChangesMessage(set, workspaceChanges);
 		return;
 	}
 
@@ -1107,6 +1248,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	connection: 'idle',
 	platformConnection: 'checking',
 	error: null,
+	isRefreshing: false,
 	sessionState: null,
 	selectedSessionPath: null,
 	isSessionLoading: false,
@@ -1138,6 +1280,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
 	connect: async () => {
 		if (get().connection === 'connecting' || get().connection === 'ready') return;
+		// 新订阅不能继承上一次 sidecar 连接的游标，否则首个 run 可能被误判为旧 run。
+		activeSessionEventCursor = {};
 		set({ connection: 'connecting', platformConnection: 'checking', error: null });
 
 		await initBridge();
@@ -1168,7 +1312,13 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			const eventSessionFile = typeof e.sessionFile === 'string' ? e.sessionFile : null;
 			// 切换会话期间后台任务仍会继续发事件；来源明确且不属于当前会话时，
 			// 不能让它污染当前正文、执行面板或侧栏刷新状态。
+			// 目标会话在 switch_session 响应附带 snapshot 前也可能先吐出事件；
+			// 这段事件已经包含在 snapshot 的 eventCursor 内，必须等快照原子恢复后再消费。
+			if (get().isSessionLoading && eventSessionFile) return;
 			if (eventSessionFile && currentSession && eventSessionFile !== currentSession) return;
+			const nextCursor = advanceSessionEventCursor(activeSessionEventCursor, e, currentSession);
+			if (!nextCursor) return;
+			activeSessionEventCursor = nextCursor;
 			useWorkbenchStore.getState().applyExecutionEvent(e);
 			// 先归并工具事件，再由 assistant 正文把此刻未归档的步骤封装成一个聊天批次。
 			applyEvent(set, e);
@@ -1292,8 +1442,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			// 切换期间可能已改变选中会话；仅当快照仍属于当前会话时应用，避免竞态覆盖。
 			const selectedPath = get().selectedSessionPath;
 			if (selectedPath && snapshot.session.sessionFile && snapshot.session.sessionFile !== selectedPath) return;
+			bindSessionEventCursor(sessionEventCursorFromSnapshot(snapshot));
 			const restoredStreaming = snapshot.execution.status === 'running';
-			const restoredMessages = agentMessagesToUi(snapshot.messages, restoredStreaming);
+			const restoredMessages = appendWorkspaceChangesToMessages(agentMessagesToUi(snapshot.messages, restoredStreaming), snapshot.session.workspaceChanges);
 			const prompt = [...restoredMessages].reverse().find((message) => message.role === 'user')?.text ?? null;
 			// 仅在确有运行态或本地执行已被重置时重建，避免覆盖正在实时归并的步骤。
 			const currentExecution = useWorkbenchStore.getState().execution;
@@ -1316,6 +1467,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	disconnect: async () => {
 		sessionSwitchRequestVersion += 1;
 		sessionRefreshRequestVersion += 1;
+		activeSessionEventCursor = {};
 		get()._unsubs.forEach((u) => u());
 		set({ _unsubs: [] });
 		await destroyBridge();
@@ -1325,6 +1477,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	refreshAll: async () => {
 		const requestVersion = ++sessionRefreshRequestVersion;
 		const next: Partial<SessionStore> = {};
+		let stateEventCursor: SessionEventCursor | undefined;
 		// 会话状态
 		try {
 			const stateRes = await rpc.getState();
@@ -1335,6 +1488,15 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 					next.sessionState = stateRes.data;
 					next.selectedSessionPath = stateRes.data.sessionFile ?? null;
 					next.isStreaming = stateRes.data.isStreaming;
+					if (stateRes.data.execution) {
+						const execution = stateRes.data.execution;
+						stateEventCursor = {
+							sessionFile: stateRes.data.sessionFile,
+							runId: typeof execution.runId === 'string' ? execution.runId : undefined,
+							lastSequence: execution.sequence,
+							settled: execution.status !== 'running' && typeof execution.runId === 'string',
+						};
+					}
 				}
 				// 能力列表始终同步，即使本次状态因切换竞态被跳过，也用于后续快照链路判断。
 				next.rpcCapabilities = stateRes.data.rpcCapabilities ?? [];
@@ -1372,15 +1534,32 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 				next.models = modelsRes.data.models;
 				if (modelsRes.data.models.length > 0) {
 					next.loggedIn = true;
+					const currentMode = useAppModeStore.getState().mode;
 					const currentModel = next.sessionState?.model ?? get().sessionState?.model;
-					if (hasSelectedModel(currentModel)) {
-						saveLastModel(currentModel);
+					const previous = loadLastModel(currentMode);
+					const previousMatch = previous ? modelsRes.data.models.find((model) => model.provider === previous.provider && model.id === previous.id) : null;
+					/** 已有 currentModel 但它不是当前 mode 上次选中的：切回当前 mode 的 lastModel，避免把别的 mode 选中的 model 误保存到当前 mode。 */
+					if (hasSelectedModel(currentModel) && (!previousMatch || previousMatch.provider !== currentModel.provider || previousMatch.id !== currentModel.id)) {
+						if (previousMatch) {
+							try {
+								await rpc.setModel(previousMatch.provider, previousMatch.id);
+								if (next.sessionState) next.sessionState = { ...next.sessionState, model: previousMatch };
+							} catch {
+								// 切回失败时仍把当前 model 写入当前 mode，避免下次启动无法恢复
+								saveLastModel(currentModel, currentMode);
+							}
+						} else {
+							// 当前 mode 的 lastModel 已不可用，把 currentModel 写入当前 mode
+							saveLastModel(currentModel, currentMode);
+						}
+					} else if (hasSelectedModel(currentModel)) {
+						saveLastModel(currentModel, currentMode);
 					} else {
-						const previous = loadLastModel();
-						const selected = modelsRes.data.models.find((model) => model.provider === previous?.provider && model.id === previous.id) ?? modelsRes.data.models[0];
+						/** currentModel 无效且当前 mode 没有可用的 lastModel，选第一个并保存。 */
+						const selected = previousMatch ?? modelsRes.data.models[0];
 						try {
 							await rpc.setModel(selected.provider, selected.id);
-							saveLastModel(selected);
+							saveLastModel(selected, currentMode);
 							if (next.sessionState) next.sessionState = { ...next.sessionState, model: selected };
 						} catch {
 							// 自动选择失败时仍保留模型列表，让用户可手动选择。
@@ -1413,6 +1592,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			// 拉取失败保留上次已知档位，不阻塞会话刷新。
 		}
 		if (requestVersion !== sessionRefreshRequestVersion) return;
+		if (stateEventCursor) bindSessionEventCursor(stateEventCursor);
 		set(next);
 		if (next.sessions) useWorkbenchStore.getState().reconcileRightPanelTabs(next.sessions.map((session) => session.path));
 		if (next.platformConnection === 'connected') {
@@ -1443,6 +1623,22 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	retryPlatformConnection: async () => {
 		set({ platformConnection: 'checking' });
 		await get().refreshAll();
+	},
+
+	manualRefresh: async () => {
+		if (get().isRefreshing) return;
+		set({ isRefreshing: true });
+		try {
+			// 先强制 sidecar 联网重拉平台模型清单并重解析当前模型：
+			// 管理端修改 visionRouting、输入模态等能力后，只有显式联网刷新才能覆盖本地缓存。
+			// 旧 sidecar 不认识该命令时返回错误，忽略后回退到读取现有清单，不阻塞全量刷新。
+			try {
+				await rpc.refreshModels();
+			} catch {}
+			await get().refreshAll();
+		} finally {
+			set({ isRefreshing: false });
+		}
 	},
 
 	refreshSessionList: async () => {
@@ -1676,6 +1872,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		try {
 			sessionSwitchRequestVersion += 1;
 			sessionRefreshRequestVersion += 1;
+			// 新会话没有可继承的消息游标；旧会话事件在 sessionFile 过滤层丢弃。
+			activeSessionEventCursor = {};
 			// 任务工作目录：优先传入（项目内子目录），否则用当前项目根
 			const taskCwd = cwd ?? get().currentProjectPath ?? undefined;
 			// 项目旁新增任务必须立即切换工作区，保证底部地址和 Agent 实际 cwd 同步。
@@ -1703,6 +1901,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		try {
 			sessionSwitchRequestVersion += 1;
 			sessionRefreshRequestVersion += 1;
+			activeSessionEventCursor = {};
 			// 独立任务优先使用用户设置的默认目录；未设置时才回退 GitPilot 根目录。
 			const configuredDirectory = loadDesktopPreferences().defaultDirectory;
 			const rootPath = configuredDirectory ?? resolveStandaloneTaskDirectory(null, await getGitPilotRoot());
@@ -1802,6 +2001,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			if (!session) return;
 			requestVersion = ++sessionSwitchRequestVersion;
 			sessionRefreshRequestVersion += 1;
+			// switch_session 响应前暂停目标事件消费；成功后由原子快照绑定准确 run/cursor，
+			// 取消切换时保留旧游标，避免旧会话恢复后被误判为目标会话。
 			const project = get().projects.find((item) => isWithinProject(session?.cwd, item.path));
 			const activePath = project?.path ?? session?.cwd;
 			if (activePath && activePath !== get().currentProjectPath) {
@@ -1819,8 +2020,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			const switchedOk = switchRes.success && switchRes.command === 'switch_session' && !switchRes.data.cancelled;
 			const snapshot = switchedOk ? switchRes.data.snapshot : undefined;
 			if (snapshot) {
+				bindSessionEventCursor(sessionEventCursorFromSnapshot(snapshot));
 				const restoredStreaming = snapshot.execution.status === 'running';
-				const restoredMessages = agentMessagesToUi(snapshot.messages, restoredStreaming);
+				const restoredMessages = appendWorkspaceChangesToMessages(agentMessagesToUi(snapshot.messages, restoredStreaming), snapshot.session.workspaceChanges);
 				const prompt = [...restoredMessages].reverse().find((message) => message.role === 'user')?.text ?? session.firstMessage ?? '';
 				// 用权威快照重建执行态（含 runId/lastSequence 序号守卫基准），替代从消息时间戳推断 startedAt；
 				// 运行中会话的当前段已完成工具步骤由消息历史恢复，避免工具执行历史丢失。
@@ -1861,7 +2063,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			const res = await rpc.getMessages();
 			if (requestVersion !== sessionSwitchRequestVersion) return;
 			if (res.success && res.command === 'get_messages' && Array.isArray(res.data.messages)) {
-				const restoredMessages = agentMessagesToUi(res.data.messages, restoredStreaming);
+				const restoredMessages = appendWorkspaceChangesToMessages(agentMessagesToUi(res.data.messages, restoredStreaming), get().sessionState?.workspaceChanges);
 				if (restoredStreaming) {
 					const seed = getRunningExecutionSeed(res.data.messages);
 					const fallbackPrompt = [...restoredMessages].reverse().find((message) => message.role === 'user')?.text
@@ -1889,7 +2091,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		try {
 			const res = await rpc.getMessages();
 			if (res.success && res.command === 'get_messages' && Array.isArray(res.data.messages)) {
-				set({ messages: agentMessagesToUi(res.data.messages, get().isStreaming), _streamingAssistantId: null, isStreaming: false });
+				set({ messages: appendWorkspaceChangesToMessages(agentMessagesToUi(res.data.messages, get().isStreaming), get().sessionState?.workspaceChanges), _streamingAssistantId: null, isStreaming: false });
 			}
 		} catch {}
 	},
@@ -1898,7 +2100,24 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		try {
 			await rpc.setModel(provider, modelId);
 			const selected = get().models.find((model) => model.provider === provider && model.id === modelId);
-			if (selected) saveLastModel(selected);
+			if (selected) saveLastModel(selected, useAppModeStore.getState().mode);
+			await get().refreshAll();
+		} catch (err) {
+			set({ error: err instanceof Error ? err.message : String(err) });
+		}
+	},
+
+	/** 把 sidecar 当前 model 切回指定 mode 上次选中的模型；目标 model 不可用时静默跳过。 */
+	applyModeModel: async (mode) => {
+		const { loggedIn, models, sessionState } = get();
+		if (!loggedIn || models.length === 0) return;
+		const previous = loadLastModel(mode);
+		if (!previous) return;
+		const target = models.find((model) => model.provider === previous.provider && model.id === previous.id);
+		if (!target) return;
+		if (sessionState?.model?.provider === target.provider && sessionState?.model?.id === target.id) return;
+		try {
+			await rpc.setModel(target.provider, target.id);
 			await get().refreshAll();
 		} catch (err) {
 			set({ error: err instanceof Error ? err.message : String(err) });
@@ -1950,13 +2169,23 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		try {
 			sessionSwitchRequestVersion += 1;
 			await rpc.logout();
-			try { localStorage.removeItem(MODEL_KEY); } catch {}
+			try { ['code', 'work', 'design'].forEach((m) => localStorage.removeItem(getModelKey(m as AppMode))); } catch {}
 			set({ loggedIn: false, platformAccount: null, models: [], sessionState: null, selectedSessionPath: null, isSessionLoading: false, extensionStatuses: new Map(), extensionWidgets: new Map() });
 		} catch (err) {
 			set({ error: err instanceof Error ? err.message : String(err) });
 		}
 	},
 }));
+
+/**
+ * 模式变化时自动把 sidecar 的当前 model 切回该 mode 上次选中的模型，避免三个 mode 共享同一个 sidecar session.model 互相带过去。
+ * 订阅放在 store 外部，避免 app-mode.ts 反向依赖 session store 形成循环引用。
+ */
+useAppModeStore.subscribe((state, prev) => {
+	if (state.mode !== prev.mode) {
+		void useSessionStore.getState().applyModeModel(state.mode);
+	}
+});
 
 /**
  * 从待响应扩展 UI 队列中取出当前会话的队首请求（按会话隔离）。

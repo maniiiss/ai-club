@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { isTauriEnv } from '@/src/rpc/bridge';
+import type { ExecutionStep } from '@/src/store/workbench';
 
 export type WorkTaskStatus = 'active' | 'completed' | 'archived';
 export type WorkFileChangeState = 'clean' | 'created' | 'updated' | 'deleted' | 'unsaved';
@@ -18,6 +19,12 @@ export interface WorkMessage {
 	text: string;
 	createdAt: number;
 	sources?: WorkSource[];
+	/** 消息形态：text 为常规气泡；execution 为执行过程批次（思考+工具步骤），按真实顺序穿插在正文之间。旧快照无该字段，视为 text。 */
+	kind?: 'text' | 'execution';
+	/** 执行过程批次内的工具步骤（仅 kind === 'execution'）。 */
+	steps?: ExecutionStep[];
+	/** 执行过程批次内的思考文本（仅 kind === 'execution'）。 */
+	thinking?: string;
 }
 
 export interface WorkFile {

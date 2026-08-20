@@ -39,6 +39,9 @@ function themeSwatchClass(theme: ThemeMode): string {
 	if (theme === 'ember') return 'bg-[#f0a45b]';
 	if (theme === 'paper') return 'bg-[#f8f5ee]';
 	if (theme === 'glacier') return 'bg-[#eef3f7]';
+	if (theme === 'glass') return 'bg-[#eceef2]';
+	if (theme === 'glass-dark') return 'bg-[#17181c]';
+	if (theme === 'black-white') return 'bg-[#ffffff]';
 	return 'bg-[#8de0cc]';
 }
 

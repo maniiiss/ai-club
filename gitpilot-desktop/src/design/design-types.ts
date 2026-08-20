@@ -145,7 +145,7 @@ export interface DesignTodoItem {
 }
 
 export type DesignExecutionStatus = 'idle' | 'starting' | 'running' | 'awaiting_clarification' | 'awaiting_approval' | 'completed' | 'stopped' | 'failed';
-export type DesignExecutionPhase = 'idle' | 'thinking' | 'responding' | 'tool' | 'applying_patch' | 'awaiting_clarification' | 'awaiting_approval';
+export type DesignExecutionPhase = 'idle' | 'thinking' | 'responding' | 'tool' | 'applying_patch' | 'compacting' | 'awaiting_clarification' | 'awaiting_approval';
 export interface DesignExecutionStep {
 	id: string;
 	toolCallId?: string;
@@ -165,6 +165,9 @@ export interface DesignExecution {
 	lastDeltaKind?: 'thinking' | 'tool' | 'text';
 	thinking: string;
 	steps: DesignExecutionStep[];
+	/** 最近一次上下文压缩的轻量结果；摘要正文仍留在 Agent 会话中，不进入 Design UI 状态。 */
+	compactionNotice?: 'success' | 'failure';
+	compactionError?: string;
 	startedAt?: number;
 	endedAt?: number;
 }

@@ -129,6 +129,12 @@ export interface CompactionSettings {
 	keepRecentTokens: number;
 }
 
+/**
+ * 会话创建方可追加到 Pi 默认压缩提示的领域规则。
+ * 允许使用回调是为了在 Design 压缩发生时读取当前运行页面，而不是冻结创建会话时的页面。
+ */
+export type CompactionInstructions = string | (() => string | undefined);
+
 export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
 	enabled: true,
 	reserveTokens: 16384,

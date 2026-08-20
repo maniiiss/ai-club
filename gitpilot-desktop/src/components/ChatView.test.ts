@@ -97,4 +97,17 @@ describe('对话流消息筛选', () => {
 		expect(animating.messages.map((message) => message.id)).toEqual(['user', 'progress', 'exec', 'final']);
 		expect(animating.processMessageIdsByUserId.get('user')).toEqual(new Set(['progress', 'exec']));
 	});
+
+	it('任务级最终 diff 覆盖工具中间统计，避免重复或累计过量', () => {
+		const result = buildConversationPresentation([
+			{ id: 'user', role: 'user', text: '修改文件', kind: 'text', meta: { executionDurationMs: 1_000 } },
+			{
+				id: 'exec', role: 'assistant', text: '', kind: 'execution',
+				changedFiles: [{ path: 'a.ts', status: 'modified', added: 9, removed: 7, editCount: 3, editable: true, diff: 'intermediate' }],
+			},
+			{ id: 'final-diff', role: 'assistant', text: '', kind: 'changed_files', changedFiles: [{ path: 'a.ts', status: 'modified', added: 1, removed: 1, editCount: 1, editable: true, diff: 'final' }] },
+		]);
+		expect(result.messages).toHaveLength(2);
+		expect(result.messages.at(-1)).toMatchObject({ kind: 'changed_files', changedFiles: [{ added: 1, removed: 1, diff: 'final' }] });
+	});
 });

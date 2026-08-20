@@ -22,7 +22,6 @@
 .artifactTabs button { flex: 1; font-size: calc(11px * var(--desktop-font-scale)); }
 .artifactContent { min-height: 0; flex: 1; margin-top: 10px; }
 .artifactContent textarea { box-sizing: border-box; width: 100%; height: 100%; min-height: 220px; resize: none; border: 1px solid var(--gp-border); border-radius: 7px; outline: 0; background: var(--gp-code-surface); padding: 10px; color: var(--gp-text); font: calc(12px * var(--desktop-font-scale))/1.65 var(--font-sans); }
-.artifactContent textarea:focus { border-color: var(--gp-accent); box-shadow: 0 0 0 2px var(--gp-accent-soft); }
 
 /* 文件区采用资源管理器式单列布局：文件是主操作，危险操作仅在需要时显现。 */
 /* WORK 右侧页签列表单独横向滚动，加号操作区始终固定在最右侧。 */
@@ -35,7 +34,7 @@
 .fileTabScroller:hover::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--gp-border-strong) 68%, transparent); }
 .fileTabScroller:hover::-webkit-scrollbar-thumb:hover { background: var(--gp-text-muted); }
 .fileTabActions { display: flex; flex: 0 0 37px; align-items: end; justify-content: flex-end; border-left: 1px solid var(--gp-border); background: var(--gp-panel-deep); padding: 0 5px 0 4px; }
-.fileTab { display: inline-flex; min-width: max-content; height: 28px; flex: 0 0 auto; align-items: center; gap: 5px; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; background: transparent; padding: 0 6px 0 8px; color: var(--gp-text-muted); font: calc(10px * var(--desktop-font-scale)) var(--font-mono); white-space: nowrap; cursor: pointer; }
+.fileTab { display: inline-flex; min-width: max-content; height: 28px; flex: 0 0 auto; align-items: center; gap: 5px; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; background: transparent; padding: 0 6px 0 8px; color: var(--gp-text-muted); font: calc(10px * var(--desktop-font-scale)) var(--font-sans); white-space: nowrap; cursor: pointer; }
 .fileTab > svg { width: 13px; height: 13px; flex: 0 0 auto; color: var(--gp-accent); }
 .fileTab > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .fileTab:hover { background: var(--gp-surface-hover); color: var(--gp-text-secondary); }
@@ -75,3 +74,69 @@
 .fileEmpty svg { color: var(--gp-accent); }
 .fileEmpty span { color: var(--gp-text-secondary); font-size: calc(11px * var(--desktop-font-scale)); font-weight: 600; }
 .fileEmpty small { max-width: 220px; color: var(--gp-text-muted); font-size: calc(10px * var(--desktop-font-scale)); line-height: 1.5; }
+
+/* ======================== 工作项协同浏览面板 ======================== */
+/* 布局骨架：面板整体为纵向 flex，滚动区独立，列表行紧凑双行结构适配窄侧栏。 */
+.collabRoot { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
+.collabScroll { min-height: 0; flex: 1; padding: 7px 7px 12px; }
+.collabToolbar { display: flex; min-width: 0; flex: 0 0 auto; align-items: center; gap: 5px; padding: 8px 8px 5px; }
+.collabProjectTrigger { max-width: 116px; min-width: 0; overflow: hidden; justify-content: flex-start; text-overflow: ellipsis; white-space: nowrap; font-size: calc(10px * var(--desktop-font-scale)); }
+.collabSearch { display: flex; min-width: 0; flex: 1; height: 29px; align-items: center; gap: 6px; border: 1px solid var(--gp-border); border-radius: 7px; background: var(--gp-panel-deep); padding: 0 7px; color: var(--gp-text-muted); }
+.collabSearch input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--gp-text); font: calc(11px * var(--desktop-font-scale))/1.4 var(--font-sans); }
+.collabSearch input::placeholder { color: var(--gp-text-dim); }
+.collabSearchClear { display: inline-grid; width: 16px; height: 16px; place-items: center; border: 0; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; }
+.collabSearchClear:hover { color: var(--gp-danger); }
+.collabChips { display: flex; min-width: 0; flex: 0 0 auto; flex-wrap: wrap; gap: 3px; padding: 2px 8px; }
+.collabChip { display: inline-flex; height: 20px; min-width: max-content; align-items: center; gap: 3px; border: 1px solid var(--gp-border); border-radius: 999px; background: transparent; padding: 0 8px; color: var(--gp-text-muted); font: calc(9px * var(--desktop-font-scale)) var(--font-sans); cursor: pointer; }
+.collabChip:hover { border-color: var(--gp-border-strong); color: var(--gp-text-secondary); }
+.collabChipActive, .collabChipActive:hover { border-color: color-mix(in srgb, var(--gp-accent) 42%, var(--gp-border)); background: var(--gp-accent-soft); color: var(--gp-accent); }
+.collabChip svg { width: 10px; height: 10px; }
+.collabListHeader { display: flex; min-width: 0; flex: 0 0 auto; align-items: center; gap: 5px; padding: 5px 9px; color: var(--gp-text-muted); font: calc(9px * var(--desktop-font-scale)) var(--font-sans); }
+.collabError { margin: 4px 9px; border: 1px solid color-mix(in srgb, var(--gp-danger) 40%, var(--gp-border)); border-radius: 6px; background: color-mix(in srgb, var(--gp-danger) 8%, var(--gp-surface)); padding: 6px 8px; color: var(--gp-danger); font: calc(10px * var(--desktop-font-scale))/1.5 var(--font-sans); }
+.collabList { display: grid; min-width: 0; gap: 3px; }
+.collabItem { display: grid; width: 100%; min-width: 0; gap: 3px; border: 1px solid transparent; border-left: 2px solid transparent; border-radius: 7px; background: transparent; padding: 5px 6px 5px 4px; color: inherit; text-align: left; cursor: pointer; }
+.collabItem:hover { border-color: var(--gp-border); background: var(--gp-surface-hover); }
+.collabItem:focus-visible { border-color: var(--gp-border-strong); border-left-color: var(--gp-accent); outline: none; }
+.collabItemTitle { display: flex; min-width: 0; align-items: center; gap: 5px; }
+.collabItemCode { flex: 0 0 auto; color: var(--gp-text-muted); font: calc(9px * var(--desktop-font-scale)) var(--font-mono); }
+.collabItemType { display: inline-flex; height: 15px; flex: 0 0 auto; align-items: center; border: 1px solid color-mix(in srgb, var(--gp-accent) 28%, var(--gp-border)); border-radius: 4px; background: color-mix(in srgb, var(--gp-accent-soft) 72%, var(--gp-surface)); color: var(--gp-accent); font-size: calc(9px * var(--desktop-font-scale)); padding: 0 4px; }
+.collabItemName { min-width: 0; overflow: hidden; color: var(--gp-text); font-size: calc(11px * var(--desktop-font-scale)); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.collabItemMeta { display: flex; min-width: 0; align-items: center; gap: 6px; overflow: hidden; color: var(--gp-text-muted); font-size: calc(9px * var(--desktop-font-scale)); white-space: nowrap; }
+.collabItemMeta > span:not(.collabBadge) { overflow: hidden; text-overflow: ellipsis; }
+.collabItemMeta > span:not(.collabBadge) + span:not(.collabBadge)::before { margin-right: 6px; color: var(--gp-border-strong); content: '•'; }
+.collabBadge { display: inline-flex; height: 16px; flex: 0 0 auto; align-items: center; border-radius: 999px; padding: 0 6px; font-size: calc(9px * var(--desktop-font-scale)); }
+.collabBadgeTodo { background: color-mix(in srgb, var(--gp-text-muted) 14%, transparent); color: var(--gp-text-secondary); }
+.collabBadgeDoing { background: color-mix(in srgb, #2563eb 14%, transparent); color: #2563eb; }
+.collabBadgeDone { background: color-mix(in srgb, var(--gp-status-success) 16%, transparent); color: var(--gp-status-success); }
+.collabEmpty { display: flex; min-height: 150px; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px 16px; color: var(--gp-text-muted); text-align: center; }
+.collabEmpty svg { color: var(--gp-accent); }
+.collabEmpty span { color: var(--gp-text-secondary); font-size: calc(11px * var(--desktop-font-scale)); font-weight: 600; }
+.collabEmpty small { max-width: 220px; color: var(--gp-text-muted); font-size: calc(10px * var(--desktop-font-scale)); line-height: 1.5; }
+.collabPagination { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 8px; color: var(--gp-text-muted); font-size: calc(10px * var(--desktop-font-scale)); }
+/* 覆盖式详情视图 */
+.collabDetail { display: flex; min-width: 0; flex-direction: column; gap: 10px; padding: 4px 3px 8px; }
+.collabDetailToolbar { display: flex; min-width: 0; align-items: center; gap: 7px; }
+.collabDetailCode { min-width: 0; flex: 1; overflow: hidden; color: var(--gp-text-muted); font: calc(10px * var(--desktop-font-scale)) var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.collabDetailSend { flex: 0 0 auto; gap: 4px; font-size: calc(10px * var(--desktop-font-scale)); }
+.collabDetailTitle { margin: 0; color: var(--gp-text); font: 600 calc(13px * var(--desktop-font-scale))/1.5 var(--font-sans); }
+.collabDetailFields { display: grid; min-width: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 10px; margin: 0; }
+.collabDetailField { display: flex; min-width: 0; align-items: baseline; gap: 6px; }
+.collabDetailField dt { flex: 0 0 auto; color: var(--gp-text-muted); font-size: calc(9px * var(--desktop-font-scale)); white-space: nowrap; }
+.collabDetailField dd { min-width: 0; overflow: hidden; color: var(--gp-text-secondary); font-size: calc(10px * var(--desktop-font-scale)); text-overflow: ellipsis; white-space: nowrap; }
+.collabDetailSection { min-width: 0; }
+.collabDetailSection h4 { margin: 0 0 5px; color: var(--gp-text-secondary); font: 600 calc(10px * var(--desktop-font-scale)) var(--font-sans); }
+.collabMarkdown { min-width: 0; border: 1px solid var(--gp-border); border-radius: 7px; background: var(--gp-overlay); padding: 8px 10px; }
+.collabMarkdown > :first-child { margin-top: 0; }
+.collabMarkdown > :last-child { margin-bottom: 0; }
+.collabMarkdown h1, .collabMarkdown h2, .collabMarkdown h3, .collabMarkdown h4 { margin: 10px 0 6px; color: var(--gp-text); font-size: calc(11px * var(--desktop-font-scale)); }
+.collabMarkdown p { margin: 0 0 6px; color: var(--gp-text-secondary); font-size: calc(10px * var(--desktop-font-scale)); line-height: 1.6; }
+.collabMarkdown li { color: var(--gp-text-secondary); font-size: calc(10px * var(--desktop-font-scale)); line-height: 1.6; }
+.collabMarkdown table { width: 100%; border-collapse: collapse; }
+.collabMarkdown th, .collabMarkdown td { border: 1px solid var(--gp-border); padding: 3px 6px; font-size: calc(10px * var(--desktop-font-scale)); }
+.collabMarkdown pre { overflow-x: auto; border: 1px solid var(--gp-border); border-radius: 6px; background: var(--gp-code-surface); padding: 8px; }
+.collabMarkdown code { font-size: calc(10px * var(--desktop-font-scale)); }
+/* 输入框的待发送工作项标签 */
+.collabPendingChip { display: flex; min-width: 0; align-items: center; gap: 6px; border: 1px solid color-mix(in srgb, var(--gp-accent) 32%, var(--gp-border)); border-radius: 6px; background: var(--gp-accent-soft); padding: 4px 6px 4px 9px; color: var(--gp-text-secondary); font-size: calc(10px * var(--desktop-font-scale)); }
+.collabPendingChip strong { min-width: 0; overflow: hidden; color: var(--gp-accent); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.collabPendingChip button { display: inline-grid; width: 17px; height: 17px; flex: 0 0 17px; place-items: center; border: 0; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; }
+.collabPendingChip button:hover { background: var(--gp-danger); color: var(--primary-foreground); }

@@ -309,7 +309,7 @@ describe('桌面会话生命周期契约', () => {
 
 	it('扩展确认弹框按会话隔离：切走隐藏、切回恢复，不带到其它会话', async () => {
 		await useSessionStore.getState().connect();
-		useWorkbenchStore.getState().resetExecution();
+		useWorkbenchStore.getState().beginExecution('第一轮');
 		// 会话 A 收到计划确认请求
 		useSessionStore.setState({ selectedSessionPath: 'C:\\sessions\\A.jsonl', sessionState: null });
 		bridgeLifecycle.extension.forEach((cb) => cb({ type: 'extension_ui_request', id: 'confirm-1', method: 'confirm', title: '计划已就绪，下一步？', message: '确认执行该计划？' }));
@@ -453,6 +453,64 @@ describe('桌面会话生命周期契约', () => {
 			assistantMessageEvent: { type: 'text_delta', delta: '当前会话正文' },
 		}));
 		expect(useSessionStore.getState().messages[0]).toMatchObject({ text: '当前会话正文', streaming: true });
+	});
+
+	it('同一会话内按 runId/sequence 丢弃迟到正文，避免污染当前工具批次', async () => {
+		await useSessionStore.getState().connect();
+		useWorkbenchStore.getState().beginExecution('第一轮');
+		const sessionPath = 'C:\\sessions\\A.jsonl';
+		useSessionStore.setState({
+			selectedSessionPath: sessionPath,
+			sessionState: { sessionFile: sessionPath } as never,
+			messages: [],
+			_streamingAssistantId: null,
+			isStreaming: true,
+		});
+
+		const emit = (event: unknown) => bridgeLifecycle.event.forEach((callback) => callback(event));
+		emit({ type: 'message_update', sessionFile: sessionPath, sessionId: 'A', runId: 'run-1', sequence: 1, assistantMessageEvent: { type: 'text_delta', delta: '第一轮正文' } });
+		// 乱序旧事件不得继续拼接到当前 assistant 气泡。
+		emit({ type: 'message_update', sessionFile: sessionPath, sessionId: 'A', runId: 'run-1', sequence: 0, assistantMessageEvent: { type: 'text_delta', delta: '迟到旧正文' } });
+		emit({ type: 'agent_settled', sessionFile: sessionPath, sessionId: 'A', runId: 'run-1', sequence: 2 });
+		// settled 后下一轮必须重新绑定 runId，且正文从新气泡开始。
+		emit({ type: 'message_update', sessionFile: sessionPath, sessionId: 'A', runId: 'run-2', sequence: 3, assistantMessageEvent: { type: 'text_delta', delta: '第二轮正文' } });
+
+		expect(useSessionStore.getState().messages.map((message) => message.text)).toEqual(['第一轮正文', '第二轮正文']);
+	});
+
+	it('低频旧快照返回时不回退实时游标，避免下一轮正文被重新判成旧 run', async () => {
+		await useSessionStore.getState().connect();
+		useWorkbenchStore.getState().beginExecution('第一轮');
+		const sessionPath = 'C:\\sessions\\A.jsonl';
+		useSessionStore.setState({
+			selectedSessionPath: sessionPath,
+			sessionState: { sessionFile: sessionPath } as never,
+			messages: [],
+			_streamingAssistantId: null,
+			isStreaming: true,
+		});
+		const emit = (event: unknown) => bridgeLifecycle.event.forEach((callback) => callback(event));
+		emit({ type: 'message_update', sessionFile: sessionPath, sessionId: 'A', runId: 'run-old', sequence: 1, assistantMessageEvent: { type: 'text_delta', delta: '旧轮正文' } });
+		emit({ type: 'agent_settled', sessionFile: sessionPath, sessionId: 'A', runId: 'run-old', sequence: 2 });
+		emit({ type: 'message_update', sessionFile: sessionPath, sessionId: 'A', runId: 'run-new', sequence: 3, assistantMessageEvent: { type: 'text_delta', delta: '新轮正文' } });
+
+		// 模拟 get_state 在新 run 实时事件之后才返回，但内容仍是旧 run 的运行中快照。
+		rpcMocks.getState.mockResolvedValue({
+			success: true,
+			command: 'get_state',
+			data: {
+				thinkingLevel: 'off', isStreaming: true, isCompacting: false, steeringMode: 'all', followUpMode: 'all',
+				sessionFile: sessionPath, sessionId: 'A', autoCompactionEnabled: true, messageCount: 2, pendingMessageCount: 0,
+				execution: { runId: 'run-old', status: 'running', phase: 'responding', sequence: 1, activeTools: [] },
+			},
+		} as never);
+		await useSessionStore.getState().refreshAll();
+
+		// 旧快照不能让迟到的旧 run 重新取得游标；当前 run 的后续正文仍应显示。
+		emit({ type: 'message_update', sessionFile: sessionPath, sessionId: 'A', runId: 'run-old', sequence: 2, assistantMessageEvent: { type: 'text_delta', delta: '迟到旧正文' } });
+		emit({ type: 'message_update', sessionFile: sessionPath, sessionId: 'A', runId: 'run-new', sequence: 4, assistantMessageEvent: { type: 'text_delta', delta: '新轮后续正文' } });
+
+		expect(useSessionStore.getState().messages.map((message) => message.text)).toEqual(['旧轮正文', '新轮正文新轮后续正文']);
 	});
 
 	it('pickActiveExtensionUI 只命中当前会话的请求，跨会话请求互不干扰', () => {

@@ -108,6 +108,14 @@ function toModelConfig(model: CliModel): ProviderModelConfig {
 	// 命中推理能力映射表的模型按 pi-ai 原生配置启用思考（reasoning + deepseek thinkingFormat + system role）；
 	// 其余平台模型保持 reasoning:false，避免向不支持思考的模型发送 reasoning/thinking 参数。
 	const profile = resolveReasoningProfile(model.modelName);
+	// PI 的 Model.input 是适配层元数据，真实能力由平台模型管理配置下发；旧接口安全回退为文本。
+	// L1: 平台声明 visionRouting:true 时，即使 inputModalities 不含 image 也注入 image 能力，
+	// 让 CLI 把图片内联到请求，由后端代理透传给上游 vision 模型（如 9router 代理的上游）。
+	const platformInput = (model.inputModalities?.length ? model.inputModalities : ["text"]) as ("text" | "image")[];
+	const effectiveInput =
+		model.visionRouting && !platformInput.includes("image")
+			? [...platformInput, "image" as const]
+			: platformInput;
 	return {
 		// id 用平台数据库 ID（streamSimple 据此 Number(id) 调 createModelSession）。
 		id: String(model.id),
@@ -119,8 +127,7 @@ function toModelConfig(model: CliModel): ProviderModelConfig {
 		reasoning: profile?.reasoning ?? false,
 		thinkingLevelMap: profile?.thinkingLevelMap,
 		compat: profile?.compat,
-		// PI 的 Model.input 是适配层元数据，真实能力由平台模型管理配置下发；旧接口安全回退为文本。
-		input: model.inputModalities?.length ? model.inputModalities : ["text"],
+		input: effectiveInput,
 		// 仅把倍率作为模型元数据传到桌面 RPC，PI 的 cost 仍保持 0，避免展示字段影响真实计费。
 		billingMultiplier: model.billingMultiplier,
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },

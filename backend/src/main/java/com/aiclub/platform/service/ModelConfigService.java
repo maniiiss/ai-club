@@ -371,6 +371,7 @@ public class ModelConfigService {
         entity.setContextLength(request.contextLength());
         entity.setMaxOutputTokens(request.maxOutputTokens());
         entity.setInputModalities(serializeInputModalities(normalizeInputModalities(request.inputModalities())));
+        entity.setVisionRouting(Boolean.TRUE.equals(request.visionRouting()));
         entity.setDescription(request.description() == null ? "" : request.description().trim());
         entity.setEnabled(request.enabled() == null || request.enabled());
         applyTokenBilling(entity, request);
@@ -462,7 +463,8 @@ public class ModelConfigService {
                 entity.getInputCreditPer1k(),
                 entity.getOutputCreditPer1k(),
                 entity.getCachedInputCreditPer1k(),
-                parseInputModalities(entity.getInputModalities())
+                parseInputModalities(entity.getInputModalities()),
+                Boolean.TRUE.equals(entity.getVisionRouting())
         );
     }
 

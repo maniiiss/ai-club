@@ -4,7 +4,7 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizePlatformUrl } from "../src/extensions/gitpilot/config.ts";
-import { listProjects, uploadDesignVersion } from "../src/extensions/gitpilot/api.ts";
+import { getWorkItemDetail, getWorkItemLinks, listMyTasks, listProjects, uploadDesignVersion } from "../src/extensions/gitpilot/api.ts";
 import { clearModelSessions, ensureModelSession } from "../src/extensions/gitpilot/session-cache.ts";
 
 const PLATFORM_URL = "http://localhost:8080";
@@ -112,5 +112,80 @@ describe("uploadDesignVersion", () => {
 		expect(options).toEqual(expect.objectContaining({ method: "POST", headers: expect.objectContaining({ authorization: "Bearer gpt_test", "content-type": "application/json" }) }));
 		expect(JSON.parse(String(options.body))).toMatchObject({ designId: "design-1", revisionId: "rev-3", previewHtml: "<main>登录</main>" });
 		expect(result).toMatchObject({ versionId: 42, versionNumber: 3, status: "DRAFT", revisionId: "rev-3" });
+	});
+});
+
+// ============================================================================
+// 工作项协同浏览（桌面端右侧栏分页浏览）依赖的三个查询接口
+// ============================================================================
+
+describe("listMyTasks", () => {
+	it("分页与过滤参数映射为查询串并透传分页结构", async () => {
+		mockFetch.mockReset();
+		mockFetch.mockResolvedValueOnce(platformOk({
+			records: [
+				{ id: 11, workItemCode: "REQ-11", name: "登录加固", workItemType: "需求", status: "进行中", priority: "高", assignee: "张三", taskType: null, projectId: 3, projectName: "订单中心", iterationId: null, iterationName: null, planStartDate: null, planEndDate: null, requirementMarkdown: "# 需求" },
+			],
+			total: 41,
+			page: 2,
+			size: 20,
+			totalPages: 3,
+		}));
+
+		const page = await listMyTasks(PLATFORM_URL, "gpt_test", { page: 2, size: 20, status: "进行中", projectId: 3, keyword: "登录", workItemType: "需求" });
+
+		const [url, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+		expect(url).toBe(`${PLATFORM_URL}/api/cli/tasks?page=2&size=20&status=${encodeURIComponent("进行中")}&projectId=3&keyword=${encodeURIComponent("登录")}&workItemType=${encodeURIComponent("需求")}`);
+		expect(options).toEqual(expect.objectContaining({ headers: expect.objectContaining({ authorization: "Bearer gpt_test" }) }));
+		// 协同浏览的列表态依赖 requirementMarkdown 大字段留在记录里由调用方剔除，此处只验证结构透传。
+		expect(page.total).toBe(41);
+		expect(page.totalPages).toBe(3);
+		expect(page.records[0]).toMatchObject({ id: 11, workItemCode: "REQ-11", requirementMarkdown: "# 需求" });
+	});
+
+	it("无过滤条件时不携带查询串", async () => {
+		mockFetch.mockReset();
+		mockFetch.mockResolvedValueOnce(platformOk({ records: [], total: 0, page: 1, size: 20, totalPages: 0 }));
+
+		await listMyTasks(PLATFORM_URL, "gpt_test");
+
+		const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
+		expect(url).toBe(`${PLATFORM_URL}/api/cli/tasks`);
+	});
+});
+
+describe("getWorkItemDetail", () => {
+	it("按工作项 ID 读取业务详情接口", async () => {
+		mockFetch.mockReset();
+		mockFetch.mockResolvedValueOnce(platformOk({
+			id: 11, workItemCode: "REQ-11", name: "登录加固", workItemType: "需求", creatorName: "李四", status: "进行中",
+			priority: "高", assignee: "张三", taskType: null, projectId: 3, projectName: "订单中心", iterationId: null, iterationName: null,
+			planStartDate: null, planEndDate: null, description: "描述", requirementMarkdown: "# 需求", prototypeUrl: null, moduleName: "认证",
+		}));
+
+		const detail = await getWorkItemDetail(PLATFORM_URL, "gpt_test", 11);
+
+		const [url, options] = mockFetch.mock.calls[0] as [string, RequestInit];
+		expect(url).toBe(`${PLATFORM_URL}/api/tasks/11`);
+		expect(options).toEqual(expect.objectContaining({ headers: expect.objectContaining({ authorization: "Bearer gpt_test" }) }));
+		expect(detail).toMatchObject({ id: 11, requirementMarkdown: "# 需求", moduleName: "认证" });
+	});
+});
+
+describe("getWorkItemLinks", () => {
+	it("按工作项 ID 读取关联资源集合", async () => {
+		mockFetch.mockReset();
+		const links = {
+			children: [], parentWorkItems: [], relatedWorkItems: [],
+			testCases: [{ id: 7, title: "登录失败重试", moduleName: "认证", caseType: "功能", priority: "P1", testPlanName: "迭代回归" }],
+			attachments: [{ id: 8, fileName: "原型.png", contentType: "image/png", fileSize: 2048 }],
+		};
+		mockFetch.mockResolvedValueOnce(platformOk(links));
+
+		const result = await getWorkItemLinks(PLATFORM_URL, "gpt_test", 11);
+
+		const [url] = mockFetch.mock.calls[0] as [string, RequestInit];
+		expect(url).toBe(`${PLATFORM_URL}/api/tasks/11/links`);
+		expect(result).toEqual(links);
 	});
 });

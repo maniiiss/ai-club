@@ -2138,6 +2138,8 @@ export interface AiModelConfigItem {
   enabled: boolean
   /** 平台明确配置的输入能力，旧接口缺失时前端按仅文本兼容展示。 */
   inputModalities?: AiModelInputModality[]
+  /** 声明上游支持 vision（如经过 9router 代理）；为 true 时 CLI 在 inputModalities 不含 image 时仍内联图片，由后端透传给上游。 */
+  visionRouting?: boolean
   /** 模型上下文窗口长度（token），用于 GitPilot CLI 展示与自动压缩阈值判断。 */
   contextLength?: number
   /** 模型最大输出 token 数。 */

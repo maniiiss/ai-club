@@ -132,11 +132,11 @@ export function TargetWorkbenchLayout({
 	return <div className={styles.root}>
 		<div className={`${styles.panels} ${layout.leftCollapsed ? styles.leftCollapsed : ''}`} style={{ gridTemplateColumns: columns }}>
 			{isCompact ? <div className={`${styles.pane} ${styles.centerPane}`}>{center}</div> : <>
-				<div className={`${styles.pane} ${styles.leftPane}`} aria-hidden={layout.leftCollapsed}>{left}</div>
+				<div className={`${styles.pane} ${styles.leftPane}`} aria-hidden={layout.leftCollapsed} data-collapsed={layout.leftCollapsed}>{left}</div>
 				{layout.leftCollapsed ? <div /> : <ResizeHandle side="left" value={layout.leftWidth} />}
 				<div className={`${styles.pane} ${styles.centerPane}`}>{center}</div>
 				{rightVisible ? <ResizeHandle side="right" value={layout.rightWidth} /> : <div />}
-				<div className={`${styles.pane} ${styles.rightPane}`} aria-hidden={!rightVisible}>{right}</div>
+				<div className={`${styles.pane} ${styles.rightPane}`} aria-hidden={!rightVisible} data-visible={rightVisible}>{right}</div>
 			</>}
 		</div>
 		{isCompact && <Sheet open={mobileLeftOpen} onOpenChange={setMobileLeftOpen}><SheetContent side="left" className={styles.mobileSheet}><SheetHeader><SheetTitle>{leftPanelTitle}</SheetTitle><SheetDescription>{leftPanelDescription}</SheetDescription></SheetHeader><div className={styles.mobileBody}>{left}</div></SheetContent></Sheet>}

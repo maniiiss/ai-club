@@ -78,6 +78,7 @@
 - [积分与 Token 关联及智能体计费设计](credit-token-agent-billing-technical-design-v1.md) - 模型 token 定价、智能体按 token 计费（预扣+终态结算）、激活 cost_credits 建立 token 与积分关联
 - [模型 Token 计费管理端 UI 设计](model-token-billing-console-ui-v1.md) - 模型管理页 token 计费配置入口、列表计费状态列、积分管理页 TOKEN_BASED 规则标注
 - [GitPilot CLI 模型会话 Token 计费设计](cli-model-session-token-billing-v1.md) - CLI/Desktop 模型调用按实际 token 即时扣积分，复用 ModelPricingService/CreditService
+- [GitPilot 桌面端非多模态模型图片识别 fallback 技术设计](gitpilot-image-vision-fallback-technical-design-v1.md) - 9router 代理感知 + full-turn multimodal routing + 本地 OCR 三层 fallback，解决非多模态模型上传图片被丢弃问题
 
 ### 工程规范
 
@@ -103,5 +104,6 @@
 - [GitPilot Desktop Design Mode 流式执行技术设计 v2](gitpilot-desktop-design-mode-streaming-technical-design-v2.md) - 独立 Design Agent 会话、结构化 patch、实时预览、审批、恢复与 Design 专属队列
 - [GitPilot Desktop Design Mode 多项目与多文件技术设计 v1](gitpilot-desktop-design-mode-multi-project-multi-file-technical-design-v1.md) - 项目级 Design Workspace、页面树/文件树、canonical manifest、多项目事件隔离与受控预览
 - [GitPilot Desktop Design Mode 项目级设计规范技术设计 v1](gitpilot-desktop-design-mode-project-guidelines-technical-design-v1.md) - 项目独立的品牌、Token、组件、交互和可访问性约束，以及规范恢复与 Agent 注入链路
+- [Design 上下文压缩技术设计 v1](design-compaction-technical-design-v1.md) - Pi 默认摘要格式复用、Design 页面事实压缩提示、RPC 状态投影与 Desktop 三态文案
 
 *本索引自动更新，如有新增设计文档请同步维护。*

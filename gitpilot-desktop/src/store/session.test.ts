@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyEvent, agentMessagesToUi, buildRestoredExecutionSteps, filterDesktopThinkingLevels, getAssistantErrorEndText, getAssistantMessageEndText, getPlanCompletionMessageEndText, getRunningExecutionSeed, isInternalGoalPrompt, mergeCurrentSessionIntoList, platformConnectionStateFromResponse, shouldSkipProjectSwitch, useSessionStore, type UIMessage } from './session';
+import { advanceSessionEventCursor, applyEvent, agentMessagesToUi, buildRestoredExecutionSteps, filterDesktopThinkingLevels, getAssistantErrorEndText, getAssistantMessageEndText, getPlanCompletionMessageEndText, getRunningExecutionSeed, isInternalGoalPrompt, mergeCurrentSessionIntoList, platformConnectionStateFromResponse, shouldSkipProjectSwitch, useSessionStore, type UIMessage } from './session';
 import { useWorkbenchStore } from './workbench';
 
 function applyToStreamingState(state: { messages: UIMessage[]; _streamingAssistantId: string | null; isStreaming: boolean }, event: Parameters<typeof applyEvent>[1]) {
@@ -239,6 +239,29 @@ describe('历史消息回放', () => {
 		expect(messages[2]?.kind).toBe('execution');
 		expect((messages[2] as UIMessage & { executionSteps?: unknown[] }).executionSteps).toHaveLength(1);
 		expect(messages[3]).toMatchObject({ role: 'assistant', text: '检查完成。' });
+	});
+});
+
+describe('消息流 runId/sequence 防护', () => {
+	it('拒绝旧序号和旧 run，settled 后只接受序号更大的下一轮', () => {
+		const initial = { sessionFile: 'C:\\sessions\\task.jsonl', runId: 'run-1', lastSequence: 5, settled: false };
+		expect(advanceSessionEventCursor(initial, { type: 'message_update', runId: 'run-1', sequence: 4 }, initial.sessionFile)).toBeNull();
+		expect(advanceSessionEventCursor(initial, { type: 'message_update', runId: 'run-2', sequence: 6 }, initial.sessionFile)).toBeNull();
+
+		const settled = advanceSessionEventCursor(initial, { type: 'agent_settled', runId: 'run-1', sequence: 6 }, initial.sessionFile);
+		expect(settled).toMatchObject({ runId: 'run-1', lastSequence: 6, settled: true });
+		expect(advanceSessionEventCursor(settled!, { type: 'message_update', runId: 'run-1', sequence: 7 }, initial.sessionFile)).toBeNull();
+		expect(advanceSessionEventCursor(settled!, { type: 'agent_settled', runId: 'run-1', sequence: 6 }, initial.sessionFile)).toBeNull();
+
+		const nextRun = advanceSessionEventCursor(settled!, { type: 'message_update', runId: 'run-2', sequence: 7 }, initial.sessionFile);
+		expect(nextRun).toMatchObject({ runId: 'run-2', lastSequence: 7, settled: false });
+		expect(advanceSessionEventCursor(nextRun!, { type: 'message_update', runId: 'run-1', sequence: 99 }, initial.sessionFile)).toBeNull();
+	});
+
+	it('来源会话切换期间拒绝不属于当前前台的事件', () => {
+		const cursor = { sessionFile: 'C:\\sessions\\task-b.jsonl', runId: 'run-b', lastSequence: 8, settled: false };
+		expect(advanceSessionEventCursor(cursor, { type: 'message_update', sessionFile: 'C:\\sessions\\task-a.jsonl', runId: 'run-a', sequence: 100 }, cursor.sessionFile)).toBeNull();
+		expect(advanceSessionEventCursor(cursor, { type: 'message_update', sessionFile: 'C:\\sessions\\task-b.jsonl', runId: 'run-b', sequence: 9 }, null)).toBeNull();
 	});
 });
 

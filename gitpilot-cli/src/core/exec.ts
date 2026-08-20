@@ -15,6 +15,8 @@ export interface ExecOptions {
 	timeout?: number;
 	/** Working directory */
 	cwd?: string;
+	/** Additional environment variables; the current process environment is preserved. */
+	env?: NodeJS.ProcessEnv;
 }
 
 /**
@@ -42,6 +44,7 @@ export async function execCommand(
 			cwd,
 			shell: false,
 			stdio: ["ignore", "pipe", "pipe"],
+			env: options?.env ? { ...process.env, ...options.env } : undefined,
 		});
 
 		let stdout = "";

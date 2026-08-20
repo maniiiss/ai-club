@@ -63,6 +63,13 @@ public class AiModelConfigEntity {
     private String inputModalities = "text";
 
     /**
+     * 声明上游支持 vision（如经过 9router 代理），让 CLI 在 inputModalities 不含 image 时仍把图片内联到请求，
+     * 由后端透传给上游 vision 模型。详见 gitpilot-image-vision-fallback-technical-design-v1.md L1。
+     */
+    @Column(name = "vision_routing", nullable = false)
+    private Boolean visionRouting = Boolean.FALSE;
+
+    /**
      * 每千输入 token 积分单价，启用 token 计费时把输入 token 换算为积分。
      */
     @Column(name = "input_credit_per_1k", precision = 10, scale = 4)
@@ -197,6 +204,14 @@ public class AiModelConfigEntity {
 
     public void setInputModalities(String inputModalities) {
         this.inputModalities = inputModalities;
+    }
+
+    public Boolean getVisionRouting() {
+        return visionRouting;
+    }
+
+    public void setVisionRouting(Boolean visionRouting) {
+        this.visionRouting = visionRouting;
     }
 
     public BigDecimal getInputCreditPer1k() {

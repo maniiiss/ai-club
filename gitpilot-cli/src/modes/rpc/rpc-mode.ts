@@ -51,7 +51,7 @@ import {
 } from "./rpc-types.ts";
 import { getPlatformUrl, setPlatformUrl } from "../../extensions/gitpilot/config.ts";
 import { deleteCliToken, loadCliToken, saveCliToken } from "../../extensions/gitpilot/credentials.ts";
-import { getCurrentCreditAccount, getCurrentUser, listMyTasks, listProjects, revokeCliToken, uploadDesignVersion } from "../../extensions/gitpilot/api.ts";
+import { getCurrentCreditAccount, getCurrentUser, getWorkItemDetail, getWorkItemLinks, listMyTasks, listProjects, revokeCliToken, uploadDesignVersion } from "../../extensions/gitpilot/api.ts";
 import { createGitPilotWorkToolDefinitions } from "../../extensions/gitpilot/work-tools.ts";
 import { createModeExtensions } from "../../extensions/gitpilot/mode-extensions.ts";
 import { isDesktopCommandVisible } from "../../extensions/gitpilot/desktop-command-visibility.ts";
@@ -59,7 +59,7 @@ import { copyManagedMcpServer, deleteManagedMcpServer, listManagedMcpServers, sa
 import { listManagedSkills, setManagedSkillEnabled, setManagedSkillModes, type SkillMode } from "../../extensions/gitpilot/skill-manager.ts";
 import type { Context } from "@earendil-works/pi-ai/compat";
 import type { DesignClarificationRequiredEvent, DesignPatch, DesignPatchAppliedEvent, DesignPlanStep, DesignPlanUpdatedEvent, DesignPreviewHandle, DesignProjectGuidelines, DesignRpcFile, DesignRpcMessage, DesignRpcSnapshot, DesignRunRecoveryState, DesignStreamMetadata, WorkFileSnapshot, WorkResearchSource } from "./rpc-types.ts";
-import { collectDesignPatchDelta, projectDesignAgentEvent } from "./design-events.ts";
+import { buildDesignCompactionInstructions, collectDesignPatchDelta, projectDesignAgentEvent } from "./design-events.ts";
 import { createDesignToolDefinitions, isDesignPatchOperation, type DesignPatchResult } from "./design-tools.ts";
 import { defaultProjectGuidelines, normalizeProjectGuidelines } from "./design-guidelines.ts";
 import { designPageIdFromEntryPath, synchronizeDesignPages } from "./design-pages.ts";
@@ -68,7 +68,13 @@ import { listCodeProjectFiles } from "./project-files.ts";
 /** Work 的会话提示词独立于 Code，避免共享 AgentSession 基础设施时继承编码助手身份。 */
 const WORK_SYSTEM_PROMPT = `你是 GitPilot Work 模式的工作协同助手。
 你的职责是帮助用户推进工作、学习、探索、调研、方案梳理、任务拆解和协作沟通。先理解用户的目标，再给出清晰、可执行的回答。
-当前 Work 会话可以按需使用工作区文件和 Work 工具。使用工具前说明意图，完成后总结真实结果，不要虚构未执行的操作。`;
+
+工作方式：
+- 默认直接回答。只有当用户的请求确实需要产出文件、检索或操作公众端工作项、联网调研时才使用工具；不要为了"先了解上下文"而主动扫描工作区、读取会话记录或枚举平台项目。
+- 你不是编码助手：除非用户明确要求处理当前工作区里的文件，否则不要读取或分析工作区代码。
+- 当问题涉及某个项目、某类工作项而你不确定用户所指的范围时，先简短询问用户确认，不要自行猜测项目或检索全部项目。
+- 需要产出 Office 文档时使用 office 工具；需要查询或操作公众端数据时使用 gitpilot 工具（写操作会由用户确认）。
+- 使用工具前说明意图，完成后总结真实结果，不要虚构未执行的操作。`;
 
 /**
  * Design 的系统角色只保留一次执行规则；具体需求和交付格式放在首轮 prompt 中。
@@ -85,6 +91,8 @@ const DESIGN_SYSTEM_PROMPT = `你是 GitPilot Design 模式的界面设计助手
 - 新页面通常还要在同一个 patch 中创建 pages/<pageId>/styles.css 和 pages/<pageId>/main.js（按实际需要创建），不要只创建一个无法识别的 about/index.html。
 - 一个 patch 可以一次创建多个页面文件；页面树会根据 pages/<pageId>/index.html 自动出现，不需要另调用页面注册工具。
 - 修改已有页面时沿用当前文件的完整 canonical 路径；shared/ 和 assets/ 用于跨页面资源。
+- 引用共享资源时使用绝对规范路径 /shared/... 或 /assets/...，不要使用 ../../shared/... 这类旧相对路径。
+- 当 shared/ 目录已存在时，你可以按页面需要将共享数据或函数内联到当前页面的 main.js 中；这不是强制要求，也可以继续通过 /shared/... 引用共享文件。
 
 每次 patch 后用一句中文说明结果，不要复述内部协议、工具 schema 或文件全文。`;
 
@@ -148,6 +156,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		pendingMessageCount: session.pendingMessageCount,
 		rpcCapabilities: [...RPC_CAPABILITIES],
 		execution: session.executionSnapshot,
+		workspaceChanges: session.workspaceChanges,
 	});
 
 	/**
@@ -294,15 +303,32 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// 用 Work 专属提示词替换 Coding Agent 默认提示词，避免 Work 回复成 Code 的编码助手。
 			resourceLoaderOptions: { extensionFactories: createModeExtensions("work", workspacePath), systemPrompt: WORK_SYSTEM_PROMPT, skillMode: "work" },
 		});
-		const created = await createAgentSessionFromServices({ services, sessionManager, model: session.model, thinkingLevel: session.thinkingLevel, tools: ["read", "write", "edit", "grep", "find", "ls"], excludeTools: ["bash"], customTools: createGitPilotWorkToolDefinitions(taskId, workspacePath) });
+		// tools 参数是白名单语义：一旦传入，customTools 与 Web/MCP 扩展注册的工具会在注册阶段
+		// 被整体过滤（曾导致 office_create_document “技能已安装但工具未挂载”）。
+		// 这里只用 excludeTools 禁 bash，保住全部 Work 自定义与扩展工具；
+		// 默认激活集只有 read/edit/write，创建后按注册表全集统一激活（bash 已被排除在外）。
+		const created = await createAgentSessionFromServices({ services, sessionManager, model: session.model, thinkingLevel: session.thinkingLevel, excludeTools: ["bash"], customTools: createGitPilotWorkToolDefinitions(taskId, workspacePath) });
+		created.session.setActiveToolsByName(created.session.getAllTools().map((tool) => tool.name));
 		const record = { session: created.session, workspacePath };
 		workSessions.set(taskId, record);
 		created.session.subscribe((event) => {
 			if (event.type === "message_update") {
 				const update = event.assistantMessageEvent as { type?: string; delta?: string } | undefined;
 				if (update?.type === "text_delta" && update.delta) output({ type: "work_delta", taskId, delta: update.delta });
+				// 与 Code 模式对齐：真实思考增量单独转发，Desktop 在正文前渲染“思考过程”块。
+				if (update?.type === "thinking_delta" && update.delta) output({ type: "work_thinking_delta", taskId, delta: update.delta });
+			}
+			if (event.type === "message_end") {
+				// 正文段边界：Desktop 依据该事件把流式文本收口为一条 assistant 消息，
+				// 实现“正文 → 执行过程 → 正文”按真实顺序交错落盘与回显。
+				const message = event.message as { role?: string; content?: Array<{ type?: string; text?: string }> } | undefined;
+				if (message?.role === "assistant") {
+					const text = (message.content ?? []).filter((part) => part.type === "text").map((part) => part.text ?? "").join("");
+					if (text.trim()) output({ type: "work_message_end", taskId, text });
+				}
 			}
 			if (event.type === "tool_execution_start") output({ type: "work_tool_started", taskId, toolCallId: event.toolCallId, toolName: event.toolName, args: event.args });
+			if (event.type === "tool_execution_update") output({ type: "work_tool_updated", taskId, toolCallId: event.toolCallId, toolName: event.toolName, partialResult: event.partialResult });
 			if (event.type === "tool_execution_end") output({ type: "work_tool_completed", taskId, toolCallId: event.toolCallId, toolName: event.toolName, result: event.result, isError: event.isError });
 			if (event.type === "agent_settled") {
 				output({ type: "work_file_snapshot", taskId, files: listWorkFiles(workspacePath) });
@@ -865,9 +891,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		const css = pageFiles.filter((file) => file.language === "css" && !html.includes(file.path.split("/").pop() ?? "")).map((file) => file.content).join("\n");
 		const sharedCss = files.filter((file) => file.scope === "shared" && file.language === "css").map((file) => file.content).join("\n");
 		const js = pageFiles.filter((file) => file.language === "javascript" && !html.includes(file.path.split("/").pop() ?? "")).map((file) => file.content).join("\n");
+		// 共享 JS 需要像共享 CSS 一样被所有页面自动加载，否则页面 main.js 依赖的公共库/数据不会生效。
+		const sharedJs = files.filter((file) => file.scope === "shared" && file.language === "javascript" && !html.includes(file.path.split("/").pop() ?? "")).map((file) => file.content).join("\n");
 		if (css || sharedCss) html = html.includes("</head>") ? html.replace("</head>", `<style data-design-bundle="css">${sharedCss}\n${css}</style></head>`) : `<style>${sharedCss}\n${css}</style>${html}`;
 		const bridge = `document.querySelectorAll('[data-design-id]').forEach((element)=>element.addEventListener('click',(event)=>{event.preventDefault();window.parent.postMessage({type:'design:select',id:element.dataset.designId},'*')}));`;
-		if (html.includes("</body>")) html = html.replace("</body>", `<script data-design-bundle="js">${js}\n${bridge}</script></body>`); else html += `<script>${js}\n${bridge}</script>`;
+		const bundledJs = [sharedJs, js, bridge].filter(Boolean).join("\n");
+		if (html.includes("</body>")) html = html.replace("</body>", `<script data-design-bundle="js">${bundledJs}</script></body>`); else html += `<script>${bundledJs}</script>`;
 		checks.push({ level: "info", message: `已构建 ${page.name ?? pageId} 的多文件预览。` });
 		const previewHandle: DesignPreviewHandle = { id: `preview-${crypto.randomUUID()}`, projectId: designProjectId(projectPath), designId, pageId, revisionId: currentRevisionId, html, expiresAt: Date.now() + 5 * 60_000 };
 		return { snapshot, previewHandle, checks };
@@ -909,6 +938,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			else if (inner.type === "text_delta") run.phase = "responding";
 		} else if (projected.type === "message_end") {
 			run.phase = "responding";
+		} else if (projected.type === "compaction_start") {
+			run.phase = "compacting";
+		} else if (projected.type === "compaction_end") {
+			// 压缩完成后回到可继续执行的阶段；最终成功/失败状态由 Desktop 保留 compactionNotice 展示。
+			run.phase = "thinking";
 		} else if (projected.type === "tool_execution_start" || projected.type === "tool_execution_update" || projected.type === "tool_execution_end") {
 			run.phase = "tool";
 		}
@@ -1189,6 +1223,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// builtin 模式关闭内置本地文件/Shell 工具，同时只开放 Design 白名单 custom tools。
 			thinkingLevel: session.thinkingLevel,
 			noTools: "builtin",
+			compactionInstructions: () => buildDesignCompactionInstructions(getDesignSnapshot(designId, projectPath), designRuns.get(cacheKey)?.pageId),
 			customTools: createDesignToolDefinitions({
 				getPageId: () => designRuns.get(cacheKey)?.pageId ?? "home",
 				getSnapshot: () => getDesignSnapshot(designId),
@@ -1426,16 +1461,23 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		const requestId = command.id ?? crypto.randomUUID();
 		const controller = new AbortController();
 		activeWorkRequest = { id: requestId, controller };
-		try {
-			await work.session.prompt(message, { source: "rpc" });
-			await work.session.waitForIdle();
-			const text = work.session.getLastAssistantText() ?? "";
-			if (work.session.messages.filter((entry) => entry.role === "user").length === 1) await work.session.generateAndApplySessionTitle(message);
-			output({ type: "work_complete", requestId, taskId: command.taskId });
-			return { requestId, text, title: work.session.sessionName };
-		} finally {
-			if (activeWorkRequest?.id === requestId) activeWorkRequest = undefined;
-		}
+		// 与 Code 模式 prompt 一致的受理式协议：回合包含多轮模型调用与工具执行，
+		// 总时长远超 RPC 超时阈值；这里立即返回 requestId，最终文本通过
+		// work_complete / work_error 事件流推送，避免 Desktop 在 30s 处误报超时。
+		void (async () => {
+			try {
+				await work.session.prompt(message, { source: "rpc" });
+				await work.session.waitForIdle();
+				const text = work.session.getLastAssistantText() ?? "";
+				if (work.session.messages.filter((entry) => entry.role === "user").length === 1) await work.session.generateAndApplySessionTitle(message);
+				output({ type: "work_complete", requestId, taskId: command.taskId, text, title: work.session.sessionName });
+			} catch (error) {
+				output({ type: "work_error", requestId, taskId: command.taskId, message: error instanceof Error ? error.message : String(error) });
+			} finally {
+				if (activeWorkRequest?.id === requestId) activeWorkRequest = undefined;
+			}
+		})();
+		return { requestId };
 	};
 
 	/** Helper for dialog methods with signal/timeout support */
@@ -2272,6 +2314,57 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			// =================================================================
+			// 工作项协同浏览：右侧栏只读分页，数据直接代理平台接口，不进模型上下文。
+			// =================================================================
+			case "work_project_list": {
+				const platformUrl = getPlatformUrl();
+				if (!platformUrl) return error(id, "work_project_list", "未配置 GitPilot 平台地址");
+				const token = await loadCliToken(platformUrl);
+				if (!token) return error(id, "work_project_list", "未登录 GitPilot 平台");
+				const projects = await listProjects(platformUrl, token);
+				return success(id, "work_project_list", { projects });
+			}
+
+			case "work_item_page": {
+				const platformUrl = getPlatformUrl();
+				if (!platformUrl) return error(id, "work_item_page", "未配置 GitPilot 平台地址");
+				const token = await loadCliToken(platformUrl);
+				if (!token) return error(id, "work_item_page", "未登录 GitPilot 平台");
+				// 列表行剔除 requirementMarkdown 大字段；每页条数钳制在 1..100，防止一次性拉爆。
+				const size = Math.min(Math.max(command.size ?? 20, 1), 100);
+				const page = await listMyTasks(platformUrl, token, {
+					page: command.page ?? 1,
+					size,
+					status: command.status,
+					priority: command.priority,
+					projectId: command.projectId,
+					keyword: command.keyword,
+					workItemType: command.workItemType,
+				});
+				return success(id, "work_item_page", {
+					records: page.records.map(({ requirementMarkdown: _omit, ...item }) => item),
+					total: page.total,
+					page: page.page,
+					size: page.size,
+					totalPages: page.totalPages,
+				});
+			}
+
+			case "work_item_detail": {
+				const platformUrl = getPlatformUrl();
+				if (!platformUrl) return error(id, "work_item_detail", "未配置 GitPilot 平台地址");
+				const token = await loadCliToken(platformUrl);
+				if (!token) return error(id, "work_item_detail", "未登录 GitPilot 平台");
+				// 详情与关联并行拉取；详情失败时整个请求失败，关联失败则降级为空集合（详情主体仍可展示）。
+				const [detail, links] = await Promise.all([
+					getWorkItemDetail(platformUrl, token, command.workItemId),
+					getWorkItemLinks(platformUrl, token, command.workItemId).catch(() => null),
+				]);
+				const emptyLinks = { children: [], parentWorkItems: [], relatedWorkItems: [], testCases: [], attachments: [] };
+				return success(id, "work_item_detail", { detail, links: links ?? emptyLinks });
+			}
+
+			// =================================================================
 			// State
 			// =================================================================
 
@@ -2493,6 +2586,16 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				}
 				session.setSessionName(name);
 				return success(id, "set_session_name");
+			}
+
+			// 桌面标题栏刷新按钮：强制联网重拉平台模型清单（refreshModels -> listModels -> GET /api/cli/models），
+			// 让管理端修改 visionRouting、输入模态等能力后无需重启 sidecar 即可生效；
+			// 随后重解析当前选中模型，使 agent.state.model 拿到新的 input 能力（决定图片是否内联）。
+			case "refresh_models": {
+				await session.modelRuntime.refresh({ allowNetwork: true });
+				session.refreshCurrentModelFromRegistry();
+				const models = await session.modelRuntime.getAvailable();
+				return success(id, "refresh_models", { models });
 			}
 
 			// 桌面版登录后注入平台 gpt_ token：持久化平台地址并存入系统凭据库，

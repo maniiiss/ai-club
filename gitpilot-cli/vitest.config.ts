@@ -26,6 +26,10 @@ export default defineConfig({
 		server: {
 			deps: {
 				external: [/@silvia-odwyer\/photon-node/],
+				// pi-tui-kit 以 dist 形态引用旧包名 @earendil-works/pi-coding-agent；
+				// inline 后由 vite 转换其产物，上述 alias 才能将其解析到本仓 src/index.ts，
+				// 否则任何导入 sdk.ts / resource-loader 的测试都会在模块解析阶段失败。
+				inline: [/@narumitw\/pi-tui-kit/],
 			},
 		},
 	},

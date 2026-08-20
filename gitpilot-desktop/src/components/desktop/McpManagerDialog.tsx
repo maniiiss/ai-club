@@ -12,6 +12,60 @@ const DEFAULT_TIMEOUT = 30000;
 type EditableTransport = Exclude<McpTransport, 'unknown'>;
 type McpView = 'list' | 'editor';
 
+/** 推荐服务的预设定义；用户点击添加后仍走全局服务保存链路，可继续编辑。 */
+export interface McpPreset {
+	name: string;
+	title: string;
+	description: string;
+	/** macOS/Linux 的 stdio 启动命令。 */
+	command: string;
+	args: string[];
+	/** Windows 下 npx 是 .cmd 脚本，不能被直接 spawn，需要经 cmd /c 启动。 */
+	windowsCommand: string;
+	windowsArgs: string[];
+	modes: McpMode[];
+	requestTimeoutMs: number;
+}
+
+/**
+ * 官方推荐服务目录。GitNexus 与内置 gitnexus Skill 配套：
+ * 需要本机 Node.js 20+，且在项目根目录运行 npx gitnexus analyze 建立索引。
+ */
+export const MCP_PRESETS: readonly McpPreset[] = [
+	{
+		name: 'gitnexus',
+		title: 'GitNexus 代码知识图谱',
+		description: '为 Code 模式提供代码理解、调用链与影响面分析，配套内置 gitnexus Skill。需本机 Node.js 20+，并在项目中运行 npx gitnexus analyze 建立索引。',
+		command: 'npx',
+		args: ['-y', 'gitnexus@latest', 'mcp'],
+		windowsCommand: 'cmd',
+		windowsArgs: ['/c', 'npx', '-y', 'gitnexus@latest', 'mcp'],
+		modes: ['code'],
+		requestTimeoutMs: 60000,
+	},
+];
+
+/** 根据平台生成预设的标准 MCP 定义；Windows 必须经 cmd /c 启动 npx。 */
+export function presetDefinition(preset: McpPreset, isWindows: boolean): McpServerDefinition {
+	return {
+		command: isWindows ? preset.windowsCommand : preset.command,
+		args: isWindows ? [...preset.windowsArgs] : [...preset.args],
+		requestTimeoutMs: preset.requestTimeoutMs,
+	};
+}
+
+/** 从 userAgent 判断是否 Windows 平台，供预设选择启动命令。 */
+export function detectWindowsPlatform(userAgent: string): boolean {
+	return /Windows/i.test(userAgent);
+}
+
+/** 已存在同名服务（任意来源）的预设不再出现在推荐区，避免重复添加。 */
+export function availableMcpPresets(presets: readonly McpPreset[], servers: readonly ManagedMcpServer[]): McpPreset[] {
+	const existing = new Set(servers.map((server) => server.name));
+	return presets.filter((preset) => !existing.has(preset.name));
+}
+
+
 export interface McpDraft {
 	name: string;
 	transport: EditableTransport;
@@ -271,6 +325,17 @@ export function McpSettingsPanel() {
 		const result = await rpc.mcpCopyServer(server.name);
 		if (!result.success) setError(result.error); else await refresh();
 	};
+	// 一键添加推荐服务：直接写入全局 mcp.json，保存后仍可在列表中编辑。
+	const addPreset = async (preset: McpPreset) => {
+		setError('');
+		try {
+			setBusy(true);
+			const result = await rpc.mcpSaveServer(preset.name, presetDefinition(preset, detectWindowsPlatform(navigator.userAgent)), preset.modes);
+			if (!result.success) { setError(result.error); return; }
+			await refresh();
+		} catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+		finally { setBusy(false); }
+	};
 	const toggleJsonMode = (next: boolean) => {
 		if (next) {
 			jsonDefinition.current = definitionText(draftToJsonDefinition(draftWithSensitiveInputs()));
@@ -283,7 +348,7 @@ export function McpSettingsPanel() {
 		}
 		setJsonMode(next); setError('');
 	};
-	const fieldClass = 'rounded-md border border-[var(--input)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)] focus:border-[var(--ring)] focus:ring-2 focus:ring-[var(--ring)]/20';
+	const fieldClass = 'rounded-md border border-[var(--input)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)] outline-none placeholder:text-[var(--muted-foreground)]';
 	const modeSelector = <div className="flex flex-wrap gap-x-4 gap-y-2 text-xs">{modes.map((mode) => <label key={mode} className="flex cursor-pointer items-center gap-1.5"><Checkbox checked={draft.modes.includes(mode)} onChange={(event) => updateDraft({ modes: nextMcpModes(draft.modes, mode, event.target.checked) })} />{mode.toUpperCase()}</label>)}</div>;
 	const fields = draft.transport === 'stdio' ? <>
 		<label className="grid gap-1 text-xs text-[var(--secondary-foreground)]">命令<Input value={draft.command} onChange={(event) => updateDraft({ command: event.target.value })} placeholder="npx" /></label>
@@ -295,9 +360,13 @@ export function McpSettingsPanel() {
 	</>;
 
 	if (view === 'list') {
+		const presets = availableMcpPresets(MCP_PRESETS, servers);
 		return <div className="flex min-h-0 flex-1 flex-col">
 			<div className="border-b border-[var(--border)] px-5 py-3"><div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold text-[var(--foreground)]">MCP 服务</h3><div className="flex gap-2"><Button type="button" variant="outline" size="sm" onClick={startCreate}><Plus />新建</Button><Hint content="重新加载 MCP 服务"><Button type="button" variant="outline" size="icon-sm" onClick={() => void rpc.mcpReload().then(refresh)} aria-label="重新加载 MCP 服务"><RefreshCw /></Button></Hint></div></div></div>
-			<div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{error && <p role="alert" className="mb-3 text-xs text-[var(--destructive)]">{error}</p>}<div className="space-y-2">{servers.map((server) => {
+			<div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">{error && <p role="alert" className="mb-3 text-xs text-[var(--destructive)]">{error}</p>}{presets.length > 0 && <div className="mb-4"><p className="mb-2 text-xs font-medium text-[var(--secondary-foreground)]">推荐服务</p><div className="space-y-2">{presets.map((preset) => {
+				const commandPreview = detectWindowsPlatform(navigator.userAgent) ? `${preset.windowsCommand} ${preset.windowsArgs.join(' ')}` : `${preset.command} ${preset.args.join(' ')}`;
+				return <div key={preset.name} className="border border-dashed border-[var(--border)] bg-[var(--card)] p-3"><div className="flex items-start gap-2"><div className="min-w-0 flex-1"><b className="block truncate text-xs text-[var(--foreground)]">{preset.title}</b><p className="mt-1 text-[10px] leading-relaxed text-[var(--muted-foreground)]">{preset.description}</p><code className="mt-1 block truncate font-mono text-[10px] text-[var(--muted-foreground)]">{commandPreview}</code></div><Button type="button" variant="outline" size="sm" onClick={() => void addPreset(preset)} disabled={busy}>添加</Button></div></div>;
+			})}</div></div>}<div className="space-y-2">{servers.map((server) => {
 				const manageable = canManageMcpServer(server);
 				return <div key={server.name} className="border border-[var(--border)] bg-[var(--card)] p-3"><div className="flex min-w-0 items-center gap-2"><span className={`h-2 w-2 shrink-0 rounded-full ${server.enabled ? 'bg-[var(--gp-status-success)]' : 'bg-[var(--muted-foreground)]'}`} aria-hidden="true" /><div className="min-w-0 flex-1"><b className="block truncate text-xs text-[var(--foreground)]">{server.name}</b><span className="mt-1 block text-[10px] uppercase text-[var(--muted-foreground)]">{sourceLabel(server.source)} · {transportLabel(server.transport)} · {server.definition.requestTimeoutMs ?? DEFAULT_TIMEOUT}ms</span></div>{manageable ? <Button type="button" variant="ghost" size="icon-sm" onClick={() => startEdit(server)} aria-label={`编辑 ${server.name}`}><Pencil /></Button> : <Button type="button" variant="ghost" size="sm" onClick={() => void copyServer(server)}><Copy />复制到全局</Button>}<Hint content={manageable ? (server.enabled ? '停用服务' : '启用服务') : '项目来源服务只能查看'}><span><Button type="button" variant="ghost" size="icon-sm" onClick={() => void setEnabled(server, !server.enabled)} disabled={!manageable} aria-label={server.enabled ? `停用 ${server.name}` : `启用 ${server.name}`}><CirclePower /></Button></span></Hint><Hint content={manageable ? '删除全局服务' : '项目来源服务不能删除'}><span><Button type="button" variant="ghost" size="icon-sm" onClick={() => void deleteServer(server)} disabled={!manageable} aria-label={`删除 ${server.name}`}><Trash2 /></Button></span></Hint></div><div className="mt-3 flex flex-wrap gap-x-4 gap-y-2 text-[11px] text-[var(--secondary-foreground)]">{modes.map((mode) => <label key={mode} className="flex cursor-pointer items-center gap-1.5"><Checkbox checked={server.modes.includes(mode)} disabled={!manageable} onChange={(event) => void updateModes(server, nextMcpModes(server.modes, mode, event.target.checked))} />{mode.toUpperCase()}</label>)}</div></div>;
 			})}{servers.length === 0 && <p className="py-8 text-center text-xs text-[var(--muted-foreground)]">尚未配置 MCP 服务。</p>}</div></div>

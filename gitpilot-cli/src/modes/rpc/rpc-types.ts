@@ -17,6 +17,7 @@ import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
 import type { SessionEntry, SessionInfo, SessionTreeNode } from "../../core/session-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
+import type { WorkspaceChangeSet } from "../../core/workspace-changes.ts";
 import type { ManagedMcpServer, McpServerDefinition } from "../../extensions/gitpilot/mcp-manager.ts";
 
 export type SkillMode = "code" | "work" | "design";
@@ -55,6 +56,82 @@ export interface RpcPlatformConnection {
 export interface WorkConversationMessage { role: "user" | "assistant"; content: string }
 export interface WorkResearchSource { id: string; title: string; url: string; snippet: string; publishedAt?: string }
 export interface WorkFileSnapshot { path: string; name: string; type: string; size: number; updatedAt: number; content?: string }
+
+// ============================================================================
+// 工作项协同浏览（右侧栏分页浏览，只读，不进模型上下文）
+// ============================================================================
+
+/** 协同浏览的项目下拉条目（与 CliProjectSummary 字段对齐）。 */
+export interface RpcWorkProjectSummary {
+	id: number;
+	name: string;
+	status?: string;
+	description?: string;
+	owner?: string;
+}
+
+/** 协同浏览的工作项列表行；requirementMarkdown 大字段只在详情态出现，列表不携带。 */
+export interface RpcWorkItemListItem {
+	id: number;
+	workItemCode: string;
+	name: string;
+	workItemType: string;
+	status: string;
+	priority: string | null;
+	assignee: string | null;
+	taskType: string | null;
+	projectId: number | null;
+	projectName: string | null;
+	iterationId: number | null;
+	iterationName: string | null;
+	planStartDate: string | null;
+	planEndDate: string | null;
+}
+
+/** 平台分页响应（与后端 PageResponse 对齐）。 */
+export interface RpcWorkItemPage {
+	records: RpcWorkItemListItem[];
+	total: number;
+	page: number;
+	size: number;
+	totalPages: number;
+}
+
+/** 工作项详情：列表字段 + 详情态专属字段（描述、需求正文、创建人、原型与模块信息）。 */
+export interface RpcWorkItemDetail extends RpcWorkItemListItem {
+	description: string | null;
+	requirementMarkdown: string | null;
+	creatorName: string | null;
+	prototypeUrl: string | null;
+	moduleName: string | null;
+}
+
+/** 工作项关联的测试用例摘要（TaskLinksSummary.LinkedTestCaseSummary 的最小消费视图）。 */
+export interface RpcWorkItemTestCase {
+	id: number;
+	title: string;
+	moduleName: string | null;
+	caseType: string | null;
+	priority: string | null;
+	testPlanName: string | null;
+}
+
+/** 工作项关联的附件摘要。 */
+export interface RpcWorkItemAttachment {
+	id: number;
+	fileName: string;
+	contentType: string | null;
+	fileSize: number;
+}
+
+/** 工作项的关联资源集合；children/parent/related 只保留列表行必需的轻量字段。 */
+export interface RpcWorkItemLinks {
+	children: RpcWorkItemListItem[];
+	parentWorkItems: RpcWorkItemListItem[];
+	relatedWorkItems: RpcWorkItemListItem[];
+	testCases: RpcWorkItemTestCase[];
+	attachments: RpcWorkItemAttachment[];
+}
 /** Code 右侧文件树的只读条目；文件内容仍由现有附件预处理链路按需读取。 */
 export interface CodeProjectFileEntry {
 	path: string;
@@ -138,6 +215,8 @@ export interface DesignStreamMetadata extends DesignProjectContext { requestId: 
  * 业务意图：patch 参数与工具原始输出可能包含整份页面代码，不能跨进程传输或驻留在 UI 状态中。
  */
 export type DesignAgentEvent =
+	| { type: "compaction_start" }
+	| { type: "compaction_end"; result: boolean; errorMessage?: string }
 	| { type: "message_update"; assistantMessageEvent: { type: "thinking_delta" | "text_delta"; delta: string } }
 	| { type: "message_end"; message: { role: "assistant"; content: Array<{ type: "text"; text: string }> } }
 	| { type: "tool_execution_start" | "tool_execution_update" | "tool_execution_end"; toolCallId: string; toolName: string; summary?: string; isError?: boolean };
@@ -159,7 +238,7 @@ export interface DesignErrorEvent extends DesignStreamMetadata { type: "design_e
  */
 export interface DesignRunRecoveryState {
 	status: "idle" | "running" | "awaiting_approval" | "awaiting_clarification";
-	phase: "idle" | "thinking" | "responding" | "tool" | "applying_patch" | "awaiting_approval" | "awaiting_clarification";
+	phase: "idle" | "thinking" | "responding" | "tool" | "applying_patch" | "compacting" | "awaiting_approval" | "awaiting_clarification";
 	requestId: string | null;
 	runId: string | null;
 	sequence: number;
@@ -251,6 +330,10 @@ export type RpcCommand =
 	| { id?: string; type: "work_file_delete"; taskId: string; path: string }
 	| { id?: string; type: "work_file_rename"; taskId: string; path: string; newPath: string }
 	| { id?: string; type: "work_prepare_attachments"; items: AttachmentInput[] }
+	// 工作项协同浏览：桌面端右侧栏只读分页浏览，与 Work AgentSession 无关，不进模型上下文。
+	| { id?: string; type: "work_project_list" }
+	| { id?: string; type: "work_item_page"; page?: number; size?: number; status?: string; priority?: string; projectId?: number; keyword?: string; workItemType?: string }
+	| { id?: string; type: "work_item_detail"; workItemId: number }
 	| { id?: string; type: "design_open"; projectPath: string }
 	| { id?: string; type: "design_sync_messages"; projectPath: string; designId: string; messages: DesignRpcMessage[] }
 	| { id?: string; type: "design_save_guidelines"; projectPath: string; designId: string; guidelines: DesignProjectGuidelines }
@@ -336,6 +419,9 @@ export type RpcCommand =
 	/** 执行扩展命令但不把 slash 文本伪装成一条用户消息；交互请求通过事件异步返回。 */
 	| { id?: string; type: "execute_command"; name: string; args?: string }
 
+	// 桌面标题栏刷新按钮：强制联网重拉平台模型清单并重解析当前选中模型，
+	// 让管理端新配置（visionRouting、输入模态等）无需重启 sidecar 即可生效。
+	| { id?: string; type: "refresh_models" }
 	// Token（桌面版登录后注入平台设备授权拿到的 gpt_ token，复用 saveCliToken 存凭据库）
 	| { id?: string; type: "set_token"; platformUrl: string; token: string }
 	// 桌面账户菜单：所有网络访问和凭据读取保留在 sidecar 内。
@@ -408,6 +494,8 @@ export interface RpcSessionState {
 	rpcCapabilities?: string[];
 	/** 当前会话的权威执行快照（仅当 sidecar 宣告 session_execution_snapshot_v1 时存在）。 */
 	execution?: RpcSessionExecutionSnapshot;
+	/** 最近一次已收口 Code 任务的最终工作区 diff；完整结果来自压缩 artifact。 */
+	workspaceChanges?: WorkspaceChangeSet;
 }
 
 // ============================================================================
@@ -432,7 +520,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "prepare_attachments"; success: true; data: { attachments: PreparedAttachment[] } }
 	| { id?: string; type: "response"; command: "code_file_list"; success: true; data: CodeProjectFileList }
 	| { id?: string; type: "response"; command: "new_work_session"; success: true; data: { taskId: string; sessionId: string; sessionPath: string; workspacePath: string; title: string } }
-	| { id?: string; type: "response"; command: "work_prompt"; success: true; data: { requestId: string; text: string; title?: string; sources?: WorkResearchSource[] } }
+	| { id?: string; type: "response"; command: "work_prompt"; success: true; data: { requestId: string } }
 	| { id?: string; type: "response"; command: "work_abort"; success: true }
 	| { id?: string; type: "response"; command: "work_file_list"; success: true; data: { taskId: string; files: WorkFileSnapshot[] } }
 	| { id?: string; type: "response"; command: "work_file_read"; success: true; data: { taskId: string; file: WorkFileSnapshot } }
@@ -440,6 +528,9 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "work_file_delete"; success: true; data: { taskId: string; path: string } }
 	| { id?: string; type: "response"; command: "work_file_rename"; success: true; data: { taskId: string; file: WorkFileSnapshot } }
 	| { id?: string; type: "response"; command: "work_prepare_attachments"; success: true; data: { attachments: PreparedAttachment[] } }
+	| { id?: string; type: "response"; command: "work_project_list"; success: true; data: { projects: RpcWorkProjectSummary[] } }
+	| { id?: string; type: "response"; command: "work_item_page"; success: true; data: RpcWorkItemPage }
+	| { id?: string; type: "response"; command: "work_item_detail"; success: true; data: { detail: RpcWorkItemDetail; links: RpcWorkItemLinks } }
 	| { id?: string; type: "response"; command: "design_open" | "design_create" | "design_save_guidelines" | "design_rename_page"; success: true; data: { designId: string; snapshot: DesignRpcSnapshot; messages?: DesignRpcMessage[]; execution?: DesignRunRecoveryState } }
 	| { id?: string; type: "response"; command: "design_sync_messages"; success: true; data: { designId: string; messages: DesignRpcMessage[] } }
 	| { id?: string; type: "response"; command: "design_get_snapshot" | "design_get_revision" | "design_check"; success: true; data: { snapshot?: DesignRpcSnapshot; checks?: Array<{ level: "error" | "warning" | "info"; message: string }> } }
@@ -583,6 +674,7 @@ export type RpcResponse =
 			data: { commands: RpcSlashCommand[] };
 	  }
 	| { id?: string; type: "response"; command: "execute_command"; success: true }
+	| { id?: string; type: "response"; command: "refresh_models"; success: true; data: { models: Model<any>[] } }
 	| { id?: string; type: "response"; command: "set_token"; success: true }
 	| { id?: string; type: "response"; command: "get_platform_account"; success: true; data: RpcPlatformAccount }
 	| { id?: string; type: "response"; command: "get_platform_connection"; success: true; data: RpcPlatformConnection }

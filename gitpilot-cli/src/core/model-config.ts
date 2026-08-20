@@ -153,6 +153,9 @@ const ModelDefinitionSchema = Type.Object({
 	reasoning: Type.Optional(Type.Boolean()),
 	thinkingLevelMap: Type.Optional(ThinkingLevelMapSchema),
 	input: Type.Optional(Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")]))),
+	// 显式声明此 9router 代理的模型上游实际支持 vision，加载时把 "image" 注入 input。
+	// 优先级：model 级别 > provider 级别。详见 gitpilot-image-vision-fallback-technical-design-v1.md L1。
+	visionRouting: Type.Optional(Type.Boolean()),
 	cost: Type.Optional(ModelCostSchema),
 	contextWindow: Type.Optional(Type.Number()),
 	maxTokens: Type.Optional(Type.Number()),
@@ -165,6 +168,8 @@ const ModelOverrideSchema = Type.Object({
 	reasoning: Type.Optional(Type.Boolean()),
 	thinkingLevelMap: Type.Optional(ThinkingLevelMapSchema),
 	input: Type.Optional(Type.Array(Type.Union([Type.Literal("text"), Type.Literal("image")]))),
+	// override 级别的 visionRouting 声明，仅对当前 model 生效。
+	visionRouting: Type.Optional(Type.Boolean()),
 	cost: Type.Optional(
 		Type.Object({
 			input: Type.Optional(Type.Number()),
@@ -189,6 +194,8 @@ const ProviderConfigSchema = Type.Object({
 	headers: Type.Optional(Type.Record(Type.String(), Type.String())),
 	compat: Type.Optional(ProviderCompatSchema),
 	authHeader: Type.Optional(Type.Boolean()),
+	// provider 级别的 visionRouting 声明，对该 provider 下所有未显式声明 visionRouting 的 model 生效。
+	visionRouting: Type.Optional(Type.Boolean()),
 	models: Type.Optional(Type.Array(ModelDefinitionSchema)),
 	modelOverrides: Type.Optional(Type.Record(Type.String(), ModelOverrideSchema)),
 });

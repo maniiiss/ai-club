@@ -18,7 +18,7 @@ interface PointerField {
 }
 
 /** 空项目入口的氛围场景；用户生成的 Design 预览不复用这些动效。 */
-export type LandingScene = 'signal' | 'stars' | 'daylight' | 'sunset' | 'ink' | 'glacier';
+export type LandingScene = 'signal' | 'stars' | 'daylight' | 'sunset' | 'ink' | 'glacier' | 'frost' | 'nocturne' | 'press';
 
 interface LandingMotionTheme {
 	scene: LandingScene;
@@ -46,6 +46,9 @@ export const LANDING_PARTICLE_THEMES: Record<ThemeMode, LandingMotionTheme> = {
 	ember: { scene: 'sunset', particle: '240, 164, 91', particleAlpha: 0.42, pointerAlpha: 1, baseCount: 24, countScale: 0.5, speed: 0.48 },
 	paper: { scene: 'ink', particle: '176, 82, 58', particleAlpha: 0.2, pointerAlpha: 1.55, baseCount: 18, countScale: 0.35, speed: 0.16 },
 	glacier: { scene: 'glacier', particle: '45, 120, 159', particleAlpha: 0.28, pointerAlpha: 1.35, baseCount: 20, countScale: 0.4, speed: 0.2 },
+	glass: { scene: 'frost', particle: '104, 110, 118', particleAlpha: 0.3, pointerAlpha: 1.2, baseCount: 20, countScale: 0.42, speed: 0.22 },
+	'glass-dark': { scene: 'nocturne', particle: '222, 226, 232', particleAlpha: 0.34, pointerAlpha: 1.1, baseCount: 22, countScale: 0.45, speed: 0.2 },
+	'black-white': { scene: 'press', particle: '17, 18, 20', particleAlpha: 0.26, pointerAlpha: 1.3, baseCount: 20, countScale: 0.4, speed: 0.18 },
 };
 
 export const LANDING_MOTION_THEMES = LANDING_PARTICLE_THEMES;
@@ -337,6 +340,123 @@ function drawGlacierScene(context: CanvasRenderingContext2D, marks: AccentMark[]
 	}
 }
 
+/** 毛玻璃场景：大面积柔光光斑模拟磨砂景深，斜向高光条呼应玻璃反光。 */
+function drawFrostScene(context: CanvasRenderingContext2D, marks: AccentMark[], time: number, theme: LandingMotionTheme, width: number, height: number): void {
+	const orbs = [
+		{ x: 0.16, y: 0.22, r: 0.2, phase: 0 },
+		{ x: 0.82, y: 0.14, r: 0.14, phase: 1.9 },
+		{ x: 0.58, y: 0.82, r: 0.24, phase: 3.4 },
+		{ x: 0.3, y: 0.6, r: 0.12, phase: 5.1 },
+	];
+	for (const [index, orb] of orbs.entries()) {
+		const wobbleX = Math.sin(time * 0.00007 + orb.phase) * 26;
+		const wobbleY = Math.cos(time * 0.00005 + orb.phase * 1.4) * 16;
+		const radius = width * orb.r;
+		const gradient = context.createRadialGradient(width * orb.x + wobbleX, height * orb.y + wobbleY, 0, width * orb.x + wobbleX, height * orb.y + wobbleY, radius);
+		gradient.addColorStop(0, 'rgba(255, 255, 255, 0.55)');
+		gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+		context.globalAlpha = 0.55 - index * 0.07;
+		context.fillStyle = gradient;
+		context.beginPath();
+		context.arc(width * orb.x + wobbleX, height * orb.y + wobbleY, radius, 0, TAU);
+		context.fill();
+	}
+	context.strokeStyle = `rgb(${theme.particle})`;
+	context.lineWidth = 0.7;
+	for (let line = 0; line < 3; line += 1) {
+		const drift = Math.sin(time * 0.00006 + line * 2.1) * 20;
+		context.globalAlpha = 0.09 - line * 0.02;
+		context.beginPath();
+		context.moveTo(-30 + line * 46, height * 1.08 + drift);
+		context.lineTo(width * 0.52 + line * 46 + drift * 0.4, -30);
+		context.stroke();
+	}
+	context.fillStyle = `rgb(${theme.particle})`;
+	for (const mark of marks) {
+		context.globalAlpha = mark.alpha * (0.55 + Math.sin(time * 0.0004 + mark.phase) * 0.2);
+		context.beginPath();
+		context.arc(mark.x, mark.y, mark.size * 0.9, 0, TAU);
+		context.fill();
+	}
+}
+
+/** 毛玻璃黑场景：冷白月光光斑在深黑玻璃上晕开，银灰高光条呼应玻璃反光，与浅色毛玻璃互为镜像。 */
+function drawNocturneScene(context: CanvasRenderingContext2D, marks: AccentMark[], time: number, theme: LandingMotionTheme, width: number, height: number): void {
+	const orbs = [
+		{ x: 0.16, y: 0.22, r: 0.2, phase: 0 },
+		{ x: 0.82, y: 0.14, r: 0.14, phase: 1.9 },
+		{ x: 0.58, y: 0.82, r: 0.24, phase: 3.4 },
+		{ x: 0.3, y: 0.6, r: 0.12, phase: 5.1 },
+	];
+	for (const [index, orb] of orbs.entries()) {
+		const wobbleX = Math.sin(time * 0.00007 + orb.phase) * 26;
+		const wobbleY = Math.cos(time * 0.00005 + orb.phase * 1.4) * 16;
+		const radius = width * orb.r;
+		const gradient = context.createRadialGradient(width * orb.x + wobbleX, height * orb.y + wobbleY, 0, width * orb.x + wobbleX, height * orb.y + wobbleY, radius);
+		gradient.addColorStop(0, 'rgba(255, 255, 255, 0.12)');
+		gradient.addColorStop(1, 'rgba(255, 255, 255, 0)');
+		context.globalAlpha = 0.4 - index * 0.05;
+		context.fillStyle = gradient;
+		context.beginPath();
+		context.arc(width * orb.x + wobbleX, height * orb.y + wobbleY, radius, 0, TAU);
+		context.fill();
+	}
+	context.strokeStyle = `rgb(${theme.particle})`;
+	context.lineWidth = 0.7;
+	for (let line = 0; line < 3; line += 1) {
+		const drift = Math.sin(time * 0.00006 + line * 2.1) * 20;
+		context.globalAlpha = 0.07 - line * 0.016;
+		context.beginPath();
+		context.moveTo(-30 + line * 46, height * 1.08 + drift);
+		context.lineTo(width * 0.52 + line * 46 + drift * 0.4, -30);
+		context.stroke();
+	}
+	context.fillStyle = `rgb(${theme.particle})`;
+	for (const mark of marks) {
+		context.globalAlpha = mark.alpha * (0.55 + Math.sin(time * 0.0004 + mark.phase) * 0.2);
+		context.beginPath();
+		context.arc(mark.x, mark.y, mark.size * 0.9, 0, TAU);
+		context.fill();
+	}
+}
+
+/** 经典黑白场景：报纸式排版——黑色细线模拟文本行、描边矩形模拟图框，装饰方块缓慢漂移。 */
+function drawPressScene(context: CanvasRenderingContext2D, marks: AccentMark[], time: number, theme: LandingMotionTheme, width: number, height: number): void {
+	context.strokeStyle = `rgb(${theme.particle})`;
+	context.lineWidth = 0.7;
+	// 文本行：分组排布的黑色细线，宽度错落模拟段落排版。
+	const lineGroups = [
+		{ y: 0.16, lines: 4, x0: 0.08, x1: 0.44 },
+		{ y: 0.16, lines: 4, x0: 0.52, x1: 0.92 },
+		{ y: 0.52, lines: 3, x0: 0.08, x1: 0.92 },
+	];
+	for (const group of lineGroups) {
+		for (let line = 0; line < group.lines; line += 1) {
+			const y = height * (group.y + line * 0.035);
+			const shorten = line === group.lines - 1 ? 0.72 : 1;
+			context.globalAlpha = 0.08;
+			context.beginPath();
+			context.moveTo(width * group.x0, y);
+			context.lineTo(width * (group.x0 + (group.x1 - group.x0) * shorten), y);
+			context.stroke();
+		}
+	}
+	// 图框：白色描边矩形，随时间轻微呼吸透明度，像版面中的图片占位。
+	const frames = [
+		{ x: 0.08, y: 0.36, w: 0.34, h: 0.11 },
+		{ x: 0.52, y: 0.36, w: 0.4, h: 0.11 },
+	];
+	for (const [index, frame] of frames.entries()) {
+		context.globalAlpha = 0.1 + Math.sin(time * 0.0004 + index * 2.4) * 0.025;
+		context.strokeRect(width * frame.x, height * frame.y, width * frame.w, height * frame.h);
+	}
+	context.fillStyle = `rgb(${theme.particle})`;
+	for (const mark of marks) {
+		context.globalAlpha = mark.alpha * (0.6 + Math.sin(time * 0.00035 + mark.phase) * 0.18);
+		context.fillRect(mark.x, mark.y, mark.size, mark.size);
+	}
+}
+
 /** 鼠标点阵只承担交互反馈：规则网格随指针产生局部位移，不替代主题主画面。 */
 function drawPointerField(context: CanvasRenderingContext2D, pointer: PointerField, time: number, theme: LandingMotionTheme, width: number, height: number): void {
 	if (!pointer.active) return;
@@ -375,6 +495,9 @@ function drawScene(context: CanvasRenderingContext2D, marks: AccentMark[], time:
 		case 'sunset': drawSunsetScene(context, marks, time, theme, width, height); break;
 		case 'ink': drawInkScene(context, marks, time, theme, width, height); break;
 		case 'glacier': drawGlacierScene(context, marks, time, theme, width, height); break;
+		case 'frost': drawFrostScene(context, marks, time, theme, width, height); break;
+		case 'nocturne': drawNocturneScene(context, marks, time, theme, width, height); break;
+		case 'press': drawPressScene(context, marks, time, theme, width, height); break;
 	}
 	context.globalAlpha = 1;
 }

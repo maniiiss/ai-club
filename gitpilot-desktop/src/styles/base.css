@@ -41,12 +41,17 @@ code,
 }
 
 button:focus-visible,
-input:focus-visible,
-textarea:focus-visible,
 [role='button']:focus-visible,
 [role='menuitem']:focus-visible {
 	outline: 2px solid var(--ring);
 	outline-offset: 2px;
+}
+
+/* 表单控件（input/textarea/select）不绘制聚焦边框：发起会话的输入框由容器级 :focus-within 样式承载反馈。 */
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+	outline: none;
 }
 
 .gp-overlay-root {

@@ -458,6 +458,7 @@ sequenceDiagram
 - 会话切换以 RPC snapshot 为准；
 - `isStreaming` 兼容字段继续保留，但由 snapshot status 派生；
 - 移除新协议下通过最后用户消息时间戳恢复 startedAt 的主路径；
+- 消息正文和工具批次在进入 reducer 前复用 `sessionFile + runId + sequence` 游标守卫；旧 run 的 `message_update/message_end/turn_end` 不得拼接当前正文或提前归档当前工具步骤；
 - 旧 sidecar 下保留 `getRunningExecutionSeed()` 等兼容逻辑。
 
 `workbench.ts`：

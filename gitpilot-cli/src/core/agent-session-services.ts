@@ -13,6 +13,7 @@ import {
 	type ResourceLoaderReloadOptions,
 } from "./resource-loader.ts";
 import { type CreateAgentSessionOptions, type CreateAgentSessionResult, createAgentSession } from "./sdk.ts";
+import type { CompactionInstructions } from "./compaction/index.ts";
 import type { SessionManager } from "./session-manager.ts";
 import { SettingsManager } from "./settings-manager.ts";
 
@@ -62,6 +63,8 @@ export interface CreateAgentSessionFromServicesOptions {
 	excludeTools?: CreateAgentSessionOptions["excludeTools"];
 	noTools?: CreateAgentSessionOptions["noTools"];
 	customTools?: ToolDefinition[];
+	/** 追加到 Pi 默认压缩提示的领域规则；回调在每次压缩时动态求值。 */
+	compactionInstructions?: CompactionInstructions;
 }
 
 /**
@@ -223,6 +226,7 @@ export async function createAgentSessionFromServices(
 		excludeTools: options.excludeTools,
 		noTools: options.noTools,
 		customTools: options.customTools,
+		compactionInstructions: options.compactionInstructions,
 		sessionStartEvent: options.sessionStartEvent,
 	});
 }

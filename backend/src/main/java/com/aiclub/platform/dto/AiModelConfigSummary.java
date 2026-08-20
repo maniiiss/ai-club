@@ -47,7 +47,9 @@ public record AiModelConfigSummary(
          */
         BigDecimal cachedInputCreditPer1k,
         /** 平台归一化后的输入模态列表，供管理端展示和 CLI 映射到 PI Model.input。 */
-        List<String> inputModalities
+        List<String> inputModalities,
+        /** 声明上游支持 vision（如经过 9router 代理）；为 true 时 CLI 在 inputModalities 不含 image 时仍内联图片。 */
+        Boolean visionRouting
 ) {
     /** 兼容新增输入能力字段前的调用方，旧模型默认仅支持文本输入。 */
     public AiModelConfigSummary(
@@ -70,7 +72,7 @@ public record AiModelConfigSummary(
     ) {
         this(id, name, modelType, provider, apiBaseUrl, modelName, openaiApiMode, apiKeyConfigured, description,
                 enabled, contextLength, maxOutputTokens, tokenBillingEnabled, null, inputCreditPer1k,
-                outputCreditPer1k, cachedInputCreditPer1k, List.of("text"));
+                outputCreditPer1k, cachedInputCreditPer1k, List.of("text"), Boolean.FALSE);
     }
 
     /** 兼容已增加输入模态但尚未增加倍率字段的调用方。 */
@@ -95,6 +97,32 @@ public record AiModelConfigSummary(
     ) {
         this(id, name, modelType, provider, apiBaseUrl, modelName, openaiApiMode, apiKeyConfigured, description,
                 enabled, contextLength, maxOutputTokens, tokenBillingEnabled, null, inputCreditPer1k,
-                outputCreditPer1k, cachedInputCreditPer1k, inputModalities);
+                outputCreditPer1k, cachedInputCreditPer1k, inputModalities, Boolean.FALSE);
+    }
+
+    /** 兼容已增加输入模态但尚未增加 visionRouting 字段的调用方。 */
+    public AiModelConfigSummary(
+            Long id,
+            String name,
+            String modelType,
+            String provider,
+            String apiBaseUrl,
+            String modelName,
+            String openaiApiMode,
+            Boolean apiKeyConfigured,
+            String description,
+            Boolean enabled,
+            Integer contextLength,
+            Integer maxOutputTokens,
+            Boolean tokenBillingEnabled,
+            BigDecimal billingMultiplier,
+            BigDecimal inputCreditPer1k,
+            BigDecimal outputCreditPer1k,
+            BigDecimal cachedInputCreditPer1k,
+            List<String> inputModalities
+    ) {
+        this(id, name, modelType, provider, apiBaseUrl, modelName, openaiApiMode, apiKeyConfigured, description,
+                enabled, contextLength, maxOutputTokens, tokenBillingEnabled, billingMultiplier, inputCreditPer1k,
+                outputCreditPer1k, cachedInputCreditPer1k, inputModalities, Boolean.FALSE);
     }
 }

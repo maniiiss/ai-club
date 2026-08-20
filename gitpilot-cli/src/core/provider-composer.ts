@@ -21,6 +21,7 @@ import {
 } from "@earendil-works/pi-ai";
 import { getApiProvider } from "@earendil-works/pi-ai/compat";
 import type { ModelConfig, ModelsJsonModel, ModelsJsonModelOverride, ModelsJsonProvider } from "./model-config.ts";
+import { isNineRouterProxied } from "./provider-attribution.ts";
 import {
 	clearConfigValueCache,
 	getConfigValueEnvVarNames,
@@ -99,6 +100,15 @@ function mergeCompat(
 }
 
 function applyModelOverride(model: Model<Api>, override: ModelsJsonModelOverride): Model<Api> {
+	// override 级别 visionRouting：声明且 baseUrl 指向 9router 时，注入 image 能力。
+	// 注意此处不继承 provider 级别 visionRouting——model 经过 modelFromJson 时若 provider 级别已声明
+	// 且 9router 代理，model.input 已含 image，override 只需处理自己显式声明的 visionRouting。
+	const baseInput = (override.input as ("text" | "image")[] | undefined) ?? model.input;
+	const visionRouting = override.visionRouting ?? false;
+	const effectiveInput =
+		visionRouting && isNineRouterProxied(model.baseUrl) && !baseInput.includes("image")
+			? [...baseInput, "image" as const]
+			: baseInput;
 	return {
 		...model,
 		name: override.name ?? model.name,
@@ -106,7 +116,7 @@ function applyModelOverride(model: Model<Api>, override: ModelsJsonModelOverride
 		thinkingLevelMap: override.thinkingLevelMap
 			? { ...model.thinkingLevelMap, ...override.thinkingLevelMap }
 			: model.thinkingLevelMap,
-		input: (override.input as ("text" | "image")[] | undefined) ?? model.input,
+		input: effectiveInput,
 		cost: override.cost
 			? {
 					input: override.cost.input ?? model.cost.input,
@@ -142,6 +152,15 @@ function modelFromJson(
 	if (definition.maxTokens !== undefined && definition.maxTokens <= 0) {
 		throw new Error(`Provider ${providerId}, model ${definition.id}: invalid maxTokens`);
 	}
+	// L1: 9router 代理感知 + visionRouting 显式声明 → 注入 image 能力。
+	// 让 text-only 模型在 9router 代理下也能正确内联图片，由 9router 路由给上游 vision 模型。
+	// 优先级：model 级别 visionRouting > provider 级别 visionRouting。
+	const input = (definition.input ?? ["text"]) as ("text" | "image")[];
+	const visionRouting = definition.visionRouting ?? providerConfig.visionRouting ?? false;
+	const effectiveInput =
+		visionRouting && isNineRouterProxied(baseUrl) && !input.includes("image")
+			? [...input, "image" as const]
+			: input;
 	return {
 		id: definition.id,
 		name: definition.name ?? definition.id,
@@ -150,7 +169,7 @@ function modelFromJson(
 		baseUrl,
 		reasoning: definition.reasoning ?? false,
 		thinkingLevelMap: definition.thinkingLevelMap,
-		input: (definition.input ?? ["text"]) as ("text" | "image")[],
+		input: effectiveInput,
 		cost: definition.cost ?? { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 		contextWindow: definition.contextWindow ?? 128000,
 		maxTokens: definition.maxTokens ?? 16384,

@@ -30,7 +30,10 @@ function filesForPage(snapshot: DesignSnapshot, pageId: string) {
 
 function previewDocument(snapshot: DesignSnapshot, pageId: string): string {
 	const page = snapshot.document.pages.find((candidate) => candidate.id === pageId) ?? snapshot.document.pages[0];
-	const files = filesForPage(snapshot, page?.id ?? pageId);
+	const pageFiles = filesForPage(snapshot, page?.id ?? pageId);
+	// sidecar 返回前，客户端兜底预览也要把 shared/ 资源加载进来，避免页面依赖公共库时直接空白。
+	const sharedFiles = snapshot.files.filter((file) => file.scope === 'shared' || file.scope === 'asset');
+	const files = pageFiles.concat(sharedFiles);
 	const html = files.find((file) => file.id === page?.entryFileId || file.path.endsWith('/index.html') || file.path === 'index.html')?.content ?? '';
 	const css = files.filter((file) => file.language === 'css').map((file) => file.content ?? '').join('\n');
 	const js = files.filter((file) => file.language === 'javascript').map((file) => file.content ?? '').join('\n');
@@ -521,10 +524,10 @@ function DesignExecutionInspector() {
 	// sequence 只服务于事件排序；右侧只在自身内容变化时滚动，避免无可见更新的事件抢占视口。
 	const scrollTrigger = `${execution.runId ?? 'idle'}:${execution.status}:${execution.phase}:${isGenerating}:${execution.thinking.length}:${execution.thinking.slice(-64)}:${stepTrigger}:${queuedPrompts.length}:${pendingApproval?.approvalId ?? ''}:${pendingApproval?.reason.length ?? 0}`;
 	const { viewportRef, isFollowing, scrollToLatest } = useFollowOutputScroll<HTMLDivElement>({ trigger: scrollTrigger, resetKey: execution.runId });
-	const phaseLabel = execution.status === 'failed' ? '执行失败' : execution.phase === 'awaiting_clarification' ? '等待需求澄清' : execution.phase === 'awaiting_approval' ? '等待确认设计修改' : execution.phase === 'tool' ? '执行设计工具' : execution.phase === 'thinking' ? '思考中' : isGenerating ? '处理中' : '已就绪';
+	const phaseLabel = execution.phase === 'compacting' ? '正在压缩上下文' : execution.compactionNotice === 'success' ? '上下文已压缩' : execution.compactionNotice === 'failure' ? '上下文压缩失败' : execution.status === 'failed' ? '执行失败' : execution.phase === 'awaiting_clarification' ? '等待需求澄清' : execution.phase === 'awaiting_approval' ? '等待确认设计修改' : execution.phase === 'tool' ? '执行设计工具' : execution.phase === 'thinking' ? '思考中' : isGenerating ? '处理中' : '已就绪';
 	const showStatus = phaseLabel !== '已就绪';
 	return <div className={styles.executionInspectorFrame}><div ref={viewportRef} className={styles.executionInspector}>
-		{showStatus && <div className={styles.inspectorStatus}><span className={`${styles.inspectorStatusDot} ${isGenerating ? styles.inspectorStatusRunning : ''}`} /><div><strong>{phaseLabel}</strong>{queuedPrompts.length > 0 && <span>{queuedPrompts.length} 条消息排队中</span>}</div></div>}
+		{showStatus && <div className={styles.inspectorStatus}><span className={`${styles.inspectorStatusDot} ${isGenerating ? styles.inspectorStatusRunning : ''}`} /><div><strong title={execution.compactionError}>{phaseLabel}</strong>{queuedPrompts.length > 0 && <span>{queuedPrompts.length} 条消息排队中</span>}</div></div>}
 		{execution.thinking && <section className={styles.inspectorSection}>
 			<button type="button" className={styles.inspectorSectionHeadingButton} onClick={() => setThinkingExpanded((expanded) => !expanded)} aria-expanded={thinkingExpanded}>
 				<span className={styles.inspectorSectionHeading}><ChevronRight size={13} className={`${styles.inspectorSectionChevron} ${thinkingExpanded ? styles.inspectorSectionChevronExpanded : ''}`} aria-hidden="true" /><span>思考过程</span></span>

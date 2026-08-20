@@ -72,6 +72,9 @@ export interface ExecutionRun {
 	lastPrompt: string | null;
 	/** sidecar 权威执行阶段；切换会话时用于恢复与原会话一致的实时状态。 */
 	phase?: AgentExecutionPhase;
+	/** 最近一次上下文压缩结果；只保留轻量状态，具体错误仍由 sidecar 事件详情承载。 */
+	compactionNotice?: 'success' | 'failure';
+	compactionError?: string;
 	/** sidecar 推送的真实思考增量，仅在当前执行中的思考面板展示。 */
 	thinking?: string;
 	/**
@@ -245,7 +248,8 @@ function saveRightPanelTabs(rightPanelTabs: RightPanelTabsState): void {
 	}
 }
 
-function stringifyPayload(value: unknown): string | undefined {
+/** 工具参数/结果统一序列化为可展示文本；供 Code 与 Work 执行过程归并逻辑复用。 */
+export function stringifyPayload(value: unknown): string | undefined {
 	if (value === undefined || value === null) return undefined;
 	if (typeof value === 'string') return value;
 	try {
@@ -335,7 +339,20 @@ export function reduceExecutionEvent(run: ExecutionRun, event: AgentSessionEvent
 		}
 	};
 	const phase = phaseForEvent();
-	const withPhase = (next: ExecutionRun): ExecutionRun => phase === undefined || next.phase === phase ? next : { ...next, phase };
+	const withPhase = (next: ExecutionRun): ExecutionRun => {
+		const phased = phase === undefined || next.phase === phase ? next : { ...next, phase };
+		if (event.type === 'compaction_start') return { ...phased, compactionNotice: undefined, compactionError: undefined };
+		if (event.type === 'compaction_end') {
+			const result = (event as { result?: unknown }).result;
+			const errorMessage = (event as { errorMessage?: unknown }).errorMessage;
+			return {
+				...phased,
+				compactionNotice: result ? 'success' : 'failure',
+				compactionError: typeof errorMessage === 'string' ? errorMessage : undefined,
+			};
+		}
+		return phased;
+	};
 
 	// thinking_delta 与正文 text_delta 同属 message_update；仅保留 sidecar 的真实思考文本，绝不从工具或模型正文猜测。
 	if (event.type === 'message_update') {

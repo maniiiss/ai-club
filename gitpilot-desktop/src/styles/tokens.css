@@ -364,3 +364,177 @@
 	--shadow-md: 0 8px 22px rgba(20, 50, 65, 0.12);
 	--shadow-lg: 0 18px 48px rgba(20, 50, 65, 0.18);
 }
+
+/* 毛玻璃：黑白灰玻璃拟态。面板令牌使用半透明白，配合 body 灰阶渐变与关键面板的 backdrop-filter 形成磨砂景深。 */
+:root[data-theme='glass'] {
+	--background: transparent;
+	--foreground: #17181c;
+	--card: rgba(255, 255, 255, 0.62);
+	--card-foreground: #17181c;
+	--popover: rgba(255, 255, 255, 0.8);
+	--popover-foreground: #17181c;
+	--primary: #17181c;
+	--primary-foreground: #ffffff;
+	--primary-hover: #000000;
+	--secondary: rgba(255, 255, 255, 0.45);
+	--secondary-foreground: #3a3d45;
+	--secondary-hover: rgba(255, 255, 255, 0.62);
+	--muted: rgba(244, 245, 247, 0.55);
+	--muted-foreground: #6f737d;
+	--accent: rgba(23, 24, 28, 0.06);
+	--accent-foreground: #17181c;
+	--border: rgba(23, 24, 28, 0.13);
+	--border-strong: rgba(23, 24, 28, 0.3);
+	--input: rgba(255, 255, 255, 0.72);
+	--ring: #17181c;
+	--destructive: #b3261e;
+	--destructive-hover: #93211b;
+	--primary-muted: rgba(23, 24, 28, 0.1);
+	--gp-panel-deep: rgba(240, 241, 244, 0.5);
+	--gp-panel-surface: rgba(255, 255, 255, 0.55);
+	--gp-panel-raised: rgba(255, 255, 255, 0.72);
+	--gp-login-background: transparent;
+	--gp-status-success: #147d54;
+	--gp-status-warning: #9a6700;
+	--gp-status-error: #b3261e;
+	--gp-status-info: #2f5077;
+	--gp-code-surface: rgba(250, 251, 252, 0.75);
+	--gp-execution-line: rgba(23, 24, 28, 0.32);
+	--gp-accent: #17181c;
+	--gp-accent-soft: rgba(23, 24, 28, 0.06);
+	--gp-warm: #6f737d;
+	--gp-grid-line: rgba(23, 24, 28, 0.05);
+	--gp-shadow-color: rgba(23, 26, 33, 0.18);
+	--gp-overlay: rgba(23, 26, 33, 0.1);
+	--gp-code-text: #26282e;
+	--gp-terminal-background: #f2f3f5;
+	--gp-terminal-foreground: #1e2025;
+	--gp-terminal-cursor: #17181c;
+	--gp-terminal-selection: #cfd2d8;
+	--gp-code-diff-add: rgba(20, 125, 84, 0.13);
+	--gp-code-diff-del: rgba(179, 38, 30, 0.13);
+	--shadow-md: 0 8px 22px rgba(23, 26, 33, 0.14);
+	--shadow-lg: 0 18px 48px rgba(23, 26, 33, 0.2);
+}
+
+/* 毛玻璃画布：body 铺灰阶渐变与柔光晕，半透明面板透过它形成玻璃景深（优先级高于 index.css 的纯色背景）。 */
+:root[data-theme='glass'] body {
+	background:
+		radial-gradient(1100px 640px at 14% -10%, rgba(255, 255, 255, 0.85), transparent 58%),
+		radial-gradient(900px 560px at 98% 6%, rgba(23, 24, 28, 0.07), transparent 55%),
+		radial-gradient(1300px 760px at 55% 112%, rgba(23, 24, 28, 0.06), transparent 62%),
+		linear-gradient(180deg, #f5f6f8 0%, #e7e9ed 100%);
+}
+
+/* 毛玻璃黑：黑底白字玻璃拟态。面板令牌使用半透明深色，配合 body 暗灰渐变与关键面板的 backdrop-filter 形成磨砂景深。 */
+:root[data-theme='glass-dark'] {
+	--background: transparent;
+	--foreground: #f2f4f7;
+	--card: rgba(28, 30, 35, 0.62);
+	--card-foreground: #f2f4f7;
+	--popover: rgba(22, 24, 28, 0.82);
+	--popover-foreground: #f2f4f7;
+	--primary: #f2f4f7;
+	--primary-foreground: #17181c;
+	--primary-hover: #ffffff;
+	--secondary: rgba(255, 255, 255, 0.08);
+	--secondary-foreground: #d4d8de;
+	--secondary-hover: rgba(255, 255, 255, 0.14);
+	--muted: rgba(255, 255, 255, 0.06);
+	--muted-foreground: #9aa1ab;
+	--accent: rgba(255, 255, 255, 0.08);
+	--accent-foreground: #f2f4f7;
+	--border: rgba(255, 255, 255, 0.13);
+	--border-strong: rgba(255, 255, 255, 0.3);
+	--input: rgba(255, 255, 255, 0.09);
+	--ring: #f2f4f7;
+	--destructive: #f28b8b;
+	--destructive-hover: #f6a3a3;
+	--primary-muted: rgba(242, 244, 247, 0.12);
+	--gp-panel-deep: rgba(13, 14, 17, 0.5);
+	--gp-panel-surface: rgba(28, 30, 35, 0.55);
+	--gp-panel-raised: rgba(36, 38, 44, 0.68);
+	--gp-login-background: transparent;
+	--gp-status-success: #7fd6ae;
+	--gp-status-warning: #f0c98a;
+	--gp-status-error: #f28b8b;
+	--gp-status-info: #9fb4f0;
+	--gp-code-surface: rgba(16, 17, 20, 0.75);
+	--gp-execution-line: rgba(255, 255, 255, 0.32);
+	--gp-accent: #f2f4f7;
+	--gp-accent-soft: rgba(255, 255, 255, 0.08);
+	--gp-warm: #f0c98a;
+	--gp-grid-line: rgba(255, 255, 255, 0.05);
+	--gp-shadow-color: rgba(0, 0, 0, 0.5);
+	--gp-overlay: rgba(0, 0, 0, 0.24);
+	--gp-code-text: #e6e9ee;
+	--gp-terminal-background: #0e0f12;
+	--gp-terminal-foreground: #d9dde3;
+	--gp-terminal-cursor: #f2f4f7;
+	--gp-terminal-selection: #3a3d45;
+	--gp-code-diff-add: rgba(127, 214, 174, 0.14);
+	--gp-code-diff-del: rgba(242, 139, 139, 0.14);
+	--shadow-md: 0 8px 22px rgba(0, 0, 0, 0.42);
+	--shadow-lg: 0 18px 48px rgba(0, 0, 0, 0.55);
+}
+
+/* 毛玻璃黑画布：body 铺暗灰渐变与冷白光晕，半透明深色面板透过它形成玻璃景深（优先级高于 index.css 的纯色背景）。 */
+:root[data-theme='glass-dark'] body {
+	background:
+		radial-gradient(1100px 640px at 14% -10%, rgba(255, 255, 255, 0.09), transparent 58%),
+		radial-gradient(900px 560px at 98% 6%, rgba(255, 255, 255, 0.05), transparent 55%),
+		radial-gradient(1300px 760px at 55% 112%, rgba(255, 255, 255, 0.04), transparent 62%),
+		linear-gradient(180deg, #17181c 0%, #0b0c0f 100%);
+}
+
+/* 经典黑白：白底配纯黑强调的扁平主题，面板不透明、无磨砂，黑字白底的经典对比（与纯净浅色的青绿强调区分）。 */
+:root[data-theme='black-white'] {
+	--background: #ffffff;
+	--foreground: #111214;
+	--card: #fafafa;
+	--card-foreground: #111214;
+	--popover: #f4f4f5;
+	--popover-foreground: #111214;
+	--primary: #111214;
+	--primary-foreground: #ffffff;
+	--primary-hover: #000000;
+	--secondary: #f1f1f2;
+	--secondary-foreground: #3a3d42;
+	--secondary-hover: #e7e7e9;
+	--muted: #f4f4f5;
+	--muted-foreground: #75787e;
+	--accent: #ececee;
+	--accent-foreground: #1a1c1f;
+	--border: #d8d9dc;
+	--border-strong: #a9abb0;
+	--input: #f7f7f8;
+	--ring: #111214;
+	--destructive: #c23b3b;
+	--destructive-hover: #a92f2f;
+	--primary-muted: rgba(17, 18, 20, 0.08);
+	--gp-panel-deep: #ffffff;
+	--gp-panel-surface: #fafafa;
+	--gp-panel-raised: #f4f4f5;
+	--gp-login-background: #f7f7f8;
+	--gp-status-success: #147d54;
+	--gp-status-warning: #9a6700;
+	--gp-status-error: #c23b3b;
+	--gp-status-info: #2f5077;
+	--gp-code-surface: #fafafa;
+	--gp-execution-line: rgba(17, 18, 20, 0.32);
+	--gp-accent: #111214;
+	--gp-accent-soft: rgba(17, 18, 20, 0.07);
+	--gp-warm: #75787e;
+	--gp-grid-line: rgba(17, 18, 20, 0.05);
+	--gp-shadow-color: rgba(17, 18, 20, 0.14);
+	--gp-overlay: rgba(17, 18, 20, 0.1);
+	--gp-code-text: #26282e;
+	--gp-terminal-background: #f4f4f5;
+	--gp-terminal-foreground: #1e2025;
+	--gp-terminal-cursor: #111214;
+	--gp-terminal-selection: #cfd0d4;
+	--gp-code-diff-add: rgba(20, 125, 84, 0.13);
+	--gp-code-diff-del: rgba(194, 59, 59, 0.13);
+	--shadow-md: 0 8px 22px rgba(17, 18, 20, 0.12);
+	--shadow-lg: 0 18px 48px rgba(17, 18, 20, 0.16);
+}

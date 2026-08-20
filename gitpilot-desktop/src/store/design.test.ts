@@ -115,6 +115,17 @@ describe('Design Mode snapshot', () => {
 		expect(DESIGN_TARGETS.desktop.width).toBeGreaterThan(DESIGN_TARGETS.tablet.width);
 	});
 
+	it('Design 压缩事件显示实时、成功和失败三种状态文案所需的状态', () => {
+		useDesignStore.getState().applyStreamEvent(line({ type: 'design_event', event: agentEvent({ type: 'compaction_start' }), sequence: 1 }));
+		expect(useDesignStore.getState().execution).toMatchObject({ phase: 'compacting', compactionNotice: undefined });
+		expect(useDesignStore.getState().isGenerating).toBe(true);
+		useDesignStore.getState().applyStreamEvent(line({ type: 'design_event', event: agentEvent({ type: 'compaction_end', result: true }), sequence: 2 }));
+		expect(useDesignStore.getState().execution).toMatchObject({ phase: 'thinking', compactionNotice: 'success' });
+		useDesignStore.getState().applyStreamEvent(line({ type: 'design_event', event: agentEvent({ type: 'compaction_start' }), sequence: 3 }));
+		useDesignStore.getState().applyStreamEvent(line({ type: 'design_event', event: agentEvent({ type: 'compaction_end', result: false, errorMessage: '底层错误' }), sequence: 4 }));
+		expect(useDesignStore.getState().execution).toMatchObject({ compactionNotice: 'failure', compactionError: '底层错误' });
+	});
+
 	it('provides editable-friendly common viewport presets', () => {
 		expect(DESIGN_VIEWPORT_PRESETS.mobile.map((preset) => preset.width)).toEqual([360, 375, 390, 430]);
 		expect(DESIGN_VIEWPORT_PRESETS.desktop.map((preset) => preset.id)).toEqual(['desktop-workspace', 'desktop-720p', 'desktop-1080p', 'desktop-2k', 'desktop-4k']);

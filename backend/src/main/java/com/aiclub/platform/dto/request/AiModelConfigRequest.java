@@ -72,7 +72,11 @@ public record AiModelConfigRequest(
         /**
          * 模型可接收的输入模态；当前支持 text 和 image，缺失时按仅文本处理。
          */
-        List<String> inputModalities
+        List<String> inputModalities,
+        /**
+         * 声明上游支持 vision（如经过 9router 代理）；为 true 时 CLI 在 inputModalities 不含 image 时仍内联图片，由后端透传给上游。
+         */
+        Boolean visionRouting
 ) {
     /** 兼容新增能力字段前的调用方，未传能力时由服务层回退为仅文本。 */
     public AiModelConfigRequest(
@@ -94,7 +98,7 @@ public record AiModelConfigRequest(
         ) {
         this(name, modelType, provider, apiBaseUrl, modelName, openaiApiMode, apiKey, description, enabled,
                 contextLength, maxOutputTokens, tokenBillingEnabled, null, inputCreditPer1k, outputCreditPer1k,
-                cachedInputCreditPer1k, null);
+                cachedInputCreditPer1k, null, null);
     }
 
     /** 兼容已增加输入模态但尚未增加倍率字段的请求构造方。 */
@@ -118,6 +122,31 @@ public record AiModelConfigRequest(
     ) {
         this(name, modelType, provider, apiBaseUrl, modelName, openaiApiMode, apiKey, description, enabled,
                 contextLength, maxOutputTokens, tokenBillingEnabled, null, inputCreditPer1k, outputCreditPer1k,
-                cachedInputCreditPer1k, inputModalities);
+                cachedInputCreditPer1k, inputModalities, null);
+    }
+
+    /** 兼容已增加输入模态但尚未增加 visionRouting 字段的请求构造方。 */
+    public AiModelConfigRequest(
+            String name,
+            String modelType,
+            String provider,
+            String apiBaseUrl,
+            String modelName,
+            String openaiApiMode,
+            String apiKey,
+            String description,
+            Boolean enabled,
+            Integer contextLength,
+            Integer maxOutputTokens,
+            Boolean tokenBillingEnabled,
+            BigDecimal billingMultiplier,
+            BigDecimal inputCreditPer1k,
+            BigDecimal outputCreditPer1k,
+            BigDecimal cachedInputCreditPer1k,
+            List<String> inputModalities
+    ) {
+        this(name, modelType, provider, apiBaseUrl, modelName, openaiApiMode, apiKey, description, enabled,
+                contextLength, maxOutputTokens, tokenBillingEnabled, billingMultiplier, inputCreditPer1k, outputCreditPer1k,
+                cachedInputCreditPer1k, inputModalities, null);
     }
 }

@@ -31,9 +31,9 @@ function ReviewFileItem({ file, expanded, onToggle }: { file: ChangedFile; expan
 			<Button
 				type="button"
 				variant="unstyled"
-				className={`${styles.row} ${file.editable ? styles.rowEditable : ''}`}
-				onClick={() => file.editable && onToggle(file.path)}
-				aria-expanded={file.editable ? expanded : undefined}
+				className={`${styles.row} ${styles.rowEditable}`}
+				onClick={() => onToggle(file.path)}
+				aria-expanded={expanded}
 			>
 				<span className={`${styles.status} ${STATUS_CLASS[file.status]}`}>{STATUS_LABEL[file.status]}</span>
 				<Hint content={file.path}><span className={styles.path}>{file.path}</span></Hint>
@@ -41,8 +41,7 @@ function ReviewFileItem({ file, expanded, onToggle }: { file: ChangedFile; expan
 					{file.added > 0 && <span className={styles.statsAdd}>+{file.added}</span>}
 					{file.removed > 0 && <span className={styles.statsDel}> -{file.removed}</span>}
 				</span>
-				{file.editable && <span className={styles.toggle}>{expanded ? '▾' : '▸'}</span>}
-				{!file.editable && <span className={styles.noDiff}>无 diff</span>}
+				{file.editable ? <span className={styles.toggle}>{expanded ? '▾' : '▸'}</span> : <span className={styles.noDiff}>无文本 diff</span>}
 			</Button>
 			{expanded && edits && (
 				edits.map((diff, index) => (

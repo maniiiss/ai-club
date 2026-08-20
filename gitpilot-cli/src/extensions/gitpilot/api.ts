@@ -78,6 +78,8 @@ export interface CliModel {
 	maxOutputTokens?: number;
 	/** 平台管理员配置的输入模态；旧平台接口缺失时由适配层回退为 text。 */
 	inputModalities?: CliModelInputModality[];
+	/** 平台声明的上游 vision 能力（如经过 9router 代理）；为 true 时即使 inputModalities 不含 image 也注入 image 能力。 */
+	visionRouting?: boolean;
 	/** 平台模型相对 1x 基准价的倍率；缺失表示 free。 */
 	billingMultiplier?: number;
 }
@@ -268,3 +270,58 @@ export const listMyTasks = (platformUrl: string, token: string, params: ListMyTa
 	const qs = query.toString();
 	return requestJson<PageResponse<CliTaskSummary>>(platformUrl, `/api/cli/tasks${qs ? `?${qs}` : ""}`, { token, ...requestOptions });
 };
+
+/** 工作项详情（Web 端 TaskSummary 的 CLI 消费视图；CLI token 可直接访问业务接口）。 */
+export interface CliTaskDetail {
+	id: number;
+	workItemCode: string;
+	name: string;
+	workItemType: string;
+	creatorName: string | null;
+	status: string;
+	priority: string | null;
+	assignee: string | null;
+	taskType: string | null;
+	projectId: number | null;
+	projectName: string | null;
+	iterationId: number | null;
+	iterationName: string | null;
+	planStartDate: string | null;
+	planEndDate: string | null;
+	description: string | null;
+	requirementMarkdown: string | null;
+	prototypeUrl: string | null;
+	moduleName: string | null;
+}
+
+/** 关联工作项的列表行视图（TaskSummary 中协同浏览需要的轻量字段）。 */
+export type CliTaskLinkItem = Pick<CliTaskDetail, "id" | "workItemCode" | "name" | "workItemType" | "status" | "priority" | "assignee" | "taskType" | "projectId" | "projectName" | "iterationId" | "iterationName" | "planStartDate" | "planEndDate">;
+
+/** 工作项关联资源摘要（TaskLinksSummary 的 CLI 消费视图，仅保留协同浏览需要的轻量字段）。 */
+export interface CliTaskLinks {
+	children: CliTaskLinkItem[];
+	parentWorkItems: CliTaskLinkItem[];
+	relatedWorkItems: CliTaskLinkItem[];
+	testCases: Array<{
+		id: number;
+		title: string;
+		moduleName: string | null;
+		caseType: string | null;
+		priority: string | null;
+		testPlanName: string | null;
+	}>;
+	attachments: Array<{
+		id: number;
+		fileName: string;
+		contentType: string | null;
+		fileSize: number;
+	}>;
+}
+
+/** 读取单个工作项详情；供桌面端协同浏览详情态使用，CLI token 走 Web 端业务接口。 */
+export const getWorkItemDetail = (platformUrl: string, token: string, workItemId: number) =>
+	requestJson<CliTaskDetail>(platformUrl, `/api/tasks/${workItemId}`, { token });
+
+/** 读取工作项关联资源（子项/父项/关联项/测试用例/附件）。 */
+export const getWorkItemLinks = (platformUrl: string, token: string, workItemId: number) =>
+	requestJson<CliTaskLinks>(platformUrl, `/api/tasks/${workItemId}/links`, { token });

@@ -47,10 +47,11 @@ function createAssistant(
 	};
 }
 
-function useSummaryStreamFn(harness: Harness, summary: string): () => number {
+function useSummaryStreamFn(harness: Harness, summary: string, contexts: unknown[] = []): () => number {
 	let callCount = 0;
-	harness.session.agent.streamFunction = (model) => {
+	harness.session.agent.streamFunction = (model, context) => {
 		callCount++;
+		contexts.push(context);
 		const stream = createAssistantMessageEventStream();
 		queueMicrotask(() => {
 			const message: AssistantMessage = {
@@ -205,6 +206,29 @@ describe("AgentSession compaction characterization", () => {
 		expect(compactionEntries).toHaveLength(1);
 		expect(compactionEnd?.result?.estimatedTokensAfter).toBeGreaterThan(0);
 		expect(getStreamCallCount()).toBe(1);
+	});
+
+	it.each([
+		["manual", async (harness: Harness) => await harness.session.compact()],
+		["threshold", async (harness: Harness) => await (harness.session as unknown as SessionWithCompactionInternals)._runAutoCompaction("threshold", false)],
+		["overflow", async (harness: Harness) => await (harness.session as unknown as SessionWithCompactionInternals)._runAutoCompaction("overflow", true)],
+	] as const)("在 %s 压缩入口追加模式提示并保留默认摘要格式", async (_reason, runCompaction) => {
+		const contexts: unknown[] = [];
+		const harness = await createHarness({ withConfiguredAuth: false, compactionInstructions: () => "Design 专属：保留当前 pageId 和 revision。" });
+		harnesses.push(harness);
+		seedCompactableSession(harness);
+		useSummaryStreamFn(harness, "## Goal\n保留默认结构", contexts);
+
+		await runCompaction(harness);
+
+		expect(contexts).toHaveLength(1);
+		const prompt = JSON.stringify(contexts[0]);
+		expect(prompt).toContain("Design 专属：保留当前 pageId 和 revision。");
+		expect(prompt).toContain("## Goal");
+		expect(prompt).toContain("## Progress");
+		expect(prompt).toContain("## Key Decisions");
+		expect(prompt).toContain("## Next Steps");
+		expect(prompt).toContain("## Critical Context");
 	});
 
 	it("cancels in-progress manual compaction when abortCompaction is called", async () => {

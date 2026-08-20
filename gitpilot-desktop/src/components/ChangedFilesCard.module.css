@@ -14,6 +14,7 @@
 .statsAdd { color: var(--gp-status-success); }
 .statsDel { color: var(--gp-status-error); }
 .toggle { color: var(--gp-text-muted); flex-shrink: 0; }
+.noDiff { color: var(--gp-text-muted); font-size: calc(9px * var(--desktop-font-scale)); flex-shrink: 0; white-space: nowrap; }
 .diffWrap { border-top: 1px solid var(--gp-border); max-height: 320px; overflow: auto; }
 .more { display: flex; align-items: center; gap: 4px; width: 100%; justify-content: flex-start; padding: 7px 12px; color: var(--gp-text-muted); font-size: var(--text-xs); }
 .more:hover { color: var(--gp-action-hover); background: var(--gp-surface-hover); }

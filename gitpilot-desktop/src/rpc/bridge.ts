@@ -193,7 +193,9 @@ export const rpc = {
 	prepareAttachments: (items: AttachmentInput[]) => send({ type: 'prepare_attachments', items }),
 	codeFileList: () => send({ type: 'code_file_list' }),
 	newWorkSession: (taskId: string, workspacePath?: string) => send({ type: 'new_work_session', taskId, workspacePath }),
-	workPrompt: (payload: { taskId: string; message: string }) => send({ type: 'work_prompt', ...payload }, 120_000),
+	// work_prompt 为受理式协议：sidecar 立即返回 requestId，最终文本通过
+	// work_complete / work_error 事件流推送，响应本身只需默认超时。
+	workPrompt: (payload: { taskId: string; message: string }) => send({ type: 'work_prompt', ...payload }),
 	workAbort: (requestId?: string) => send({ type: 'work_abort', requestId }),
 	workFileList: (taskId: string) => send({ type: 'work_file_list', taskId }),
 	workFileRead: (taskId: string, path: string) => send({ type: 'work_file_read', taskId, path }),
@@ -201,6 +203,10 @@ export const rpc = {
 	workFileDelete: (taskId: string, path: string) => send({ type: 'work_file_delete', taskId, path }),
 	workFileRename: (taskId: string, path: string, newPath: string) => send({ type: 'work_file_rename', taskId, path, newPath }),
 	workPrepareAttachments: (items: AttachmentInput[]) => send({ type: 'work_prepare_attachments', items }),
+	// 工作项协同浏览：右侧栏只读分页浏览，数据经 sidecar 代理平台接口，不进模型上下文。
+	workProjectList: () => send({ type: 'work_project_list' }),
+	workItemPage: (payload: { page?: number; size?: number; status?: string; priority?: string; projectId?: number; keyword?: string; workItemType?: string }) => send({ type: 'work_item_page', ...payload }),
+	workItemDetail: (workItemId: number) => send({ type: 'work_item_detail', workItemId }),
 	designOpen: (projectPath: string) => send({ type: 'design_open', projectPath }),
 	designSyncMessages: (projectPath: string, designId: string, messages: DesignRpcMessage[]) => send({ type: 'design_sync_messages', projectPath, designId, messages }),
 	designSaveGuidelines: (projectPath: string, designId: string, guidelines: DesignProjectGuidelines) => send({ type: 'design_save_guidelines', projectPath, designId, guidelines }),
@@ -249,6 +255,8 @@ export const rpc = {
 	exportHtml: (outputPath?: string) => send({ type: 'export_html', outputPath }),
 	getCommands: () => send({ type: 'get_commands' }),
 	executeCommand: (name: string, args?: string) => send({ type: 'execute_command', name, args }),
+	/** 标题栏刷新按钮：强制 sidecar 联网重拉平台模型清单并重解析当前选中模型。 */
+	refreshModels: () => send({ type: 'refresh_models' }),
 	setToken: (platformUrl: string, token: string) => send({ type: 'set_token', platformUrl, token }),
 	getPlatformAccount: () => send({ type: 'get_platform_account' }),
 	getPlatformConnection: () => send({ type: 'get_platform_connection' }),
@@ -524,6 +532,20 @@ function mockResponseFor(cmd: RpcCommand & { id: string }): RpcResponse {
 				{ path: 'package.json', name: 'package.json', kind: 'file', size: 512, updatedAt: Date.now() },
 			];
 			return { id, type: 'response', command: 'code_file_list', success: true, data: { rootPath: 'mock-project', entries, truncated: false } };
+		}
+		case 'work_prompt': {
+			// 受理式协议的 mock：立即返回 requestId，再通过事件流模拟一次完整回合，
+			// 保持浏览器预览下 Work 对话可用（delta 流式 + complete 收尾）。
+			const requestId = id;
+			const taskId = cmd.taskId;
+			setTimeout(() => {
+				dispatchLine({ type: 'work_delta', taskId, delta: '[mock] 已收到 Work 请求，' } as RpcStreamLine);
+				setTimeout(() => {
+					dispatchLine({ type: 'work_delta', taskId, delta: '浏览器预览仅提供界面联调。' } as RpcStreamLine);
+					dispatchLine({ type: 'work_complete', requestId, taskId, text: '[mock] 已收到 Work 请求，浏览器预览仅提供界面联调。', title: 'Mock Work 会话' } as RpcStreamLine);
+				}, 60);
+			}, 20);
+			return { id, type: 'response', command: 'work_prompt', success: true, data: { requestId } };
 		}
 		case 'abort':
 			return { id, type: 'response', command: 'abort', success: true, data: { clearedSteering: 0, clearedFollowUp: 0 } };

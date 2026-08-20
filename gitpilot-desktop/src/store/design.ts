@@ -406,6 +406,8 @@ function updateBackgroundRun(previous: DesignBackgroundRun | undefined, line: De
 	const execution = { ...base.execution, runId: line.runId ?? base.execution.runId, requestId: line.requestId, sequence: Math.max(base.execution.sequence, line.sequence) };
 	if (line.type === 'design_event') {
 		const event = line.event;
+		if (event.type === 'compaction_start') return { ...base, execution: { ...execution, status: 'running', phase: 'compacting', compactionNotice: undefined, compactionError: undefined }, status: 'running', isGenerating: true };
+		if (event.type === 'compaction_end') return { ...base, execution: { ...execution, status: 'running', phase: 'thinking', compactionNotice: event.result ? 'success' : 'failure', compactionError: event.errorMessage }, status: 'running', isGenerating: true };
 		if (event.type === 'message_update') {
 			const inner = event.assistantMessageEvent;
 			if (inner.type === 'thinking_delta') return { ...base, execution: { ...execution, status: 'running', phase: 'thinking', thinking: appendCappedText(execution.thinking, inner.delta, DESIGN_THINKING_MAX_CHARS) }, status: 'running', isGenerating: true };
@@ -884,6 +886,14 @@ export const useDesignStore = create<DesignState>((set, get) => {
 			set((current) => ({ execution: { ...current.execution, sequence: line.sequence } }));
 			if (line.type === 'design_event') {
 				const event = line.event;
+				if (event.type === 'compaction_start') {
+					set((current) => ({ execution: { ...current.execution, status: 'running', phase: 'compacting', compactionNotice: undefined, compactionError: undefined }, isGenerating: true }));
+					return;
+				}
+				if (event.type === 'compaction_end') {
+					set((current) => ({ execution: { ...current.execution, status: 'running', phase: 'thinking', compactionNotice: event.result ? 'success' : 'failure', compactionError: event.errorMessage }, isGenerating: true }));
+					return;
+				}
 				if (event.type === 'message_update') {
 					const inner = event.assistantMessageEvent as { type?: string; delta?: string } | undefined;
 					if (inner?.type === 'thinking_delta' && inner.delta) set((current) => ({ execution: { ...current.execution, status: 'running', phase: 'thinking', lastDeltaKind: 'thinking', thinking: appendCappedText(current.execution.thinking, inner.delta!, DESIGN_THINKING_MAX_CHARS) } }));

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canManageMcpServer, definitionToDraft, draftToDefinition, draftToJsonDefinition, nextMcpModes, parseMcpArgs, parseMcpDefinition, parseMcpRecord, validateMcpDraft } from './McpManagerDialog';
+import { availableMcpPresets, canManageMcpServer, definitionToDraft, detectWindowsPlatform, draftToDefinition, draftToJsonDefinition, MCP_PRESETS, nextMcpModes, parseMcpArgs, parseMcpDefinition, parseMcpRecord, presetDefinition, validateMcpDraft } from './McpManagerDialog';
 import type { ManagedMcpServer } from '@/src/rpc/types';
 
 const globalServer: ManagedMcpServer = { name: 'filesystem', source: 'global', enabled: true, modes: ['code'], transport: 'stdio', definition: { command: 'npx', args: ['@mcp/server'], requestTimeoutMs: 30000 } };
@@ -45,5 +45,30 @@ describe('MCP 设置分区', () => {
 		expect(() => parseMcpDefinition('[]')).toThrow('服务定义对象');
 		expect(definitionToDraft({ ...globalServer, definition: { command: 'node', args: ['server.js', '--name', 'hello world'], requestTimeoutMs: 30000 } }).args).toBe('server.js --name "hello world"');
 		expect(definitionToDraft({ ...globalServer, definition: { command: 'node', args: ['C:\\Program Files\\server.js', ''], requestTimeoutMs: 30000 } }).args).toBe('"C:\\Program Files\\server.js" ""');
+	});
+
+	it('推荐预设按平台生成定义，Windows 经 cmd /c 启动 npx', () => {
+		const preset = MCP_PRESETS.find((item) => item.name === 'gitnexus');
+		expect(preset).toBeDefined();
+		if (!preset) return;
+		// macOS/Linux 直接 spawn npx。
+		expect(presetDefinition(preset, false)).toEqual({ command: 'npx', args: ['-y', 'gitnexus@latest', 'mcp'], requestTimeoutMs: preset.requestTimeoutMs });
+		// Windows 上 npx 是 .cmd 脚本，必须经 cmd /c 才能被 spawn。
+		expect(presetDefinition(preset, true)).toEqual({ command: 'cmd', args: ['/c', 'npx', '-y', 'gitnexus@latest', 'mcp'], requestTimeoutMs: preset.requestTimeoutMs });
+		// 预设生成的是标准 stdio 定义，能通过现有草稿校验。
+		expect(draftToDefinition({ name: preset.name, transport: 'stdio', timeout: String(preset.requestTimeoutMs), command: 'npx', args: '-y gitnexus@latest mcp', env: '', url: '', headers: '', modes: [...preset.modes] })).toEqual(presetDefinition(preset, false));
+	});
+
+	it('已存在同名服务时预设从推荐区隐藏', () => {
+		expect(availableMcpPresets(MCP_PRESETS, []).map((preset) => preset.name)).toContain('gitnexus');
+		expect(availableMcpPresets(MCP_PRESETS, [{ ...globalServer, name: 'gitnexus' }])).toEqual([]);
+		// 项目来源的同名服务同样视为已存在，避免一键添加后被项目配置覆盖。
+		expect(availableMcpPresets(MCP_PRESETS, [{ ...globalServer, name: 'gitnexus', source: 'project' }])).toEqual([]);
+	});
+
+	it('从 userAgent 识别 Windows 平台', () => {
+		expect(detectWindowsPlatform('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36')).toBe(true);
+		expect(detectWindowsPlatform('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36')).toBe(false);
+		expect(detectWindowsPlatform('Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36')).toBe(false);
 	});
 });

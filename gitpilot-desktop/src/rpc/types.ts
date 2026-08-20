@@ -89,6 +89,18 @@ export interface WorkFileSnapshot {
 	updatedAt: number;
 	content?: string;
 }
+/**
+ * sidecar 推送到 Desktop 的 Work 执行过程事件；必须与 gitpilot-cli rpc-mode 的 work_* 输出保持同步。
+ * 业务意图：Work 对话与 Code 模式一致，在输出正文中穿插展示思考与工具调用，
+ * 这些事件是执行过程进入渲染与持久化链路的唯一数据源。
+ */
+export type WorkStreamEvent =
+	| { type: 'work_delta'; taskId: string; delta: string }
+	| { type: 'work_thinking_delta'; taskId: string; delta: string }
+	| { type: 'work_message_end'; taskId: string; text: string }
+	| { type: 'work_tool_started'; taskId: string; toolCallId: string; toolName: string; args?: unknown }
+	| { type: 'work_tool_updated'; taskId: string; toolCallId: string; toolName: string; partialResult?: unknown }
+	| { type: 'work_tool_completed'; taskId: string; toolCallId: string; toolName: string; result?: unknown; isError?: boolean };
 /** Code 右侧文件树的只读条目；文件内容仍由现有附件预处理链路按需读取。 */
 export interface CodeProjectFileEntry {
 	path: string;
@@ -154,6 +166,8 @@ export interface DesignPatch { baseRevisionId: string; operations: DesignPatchOp
  * 必须与 gitpilot-cli 的同名协议保持同步。
  */
 export type DesignAgentEvent =
+	| { type: 'compaction_start' }
+	| { type: 'compaction_end'; result: boolean; errorMessage?: string }
 	| { type: 'message_update'; assistantMessageEvent: { type: 'thinking_delta' | 'text_delta'; delta: string } }
 	| { type: 'message_end'; message: { role: 'assistant'; content: Array<{ type: 'text'; text: string }> } }
 	| { type: 'tool_execution_start' | 'tool_execution_update' | 'tool_execution_end'; toolCallId: string; toolName: string; summary?: string; isError?: boolean };
@@ -175,7 +189,7 @@ export interface DesignErrorEvent { type: 'design_error'; projectId?: string; pr
  */
 export interface DesignRunRecoveryState {
 	status: 'idle' | 'running' | 'awaiting_approval' | 'awaiting_clarification';
-	phase: 'idle' | 'thinking' | 'responding' | 'tool' | 'applying_patch' | 'awaiting_approval' | 'awaiting_clarification';
+	phase: 'idle' | 'thinking' | 'responding' | 'tool' | 'applying_patch' | 'compacting' | 'awaiting_approval' | 'awaiting_clarification';
 	requestId: string | null;
 	runId: string | null;
 	sequence: number;
@@ -299,6 +313,20 @@ export interface AgentExecutionSummary {
 	activeToolName?: string;
 }
 
+/** Code 任务收口后的最终工作区 diff；只描述本次任务触及路径的净结果。 */
+export interface WorkspaceChangedFile {
+	path: string;
+	status: 'modified' | 'added' | 'deleted';
+	added: number;
+	removed: number;
+	diff?: string;
+}
+export interface WorkspaceChangeSet {
+	version: 1;
+	source: 'git';
+	files: WorkspaceChangedFile[];
+}
+
 /** v1 能力编码。Desktop 只按能力字段启用新链路，不按版本号硬编码行为。 */
 export const RPC_CAPABILITY_SESSION_EXECUTION_SNAPSHOT_V1 = 'session_execution_snapshot_v1';
 export const RPC_CAPABILITY_SESSION_EVENT_METADATA_V1 = 'session_event_metadata_v1';
@@ -346,6 +374,10 @@ export type RpcCommand =
 	| { id?: string; type: 'work_file_delete'; taskId: string; path: string }
 	| { id?: string; type: 'work_file_rename'; taskId: string; path: string; newPath: string }
 	| { id?: string; type: 'work_prepare_attachments'; items: AttachmentInput[] }
+	// 工作项协同浏览：右侧栏只读分页，与 Work AgentSession 无关，不进模型上下文。
+	| { id?: string; type: 'work_project_list' }
+	| { id?: string; type: 'work_item_page'; page?: number; size?: number; status?: string; priority?: string; projectId?: number; keyword?: string; workItemType?: string }
+	| { id?: string; type: 'work_item_detail'; workItemId: number }
 	| { id?: string; type: 'design_open'; projectPath: string }
 	| { id?: string; type: 'design_sync_messages'; projectPath: string; designId: string; messages: DesignRpcMessage[] }
 	| { id?: string; type: 'design_save_guidelines'; projectPath: string; designId: string; guidelines: DesignProjectGuidelines }
@@ -399,6 +431,9 @@ export type RpcCommand =
 	| { id?: string; type: 'get_commands' }
 	/** 执行扩展命令但不创建假的 slash 用户消息。 */
 	| { id?: string; type: 'execute_command'; name: string; args?: string }
+	// 标题栏刷新按钮：强制 sidecar 联网重拉平台模型清单并重解析当前模型，
+	// 让管理端新配置（visionRouting、输入模态等）无需重启即可生效。
+	| { id?: string; type: 'refresh_models' }
 	// 桌面版登录后注入平台 gpt_ token（复用 sidecar saveCliToken）
 	| { id?: string; type: 'set_token'; platformUrl: string; token: string }
 	// 账户菜单的只读摘要与受控登出。
@@ -435,6 +470,8 @@ export interface RpcSessionState {
 	rpcCapabilities?: string[];
 	/** 当前会话权威执行快照（仅当 sidecar 宣告 session_execution_snapshot_v1 时存在）。 */
 	execution?: AgentExecutionSnapshot;
+	/** 最近一次已收口 Code 任务的最终工作区 diff。 */
+	workspaceChanges?: WorkspaceChangeSet;
 }
 
 // ============================================================================
@@ -456,7 +493,7 @@ export type RpcResponse =
 	| { id?: string; type: 'response'; command: 'prepare_attachments'; success: true; data: { attachments: PreparedAttachment[] } }
 	| { id?: string; type: 'response'; command: 'code_file_list'; success: true; data: CodeProjectFileList }
 	| { id?: string; type: 'response'; command: 'new_work_session'; success: true; data: { taskId: string; sessionId: string; sessionPath: string; workspacePath: string; title: string } }
-	| { id?: string; type: 'response'; command: 'work_prompt'; success: true; data: { requestId: string; text: string; title?: string; sources?: WorkResearchSource[] } }
+	| { id?: string; type: 'response'; command: 'work_prompt'; success: true; data: { requestId: string } }
 	| { id?: string; type: 'response'; command: 'work_abort'; success: true }
 	| { id?: string; type: 'response'; command: 'work_file_list'; success: true; data: { taskId: string; files: WorkFileSnapshot[] } }
 	| { id?: string; type: 'response'; command: 'work_file_read'; success: true; data: { taskId: string; file: WorkFileSnapshot } }
@@ -499,11 +536,15 @@ export type RpcResponse =
 	| { id?: string; type: 'response'; command: 'export_html'; success: true; data: { path: string } }
 	| { id?: string; type: 'response'; command: 'get_commands'; success: true; data: { commands: RpcSlashCommand[] } }
 	| { id?: string; type: 'response'; command: 'execute_command'; success: true }
+	| { id?: string; type: 'response'; command: 'refresh_models'; success: true; data: { models: ModelInfo[] } }
 	| { id?: string; type: 'response'; command: 'set_token'; success: true }
 	| { id?: string; type: 'response'; command: 'get_platform_account'; success: true; data: PlatformAccount }
 	| { id?: string; type: 'response'; command: 'get_platform_connection'; success: true; data: PlatformConnection }
 	| { id?: string; type: 'response'; command: 'get_platform_projects'; success: true; data: { projects: Array<{ id: number; name: string; status?: string; description?: string; owner?: string }> } }
 	| { id?: string; type: 'response'; command: 'get_platform_work_items'; success: true; data: { items: RpcWorkItemSummary[] } }
+	| { id?: string; type: 'response'; command: 'work_project_list'; success: true; data: { projects: RpcWorkProjectSummary[] } }
+	| { id?: string; type: 'response'; command: 'work_item_page'; success: true; data: RpcWorkItemPage }
+	| { id?: string; type: 'response'; command: 'work_item_detail'; success: true; data: { detail: RpcWorkItemDetail; links: RpcWorkItemLinks } }
 	| { id?: string; type: 'response'; command: 'logout'; success: true }
 	| { id?: string; type: 'response'; command: string; success: false; error: string };
 
@@ -539,6 +580,82 @@ export interface RpcWorkItemSummary {
 	planStartDate: string | null;
 	planEndDate: string | null;
 	requirementMarkdown: string | null;
+}
+
+// ============================================================================
+// 工作项协同浏览（右侧栏分页浏览，只读，不进模型上下文）
+// ============================================================================
+
+/** 协同浏览的项目下拉条目。 */
+export interface RpcWorkProjectSummary {
+	id: number;
+	name: string;
+	status?: string;
+	description?: string;
+	owner?: string;
+}
+
+/** 协同浏览的工作项列表行；requirementMarkdown 大字段只在详情态返回，列表不携带。 */
+export interface RpcWorkItemListItem {
+	id: number;
+	workItemCode: string;
+	name: string;
+	workItemType: string;
+	status: string;
+	priority: string | null;
+	assignee: string | null;
+	taskType: string | null;
+	projectId: number | null;
+	projectName: string | null;
+	iterationId: number | null;
+	iterationName: string | null;
+	planStartDate: string | null;
+	planEndDate: string | null;
+}
+
+/** 协同浏览的工作项分页结果。 */
+export interface RpcWorkItemPage {
+	records: RpcWorkItemListItem[];
+	total: number;
+	page: number;
+	size: number;
+	totalPages: number;
+}
+
+/** 工作项详情：列表字段 + 详情态专属字段（描述、需求正文、创建人、原型与模块信息）。 */
+export interface RpcWorkItemDetail extends RpcWorkItemListItem {
+	description: string | null;
+	requirementMarkdown: string | null;
+	creatorName: string | null;
+	prototypeUrl: string | null;
+	moduleName: string | null;
+}
+
+/** 工作项关联的测试用例摘要。 */
+export interface RpcWorkItemTestCase {
+	id: number;
+	title: string;
+	moduleName: string | null;
+	caseType: string | null;
+	priority: string | null;
+	testPlanName: string | null;
+}
+
+/** 工作项关联的附件摘要。 */
+export interface RpcWorkItemAttachment {
+	id: number;
+	fileName: string;
+	contentType: string | null;
+	fileSize: number;
+}
+
+/** 工作项的关联资源集合。 */
+export interface RpcWorkItemLinks {
+	children: RpcWorkItemListItem[];
+	parentWorkItems: RpcWorkItemListItem[];
+	relatedWorkItems: RpcWorkItemListItem[];
+	testCases: RpcWorkItemTestCase[];
+	attachments: RpcWorkItemAttachment[];
 }
 
 // ============================================================================

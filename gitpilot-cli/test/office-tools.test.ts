@@ -1,7 +1,12 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { getModel } from "@earendil-works/pi-ai/compat";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
+import { createAgentSession } from "../src/core/sdk.ts";
+import { SessionManager } from "../src/core/session-manager.ts";
+import { SettingsManager } from "../src/core/settings-manager.ts";
 import { createOfficeWorkToolDefinitions } from "../src/extensions/gitpilot/office-tools.ts";
 import { createGitPilotWorkToolDefinitions } from "../src/extensions/gitpilot/work-tools.ts";
 
@@ -98,5 +103,58 @@ describe("Work Office 工具", () => {
 		expect(readFileSync(join(workspace, input.outputPath), "utf8")).toBe("旧内容");
 		await create.execute("accept", { ...input, overwrite: true }, undefined, undefined, confirmedContext);
 		expect(confirmedContext.ui.confirm).toHaveBeenCalled();
+	});
+});
+
+describe("Work 会话工具挂载", () => {
+	// 回归背景：rpc-mode 曾用 tools 白名单限制 Work 内置工具，导致 office/gitpilot
+	// 自定义工具在注册阶段被整体过滤，模型只能报告"技能已安装但工具未挂载"。
+	// 这里固定两种参数组合的挂载语义，防止 Work 会话再次误用白名单。
+	const workToolNames = (workspace: string) => createGitPilotWorkToolDefinitions("work-mount-test", workspace).map((tool) => tool.name);
+
+	async function createWorkLikeSession(workspace: string, options: { tools?: string[]; excludeTools?: string[] }, activateAll: boolean) {
+		const agentDir = join(workspace, ".agent");
+		mkdirSync(agentDir, { recursive: true });
+		const settingsManager = SettingsManager.create(workspace, agentDir);
+		const sessionManager = SessionManager.inMemory(workspace);
+		const resourceLoader = new DefaultResourceLoader({ cwd: workspace, agentDir, settingsManager });
+		await resourceLoader.reload();
+		const { session } = await createAgentSession({
+			cwd: workspace,
+			agentDir,
+			model: getModel("anthropic", "claude-sonnet-4-5")!,
+			settingsManager,
+			sessionManager,
+			resourceLoader,
+			customTools: createOfficeWorkToolDefinitions(workspace),
+			tools: options.tools,
+			excludeTools: options.excludeTools,
+		});
+		await session.bindExtensions({});
+		if (activateAll) session.setActiveToolsByName(session.getAllTools().map((tool) => tool.name));
+		return session;
+	}
+
+	it("tools 白名单会过滤掉 Office 自定义工具（回归锚点）", async () => {
+		const workspace = mkdtempSync(join(tmpdir(), "gitpilot-work-mount-"));
+		const session = await createWorkLikeSession(workspace, { tools: ["read", "write", "edit", "grep", "find", "ls"] }, false);
+		const registered = session.getAllTools().map((tool) => tool.name);
+		expect(registered).not.toContain("office_create_document");
+		expect(registered).not.toContain("office_inspect_document");
+		session.dispose();
+		rmSync(workspace, { recursive: true, force: true });
+	});
+
+	it("excludeTools 只禁 bash，Office 工具完成注册并激活", async () => {
+		const workspace = mkdtempSync(join(tmpdir(), "gitpilot-work-mount-"));
+		const session = await createWorkLikeSession(workspace, { excludeTools: ["bash"] }, true);
+		const registered = session.getAllTools().map((tool) => tool.name);
+		expect(registered).toContain("office_create_document");
+		expect(registered).toContain("office_inspect_document");
+		expect(registered).not.toContain("bash");
+		expect(session.getActiveToolNames()).toEqual(expect.arrayContaining(["read", "write", "edit", "grep", "find", "ls", "office_create_document", "office_inspect_document"]));
+		expect(workToolNames(workspace).length).toBeGreaterThan(0);
+		session.dispose();
+		rmSync(workspace, { recursive: true, force: true });
 	});
 });

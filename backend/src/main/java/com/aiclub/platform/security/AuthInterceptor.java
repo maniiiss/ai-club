@@ -59,7 +59,10 @@ public class AuthInterceptor implements HandlerInterceptor {
         }
         boolean modelProxyRequest = requestUri.startsWith("/api/cli/model-sessions/")
                 && gitPilotCliService.isModelSessionToken(rawAuthorization.isBlank() ? rawModelSession : rawAuthorization);
-        boolean cliRequest = requestUri.startsWith("/api/cli/") && gitPilotCliService.isCliToken(rawAuthorization);
+        // CLI Token（gpt_ 前缀）不再限定 /api/cli/ 前缀：桌面端 Work 模式的公众端工具
+        // 会携带该 Token 调用 /api/tasks、/api/projects 等业务接口。权限仍通过
+        // authenticateCliToken 重建的用户最新权限快照，交由各端点的 @RequirePermission 校验。
+        boolean cliRequest = gitPilotCliService.isCliToken(rawAuthorization);
         if ((authHeader == null || authHeader.isBlank()) && !modelProxyRequest) {
             writeJson(response, HttpStatus.UNAUTHORIZED, "Not logged in or session expired");
             return false;

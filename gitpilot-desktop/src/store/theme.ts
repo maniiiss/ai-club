@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 
-/** 工作台支持的六套视觉主题；主题只改变渲染层令牌，不改变 sidecar 会话与权限边界。 */
-export type ThemeMode = 'current' | 'mono-dark' | 'light' | 'ember' | 'paper' | 'glacier';
+/** 工作台支持的九套视觉主题；主题只改变渲染层令牌，不改变 sidecar 会话与权限边界。 */
+export type ThemeMode = 'current' | 'mono-dark' | 'light' | 'ember' | 'paper' | 'glacier' | 'glass' | 'glass-dark' | 'black-white';
 
 export const THEME_OPTIONS: ReadonlyArray<{ value: ThemeMode; label: string; description: string }> = [
 	{ value: 'current', label: '午夜石墨', description: '深石墨背景，青绿色强调' },
@@ -10,9 +10,12 @@ export const THEME_OPTIONS: ReadonlyArray<{ value: ThemeMode; label: string; des
 	{ value: 'ember', label: '炭火橙', description: '炭黑背景，琥珀橙强调' },
 	{ value: 'paper', label: '纸张暖白', description: '暖白背景，陶土红强调' },
 	{ value: 'glacier', label: '冰川灰蓝', description: '冷灰蓝背景，深蓝强调' },
+	{ value: 'glass', label: '毛玻璃', description: '黑白灰磨砂玻璃，半透明面板配柔和景深' },
+	{ value: 'glass-dark', label: '毛玻璃黑', description: '黑底白字磨砂玻璃，半透明深色面板配柔和景深' },
+	{ value: 'black-white', label: '经典黑白', description: '白色背景，黑色正文，黑字白底的经典扁平对比' },
 ];
 
-const LIGHT_THEME_MODES: ReadonlySet<ThemeMode> = new Set(['light', 'paper', 'glacier']);
+const LIGHT_THEME_MODES: ReadonlySet<ThemeMode> = new Set(['light', 'paper', 'glacier', 'glass', 'black-white']);
 
 /** 浏览器原生控件和滚动条需要跟随主题选择正确的明暗配色。 */
 export function isLightTheme(theme: ThemeMode): boolean {
@@ -22,7 +25,7 @@ export function isLightTheme(theme: ThemeMode): boolean {
 const THEME_STORAGE_KEY = 'gitpilot-desktop.theme';
 
 export function isThemeMode(value: unknown): value is ThemeMode {
-	return value === 'current' || value === 'mono-dark' || value === 'light' || value === 'ember' || value === 'paper' || value === 'glacier';
+	return value === 'current' || value === 'mono-dark' || value === 'light' || value === 'ember' || value === 'paper' || value === 'glacier' || value === 'glass' || value === 'glass-dark' || value === 'black-white';
 }
 
 export function normalizeTheme(value: unknown): ThemeMode {

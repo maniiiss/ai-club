@@ -42,7 +42,9 @@ public final class CliDtos {
             /** 平台配置的输入模态，CLI 将其映射为 PI Model.input。 */
             List<String> inputModalities,
             /** 模型相对平台 1x 基准价的倍率；为空时桌面端显示 free。 */
-            BigDecimal billingMultiplier
+            BigDecimal billingMultiplier,
+            /** 声明上游支持 vision（如经过 9router 代理）；为 true 时 CLI 在 inputModalities 不含 image 时仍内联图片，由后端透传给上游。 */
+            Boolean visionRouting
     ) {
         /** 兼容未增加输入能力字段前的构造方，旧模型默认仅支持文本。 */
         public CliModelSummary(
@@ -55,7 +57,7 @@ public final class CliDtos {
                 Integer contextLength,
                 Integer maxOutputTokens
         ) {
-            this(id, name, provider, modelName, description, openaiApiMode, contextLength, maxOutputTokens, List.of("text"), null);
+            this(id, name, provider, modelName, description, openaiApiMode, contextLength, maxOutputTokens, List.of("text"), null, Boolean.FALSE);
         }
 
         /** 兼容已增加输入模态但尚未增加倍率字段的调用方。 */
@@ -70,7 +72,23 @@ public final class CliDtos {
                 Integer maxOutputTokens,
                 List<String> inputModalities
         ) {
-            this(id, name, provider, modelName, description, openaiApiMode, contextLength, maxOutputTokens, inputModalities, null);
+            this(id, name, provider, modelName, description, openaiApiMode, contextLength, maxOutputTokens, inputModalities, null, Boolean.FALSE);
+        }
+
+        /** 兼容已增加倍率但尚未增加 visionRouting 字段的调用方。 */
+        public CliModelSummary(
+                Long id,
+                String name,
+                String provider,
+                String modelName,
+                String description,
+                String openaiApiMode,
+                Integer contextLength,
+                Integer maxOutputTokens,
+                List<String> inputModalities,
+                BigDecimal billingMultiplier
+        ) {
+            this(id, name, provider, modelName, description, openaiApiMode, contextLength, maxOutputTokens, inputModalities, billingMultiplier, Boolean.FALSE);
         }
     }
 

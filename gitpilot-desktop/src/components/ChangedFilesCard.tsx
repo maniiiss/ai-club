@@ -26,8 +26,8 @@ export function ChangedFileItem({ file }: { file: ChangedFile }) {
 			<Button
 				type="button"
 				variant="unstyled"
-				className={`${styles.row} ${file.editable ? styles.rowEditable : ''}`}
-				onClick={() => file.editable && useReviewStore.getState().openReviewFile(file.path)}
+				className={`${styles.row} ${styles.rowEditable}`}
+				onClick={() => useReviewStore.getState().openReviewFile(file.path)}
 			>
 				<span className={`${styles.status} ${STATUS_CLASS[file.status]}`}>{STATUS_LABEL[file.status]}</span>
 				<Hint content={file.path}><span className={styles.path}>{file.path}</span></Hint>
@@ -35,7 +35,7 @@ export function ChangedFileItem({ file }: { file: ChangedFile }) {
 					{file.added > 0 && <span className={styles.statsAdd}>+{file.added}</span>}
 					{file.removed > 0 && <span className={styles.statsDel}> -{file.removed}</span>}
 				</span>
-				{file.editable && <span className={styles.toggle}>▸</span>}
+				{file.editable ? <span className={styles.toggle}>▸</span> : <span className={styles.noDiff}>无文本 diff</span>}
 			</Button>
 		</div>
 	);

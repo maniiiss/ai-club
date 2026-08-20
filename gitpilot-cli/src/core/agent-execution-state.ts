@@ -9,6 +9,7 @@
 
 import { randomUUID } from "node:crypto";
 import type { AgentSessionEvent } from "./agent-session.ts";
+import type { WorkspaceChangeArtifactRef } from "./workspace-changes.ts";
 
 // ============================================================================
 // 运行时中性类型
@@ -117,6 +118,8 @@ export interface ExecutionRunEntryV1 {
 	endedAt: number;
 	rootUserTimestamp?: number;
 	lastSequence: number;
+	/** 最终工作区 diff 的压缩 artifact 引用；完整正文不进入 JSONL。 */
+	workspaceChanges?: WorkspaceChangeArtifactRef;
 }
 
 /** 判断一个 custom entry 数据是否为 v1 执行 run 记录。 */

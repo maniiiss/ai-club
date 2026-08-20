@@ -7,6 +7,9 @@ import { Hint } from '@/src/components/ui/tooltip';
 import styles from './ExecutionActivity.module.css';
 
 export function getExecutionActivityLabel(execution: ExecutionRun, isStreaming: boolean): string | null {
+	if (execution.phase === 'compacting') return '正在压缩上下文';
+	if (execution.compactionNotice === 'success') return '上下文已压缩';
+	if (execution.compactionNotice === 'failure') return '上下文压缩失败';
 	if (!isStreaming) return null;
 	// 仅显示当前仍在执行的真实工具；没有活跃工具时按模型增量阶段判断。
 	const activeTool = [...execution.steps].reverse().find((step) => step.status === 'running' || step.status === 'waiting');
@@ -209,9 +212,13 @@ export function ExecutionTimer({ isRunning, startedAt, durationMs, items = [], i
 	);
 }
 
-/** 当前思考或工具活动跟随最新正文向下推进，可展开查看尚未归档的执行过程。 */
-export function ExecutionActivity({ isStreaming }: { isStreaming: boolean }) {
-	const execution = useWorkbenchStore((s) => s.execution);
+/**
+ * 当前思考或工具活动跟随最新正文向下推进，可展开查看尚未归档的执行过程。
+ * execution 参数允许 Work 等其他模式注入自己的运行态；缺省时读取 Code 工作台 store。
+ */
+export function ExecutionActivity({ isStreaming, execution: executionOverride }: { isStreaming: boolean; execution?: ExecutionRun }) {
+	const storeExecution = useWorkbenchStore((s) => s.execution);
+	const execution = executionOverride ?? storeExecution;
 	const [expanded, setExpanded] = useState(false);
 	const label = getExecutionActivityLabel(execution, isStreaming);
 	const visibleSteps = getUnreportedExecutionSteps(execution);

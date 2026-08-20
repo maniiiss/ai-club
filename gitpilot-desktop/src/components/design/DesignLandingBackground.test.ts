@@ -20,13 +20,16 @@ describe('Design landing motion themes', () => {
 		}
 	});
 
-	it('为六套主题提供不同的入口场景', () => {
+	it('为九套主题提供不同的入口场景', () => {
 		expect(LANDING_MOTION_THEMES.current.scene).toBe('signal');
 		expect(LANDING_MOTION_THEMES['mono-dark'].scene).toBe('stars');
 		expect(LANDING_MOTION_THEMES.light.scene).toBe('daylight');
 		expect(LANDING_MOTION_THEMES.ember.scene).toBe('sunset');
 		expect(LANDING_MOTION_THEMES.paper.scene).toBe('ink');
 		expect(LANDING_MOTION_THEMES.glacier.scene).toBe('glacier');
+		expect(LANDING_MOTION_THEMES.glass.scene).toBe('frost');
+		expect(LANDING_MOTION_THEMES['glass-dark'].scene).toBe('nocturne');
+		expect(LANDING_MOTION_THEMES['black-white'].scene).toBe('press');
 		expect(new Set(THEME_OPTIONS.map((option) => LANDING_MOTION_THEMES[option.value].scene)).size).toBe(THEME_OPTIONS.length);
 		for (const option of THEME_OPTIONS) expect(LANDING_MOTION_THEMES[option.value].speed).toBeGreaterThan(0);
 	});
@@ -36,6 +39,9 @@ describe('Design landing motion themes', () => {
 		expect(LANDING_MOTION_THEMES.ember.baseCount).toBeLessThan(30);
 		expect(LANDING_MOTION_THEMES.paper.baseCount).toBeLessThan(30);
 		expect(LANDING_MOTION_THEMES.glacier.baseCount).toBeLessThan(30);
+		expect(LANDING_MOTION_THEMES.glass.baseCount).toBeLessThan(30);
+		expect(LANDING_MOTION_THEMES['glass-dark'].baseCount).toBeLessThan(30);
+		expect(LANDING_MOTION_THEMES['black-white'].baseCount).toBeLessThan(30);
 		expect(LANDING_MOTION_THEMES['mono-dark'].baseCount).toBeLessThanOrEqual(80);
 	});
 });

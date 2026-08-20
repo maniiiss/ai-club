@@ -22,7 +22,7 @@ describe("GitPilot 内置 Skill", () => {
 	it("首次创建服务时安装完整的内置 Skill 包", () => {
 		const agentDir = createAgentDir();
 
-		expect(installBundledSkills(agentDir)).toEqual({ installedSkillNames: ["cross-agent-harness", "office-docx", "office-xlsx", "office-pptx"] });
+		expect(installBundledSkills(agentDir)).toEqual({ installedSkillNames: ["cross-agent-harness", "gitnexus", "office-docx", "office-xlsx", "office-pptx"] });
 		const skillDir = join(agentDir, "skills", "cross-agent-harness");
 		expect(readFileSync(join(skillDir, "SKILL.md"), "utf8")).toContain("name: cross-agent-harness");
 		expect(existsSync(join(skillDir, "references", "usage.md"))).toBe(true);
@@ -30,6 +30,9 @@ describe("GitPilot 内置 Skill", () => {
 		const registry = getBundledSkillRegistry(agentDir).skills;
 		expect(registry["cross-agent-harness"]?.path).toBe(skillDir);
 		expect(registry["cross-agent-harness"]?.defaultModes).toEqual(["code"]);
+		// gitnexus 面向 Code 模式的知识图谱工作流，默认模式应为 code。
+		expect(readFileSync(join(agentDir, "skills", "gitnexus", "SKILL.md"), "utf8")).toContain("name: gitnexus");
+		expect(registry["gitnexus"]?.defaultModes).toEqual(["code"]);
 		for (const name of ["office-docx", "office-xlsx", "office-pptx"]) {
 			expect(readFileSync(join(agentDir, "skills", name, "SKILL.md"), "utf8")).toContain(`name: ${name}`);
 			expect(registry[name]?.defaultModes).toEqual(["work"]);
@@ -42,13 +45,13 @@ describe("GitPilot 内置 Skill", () => {
 		mkdirSync(dirname(skillPath), { recursive: true });
 		writeFileSync(skillPath, "用户自定义内容", { encoding: "utf8", flag: "w" });
 
-		expect(installBundledSkills(agentDir)).toEqual({ installedSkillNames: ["office-docx", "office-xlsx", "office-pptx"] });
+		expect(installBundledSkills(agentDir)).toEqual({ installedSkillNames: ["gitnexus", "office-docx", "office-xlsx", "office-pptx"] });
 		expect(readFileSync(skillPath, "utf8")).toBe("用户自定义内容");
 	});
 
 	it("旧安装内容被用户修改后不登记为内置来源", () => {
 		const agentDir = createAgentDir();
-		expect(installBundledSkills(agentDir).installedSkillNames).toEqual(["cross-agent-harness", "office-docx", "office-xlsx", "office-pptx"]);
+		expect(installBundledSkills(agentDir).installedSkillNames).toEqual(["cross-agent-harness", "gitnexus", "office-docx", "office-xlsx", "office-pptx"]);
 		const skillPath = join(agentDir, "skills", "cross-agent-harness", "SKILL.md");
 		writeFileSync(skillPath, `${readFileSync(skillPath, "utf8")}\n用户修改\n`, "utf8");
 		const registryPath = join(agentDir, "bundled-skills.json");

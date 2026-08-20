@@ -60,6 +60,15 @@ describe('Agent 工作台执行事件', () => {
 		expect(ended.phase).toBe('settling');
 	});
 
+	it('压缩期间显示实时状态，完成后保留成功或失败结果且新一轮会清除旧结果', () => {
+		const compacting = reduceExecutionEvent({ ...runningRun(), compactionNotice: 'success', compactionError: 'old error' }, { type: 'compaction_start' }, 100);
+		expect(compacting).toMatchObject({ phase: 'compacting', compactionNotice: undefined, compactionError: undefined });
+		const succeeded = reduceExecutionEvent(compacting, { type: 'compaction_end', result: { summary: 'summary' }, aborted: false, willRetry: false }, 120);
+		expect(succeeded).toMatchObject({ compactionNotice: 'success', compactionError: undefined });
+		const failed = reduceExecutionEvent(compacting, { type: 'compaction_end', result: undefined, aborted: true, willRetry: false, errorMessage: '取消详情' }, 140);
+		expect(failed).toMatchObject({ compactionNotice: 'failure', compactionError: '取消详情' });
+	});
+
 	it('单个工具失败不提前终止整轮，agent_settled 仍写入真实结束时间', () => {
 		const failedStep = reduceExecutionEvent(runningRun(), { type: 'tool_execution_end', toolCallId: 'tool-1', toolName: 'bash', result: 'failed', isError: true }, 140);
 		expect(failedStep.status).toBe('running');
