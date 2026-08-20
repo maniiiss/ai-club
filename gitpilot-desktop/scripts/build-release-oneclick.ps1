@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     # 发布 API 基地址或完整 updater 清单地址；构建时会注入安装包，不写回源码配置。
-    [Parameter(Mandatory = $true, HelpMessage = '请输入平台 API 地址，例如 https://release.example.com')]
+    [Parameter(Mandatory = $true, HelpMessage = '请输入平台 API 地址，例如 https://release.example.com 或 http://localhost:8080')]
     [string]$ApiBaseUrl,
     [Parameter(Position = 0)]
     [string]$Version
@@ -10,6 +10,7 @@ param(
 # GitPilot Desktop 一键发布打包脚本（Windows PowerShell）
 # 用法：
 #   powershell -ExecutionPolicy Bypass -File scripts\build-release-oneclick.ps1 [版本号] -ApiBaseUrl https://你的平台域名
+#   内网/本机测试也支持：-ApiBaseUrl http://localhost:8080
 #   或直接双击 scripts\build-release-oneclick.cmd，按提示填写 API 地址
 # - 自动把版本同步到 package.json / src-tauri\Cargo.toml / src-tauri\tauri.conf.json
 # - 自动确保 Tauri 签名密钥存在（不存在则生成），并把公钥同步进 tauri.conf.json
@@ -34,7 +35,7 @@ function Get-UpdaterEndpoint {
 
     $trimmed = $Value.Trim().TrimEnd('/')
     if ($trimmed -notmatch '^https?://[^\s]+$') {
-        throw '错误：ApiBaseUrl 必须是 http:// 或 https:// 开头的地址。'
+        throw '错误：ApiBaseUrl 必须使用 http:// 或 https:// 地址。'
     }
     if ($trimmed -match '/api/desktop-updates/\{\{target\}\}/\{\{arch\}\}/\{\{bundle_type\}\}/\{\{current_version\}\}$') {
         return $trimmed
@@ -46,6 +47,7 @@ function Get-UpdaterEndpoint {
 Set-Location (Join-Path $PSScriptRoot '..')
 
 $UpdaterEndpoint = Get-UpdaterEndpoint $ApiBaseUrl
+$AllowInsecureUpdater = $UpdaterEndpoint -match '^http://'
 
 # ---------- 1. 版本号 ----------
 $SemverRegex = '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$'
@@ -110,11 +112,17 @@ $configOverlay = [ordered]@{
     plugins = [ordered]@{
         updater = [ordered]@{
             endpoints = @($UpdaterEndpoint)
+            # 业务意图：内网/本机发布服务可能只有 HTTP；显式开启 Tauri 的兼容开关，
+            # 否则正式版会在启动阶段因不安全 endpoint 直接退出。
+            dangerousInsecureTransportProtocol = $AllowInsecureUpdater
         }
     }
 }
 Write-Utf8NoBom $tempConfigPath ($configOverlay | ConvertTo-Json -Depth 10)
 Write-Host "Updater endpoint: $UpdaterEndpoint" -ForegroundColor DarkGray
+if ($AllowInsecureUpdater) {
+    Write-Host '警告：当前使用 HTTP updater，仅适合本机/内网测试；正式公网发布请改用 HTTPS。' -ForegroundColor Yellow
+}
 $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content $keyPath -Raw)
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $signingPassword
 try {
