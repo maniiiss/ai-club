@@ -107,6 +107,13 @@ if ((Get-Content src-tauri\tauri.conf.json -Raw | ConvertFrom-Json).bundle.creat
 Write-Step "构建并签名（MSI + NSIS + updater ZIP + .sig）"
 $signingPassword = $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 if (-not $signingPassword) { $signingPassword = Read-SecretText '请输入签名私钥口令（无口令直接回车）' }
+# 业务意图：Tauri 构建前先清空 bundle 产物目录，避免上次构建的旧版本安装包和 .sig 残留，
+# 被 package-release.mjs 递归扫描后混进当前版本的发布产物（历史教训：0.1.2 曾混入 0.1.1 的签名）。
+$bundleDir = Join-Path (Get-Location) 'src-tauri\target\release\bundle'
+if (Test-Path -LiteralPath $bundleDir) {
+    Write-Host "清空旧 bundle 产物：$bundleDir" -ForegroundColor DarkGray
+    Remove-Item -LiteralPath $bundleDir -Recurse -Force
+}
 $tempConfigPath = Join-Path ([System.IO.Path]::GetTempPath()) "gitpilot-tauri-release-$([guid]::NewGuid().ToString('N')).json"
 $configOverlay = [ordered]@{
     plugins = [ordered]@{
@@ -127,6 +134,17 @@ $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content $keyPath -Raw)
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $signingPassword
 try {
     npm.cmd run tauri -- build --config $tempConfigPath --bundles msi,nsis
+    # 业务意图：Windows PowerShell 下 $ErrorActionPreference='Stop' 不会捕获原生命令（npm）的非零退出码，
+    # 若不显式检查，签名失败时脚本会继续往下跑，把旧签名当成当前版本签名打包（历史教训：0.1.2 无 .sig）。
+    if ($LASTEXITCODE -ne 0) {
+        throw "tauri build 失败（exit code=$LASTEXITCODE），未能生成签名，终止打包。请检查签名私钥与口令。"
+    }
+    # 业务意图：构建结束必须存在当前版本的 updater ZIP 签名，否则说明签名步骤未成功，直接终止。
+    $expectedSig = Get-ChildItem -LiteralPath $bundleDir -Recurse -Filter "GitPilot_${Version}_*.zip.sig" -File -ErrorAction SilentlyContinue
+    if (-not $expectedSig) {
+        throw "未找到 $Version 的 updater .sig（GitPilot_${Version}_*.zip.sig），签名步骤未成功，终止打包。"
+    }
+    Write-Host "已生成 $($expectedSig.Count) 个 $Version 的 updater 签名。" -ForegroundColor Green
 }
 finally {
     Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY -ErrorAction SilentlyContinue

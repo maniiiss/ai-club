@@ -30,16 +30,32 @@
 	},
 	"plugins": {
 		"updater": {
-			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI3NUM1ODYxRTM4RUFFMTkKUldRWnJvN2pZVmhjdHlyQnV0K2ZsUnppWkpQdHdpVGhJRmJHVWdZSTJXTW5nN3dieCt4Qm13TVEK",
+			"pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDYwOEY2NTc3NDYyNjc2OQpSV1JwWjJKMFYvWUlCblU2YXBTUCtQTEF6aW5jRVNzRXErWS83UklRcWV0UnU1TG1UclRrMU1Fago=",
 			"endpoints": []
 		}
 	},
 	"bundle": {
 		"active": true,
-			"createUpdaterArtifacts": "v1Compatible",
-		"targets": ["msi", "nsis", "app", "dmg"],
-		"icon": ["icons/icon.png", "icons/icon.ico"],
-		"externalBin": ["binaries/gitpilot-rpc"],
-		"resources": ["resources/package.json", "resources/plannotator.json", "resources/theme/*", "resources/export-html/**/*", "resources/skills/**/*"]
+		"createUpdaterArtifacts": "v1Compatible",
+		"targets": [
+			"msi",
+			"nsis",
+			"app",
+			"dmg"
+		],
+		"icon": [
+			"icons/icon.png",
+			"icons/icon.ico"
+		],
+		"externalBin": [
+			"binaries/gitpilot-rpc"
+		],
+		"resources": [
+			"resources/package.json",
+			"resources/plannotator.json",
+			"resources/theme/*",
+			"resources/export-html/**/*",
+			"resources/skills/**/*"
+		]
 	}
 }
