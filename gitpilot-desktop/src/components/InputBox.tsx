@@ -173,6 +173,8 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 	const showPaletteRef = useRef(false);
 	const hasActionSelectRef = useRef(false);
 	const isStreamingRef = useRef(isStreaming);
+	/** React state 更新前可能连续收到两个 Enter/click；用同步锁避免创建两条相同引导队列项。 */
+	const guidanceSubmittingRef = useRef(false);
 	const sendRef = useRef<(modeOverride?: GuidanceMode) => Promise<void>>(async () => undefined);
 	const addInputsRef = useRef<(items: AttachmentInput[]) => Promise<void>>(async () => undefined);
 	showPaletteRef.current = showPalette;
@@ -427,7 +429,7 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 				return;
 			}
 		}
-		if (preparing || submitting || isStopping || isFlushingGuidance) return;
+		if (preparing || submitting || guidanceSubmittingRef.current || isStopping || isFlushingGuidance) return;
 		const clearComposer = () => {
 			// 欢迎页输入框会在首条消息进入消息流后卸载；先把草稿镜像清空，避免新输入框恢复旧文本。
 			const emptyDraft = { text: '', selectedCommand: null, attachments: [], guidanceMode: 'steer' as GuidanceMode };
@@ -445,9 +447,15 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 				setPrepareError('当前任务执行期间不能排队运行扩展命令，请停止任务后再执行。');
 				return;
 			}
+			guidanceSubmittingRef.current = true;
 			setSubmitting(true);
-			const accepted = await sendGuidance(msg, attachments, modeOverride ?? guidanceMode);
-			setSubmitting(false);
+			let accepted = false;
+			try {
+				accepted = await sendGuidance(msg, attachments, modeOverride ?? guidanceMode);
+			} finally {
+				guidanceSubmittingRef.current = false;
+				setSubmitting(false);
+			}
 			if (!accepted) return;
 		} else {
 			clearComposer();
@@ -578,13 +586,13 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 									<span className={styles.guidanceItemStatus}>{guidanceStatusLabel(item.status)}</span>
 								</div>
 								<div className={styles.guidanceItemActions}>
-									<Hint content="再次引导"><Button type="button" variant="secondary" size="sm" className={styles.guidanceAction} onClick={() => void replayGuidance(item, 'steer')} disabled={!isStreaming || submitting || isStopping || isFlushingGuidance}>
+									<Hint content="再次引导"><Button type="button" variant="secondary" size="sm" className={styles.guidanceAction} onClick={() => void replayGuidance(item, 'steer')} disabled={!isStreaming || submitting || isStopping || isFlushingGuidance || item.status === 'submitting' || item.status === 'applying'}>
 										<CornerUpRight size={13} /> 引导
 									</Button></Hint>
 									<Hint content="编辑后发送"><Button type="button" variant="ghost" size="icon-sm" className={styles.guidanceIconAction} onClick={() => editGuidance(item)} aria-label="编辑后发送">
 										<Pencil size={14} />
 									</Button></Hint>
-									<Hint content="删除记录"><Button type="button" variant="ghost" size="icon-sm" className={styles.guidanceIconAction} onClick={() => removeGuidance(item.id)} aria-label="删除记录">
+									<Hint content="删除记录"><Button type="button" variant="ghost" size="icon-sm" className={styles.guidanceIconAction} onClick={() => removeGuidance(item.id)} aria-label="删除记录" disabled={item.status === 'submitting' || item.status === 'applying'}>
 										<Trash2 size={14} />
 									</Button></Hint>
 								</div>

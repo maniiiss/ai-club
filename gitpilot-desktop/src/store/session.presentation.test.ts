@@ -1,6 +1,7 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { applyEvent, buildAttachmentPayload, useSessionStore } from './session';
 import { useWorkbenchStore } from './workbench';
+import { rpc } from '@/src/rpc/bridge';
 import type { PreparedAttachment } from '@/src/rpc/types';
 
 function attachment(index: number): PreparedAttachment {
@@ -30,6 +31,10 @@ describe('对话展示压力场景', () => {
 			execution: { id: 'run-presentation', status: 'running', lastPrompt: '压力场景', steps: [], reportedStepIds: [] },
 			selectedStepId: null,
 		});
+	});
+
+	afterEach(() => {
+		vi.restoreAllMocks();
 	});
 
 	it('大附件列表保留完整展示元数据，并把正文注入块与 UI 元数据分开', () => {
@@ -100,6 +105,54 @@ describe('对话展示压力场景', () => {
 
 		applyEvent(setter, { type: 'message_start', message: { role: 'user', content: [{ type: 'text', text: '只检查登录模块' }] } });
 		expect(useSessionStore.getState().guidanceQueue).toHaveLength(0);
+		expect(useSessionStore.getState().messages[0].meta?.guidanceStatus).toBe('applied');
+	});
+
+	it('已抢占的引导不会被队列回声降级或被任务结束再次发送', async () => {
+		useSessionStore.setState({
+			messages: [{ id: 'guidance-race-message', role: 'user', text: '只发送一次', kind: 'text', meta: { guidanceMode: 'steer', guidanceStatus: 'queued' } }],
+			guidanceQueue: [{
+				id: 'guidance-race',
+				messageId: 'guidance-race-message',
+				mode: 'steer',
+				displayText: '只发送一次',
+				wireText: '只发送一次',
+				attachments: [],
+				status: 'queued',
+			}],
+		});
+		let resolveSteer!: (value: Awaited<ReturnType<typeof rpc.steer>>) => void;
+		const steer = vi.spyOn(rpc, 'steer').mockImplementation(() => new Promise((resolve) => { resolveSteer = resolve; }));
+		const prompt = vi.spyOn(rpc, 'prompt').mockResolvedValue({ success: true } as never);
+
+		const replay = useSessionStore.getState().replayGuidance('guidance-race', 'steer');
+		expect(useSessionStore.getState().guidanceQueue[0].status).toBe('submitting');
+		applyEvent((partial: unknown) => useSessionStore.setState(partial as never), { type: 'queue_update', steering: ['只发送一次'], followUp: [] });
+		expect(useSessionStore.getState().guidanceQueue[0].status).toBe('submitting');
+
+		await useSessionStore.getState().flushGuidanceQueue();
+		expect(prompt).not.toHaveBeenCalled();
+
+		resolveSteer({ success: true } as never);
+		await replay;
+		expect(steer).toHaveBeenCalledTimes(1);
+		expect(useSessionStore.getState().guidanceQueue[0].status).toBe('applying');
+	});
+
+	it('RPC 响应先到时，迟到的 message_start 不会追加第二个引导气泡', () => {
+		useSessionStore.setState({
+			messages: [
+				{ id: 'guidance-applied', role: 'user', text: '只保留一条', kind: 'text', meta: { guidanceMode: 'steer', guidanceStatus: 'applied' } },
+				{ id: 'changed-files', role: 'assistant', text: '', kind: 'changed_files' },
+			],
+			guidanceQueue: [],
+		});
+		applyEvent((partial: unknown) => useSessionStore.setState(partial as never), {
+			type: 'message_start',
+			message: { role: 'user', content: [{ type: 'text', text: '只保留一条' }] },
+		});
+
+		expect(useSessionStore.getState().messages).toHaveLength(2);
 		expect(useSessionStore.getState().messages[0].meta?.guidanceStatus).toBe('applied');
 	});
 

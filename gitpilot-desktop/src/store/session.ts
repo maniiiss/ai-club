@@ -712,6 +712,69 @@ function updateGuidanceMessageStatus(
 	));
 }
 
+/**
+ * 判断引导项是否可以被新的发送动作抢占。
+ * 业务意图：submitting/applying 表示该项已经交给某条 RPC/sidecar 链路，
+ * 此时无论是自动派发还是手动重放都不能再次拿到发送权。
+ */
+function isGuidanceClaimable(item: GuidanceQueueItem, allowFailed: boolean): boolean {
+	return item.status === 'queued' || (allowFailed && item.status === 'failed');
+}
+
+/**
+ * 原子抢占一个引导项的发送权。
+ * Zustand 的 set 回调在当前 JS 事件循环内同步执行，因此检查状态和写入 submitting
+ * 不会被另一个 replay/flush 调用插入，避免两个异步发送入口同时复用同一个队列项。
+ */
+function claimGuidanceItem(
+	set: SessionSetter,
+	id: string,
+	mode: GuidanceMode | undefined,
+	allowFailed: boolean,
+): GuidanceQueueItem | null {
+	let claimed: GuidanceQueueItem | null = null;
+	set((state) => {
+		const current = state.guidanceQueue.find((item) => item.id === id);
+		if (!current || !isGuidanceClaimable(current, allowFailed)) return {};
+		claimed = {
+			...current,
+			mode: mode ?? current.mode,
+			status: 'submitting',
+		};
+		return {
+			guidanceQueue: state.guidanceQueue.map((item) => item.id === id ? claimed! : item),
+			messages: updateGuidanceMessageStatus(state.messages, claimed!, 'submitting'),
+		};
+	});
+	return claimed;
+}
+
+/** RPC 成功只代表 sidecar 已受理；保留队列项直到 message_start，才能用同一 messageId 收口 UI。 */
+function markGuidanceApplying(set: SessionSetter, id: string): void {
+	set((state) => {
+		const item = state.guidanceQueue.find((candidate) => candidate.id === id);
+		if (!item || item.status !== 'submitting') return {};
+		const next = { ...item, status: 'applying' as const };
+		return {
+			guidanceQueue: state.guidanceQueue.map((candidate) => candidate.id === id ? next : candidate),
+			messages: updateGuidanceMessageStatus(state.messages, next, 'applying'),
+		};
+	});
+}
+
+/** 发送失败时保留失败项，允许用户重试，但不再让自动派发隐式重发。 */
+function markGuidanceFailed(set: SessionSetter, id: string): void {
+	set((state) => {
+		const item = state.guidanceQueue.find((candidate) => candidate.id === id);
+		if (!item) return {};
+		const next = { ...item, status: 'failed' as const };
+		return {
+			guidanceQueue: state.guidanceQueue.map((candidate) => candidate.id === id ? next : candidate),
+			messages: updateGuidanceMessageStatus(state.messages, next, 'failed'),
+		};
+	});
+}
+
 /** 将 sidecar 的文本队列快照映射到本地展示项；wireText 只用于匹配，永远不直接渲染。 */
 function applyGuidanceQueueUpdate(set: SessionSetter, event: AgentSessionEvent): void {
 	const steering = Array.isArray((event as { steering?: unknown }).steering)
@@ -724,6 +787,9 @@ function applyGuidanceQueueUpdate(set: SessionSetter, event: AgentSessionEvent):
 		const queue = state.guidanceQueue.map((item) => {
 			const values = item.mode === 'steer' ? steering : followUp;
 			const stillQueued = values.some((value) => value === item.wireText || value === item.displayText);
+			// 已由 Desktop 某条发送路径抢占的项不能被 sidecar 队列回声降级，
+			// 否则任务结束自动 flush 可能再次把它当成新项发送。
+			if (item.status === 'submitting' || item.status === 'applying') return item;
 			if (stillQueued) return { ...item, status: 'queued' as const };
 			return item.status === 'queued' ? { ...item, status: 'applying' as const } : item;
 		});
@@ -759,7 +825,7 @@ function applyGuidanceMessageStart(set: SessionSetter, event: AgentSessionEvent)
 	const presentation = parseUserMessagePresentation((message as { content?: unknown }).content);
 	set((state) => {
 		const item = state.guidanceQueue.find((candidate) =>
-			(candidate.status === 'applying' || candidate.status === 'queued') &&
+			(candidate.status === 'applying' || candidate.status === 'submitting' || candidate.status === 'queued') &&
 			(candidate.wireText === text || candidate.displayText === text),
 		);
 		if (!item) {
@@ -782,6 +848,25 @@ function applyGuidanceMessageStart(set: SessionSetter, event: AgentSessionEvent)
 			// 扩展通过 sendUserMessage 触发的真实需求指令也要进入当前对话；
 			// 普通 prompt 已由输入框乐观插入，因此用可见正文去重，避免出现两个相同气泡。
 			const displayText = presentation.text;
+			// RPC response 可能先于 message_start 返回，此时队列项已经被移除，
+			// 但本地乐观消息仍保留 guidance 元数据。按最近一条匹配的引导消息回填，
+			// 避免因为中间插入 execution/changed_files 消息而再追加一个重复气泡。
+			const optimisticIndex = [...state.messages].map((candidate, index) => ({ candidate, index })).reverse().find(({ candidate }) =>
+				candidate.role === 'user'
+					&& candidate.meta?.guidanceStatus === 'applied'
+					&& isEquivalentUserMessage(candidate.text, displayText),
+			)?.index;
+			if (optimisticIndex !== undefined) {
+				const messages = [...state.messages];
+				const optimistic = messages[optimisticIndex];
+				messages[optimisticIndex] = {
+					...optimistic,
+					text: displayText || optimistic.text,
+					attachments: presentation.attachments ?? optimistic.attachments,
+					skills: presentation.skills ?? optimistic.skills,
+				};
+				return { messages };
+			}
 			if ((!displayText.trim() && !presentation.attachments?.length && !presentation.skills?.length)
 				|| (lastMessage?.role === 'user' && isEquivalentUserMessage(lastMessage.text, displayText))) return {};
 			return {
@@ -1746,7 +1831,8 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	},
 
 	replayGuidance: async (id: string, mode: GuidanceMode) => {
-		const item = get().guidanceQueue.find((candidate) => candidate.id === id);
+		// 手动重放允许失败项重试，但必须先抢占发送权，避免和 agent_settled 自动 flush 并发。
+		const item = claimGuidanceItem(set, id, mode, true);
 		if (!item) return false;
 		try {
 			// 已存在的队列项直接复用 wireText 派发，不能再次调用 sendGuidance，否则会复制一条本地队列记录。
@@ -1754,14 +1840,11 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 				? await rpc.steer(item.wireText, item.images)
 				: await rpc.followUp(item.wireText, item.images);
 			if (!response.success) throw new Error(response.error || '引导发送失败');
-			set((state) => ({
-				guidanceQueue: state.guidanceQueue.filter((candidate) => candidate.id !== id),
-				messages: state.messages.map((message) => message.id === item.messageId
-					? { ...message, meta: { ...(message.meta ?? {}), guidanceMode: mode, guidanceStatus: 'applied' } }
-					: message),
-			}));
+			// 等 message_start 事件到达后再移除队列项，事件处理会用 messageId 更新同一条乐观气泡。
+			markGuidanceApplying(set, id);
 			return true;
 		} catch (err) {
+			markGuidanceFailed(set, id);
 			set({ error: err instanceof Error ? err.message : String(err) });
 			return false;
 		}
@@ -1770,26 +1853,33 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	flushGuidanceQueue: async () => {
 		const current = get();
 		if (current.isFlushingGuidance || current.guidanceQueue.length === 0) return;
-		const pending = [...current.guidanceQueue];
+		// applying/submitting 已经有发送者，只自动派发尚未被任何入口抢占的 queued 项。
+		const pending = current.guidanceQueue.filter((item) => item.status === 'queued');
+		if (pending.length === 0) return;
 		set({ isFlushingGuidance: true, isStreaming: true });
 		let startedNewTurn = false;
 		try {
 			for (const item of pending) {
-				if (!get().guidanceQueue.some((candidate) => candidate.id === item.id)) continue;
+				const claimed = claimGuidanceItem(set, item.id, undefined, false);
+				if (!claimed) continue;
 				if (!startedNewTurn) {
 					// 上一任务已经结束，第一条待处理内容必须用 prompt 启动新一轮；follow_up 在 idle 时只会入队不会启动。
-					useWorkbenchStore.getState().beginExecution(item.displayText);
+					useWorkbenchStore.getState().beginExecution(claimed.displayText);
 				}
-				const response = !startedNewTurn
-					? await rpc.prompt(item.wireText, item.images)
-					: await rpc.followUp(item.wireText, item.images);
-				if (!response.success) throw new Error(response.error || '后续引导发送失败');
+				try {
+					const response = !startedNewTurn
+						? await rpc.prompt(claimed.wireText, claimed.images)
+						: await rpc.followUp(claimed.wireText, claimed.images);
+					if (!response.success) {
+						throw new Error(response.error || '后续引导发送失败');
+					}
+				} catch (err) {
+					markGuidanceFailed(set, claimed.id);
+					throw err;
+				}
 				startedNewTurn = true;
-				set((state) => ({
-					guidanceQueue: state.guidanceQueue.filter((candidate) => candidate.id !== item.id),
-					// 自动派发后把本地临时引导消息转成普通会话消息，避免再次出现在队列卡片。
-					messages: state.messages.map((message) => message.id === item.messageId ? { ...message, meta: undefined } : message),
-				}));
+				// RPC 成功仅表示受理，message_start 到达后才移除队列，避免事件晚到时产生第二条气泡。
+				markGuidanceApplying(set, claimed.id);
 			}
 		} catch (err) {
 			set({ error: err instanceof Error ? err.message : String(err), isStreaming: false });

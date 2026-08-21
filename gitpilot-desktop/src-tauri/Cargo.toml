@@ -1,6 +1,6 @@
 [package]
 name = "gitpilot-desktop"
-version = "0.1.5"
+version = "0.1.6"
 description = "GitPilot 桌面版 - Tauri 2 原生 GUI，复用 gitpilot-cli RPC 核心"
 edition = "2021"
 rust-version = "1.77"

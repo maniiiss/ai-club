@@ -216,6 +216,11 @@ if ($AllowInsecureUpdater) {
 }
 $env:TAURI_SIGNING_PRIVATE_KEY = (Get-Content $keyPath -Raw)
 $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = $signingPassword
+# 业务意图：登录/API 地址与 updater 同源，注入给前端构建（Vite envPrefix=TAURI_ 会编进产物，
+# config.ts 读取 TAURI_GITPILOT_API_BASE_URL，缺省会回退 localhost:8080 导致登录连不上平台，历史教训：0.1.3）。
+$env:TAURI_GITPILOT_API_BASE_URL = $ApiBaseUrl.TrimEnd('/')
+# webBaseUrl 由同一平台地址推导（登录校验页/「前往 GitPilot Web」跳转用；后端 verificationUri 也基于同址生成）。
+$env:TAURI_GITPILOT_WEB_BASE_URL = $ApiBaseUrl.TrimEnd('/')
 try {
     npm.cmd run tauri -- build --config $tempConfigPath --bundles msi,nsis
     # 业务意图：Windows PowerShell 下 $ErrorActionPreference='Stop' 不会捕获原生命令（npm）的非零退出码，
@@ -233,6 +238,8 @@ try {
 finally {
     Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY -ErrorAction SilentlyContinue
     Remove-Item Env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD -ErrorAction SilentlyContinue
+    Remove-Item Env:TAURI_GITPILOT_API_BASE_URL -ErrorAction SilentlyContinue
+    Remove-Item Env:TAURI_GITPILOT_WEB_BASE_URL -ErrorAction SilentlyContinue
     if (Test-Path -LiteralPath $tempConfigPath) {
         Remove-Item -LiteralPath $tempConfigPath -Force -ErrorAction SilentlyContinue
     }
