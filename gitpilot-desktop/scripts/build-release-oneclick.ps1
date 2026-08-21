@@ -103,10 +103,26 @@ if ((Get-Content src-tauri\tauri.conf.json -Raw | ConvertFrom-Json).bundle.creat
     throw 'tauri.conf.json 的 createUpdaterArtifacts 需为 "v1Compatible" 才能产出 ZIP 签名'
 }
 
-# ---------- 5. 构建并签名 ----------
+# ---------- 5. 强制重建 sidecar ----------
+Write-Step "强制重建 sidecar（gitpilot-rpc，跟随最新 CLI 源码）"
+# 业务意图：sidecar 是打包时按 externalBin 原样打进安装包的，若沿用旧二进制，
+# 会出现“新前端调旧 sidecar”的命令缺失问题（历史教训：0.1.2 曾缺 work_item_page）。
+# 每次发布都强制用 sidecar/build.sh 从 gitpilot-cli 最新源码重编，避免旧 sidecar 混入发布包。
+# 注：bun 通常是 npm 全局 shim（bun.cmd/bun.ps1，无 bun.exe），故按命令名 bun 而非 bun.exe 检查。
+if (-not (Get-Command bun -ErrorAction SilentlyContinue) -and -not (Get-Command bun.exe -ErrorAction SilentlyContinue)) {
+    throw '未找到 bun，需要 Bun 才能编译 sidecar。请先安装 Bun（https://bun.sh）后重试。'
+}
+bash.exe ./sidecar/build.sh
+if ($LASTEXITCODE -ne 0) {
+    throw "sidecar/build.sh 失败（exit code=$LASTEXITCODE），终止打包。"
+}
+Write-Host "sidecar 重建完成。" -ForegroundColor Green
+
+# ---------- 6. 构建并签名 ----------
 Write-Step "构建并签名（MSI + NSIS + updater ZIP + .sig）"
 $signingPassword = $env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD
-if (-not $signingPassword) { $signingPassword = Read-SecretText '请输入签名私钥口令（无口令直接回车）' }
+# 业务意图：空口令密钥下，显式设置（即使为空串）即视为已提供密码；否则后台/CI 运行会卡在 Read-Host。
+if ($null -eq $signingPassword) { $signingPassword = Read-SecretText '请输入签名私钥口令（无口令直接回车）' }
 # 业务意图：Tauri 构建前先清空 bundle 产物目录，避免上次构建的旧版本安装包和 .sig 残留，
 # 被 package-release.mjs 递归扫描后混进当前版本的发布产物（历史教训：0.1.2 曾混入 0.1.1 的签名）。
 $bundleDir = Join-Path (Get-Location) 'src-tauri\target\release\bundle'
@@ -154,7 +170,7 @@ finally {
     }
 }
 
-# ---------- 6. 整理六件套 ----------
+# ---------- 7. 整理六件套 ----------
 Write-Step "整理发布产物流入 release-artifacts\$Version"
 node scripts/package-release.mjs
 
@@ -163,7 +179,7 @@ $outDir = Join-Path (Get-Location) "release-artifacts\$Version"
 Get-ChildItem (Join-Path $outDir 'signature') -Filter *.sig -File |
     Where-Object { $_.Name -notlike '*.zip.sig' } | Remove-Item
 
-# ---------- 7. 输出 ----------
+# ---------- 8. 输出 ----------
 $msiInstaller = (Get-ChildItem (Join-Path $outDir 'msi') -Filter *.msi | Select-Object -First 1).Name
 $nsisInstaller = (Get-ChildItem (Join-Path $outDir 'nsis') -Filter *.exe | Select-Object -First 1).Name
 $msiZip = (Get-ChildItem (Join-Path $outDir 'updater') -Filter *.msi.zip | Select-Object -First 1).Name

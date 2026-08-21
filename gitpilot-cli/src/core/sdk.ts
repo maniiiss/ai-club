@@ -3,6 +3,7 @@ import { Agent, type AgentMessage, setDefaultStreamFn, type ThinkingLevel } from
 import { clampThinkingLevel, type Message, type Model, streamSimple } from "@earendil-works/pi-ai/compat";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
+import { ensureTool } from "../utils/tools-manager.ts";
 import { AgentSession } from "./agent-session.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
 import type { CompactionInstructions } from "./compaction/index.ts";
@@ -250,7 +251,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		thinkingLevel = clampThinkingLevel(model, thinkingLevel) as ThinkingLevel;
 	}
 
-	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write"];
+	// GitPilot 二开定制：默认启用 grep/find/ls 只读检索工具，
+	// 让 Agent 优先走内置 rg/fd 检索（尊重 .gitignore、命中即停），
+	// 避免模型在 bash 里裸跑 grep -r 全量扫描 node_modules 等依赖目录。
+	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write", "grep", "find", "ls"];
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
 	const excludedToolNames = options.excludeTools;
 	const excludedToolNameSet = excludedToolNames ? new Set(excludedToolNames) : undefined;
@@ -398,6 +402,11 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		sessionStartEvent: options.sessionStartEvent,
 	});
 	const extensionsResult = resourceLoader.getExtensions();
+
+	// GitPilot 开箱即用：后台预下载 rg 到共享 bin 目录（getShellEnv 会把该目录注入 bash 的 PATH），
+	// 确保 Agent 在 bash 中直接执行 rg 时无需用户手动安装。下载失败时静默，
+	// 由内置 grep 工具运行时自身的 ensureTool 调用兜底重试。
+	void ensureTool("rg", true).catch(() => {});
 
 	return {
 		session,
