@@ -5,6 +5,7 @@ import { closeWindow, minimizeWindow, onWindowMaximizedChange, startDraggingWind
 import { useSessionStore } from '@/src/store/session';
 import { useAppModeStore, type AppMode } from '@/src/store/app-mode';
 import { TargetUserMenu } from './TargetUserMenu';
+import { TargetUpdateBadge } from './TargetUpdateBadge';
 import { Button } from '@/src/components/ui/button';
 import { Hint } from '@/src/components/ui/tooltip';
 import styles from './TargetTitleBar.module.css';
@@ -75,6 +76,8 @@ export function TargetTitleBar() {
 			</div>
 			<div className={styles.spacer} />
 			<div className={styles.actions} onMouseDown={(event) => event.stopPropagation()}>
+				{/* 新版本提示放在账户头像左侧，仅静默检查发现更新后渲染。 */}
+				<TargetUpdateBadge />
 				<TargetUserMenu />
 				<span className={styles.divider} />
 				<Hint content="最小化"><Button variant="ghost" size="icon-sm" onClick={() => runWindowAction('最小化', minimizeWindow)} aria-label="最小化"><Minus /></Button></Hint>

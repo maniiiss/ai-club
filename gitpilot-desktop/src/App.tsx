@@ -48,8 +48,29 @@ export default function App() {
 	useEffect(() => {
 		if (galleryRequested) return;
 		// 更新检查与登录和 Agent 连接解耦；网络失败只留在更新 store，不阻塞工作台首屏。
-		const timer = window.setTimeout(() => { void useDesktopUpdateStore.getState().checkForUpdate({ silent: true }); }, 3000);
-		return () => window.clearTimeout(timer);
+		// 启动 3 秒后首查，之后每 2 小时静默轮询；下载/安装/检查进行中跳过，避免打断更新状态机。
+		const CHECK_INTERVAL_MS = 2 * 60 * 60 * 1000;
+		const FOCUS_RECHECK_MIN_INTERVAL_MS = 30 * 60 * 1000;
+		const silentCheck = () => {
+			const { status } = useDesktopUpdateStore.getState();
+			if (status === 'checking' || status === 'downloading' || status === 'installing') return;
+			void useDesktopUpdateStore.getState().checkForUpdate({ silent: true });
+		};
+		const startupTimer = window.setTimeout(silentCheck, 3000);
+		const intervalTimer = window.setInterval(silentCheck, CHECK_INTERVAL_MS);
+		// 应用长时间挂后台时定时器会被系统节流，切回窗口且距上次检查超过 30 分钟时补查一次。
+		const onVisibilityChange = () => {
+			if (document.visibilityState !== 'visible') return;
+			const { lastCheckedAt } = useDesktopUpdateStore.getState();
+			if (lastCheckedAt && Date.now() - lastCheckedAt < FOCUS_RECHECK_MIN_INTERVAL_MS) return;
+			silentCheck();
+		};
+		document.addEventListener('visibilitychange', onVisibilityChange);
+		return () => {
+			window.clearTimeout(startupTimer);
+			window.clearInterval(intervalTimer);
+			document.removeEventListener('visibilitychange', onVisibilityChange);
+		};
 	}, [galleryRequested]);
 
 	useEffect(() => {

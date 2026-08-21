@@ -218,7 +218,11 @@ export function createGrepToolDefinition(
 						if (glob) args.push("--glob", glob);
 						args.push("--", pattern, searchPath);
 
-						const child = spawn(rgPath, args, { stdio: ["ignore", "pipe", "pipe"] });
+						// windowsHide：GUI（桌面端）进程树下直接 spawn 控制台程序会闪黑框，必须显式抑制。
+						const child = spawn(rgPath, args, {
+							stdio: ["ignore", "pipe", "pipe"],
+							windowsHide: true,
+						});
 						const rl = createInterface({ input: child.stdout });
 						let stderr = "";
 						let matchCount = 0;

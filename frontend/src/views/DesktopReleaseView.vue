@@ -41,7 +41,8 @@
       <template v-if="detail">
         <div class="desktop-release-detail-head"><div><div class="desktop-release-detail-eyebrow">Windows x64 · stable</div><h2>GitPilot Desktop {{ detail.version }}</h2><p>{{ detail.title }} · {{ statusLabel(detail.status) }} · {{ formatDate(detail.publishedAt || detail.createdAt) }}</p></div><el-tag :type="statusType(detail.status)">{{ statusLabel(detail.status) }}</el-tag></div>
         <el-alert v-if="detail.status === 'DRAFT'" type="warning" :closable="false" show-icon title="草稿可继续替换产物；发布后版本和产物均不可编辑。" />
-        <div class="desktop-release-detail-grid"><section><h3>发布说明</h3><pre class="desktop-release-notes">{{ detail.releaseNotes || '未填写发布说明' }}</pre></section><section><h3>产物矩阵 <small>{{ detail.artifacts.length }} / 6</small></h3><div class="desktop-release-artifacts"><div v-for="cell in artifactCells" :key="`${cell.kind}-${cell.bundle}`" class="desktop-release-artifact-cell" :class="{ uploaded: cell.artifact }"><div><strong>{{ artifactLabel(cell.kind) }}</strong><span>{{ cell.bundle.toUpperCase() }}</span></div><template v-if="cell.artifact"><p>{{ cell.artifact.fileName }}</p><small>{{ formatBytes(cell.artifact.fileSize) }} · SHA {{ cell.artifact.sha256.slice(0, 12) }}…</small></template><template v-else><p class="desktop-release-missing">待上传</p></template><button v-if="detail.status === 'DRAFT'" type="button" class="desktop-release-upload-button" :disabled="uploading" @click="pickArtifact(cell.kind, cell.bundle)"><el-icon><Upload /></el-icon>{{ cell.artifact ? '替换' : '上传' }}</button></div></div></section></div>
+        <div v-if="batchUploading" class="desktop-release-batch-progress"><div class="desktop-release-batch-progress-head"><span>批量上传中 {{ batchProgress.done }} / {{ batchProgress.total }}</span><span class="desktop-release-batch-progress-file">{{ batchProgress.currentFile }}</span></div><el-progress :percentage="batchProgress.percent" :show-text="false" :stroke-width="6" /></div>
+        <div class="desktop-release-detail-grid"><section><h3>发布说明</h3><pre class="desktop-release-notes">{{ detail.releaseNotes || '未填写发布说明' }}</pre></section><section><div class="desktop-release-matrix-head"><h3>产物矩阵 <small>{{ detail.artifacts.length }} / 6</small></h3><button v-if="detail.status === 'DRAFT'" type="button" class="desktop-release-batch-button" :disabled="uploading || batchUploading" @click="pickDirectory"><el-icon><FolderOpened /></el-icon>上传产物目录</button></div><div class="desktop-release-artifacts"><div v-for="cell in artifactCells" :key="`${cell.kind}-${cell.bundle}`" class="desktop-release-artifact-cell" :class="{ uploaded: cell.artifact }"><div><strong>{{ artifactLabel(cell.kind) }}</strong><span>{{ cell.bundle.toUpperCase() }}</span></div><template v-if="cell.artifact"><p>{{ cell.artifact.fileName }}</p><small>{{ formatBytes(cell.artifact.fileSize) }} · SHA {{ cell.artifact.sha256.slice(0, 12) }}…</small></template><template v-else><p class="desktop-release-missing">待上传</p></template><button v-if="detail.status === 'DRAFT'" type="button" class="desktop-release-upload-button" :disabled="uploading || batchUploading" @click="pickArtifact(cell.kind, cell.bundle)"><el-icon><Upload /></el-icon>{{ cell.artifact ? '替换' : '上传' }}</button></div></div></section></div>
         <div class="desktop-release-actions"><el-button v-if="detail.status === 'DRAFT'" type="primary" :disabled="!canPublish" :loading="working" @click="handlePublish">发布版本</el-button><el-button v-if="detail.status === 'PUBLISHED'" type="danger" plain :loading="working" @click="handleRevoke">撤回版本</el-button><el-button v-if="detail.status === 'REVOKED'" type="danger" plain :loading="working" @click="handleDelete">删除记录</el-button><span v-if="detail.status === 'DRAFT' && !canPublish" class="desktop-release-action-hint">上传 MSI、NSIS 的安装器、updater ZIP 和 .sig 后才能发布。</span></div>
       </template>
     </el-drawer>
@@ -55,16 +56,35 @@
       <template #footer><div class="desktop-release-drawer-footer"><el-button @click="createVisible = false">取消</el-button><el-button type="primary" :loading="working" @click="handleCreate">创建草稿</el-button></div></template>
     </el-drawer>
     <input ref="fileInput" class="desktop-release-file-input" type="file" @change="handleFileChange" />
+    <input ref="dirInput" class="desktop-release-file-input" type="file" webkitdirectory @change="handleDirChange" />
+    <el-dialog v-model="batchVisible" title="确认批量上传产物" width="min(720px, 96vw)" destroy-on-close>
+      <template v-if="batchPlan">
+        <el-alert v-if="batchPlan.versionBlocked" type="error" :closable="false" show-icon class="desktop-release-batch-alert" :title="batchPlan.versionBlocked" />
+        <el-alert v-else-if="batchPlan.versionWarning" type="warning" :closable="false" show-icon class="desktop-release-batch-alert" :title="batchPlan.versionWarning" />
+        <table class="desktop-release-batch-table">
+          <thead><tr><th>产物槽位</th><th>匹配文件</th><th class="right">大小</th></tr></thead>
+          <tbody>
+            <tr v-for="row in batchPlan.rows" :key="`${row.kind}-${row.bundle}`" :class="{ missing: !row.file }">
+              <td>{{ row.label }}</td>
+              <td>{{ row.file ? row.file.name : '未匹配，可稍后手动上传' }}</td>
+              <td class="right">{{ row.file ? formatBytes(row.file.size) : '—' }}</td>
+            </tr>
+          </tbody>
+        </table>
+        <p v-if="batchPlan.ignoredCount" class="desktop-release-batch-ignored">已忽略 {{ batchPlan.ignoredCount }} 个不在产物矩阵内的文件：{{ batchPlan.ignoredPreview.join('、') }}{{ batchPlan.ignoredCount > batchPlan.ignoredPreview.length ? ' 等' : '' }}</p>
+      </template>
+      <template #footer><div class="desktop-release-drawer-footer"><el-button @click="batchVisible = false">取消</el-button><el-button type="primary" :disabled="!batchPlan || !batchPlan.fileCount || !!batchPlan.versionBlocked" @click="handleBatchUpload">开始上传（{{ batchPlan?.fileCount ?? 0 }} 个文件）</el-button></div></template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { ArrowLeft, ArrowRight, Delete, Plus, RefreshRight, Upload, View } from '@element-plus/icons-vue'
+import { ArrowLeft, ArrowRight, Delete, FolderOpened, Plus, RefreshRight, Upload, View } from '@element-plus/icons-vue'
 import { createDesktopRelease, deleteDesktopRelease, getDesktopRelease, pageDesktopReleases, publishDesktopRelease, revokeDesktopRelease, uploadDesktopReleaseArtifact } from '@/api/desktop-release'
 import { useAuthStore } from '@/stores/auth'
-import type { DesktopArtifactKind, DesktopBundleType, DesktopReleaseDetail, DesktopReleaseStatus, DesktopReleaseSummary } from '@/types/desktop-release'
+import type { DesktopArtifactKind, DesktopBundleType, DesktopReleaseArtifact, DesktopReleaseDetail, DesktopReleaseStatus, DesktopReleaseSummary } from '@/types/desktop-release'
 
 const authStore = useAuthStore()
 const canManage = computed(() => authStore.hasPermission('system:desktop-release:manage'))
@@ -77,7 +97,26 @@ const drawerVisible = ref(false)
 const createVisible = ref(false)
 const formRef = ref<FormInstance>()
 const fileInput = ref<HTMLInputElement>()
+const dirInput = ref<HTMLInputElement>()
 const pendingArtifact = ref<{ kind: DesktopArtifactKind; bundle: DesktopBundleType } | null>(null)
+/** 批量目录上传：文件名后缀 → 产物矩阵槽位的有序匹配规则，先命中先占用；.msi.sig / .exe.sig / release-artifacts.json 天然落不进任何规则，自动忽略。 */
+const BATCH_MATCH_RULES: Array<{ suffix: string; kind: DesktopArtifactKind; bundle: DesktopBundleType }> = [
+  { suffix: '.msi.zip.sig', kind: 'SIGNATURE', bundle: 'msi' },
+  { suffix: '.nsis.zip.sig', kind: 'SIGNATURE', bundle: 'nsis' },
+  { suffix: '.msi.zip', kind: 'UPDATER', bundle: 'msi' },
+  { suffix: '.nsis.zip', kind: 'UPDATER', bundle: 'nsis' },
+  { suffix: '.msi', kind: 'INSTALLER', bundle: 'msi' },
+  { suffix: '.exe', kind: 'INSTALLER', bundle: 'nsis' }
+]
+/** 从产物文件名里提取内嵌 semver，例如 GitPilot_0.1.4_x64_en-US.msi → 0.1.4。 */
+const FILE_VERSION_RE = /(\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?)/
+/** 确认弹窗里的一行：槽位 + 匹配到的文件（可能缺失）。 */
+interface BatchPlanRow { kind: DesktopArtifactKind; bundle: DesktopBundleType; label: string; file: File | null }
+interface BatchPlan { rows: BatchPlanRow[]; fileCount: number; ignoredCount: number; ignoredPreview: string[]; versionWarning: string | null; versionBlocked: string | null }
+const batchVisible = ref(false)
+const batchUploading = ref(false)
+const batchPlan = ref<BatchPlan | null>(null)
+const batchProgress = reactive({ done: 0, total: 0, percent: 0, currentFile: '' })
 const pagination = reactive({ page: 1, size: 10, total: 0 })
 const totalPages = computed(() => Math.max(1, Math.ceil(pagination.total / pagination.size) || 1))
 const form = reactive({ version: '', title: '', releaseNotes: '' })
@@ -116,6 +155,94 @@ const handleFileChange = async (event: Event) => {
   if (!file || !pending || !detail.value) return
   uploading.value = true
   try { await uploadDesktopReleaseArtifact(detail.value.id, pending.kind, pending.bundle, file); detail.value = await getDesktopRelease(detail.value.id); ElMessage.success(`${artifactLabel(pending.kind)}上传成功`) } catch (error: any) { ElMessage.error(error?.response?.data?.message || '上传桌面产物失败') } finally { uploading.value = false; pendingArtifact.value = null }
+}
+
+/** 把上传成功的产物即时写回详情，让产物矩阵在批量上传过程中逐格点亮。 */
+const applyArtifactLocally = (artifact: DesktopReleaseArtifact) => {
+  if (!detail.value) return
+  const rest = detail.value.artifacts.filter((item) => !(item.artifactKind === artifact.artifactKind && item.bundleType === artifact.bundleType && item.platform === artifact.platform && item.arch === artifact.arch))
+  detail.value.artifacts = [...rest, artifact]
+}
+
+const pickDirectory = () => { if (dirInput.value) { dirInput.value.value = ''; dirInput.value.click() } }
+
+/** 选择 release-artifacts 版本目录后：解析清单、按后缀匹配 6 个槽位、做版本一致性校验，然后弹出确认弹窗。 */
+const handleDirChange = async (event: Event) => {
+  const files = Array.from((event.target as HTMLInputElement).files ?? [])
+  if (!files.length || !detail.value) return
+  if (files.length > 100) { ElMessage.error(`选中了 ${files.length} 个文件，目录可能选得过大；请直接选择版本目录（例如 release-artifacts/0.1.4）`); return }
+  const draftVersion = detail.value.version.replace(/^v/i, '')
+  // release-artifacts.json 是构建侧生成的权威清单，存在时用它的 version 做强校验。
+  let manifestVersion: string | null = null
+  const manifestFile = files.find((file) => file.name === 'release-artifacts.json')
+  if (manifestFile) {
+    try { const parsed = JSON.parse(await manifestFile.text()); if (typeof parsed?.version === 'string') manifestVersion = parsed.version } catch { /* 清单解析失败时退回文件名版本校验 */ }
+  }
+  const candidates = new Map<string, File[]>()
+  const ignored: string[] = []
+  for (const file of files) {
+    const name = file.name.toLowerCase()
+    const rule = BATCH_MATCH_RULES.find((item) => name.endsWith(item.suffix))
+    if (!rule) { ignored.push(file.name); continue }
+    const key = `${rule.kind}:${rule.bundle}`
+    candidates.set(key, [...(candidates.get(key) ?? []), file])
+  }
+  const rows: BatchPlanRow[] = []
+  const mismatchedVersions = new Set<string>()
+  for (const cell of cells.value) {
+    let list = candidates.get(`${cell.kind}:${cell.bundle}`) ?? []
+    if (list.length > 1) {
+      // 误选了包含多个版本的父目录时，优先保留文件名内嵌版本与草稿一致的产物。
+      const preferred = list.filter((file) => FILE_VERSION_RE.exec(file.name)?.[1]?.replace(/^v/i, '') === draftVersion)
+      if (preferred.length) list = preferred
+    }
+    if (list.length > 1) { ElMessage.error(`多个文件匹配「${artifactLabel(cell.kind)} · ${cell.bundle.toUpperCase()}」槽位：${list.map((file) => file.name).join('、')}；请选择具体版本目录`); return }
+    const file = list[0] ?? null
+    const fileVersion = file ? FILE_VERSION_RE.exec(file.name)?.[1]?.replace(/^v/i, '') : undefined
+    if (fileVersion && fileVersion !== draftVersion) mismatchedVersions.add(fileVersion)
+    rows.push({ kind: cell.kind, bundle: cell.bundle, label: `${artifactLabel(cell.kind)} · ${cell.bundle.toUpperCase()}`, file })
+  }
+  const fileCount = rows.filter((row) => row.file).length
+  if (!fileCount) { ElMessage.error('所选目录中没有匹配到任何桌面发布产物，请确认选择的是 release-artifacts 版本目录'); return }
+  // Tauri updater 签名与构建产物强绑定，清单版本不一致时直接阻断，防止把别的版本产物传进当前草稿。
+  let versionBlocked: string | null = null
+  let versionWarning: string | null = null
+  if (manifestVersion && manifestVersion.replace(/^v/i, '') !== draftVersion) versionBlocked = `产物清单 release-artifacts.json 的版本 ${manifestVersion} 与草稿版本 ${detail.value.version} 不一致，请确认选择了正确目录`
+  else if (mismatchedVersions.size) versionWarning = `部分文件名中的版本号（${Array.from(mismatchedVersions).join('、')}）与草稿版本 ${detail.value.version} 不一致，请确认产物来源`
+  batchPlan.value = { rows, fileCount, ignoredCount: ignored.length, ignoredPreview: ignored.slice(0, 8), versionWarning, versionBlocked }
+  batchVisible.value = true
+}
+
+/** 确认后顺序上传：签名 → updater ZIP → 安装器，小文件先行可秒级暴露签名不匹配问题。 */
+const handleBatchUpload = async () => {
+  if (!batchPlan.value || !detail.value || batchUploading.value) return
+  batchUploading.value = true
+  batchVisible.value = false
+  const orderWeight = { SIGNATURE: 0, UPDATER: 1, INSTALLER: 2 }
+  const queue = batchPlan.value.rows.filter((row) => row.file).sort((a, b) => orderWeight[a.kind] - orderWeight[b.kind])
+  batchProgress.done = 0
+  batchProgress.total = queue.length
+  batchProgress.percent = 0
+  batchProgress.currentFile = ''
+  try {
+    for (const row of queue) {
+      if (!row.file || !detail.value) break
+      batchProgress.currentFile = row.file.name
+      const artifact = await uploadDesktopReleaseArtifact(detail.value.id, row.kind, row.bundle, row.file, (percent) => { batchProgress.percent = Math.min(99, Math.round(((batchProgress.done + percent / 100) / batchProgress.total) * 100)) })
+      applyArtifactLocally(artifact)
+      batchProgress.done += 1
+      batchProgress.percent = Math.round((batchProgress.done / batchProgress.total) * 100)
+    }
+    ElMessage.success(`批量上传完成：${batchProgress.done} / ${batchProgress.total} 个产物`)
+  } catch (error: any) {
+    // 上传接口是“替换”语义且幂等，失败后重选目录续传即可，已成功的格子保留。
+    ElMessage.error(`上传 ${batchProgress.currentFile} 失败：${error?.response?.data?.message || error?.message || '网络异常'}；已上传的产物会保留，可重新选择目录续传`)
+  } finally {
+    batchUploading.value = false
+    batchPlan.value = null
+    if (detail.value) { try { detail.value = await getDesktopRelease(detail.value.id) } catch { /* 刷新失败时保留本地已应用的产物状态 */ } }
+    await loadReleases()
+  }
 }
 const handlePublish = async () => {
   if (!detail.value || !canPublish.value) return
@@ -172,5 +299,20 @@ onMounted(loadReleases)
 .desktop-release-form-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr); gap: 16px; margin-top: 18px; }
 .desktop-release-drawer-footer { display: flex; justify-content: flex-end; gap: 10px; }
 .desktop-release-file-input { display: none; }
+.desktop-release-matrix-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.desktop-release-matrix-head h3 { margin: 0; }
+.desktop-release-batch-button { display: inline-flex; align-items: center; gap: 5px; border: 1px solid rgba(196, 106, 58, .45); border-radius: 8px; background: rgba(196, 106, 58, .08); padding: 5px 10px; color: var(--app-primary, #c46a3a); font-size: 11px; font-weight: 800; white-space: nowrap; }
+.desktop-release-batch-button:disabled { opacity: .5; }
+.desktop-release-batch-progress { margin-top: 16px; border: 1px solid rgba(196, 106, 58, .35); border-radius: 12px; background: rgba(196, 106, 58, .05); padding: 12px 14px; }
+.desktop-release-batch-progress-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; color: #475569; font-size: 12px; font-weight: 700; }
+.desktop-release-batch-progress-file { overflow: hidden; color: #94a3b8; font-family: var(--app-font-mono, monospace); font-size: 11px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.desktop-release-batch-alert { margin-bottom: 14px; }
+.desktop-release-batch-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.desktop-release-batch-table th { padding: 8px 10px; border-bottom: 1px solid var(--app-outline, #e2e8f0); color: var(--app-text-muted, #64748b); font-weight: 700; text-align: left; }
+.desktop-release-batch-table th.right { text-align: right; }
+.desktop-release-batch-table td { padding: 8px 10px; border-bottom: 1px solid var(--app-outline, #e2e8f0); color: #475569; }
+.desktop-release-batch-table td.right { text-align: right; font-family: var(--app-font-mono, monospace); }
+.desktop-release-batch-table tr.missing td { color: #b91c1c; }
+.desktop-release-batch-ignored { margin: 10px 0 0; color: #94a3b8; font-size: 11px; }
 @media (max-width: 760px) { .desktop-release-detail-grid, .desktop-release-form-grid { grid-template-columns: 1fr; } .desktop-release-artifacts { grid-template-columns: 1fr; } }
 </style>

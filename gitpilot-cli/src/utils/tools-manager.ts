@@ -81,12 +81,27 @@ function commandExists(cmd: string): boolean {
 	}
 }
 
-// Get the path to a tool (system-wide or in our tools dir)
+// GitPilot 安装包预置目录：桌面端 sidecar 启动时通过 PI_PACKAGE_DIR 指向 Tauri 资源根，
+// rg/fd 在打包时已预置在该目录的 bin/ 子目录下，运行时零下载、开箱即用。
+function getBundledToolPath(config: ToolConfig): string | null {
+	const packageDir = process.env.PI_PACKAGE_DIR;
+	if (!packageDir) return null;
+	const bundledPath = join(packageDir, "bin", config.binaryName + (platform() === "win32" ? ".exe" : ""));
+	return existsSync(bundledPath) ? bundledPath : null;
+}
+
+// Get the path to a tool (bundled install dir > tools dir > system PATH)
 export function getToolPath(tool: "fd" | "rg"): string | null {
 	const config = TOOLS[tool];
 	if (!config) return null;
 
-	// Check our tools directory first
+	// Check the bundled dir shipped with the desktop installer first (no download needed)
+	const bundledPath = getBundledToolPath(config);
+	if (bundledPath) {
+		return bundledPath;
+	}
+
+	// Check our tools directory
 	const localPath = join(TOOLS_DIR, config.binaryName + (platform() === "win32" ? ".exe" : ""));
 	if (existsSync(localPath)) {
 		return localPath;

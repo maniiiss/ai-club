@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { delimiter } from "node:path";
+import { delimiter, join } from "node:path";
 import { spawn, spawnSync } from "child_process";
 import { getBinDir } from "../config.ts";
 
@@ -120,12 +120,19 @@ export function getShellConfig(customShellPath?: string): ShellConfig {
 }
 
 export function getShellEnv(): NodeJS.ProcessEnv {
-	const binDir = getBinDir();
+	// GitPilot 开箱即用：把安装包预置的 bin（PI_PACKAGE_DIR/bin）与共享 bin 目录一并前置注入 PATH，
+	// 让 Agent 在 bash 中直接执行 rg/fd 时无需用户手动安装、不依赖运行时下载。
+	const binDirs: string[] = [];
+	const packageDir = process.env.PI_PACKAGE_DIR;
+	if (packageDir) binDirs.push(join(packageDir, "bin"));
+	binDirs.push(getBinDir());
+
 	const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === "path") ?? "PATH";
 	const currentPath = process.env[pathKey] ?? "";
 	const pathEntries = currentPath.split(delimiter).filter(Boolean);
-	const hasBinDir = pathEntries.includes(binDir);
-	const updatedPath = hasBinDir ? currentPath : [binDir, currentPath].filter(Boolean).join(delimiter);
+	const missingBinDirs = binDirs.filter((dir) => !pathEntries.includes(dir));
+	const updatedPath =
+		missingBinDirs.length > 0 ? [...missingBinDirs, ...pathEntries].join(delimiter) : currentPath;
 
 	return {
 		...process.env,

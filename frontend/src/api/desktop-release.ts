@@ -18,8 +18,8 @@ export const createDesktopRelease = async (payload: DesktopReleaseRequest) => {
   return data.data
 }
 
-/** 上传单个发布矩阵产物；文件由后端流式写入私有 MinIO。 */
-export const uploadDesktopReleaseArtifact = async (releaseId: number, artifactKind: DesktopArtifactKind, bundleType: DesktopBundleType, file: File) => {
+/** 上传单个发布矩阵产物；文件由后端流式写入私有 MinIO。onUploadProgress 供批量目录上传展示当前文件进度。 */
+export const uploadDesktopReleaseArtifact = async (releaseId: number, artifactKind: DesktopArtifactKind, bundleType: DesktopBundleType, file: File, onUploadProgress?: (percent: number) => void) => {
   const formData = new FormData()
   formData.append('artifactKind', artifactKind)
   formData.append('platform', 'windows')
@@ -28,7 +28,8 @@ export const uploadDesktopReleaseArtifact = async (releaseId: number, artifactKi
   formData.append('file', file)
   const { data } = await http.post<ApiResponse<DesktopReleaseDetail['artifacts'][number]>>(`/api/desktop-releases/${releaseId}/artifacts`, formData, {
     headers: { 'Content-Type': 'multipart/form-data' },
-    timeout: 5 * 60 * 1000
+    timeout: 5 * 60 * 1000,
+    onUploadProgress: onUploadProgress ? (event) => onUploadProgress(event.total ? Math.round((event.loaded / event.total) * 100) : 0) : undefined
   })
   return data.data
 }

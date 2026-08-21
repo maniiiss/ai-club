@@ -252,7 +252,11 @@ export function createFindToolDefinition(
 						}
 						args.push("--", effectivePattern, searchPath);
 
-						const child = spawn(fdPath, args, { stdio: ["ignore", "pipe", "pipe"] });
+						// windowsHide：GUI（桌面端）进程树下直接 spawn 控制台程序会闪黑框，必须显式抑制。
+						const child = spawn(fdPath, args, {
+							stdio: ["ignore", "pipe", "pipe"],
+							windowsHide: true,
+						});
 						const rl = createInterface({ input: child.stdout });
 						let stderr = "";
 						const lines: string[] = [];

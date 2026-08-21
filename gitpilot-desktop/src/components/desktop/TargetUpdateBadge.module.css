@@ -1,0 +1,10 @@
+/* 新版本提示按钮：跟随主题强调色，圆点轻微呼吸提示“有待安装更新”。 */
+.trigger { position: relative; color: var(--gp-accent); }
+.trigger:hover { color: var(--gp-accent); }
+.trigger svg { width: 15px; height: 15px; }
+.dot { position: absolute; top: 3px; right: 3px; width: 6px; height: 6px; border-radius: 50%; background: var(--gp-accent); box-shadow: 0 0 0 1.5px var(--popover); animation: update-badge-pulse 2.2s ease-in-out infinite; }
+
+@keyframes update-badge-pulse {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.4; }
+}

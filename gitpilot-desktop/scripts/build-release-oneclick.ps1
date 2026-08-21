@@ -112,11 +112,79 @@ Write-Step "强制重建 sidecar（gitpilot-rpc，跟随最新 CLI 源码）"
 if (-not (Get-Command bun -ErrorAction SilentlyContinue) -and -not (Get-Command bun.exe -ErrorAction SilentlyContinue)) {
     throw '未找到 bun，需要 Bun 才能编译 sidecar。请先安装 Bun（https://bun.sh）后重试。'
 }
-bash.exe ./sidecar/build.sh
+# 业务意图：切勿裸调 bash.exe——PowerShell 的 PATH 里 System32\bash.exe（WSL）常排在 Git 前面，
+# 会把 sidecar/build.sh 交给 WSL 导致 /bin/bash 找不到（历史教训：WSL execvpe(/bin/bash) failed）。
+# 改通过 git.exe 定位 Git 安装根，推导 Git Bash 的绝对路径来执行。
+$gitCmd = Get-Command git.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $gitCmd) { throw '未找到 git.exe，无法定位 Git Bash。请先安装 Git for Windows。' }
+# 从 git.exe 所在目录逐级向上找 bin\bash.exe（兼容 cmd\ 与 mingw64\bin\ 两种安装布局）。
+$gitBash = $null
+$probeDir = Split-Path $gitCmd.Source -Parent
+while ($probeDir) {
+    $candidate = Join-Path $probeDir 'bin\bash.exe'
+    if (Test-Path -LiteralPath $candidate) { $gitBash = $candidate; break }
+    $parent = Split-Path $probeDir -Parent
+    if ($parent -eq $probeDir) { break }
+    $probeDir = $parent
+}
+if (-not $gitBash) {
+    throw "定位 Git Bash 失败（git.exe 位于 $($gitCmd.Source)）。请确认安装了 Git for Windows。"
+}
+& $gitBash ./sidecar/build.sh
 if ($LASTEXITCODE -ne 0) {
     throw "sidecar/build.sh 失败（exit code=$LASTEXITCODE），终止打包。"
 }
 Write-Host "sidecar 重建完成。" -ForegroundColor Green
+
+# ---------- 5.5 预置 rg/fd 到安装包资源 ----------
+Write-Step "预置 rg/fd 检索工具到 resources/bin（开箱即用，免用户下载）"
+# 业务意图：国内网络直连 GitHub 下载 rg/fd 间歇性失败（且 Node fetch 不走系统代理），
+# 运行时自下载不可靠。打包时把 rg/fd 预置进 Tauri resources/bin，sidecar 启动后
+# 通过 PI_PACKAGE_DIR/bin 直接命中（见 gitpilot-cli tools-manager.getToolPath），零网络依赖。
+# rg 为内置 grep 工具核心依赖，缺失则强制终止打包；fd 尽力预置，失败仅警告。
+$bundledBinDir = Join-Path (Get-Location) 'src-tauri\resources\bin'
+New-Item -ItemType Directory -Path $bundledBinDir -Force | Out-Null
+$sharedBinDir = Join-Path $HOME '.gitpilot\agent\bin'
+$rgVersion = '15.0.0'
+$fdVersion = '10.3.0'
+function Copy-OrDownloadTool {
+    param([string]$Name, [string]$Version, [switch]$Required)
+    $dest = Join-Path $bundledBinDir "$Name.exe"
+    $shared = Join-Path $sharedBinDir "$Name.exe"
+    if (Test-Path $shared) {
+        Copy-Item $shared $dest -Force
+        Write-Host "  $Name.exe <- 共享目录 $shared" -ForegroundColor Gray
+        return
+    }
+    $repo = if ($Name -eq 'rg') { 'BurntSushi/ripgrep' } else { 'sharkdp/fd' }
+    $tagPrefix = if ($Name -eq 'rg') { '' } else { 'v' }
+    $asset = if ($Name -eq 'rg') { "ripgrep-$Version-x86_64-pc-windows-msvc.zip" } else { "fd-v$Version-x86_64-pc-windows-msvc.zip" }
+    $url = "https://github.com/$repo/releases/download/$tagPrefix$Version/$asset"
+    $tmpZip = Join-Path $env:TEMP "gitpilot-bundle-$Name-$Version.zip"
+    $tmpExtract = Join-Path $env:TEMP "gitpilot-bundle-$Name-$Version"
+    try {
+        Invoke-WebRequest -Uri $url -OutFile $tmpZip -TimeoutSec 120 -UseBasicParsing
+        Expand-Archive -Path $tmpZip -DestinationPath $tmpExtract -Force
+        $exe = Get-ChildItem $tmpExtract -Recurse -Filter "$Name.exe" | Select-Object -First 1
+        if (-not $exe) { throw "归档内未找到 $Name.exe" }
+        Copy-Item $exe.FullName $dest -Force
+        Write-Host "  $Name.exe <- GitHub $url" -ForegroundColor Gray
+    }
+    catch {
+        if ($Required) { throw "预置 $Name 失败（打包机网络不通且本地 $shared 不存在）：$($_.Exception.Message)" }
+        Write-Host "  预置 fd 失败（仅警告，find 工具运行时将回退自下载）：$($_.Exception.Message)" -ForegroundColor Yellow
+    }
+    finally {
+        Remove-Item $tmpZip, $tmpExtract -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+Copy-OrDownloadTool -Name 'rg' -Version $rgVersion -Required
+Copy-OrDownloadTool -Name 'fd' -Version $fdVersion
+foreach ($name in @('rg', 'fd')) {
+    $p = Join-Path $bundledBinDir "$name.exe"
+    if (-not (Test-Path $p)) { throw "预置校验失败：缺少 $p" }
+}
+Write-Host "resources/bin 预置完成：$((Get-ChildItem $bundledBinDir | ForEach-Object Name) -join ', ')" -ForegroundColor Green
 
 # ---------- 6. 构建并签名 ----------
 Write-Step "构建并签名（MSI + NSIS + updater ZIP + .sig）"
