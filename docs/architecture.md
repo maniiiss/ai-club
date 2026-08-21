@@ -14,6 +14,8 @@
 
 Design 页面名称重命名属于 Design 快照元数据变更：Desktop 通过 `design_rename_page` RPC 携带当前 revision 写入 sidecar，sidecar 生成新的不可变 revision 并更新 `.gitpilot/design/<designId>/design.json`；右侧页面列表只负责右键触发和原位编辑，不直接修改文件 manifest。
 
+> GitPilot Desktop Code 会话采用双模式安全边界：默认 Windows 原生防护执行路径、命令、timeout 和进程树策略；可选 WSL2 + Gondolin 增强隔离。读取/搜索自动执行，文件修改、Bash、网络和工作区外访问通过独立 `approval_required` RPC 事件请求 Desktop 决策，授权仅限当前会话，不跨会话持久化。Gondolin/WSL2 初始化失败时阻断执行，不静默降级到无限制本机模式。详见 `docs/design-docs/desktop-security-sandbox-technical-design-v1.md`。
+
 ## 1. 项目定位
 
 AI Club 是一个面向 AI 代理协作与工程管理的多服务平台，目标是把“项目、工作项、执行任务、测试计划、代码仓库、模型配置、智能体协作”统一放到同一套业务平台中管理。

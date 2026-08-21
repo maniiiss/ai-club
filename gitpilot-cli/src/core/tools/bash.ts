@@ -21,11 +21,15 @@ import { getTextOutput, invalidArgText, str } from "./render-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult } from "./truncate.ts";
 
-const MAX_TIMEOUT_MS = 2_147_483_647;
-const MAX_TIMEOUT_SECONDS = MAX_TIMEOUT_MS / 1000;
+/** Bash 默认超时，避免模型生成的命令无限占用 sidecar。 */
+export const DEFAULT_BASH_TIMEOUT_SECONDS = 120;
+/** Bash 超时硬上限，与桌面安全策略保持一致。 */
+export const MAX_BASH_TIMEOUT_SECONDS = 600;
+const MAX_TIMEOUT_MS = MAX_BASH_TIMEOUT_SECONDS * 1000;
+const MAX_TIMEOUT_SECONDS = MAX_BASH_TIMEOUT_SECONDS;
 
 function resolveTimeoutMs(timeout: number | undefined): number | undefined {
-	if (timeout === undefined) return undefined;
+	if (timeout === undefined) return DEFAULT_BASH_TIMEOUT_SECONDS * 1000;
 	if (!Number.isFinite(timeout) || timeout <= 0) {
 		throw new Error("Invalid timeout: must be a finite number of seconds");
 	}
@@ -39,7 +43,7 @@ function resolveTimeoutMs(timeout: number | undefined): number | undefined {
 
 const bashSchema = Type.Object({
 	command: Type.String({ description: "Bash command to execute" }),
-	timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
+	timeout: Type.Optional(Type.Number({ description: `Timeout in seconds (default ${DEFAULT_BASH_TIMEOUT_SECONDS}, max ${MAX_BASH_TIMEOUT_SECONDS})` })),
 });
 
 export type BashToolInput = Static<typeof bashSchema>;
@@ -200,7 +204,7 @@ function formatDuration(ms: number): string {
 
 function formatBashCall(args: { command?: string; timeout?: number } | undefined): string {
 	const command = str(args?.command);
-	const timeout = args?.timeout as number | undefined;
+				const timeout = args?.timeout as number | undefined;
 	const timeoutSuffix = timeout ? theme.fg("muted", ` (timeout ${timeout}s)`) : "";
 	const commandDisplay = command === null ? invalidArgText(theme) : command ? command : theme.fg("toolOutput", "...");
 	return theme.fg("toolTitle", theme.bold(`$ ${commandDisplay}`)) + timeoutSuffix;
@@ -303,7 +307,7 @@ export function createBashToolDefinition(
 		parameters: bashSchema,
 		async execute(
 			_toolCallId,
-			{ command, timeout }: { command: string; timeout?: number },
+				{ command, timeout }: { command: string; timeout?: number },
 			signal?: AbortSignal,
 			onUpdate?,
 			_ctx?,
@@ -400,7 +404,7 @@ export function createBashToolDefinition(
 					const result = await ops.exec(spawnContext.command, spawnContext.cwd, {
 						onData: handleData,
 						signal,
-						timeout,
+						timeout: timeout ?? DEFAULT_BASH_TIMEOUT_SECONDS,
 						env: spawnContext.env,
 					});
 					exitCode = result.exitCode;

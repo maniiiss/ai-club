@@ -34,7 +34,21 @@ export const DEFAULT_DESKTOP_PREFERENCES: Readonly<DesktopPreferences> = {
 	defaultDirectory: null,
 };
 
+/** Desktop 级安全默认值；仅保存模式和 timeout，不保存任何审批授权。 */
+export interface SecurityPreferences {
+	sandboxMode: 'windows-native' | 'gondolin';
+	defaultTimeoutSeconds: number;
+	maxTimeoutSeconds: number;
+}
+
+export const DEFAULT_SECURITY_PREFERENCES: Readonly<SecurityPreferences> = {
+	sandboxMode: 'windows-native',
+	defaultTimeoutSeconds: 120,
+	maxTimeoutSeconds: 600,
+};
+
 const PREFERENCES_STORAGE_KEY = 'gitpilot-desktop.preferences.v1';
+const SECURITY_PREFERENCES_STORAGE_KEY = 'gitpilot-desktop.security-preferences.v1';
 const FONT_STACKS = new Map(DESKTOP_FONT_OPTIONS.map((option) => [option.value, option.stack]));
 
 export function isDesktopFont(value: unknown): value is DesktopFont {
@@ -75,6 +89,33 @@ export function saveDesktopPreferences(preferences: DesktopPreferences): void {
 		localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(normalized));
 	} catch {
 		// 私密窗口或受限 WebView 无法持久化时，当前会话仍保留已应用的设置。
+	}
+}
+
+/** 读取全局安全默认值；审批授权永远不落盘。 */
+export function loadSecurityPreferences(): SecurityPreferences {
+	if (typeof localStorage === 'undefined') return { ...DEFAULT_SECURITY_PREFERENCES };
+	try {
+		const raw = localStorage.getItem(SECURITY_PREFERENCES_STORAGE_KEY);
+		const value = raw ? JSON.parse(raw) as Partial<SecurityPreferences> : {};
+		const defaultTimeout = value.defaultTimeoutSeconds;
+		const maxTimeout = value.maxTimeoutSeconds;
+		return {
+			sandboxMode: value.sandboxMode === 'gondolin' ? 'gondolin' : 'windows-native',
+			defaultTimeoutSeconds: typeof defaultTimeout === 'number' && Number.isInteger(defaultTimeout) && defaultTimeout > 0 ? defaultTimeout : DEFAULT_SECURITY_PREFERENCES.defaultTimeoutSeconds,
+			maxTimeoutSeconds: typeof maxTimeout === 'number' && Number.isInteger(maxTimeout) && maxTimeout >= DEFAULT_SECURITY_PREFERENCES.defaultTimeoutSeconds && maxTimeout <= 600 ? maxTimeout : DEFAULT_SECURITY_PREFERENCES.maxTimeoutSeconds,
+		};
+	} catch {
+		return { ...DEFAULT_SECURITY_PREFERENCES };
+	}
+}
+
+/** 只保存全局默认策略，不把本会话审批授权写入 localStorage。 */
+export function saveSecurityPreferences(preferences: SecurityPreferences): void {
+	try {
+		localStorage.setItem(SECURITY_PREFERENCES_STORAGE_KEY, JSON.stringify(preferences));
+	} catch {
+		// 受限 WebView 无法持久化时，当前 sidecar 会话仍使用已应用策略。
 	}
 }
 

@@ -34,6 +34,7 @@ import { Button } from '@/src/components/ui/button';
 import { Hint } from '@/src/components/ui/tooltip';
 import styles from './InputBox.module.css';
 import { PlanProgressStatus } from './PlanProgressStatus';
+import { SecurityApprovalCard } from './SecurityApprovalCard';
 
 export { formatCommandLabel, getCommandIconKey } from './CommandTokenNode';
 
@@ -575,7 +576,8 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 			{/* 业务意图：步骤状态独立显示在输入框上方，避免占用编辑区内部空间。 */}
 			<div className={styles.composerStack}>
 				<PlanProgressStatus />
-				<div className={styles.surface}>
+					<div className={styles.surface}>
+						<SecurityApprovalCard />
 				{visibleGuidance.length > 0 && (
 					<div className={styles.guidanceList} aria-label="已发送引导">
 						{visibleGuidance.map((item) => (

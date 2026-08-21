@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { stripAnsi } from "../utils/ansi.ts";
 import { sanitizeBinaryOutput } from "../utils/shell.ts";
-import type { BashOperations } from "./tools/bash.ts";
+import { DEFAULT_BASH_TIMEOUT_SECONDS, type BashOperations } from "./tools/bash.ts";
 import { DEFAULT_MAX_BYTES, truncateTail } from "./tools/truncate.ts";
 
 // ============================================================================
@@ -24,6 +24,8 @@ export interface BashExecutorOptions {
 	onChunk?: (chunk: string) => void;
 	/** AbortSignal for cancellation */
 	signal?: AbortSignal;
+	/** 未显式传入时使用的 Bash 超时秒数。 */
+	timeoutSeconds?: number;
 }
 
 export interface BashResult {
@@ -108,6 +110,7 @@ export async function executeBashWithOperations(
 		const result = await operations.exec(command, cwd, {
 			onData,
 			signal: options?.signal,
+			timeout: options?.timeoutSeconds ?? DEFAULT_BASH_TIMEOUT_SECONDS,
 		});
 
 		const fullOutput = outputChunks.join("");

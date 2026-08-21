@@ -64,6 +64,15 @@ import { createDesignToolDefinitions, isDesignPatchOperation, type DesignPatchRe
 import { defaultProjectGuidelines, normalizeProjectGuidelines } from "./design-guidelines.ts";
 import { designPageIdFromEntryPath, synchronizeDesignPages } from "./design-pages.ts";
 import { listCodeProjectFiles } from "./project-files.ts";
+import {
+	cloneSecurityPolicy,
+	DEFAULT_SECURITY_POLICY,
+	normalizeSecurityPolicy,
+	type ApprovalDecision,
+	type SecurityApprovalRequest,
+	type SecurityPolicy,
+} from "../../core/security/security-policy.ts";
+import { GondolinExecutor, WindowsNativeExecutor } from "../../core/security/sandbox-executor.ts";
 
 /** Work 的会话提示词独立于 Code，避免共享 AgentSession 基础设施时继承编码助手身份。 */
 const WORK_SYSTEM_PROMPT = `你是 GitPilot Work 模式的工作协同助手。
@@ -120,9 +129,42 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	let session = runtimeHost.session;
 	let unsubscribe: (() => void) | undefined;
 	let unsubscribeBackpressure: (() => void) | undefined;
+	/** Code 审批只存在 sidecar 内存中，sidecar 重启后全部失效。 */
+	const pendingSecurityApprovals = new Map<string, { request: SecurityApprovalRequest; resolve: (decision: ApprovalDecision) => void; sessionId: string }>();
+	let securityPolicy: SecurityPolicy = cloneSecurityPolicy(DEFAULT_SECURITY_POLICY);
+	let sandboxExecutor: WindowsNativeExecutor | GondolinExecutor = new WindowsNativeExecutor(runtimeHost.cwd);
 
 	const output = (obj: RpcResponse | RpcExtensionUIRequest | object) => {
 		writeRawStdout(serializeJsonLine(obj));
+	};
+
+	/** 发起 Code 工具审批并等待 Desktop 决策；断连、abort 和超时均默认拒绝。 */
+	const requestSecurityApproval = async (request: SecurityApprovalRequest): Promise<ApprovalDecision> => {
+		const expiresAt = Math.min(request.expiresAt, Date.now() + 10 * 60 * 1000);
+		return await new Promise<ApprovalDecision>((resolveApproval) => {
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			const settle = (decision: ApprovalDecision): void => {
+				if (timer) clearTimeout(timer);
+				pendingSecurityApprovals.delete(request.approvalId);
+				resolveApproval(decision);
+			};
+			pendingSecurityApprovals.set(request.approvalId, { request: { ...request, expiresAt }, resolve: settle, sessionId: request.sessionId });
+			timer = setTimeout(() => settle("deny"), Math.max(0, expiresAt - Date.now()));
+			output({ type: "approval_required", ...request, expiresAt });
+		});
+	};
+
+	/** 清理当前任务所有等待中的审批，避免切换任务后旧 Promise 永久挂起。 */
+	const denySecurityApprovals = (sessionId?: string): void => {
+		for (const [approvalId, approval] of pendingSecurityApprovals) {
+			if (!sessionId || approval.sessionId === sessionId) approval.resolve("deny");
+		}
+	};
+
+	const initializeSandbox = async (policy: SecurityPolicy, cwd = runtimeHost.cwd): Promise<void> => {
+		const next = policy.sandboxMode === "gondolin" ? new GondolinExecutor(cwd) : new WindowsNativeExecutor(cwd);
+		sandboxExecutor = next;
+		await next.initialize(policy);
 	};
 
 	const success = <T extends RpcCommand["type"]>(
@@ -1773,6 +1815,16 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 	const rebindSession = async (): Promise<void> => {
 		session = runtimeHost.session;
+		// 每个任务创建时快照策略；Gondolin 初始化失败直接阻断，不切回本机执行。
+		let sandboxReady = false;
+		try {
+			await initializeSandbox(securityPolicy, session.sessionManager.getCwd());
+			sandboxReady = true;
+		} catch (error) {
+			// 初始化失败仍通过 RPC 暴露结构化状态，所有 Code 工具随后由 AgentSession 阻断。
+			output({ type: "sandbox_status", status: sandboxExecutor.getStatus(), error: error instanceof Error ? error.message : String(error) });
+		}
+		session.configureSecurityPolicy(securityPolicy, requestSecurityApproval, () => sandboxReady);
 		await session.bindExtensions({
 			uiContext: createExtensionUIContext(),
 			mode: "rpc",
@@ -1894,6 +1946,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "abort": {
+				denySecurityApprovals(session.sessionId);
 				const cleared = command.clearQueue ? session.clearQueue() : undefined;
 				await session.abort();
 				return success(
@@ -1906,6 +1959,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "new_session": {
+				denySecurityApprovals(session.sessionId);
 				// 透传 cwd：桌面版按项目/子目录创建任务时指定工作目录。
 				// 新建只切换内存会话，不立即落盘；首条 prompt 生成标题后才形成历史记录。
 				const options: { parentSession?: string; cwd?: string } = {};
@@ -2467,9 +2521,45 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// Bash
 			// =================================================================
 
+			case "approval_response": {
+				const pending = pendingSecurityApprovals.get(command.approvalId);
+				if (!pending || pending.sessionId !== session.sessionId) throw new Error("安全审批请求已过期");
+				pending.resolve(command.decision);
+				return success(id, "approval_response");
+			}
+
+			case "get_security_policy": {
+				return success(id, "get_security_policy", {
+					policy: cloneSecurityPolicy(securityPolicy),
+					sandbox: sandboxExecutor.getStatus(),
+					pendingApprovals: [...pendingSecurityApprovals.values()]
+						.filter((pending) => pending.sessionId === session.sessionId)
+						.map((pending) => pending.request),
+				});
+			}
+
+			case "set_security_policy": {
+				if (session.isStreaming) throw new Error("当前任务执行中，安全策略只能在新任务前切换");
+				const nextPolicy = normalizeSecurityPolicy(command.policy);
+				let nextReady = true;
+				try {
+					await initializeSandbox(nextPolicy, session.sessionManager.getCwd());
+				} catch (error) {
+					nextReady = false;
+					output({ type: "sandbox_status", status: sandboxExecutor.getStatus(), error: error instanceof Error ? error.message : String(error) });
+				}
+				securityPolicy = nextPolicy;
+				session.configureSecurityPolicy(securityPolicy, requestSecurityApproval, () => nextReady);
+				return success(id, "set_security_policy", { policy: cloneSecurityPolicy(nextPolicy), sandbox: sandboxExecutor.getStatus() });
+			}
+
 			case "bash": {
+				if (!(await session.authorizeToolExecution("bash", { command: command.command }))) {
+					return error(id, "bash", "用户拒绝了桌面安全审批");
+				}
 				const result = await session.executeBash(command.command, undefined, {
 					excludeFromContext: command.excludeFromContext,
+					timeoutSeconds: command.timeout,
 				});
 				return success(id, "bash", result);
 			}
@@ -2494,6 +2584,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "switch_session": {
+				denySecurityApprovals(session.sessionId);
 				const currentSessionFile = session.sessionFile;
 				// 计划确认等交互会在 Agent 回合结束后继续等待；此时 isStreaming 已为 false。
 				// 若直接销毁会话，Desktop 收到确认回包也找不到原 Promise，计划无法继续。
@@ -2515,6 +2606,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "fork": {
+				denySecurityApprovals(session.sessionId);
 				const result = await runtimeHost.fork(command.entryId);
 				if (!result.cancelled) {
 					await rebindSession();
@@ -2523,6 +2615,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			case "clone": {
+				denySecurityApprovals(session.sessionId);
 				const leafId = session.sessionManager.getLeafId();
 				if (!leafId) {
 					return error(id, "clone", "Cannot clone session: no current entry selected");
@@ -2773,6 +2866,8 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			process.exit(exitCode);
 		}
 		shuttingDown = true;
+		denySecurityApprovals();
+		await sandboxExecutor.shutdown();
 		for (const cleanup of signalCleanupHandlers) {
 			cleanup();
 		}

@@ -36,10 +36,14 @@ import type {
 	SessionListItem,
 	ThinkingLevel,
 	WorkspaceChangeSet,
+	ApprovalDecision,
+	SecurityApprovalRequest,
+	SecurityPolicy,
+	SandboxStatus,
 } from '@/src/rpc/types';
 import { getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionStep } from '@/src/store/workbench';
 import { aggregateChangedFiles, changedFilesFromWorkspaceChanges, parseExecutionStepsFromMessages, parseOpsFromMessages, parseOpsFromSteps, type ChangedFile, type EditOperation } from '@/src/store/changed-files';
-import { loadDesktopPreferences, resolveStandaloneTaskDirectory } from '@/src/store/settings';
+import { loadDesktopPreferences, loadSecurityPreferences, resolveStandaloneTaskDirectory } from '@/src/store/settings';
 import { useAppModeStore, type AppMode } from '@/src/store/app-mode';
 import { isProjectPathWithin, isSameProjectPath, isTemporaryWorkspacePath } from '@/src/utils/project-path';
 
@@ -499,6 +503,7 @@ export type PlatformConnectionState = 'checking' | 'connected' | 'disconnected';
  * （见 useActiveExtensionUI）。sidecar 侧 pending 请求不随切换取消，切回仍可响应。
  */
 export type PendingExtensionUIEntry = RpcExtensionUIRequest & { sessionPath: string | null };
+export type PendingSecurityApprovalEntry = SecurityApprovalRequest & { sessionPath: string | null };
 
 export function platformConnectionStateFromResponse(response: PlatformConnection): PlatformConnectionState {
 	return response.connected ? 'connected' : 'disconnected';
@@ -547,6 +552,10 @@ interface SessionStore {
 
 	// 扩展 UI 请求队列（待用户交互，按会话隔离）
 	pendingExtensionUI: PendingExtensionUIEntry[];
+	/** Code 工具审批队列；与 Design 审批状态分离，并按 session 隔离展示。 */
+	pendingSecurityApprovals: PendingSecurityApprovalEntry[];
+	securityPolicy: SecurityPolicy | null;
+	sandboxStatus: SandboxStatus | null;
 	// 扩展标准 UI 事件消费（notify/status/widget/title，v1 §6.2 补齐）
 	extensionNotifications: Array<{ id: string; message: string; type: 'info' | 'warning' | 'error'; at: number }>;
 	extensionStatuses: Map<string, string>;
@@ -599,6 +608,7 @@ interface SessionStore {
 	setThinkingLevel: (level: ThinkingLevel) => Promise<void>;
 	exportHtml: () => Promise<void>;
 	respondExtensionUI: (req: RpcExtensionUIRequest, value: { value: string } | { confirmed: boolean } | { cancelled: true }) => Promise<void>;
+	respondSecurityApproval: (approval: PendingSecurityApprovalEntry, decision: ApprovalDecision) => Promise<void>;
 	/** 标记已登录（登录流程成功后调用，与模型列表可用性解耦）。 */
 	markLoggedIn: () => void;
 	/** 退出登录时撤销平台会话并清空桌面侧账户展示。 */
@@ -1346,6 +1356,9 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 	composerDrafts: {},
 	thinkingLevels: ['off', 'low', 'medium', 'high'],
 		pendingExtensionUI: [],
+		pendingSecurityApprovals: [],
+		securityPolicy: null,
+		sandboxStatus: null,
 		extensionNotifications: [],
 		extensionStatuses: new Map(),
 		extensionWidgets: new Map(),
@@ -1368,19 +1381,18 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		set({ connection: 'connecting', platformConnection: 'checking', error: null });
 
 		await initBridge();
-
 		const unsubs: Array<() => void> = [];
 		unsubs.push(
 			onReady(() => {
 				set({ connection: 'ready' });
+				void rpc.setSecurityPolicy(loadSecurityPreferences()).then(() => get().refreshAll()).catch(() => get().refreshAll());
 				// sidecar 就绪后拉取初始状态
-				get().refreshAll();
 			}),
 		);
 		unsubs.push(
 			onDisconnect(() => {
 				platformConnectionRequestVersion += 1;
-			set({ connection: 'disconnected', platformConnection: 'disconnected', isSessionLoading: false, isStreaming: false, _streamingAssistantId: null, guidanceQueue: [], isFlushingGuidance: false, isStopping: false, extensionStatuses: new Map(), extensionWidgets: new Map() });
+			set({ connection: 'disconnected', platformConnection: 'disconnected', isSessionLoading: false, isStreaming: false, _streamingAssistantId: null, guidanceQueue: [], isFlushingGuidance: false, isStopping: false, extensionStatuses: new Map(), extensionWidgets: new Map(), pendingSecurityApprovals: [] });
 			}),
 		);
 		unsubs.push(onError((msg) => {
@@ -1391,6 +1403,16 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			if (wasStreaming) useWorkbenchStore.getState().markExecutionStopped();
 		}));
 		unsubs.push(onEvent((e) => {
+			if (e.type === 'approval_required') {
+				const approval = e as unknown as SecurityApprovalRequest;
+				const state = get();
+				const currentSession = state.selectedSessionPath ?? state.sessionState?.sessionFile ?? null;
+				if (state.sessionState?.sessionId && approval.sessionId !== state.sessionState.sessionId) return;
+				set((s) => s.pendingSecurityApprovals.some((item) => item.approvalId === approval.approvalId)
+					? {}
+					: { pendingSecurityApprovals: [...s.pendingSecurityApprovals, { ...approval, sessionPath: currentSession }] });
+				return;
+			}
 			const currentSession = get().selectedSessionPath ?? get().sessionState?.sessionFile ?? null;
 			const eventSessionFile = typeof e.sessionFile === 'string' ? e.sessionFile : null;
 			// 切换会话期间后台任务仍会继续发事件；来源明确且不属于当前会话时，
@@ -1503,7 +1525,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 
 		// rpc:ready 可能在 listen 注册前已发出（Rust setup 时即 emit），
 		// 不依赖 ready 事件，直接拉取状态；失败由 refreshAll 内部 catch 记录 error。
-		void get().refreshAll().then(() => {
+			void get().refreshAll().then(() => {
 			// 重连/启动后若 sidecar 支持快照，用 get_session_snapshot 一次性恢复消息与执行态，
 			// 避免渲染层在 sidecar 仍持有运行中会话时显示空正文或丢失运行指示（设计文档 §9.4）。
 			void get().loadSessionSnapshot();
@@ -1588,6 +1610,16 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		} catch (err) {
 			set({ error: err instanceof Error ? err.message : String(err) });
 		}
+		// 重连或刷新时恢复 sidecar 仍在等待的 Code 审批，审批正文只保留轻量摘要。
+		try {
+			const securityRes = await rpc.getSecurityPolicy();
+			if (securityRes.success && securityRes.command === 'get_security_policy') {
+				const currentPath = next.selectedSessionPath ?? get().selectedSessionPath ?? null;
+				next.securityPolicy = securityRes.data.policy;
+				next.sandboxStatus = securityRes.data.sandbox;
+				next.pendingSecurityApprovals = securityRes.data.pendingApprovals.map((approval) => ({ ...approval, type: 'approval_required' as const, sessionPath: currentPath }));
+			}
+		} catch {}
 		// 不请求完整会话树：桌面当前未消费该深层数据，长历史会使 JSONL 解析触发递归限制。
 		// 历史会话列表：跨所有项目目录拉取（listAll），前端按项目分组显示
 		try {
@@ -2246,6 +2278,15 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		}
 	},
 
+	respondSecurityApproval: async (approval, decision) => {
+		set((s) => ({ pendingSecurityApprovals: s.pendingSecurityApprovals.filter((item) => item.approvalId !== approval.approvalId) }));
+		try {
+			await rpc.approvalResponse(approval.approvalId, decision);
+		} catch (err) {
+			set((s) => ({ error: err instanceof Error ? err.message : String(err), pendingSecurityApprovals: [...s.pendingSecurityApprovals, approval] }));
+		}
+	},
+
 	clearError: () => set({ error: null }),
 	reportError: (message) => set({ error: message }),
 	markLoggedIn: () => set({ loggedIn: true }),
@@ -2294,4 +2335,9 @@ export function pickActiveExtensionUI(
  */
 export function useActiveExtensionUI(): RpcExtensionUIRequest | null {
 	return useSessionStore((s) => pickActiveExtensionUI(s.pendingExtensionUI, s.selectedSessionPath ?? s.sessionState?.sessionFile ?? null));
+}
+
+/** 只返回当前 Code 会话的首个安全审批，切换任务不会带走旧审批卡片。 */
+export function useActiveSecurityApproval(): PendingSecurityApprovalEntry | null {
+	return useSessionStore((s) => s.pendingSecurityApprovals.find((entry) => entry.sessionPath === (s.selectedSessionPath ?? s.sessionState?.sessionFile ?? null)) ?? null);
 }
