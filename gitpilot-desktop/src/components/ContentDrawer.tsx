@@ -4,7 +4,7 @@
  * 不让消息卡片各自实现焦点、遮罩、复制和关闭行为。
  */
 import { useEffect, useState } from 'react';
-import { Check, Clipboard, Code2, FileText, GitCompare } from 'lucide-react';
+import { Check, ClipboardText as Clipboard, Code as Code2, FileText, GitDiff as GitCompare } from '@phosphor-icons/react';
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from '@/src/components/ui/sheet';
 import { Hint } from '@/src/components/ui/tooltip';
 import { useWorkbenchStore, type ContentDrawerContent, type ContentDrawerKind } from '@/src/store/workbench';

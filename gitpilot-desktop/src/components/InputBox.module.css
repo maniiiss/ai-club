@@ -7,6 +7,11 @@
 /* 业务意图：使用不透明表面替代实时背景模糊，避免侧栏切换时对聊天正文做大面积重绘。 */
 .composerStack { display: flex; width: min(860px, 100%); min-width: 0; flex-direction: column; }
 .surface { position: relative; z-index: 1; display: flex; width: min(860px, 100%); min-width: 0; flex-direction: column; overflow: visible; border: 1px solid var(--gp-border-strong); border-radius: 14px; background: linear-gradient(180deg, var(--gp-surface-raised), var(--gp-surface)); padding: 12px 14px 10px; box-shadow: var(--shadow-lg), 0 0 0 1px var(--gp-accent-soft); transition: border-color 140ms ease, box-shadow 140ms ease; }
+:global([data-ui-version='target']) .surface { border-radius: 18px; }
+:global([data-ui-version='work']) .surface { border-radius: 18px; }
+/* CODE 输入框采用纯净的圆角表面，隐藏顶部装饰色带，避免形成新的视觉分界线。 */
+:global([data-ui-version='target']) .surface::before,
+:global([data-ui-version='work']) .surface::before { display: none; }
 .surface::before { position: absolute; top: 0; right: 14px; left: 14px; height: 2px; background: linear-gradient(90deg, var(--gp-accent), transparent 68%, var(--gp-warm)); content: ''; opacity: .85; }
 .surface:focus-within { border-color: color-mix(in srgb, var(--gp-accent) 65%, var(--gp-border)); box-shadow: 0 20px 54px var(--gp-shadow-color), 0 0 0 3px var(--gp-accent-soft); }
 .guidanceList { display: flex; max-height: 188px; flex-direction: column; gap: 6px; margin: -2px 0 8px; overflow-y: auto; padding: 0 0 2px; }

@@ -27,10 +27,20 @@
 .shell[data-design-empty="true"] .deviceFrame,.shell[data-design-empty="true"] .browserFrame,.shell[data-design-empty="true"] .codeContent{display:none}
 .viewportControls{display:flex;align-items:center;gap:7px;min-width:0}
 .viewportLabel{color:#718078;font-family:var(--font-sans);font-size: calc(10px * var(--desktop-font-scale))}
-.viewportSelect,.viewportInput{height:24px;border:1px solid #d6dfda;border-radius:6px;background:#fff;color:#4f6157;font: calc(10px * var(--desktop-font-scale)) var(--font-sans);outline:0}
-.viewportSelect{max-width:145px;padding:0 5px}
+.viewportPresetTrigger,.viewportInput{height:24px;border:1px solid #d6dfda;border-radius:6px;background:#fff;color:#4f6157;font: calc(10px * var(--desktop-font-scale)) var(--font-sans);outline:0}
+.viewportPresetTrigger{display:flex;width:188px;min-width:0;align-items:center;justify-content:space-between;gap:7px;padding:0 7px;text-align:left}
+.viewportPresetTrigger:hover{border-color:#b9d3c3;background:#f3f8f4;color:#2e7354}
+.viewportPresetTrigger:focus-visible{border-color:#8ebba2;box-shadow:0 0 0 2px rgba(74,139,105,.1)}
+.viewportPresetTrigger>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.viewportPresetTrigger>svg{flex:0 0 auto;color:#718078;transition:transform 160ms ease}
+.viewportPresetTrigger[data-state='open']>svg{transform:rotate(180deg)}
+.viewportPresetMenu{min-width:210px;padding:5px}
+.viewportPresetItem{min-height:30px;color:var(--design-text-secondary);font-size:calc(10px * var(--desktop-font-scale))}
+.viewportPresetItemActive{background:var(--design-accent-soft);color:var(--design-accent)}
+.viewportPresetItemActive:focus,.viewportPresetItemActive:hover{background:var(--design-accent-soft);color:var(--design-accent)}
+.viewportPresetCheck{margin-left:auto;flex:0 0 auto}
 .viewportInput{width:58px;padding:0 6px;text-align:center}
-.viewportSelect:focus,.viewportInput:focus{border-color:#8ebba2;box-shadow:0 0 0 2px rgba(74,139,105,.1)}
+.viewportInput:focus{border-color:#8ebba2;box-shadow:0 0 0 2px rgba(74,139,105,.1)}
 .statusHint{min-width:0;overflow:hidden;color:#8a978f;text-overflow:ellipsis;white-space:nowrap}
 .backButton{display:grid;width:28px;height:28px;place-items:center;border:1px solid #dce5df;border-radius:8px;background:#fff;color:#607168}
 .backButton:hover{border-color:#b9d3c3;background:#eef6f0;color:#2e7354}
@@ -81,7 +91,9 @@
 .navigatorTopbar button:hover{border-color:#a9c8b5;background:#edf7f0;color:#2f7254}
 .navigatorSection{display:flex;flex-direction:column;gap:4px}
 .navigatorHeading{display:flex;align-items:center;justify-content:space-between;margin:0 6px 5px;color:#75827a;font-size: calc(9px * var(--desktop-font-scale));font-weight:700;letter-spacing:.12em;text-transform:uppercase}
-.navigatorHeading>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.navigatorHeadingCopy{display:flex;min-width:0;align-items:center;gap:8px}
+.navigatorHeadingActions{display:flex;align-items:center;gap:3px;margin-left:auto}
+.navigatorHeading>span:first-child,.navigatorHeadingCopy>span:first-child{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .navigatorHeading button{display:grid;width:21px;height:21px;flex:none;place-items:center;border:1px solid transparent;border-radius:5px;background:transparent;color:#7e8d84}
 .navigatorHeading button:hover{border-color:#c5dccd;background:#fff;color:#2f7254}
 .navigatorHeading button:disabled{cursor:not-allowed;opacity:.45}
@@ -336,7 +348,7 @@
 .tabs button:hover,.deviceButton:hover,.previewActions button:hover,.codeToolbar button:hover,.fileTabs button:hover{border-color:var(--design-border-strong);background:var(--design-surface-raised);color:var(--design-accent)}
 .tabs .tabActive{border-bottom-color:var(--design-accent);color:var(--design-accent)}
 .deviceActive,.fileTabs .fileActive{border-color:var(--design-accent);background:var(--design-accent-soft);color:var(--design-accent)}
-.previewActions select,.viewportSelect,.viewportInput{border-color:var(--design-border);background:var(--design-surface-raised);color:var(--design-text)}
+.previewActions select,.viewportPresetTrigger,.viewportInput{border-color:var(--design-border);background:var(--design-surface-raised);color:var(--design-text)}
 .previewStage{background:var(--design-background)}
 .deviceFrame{border-color:var(--design-border-strong);background:var(--design-code);box-shadow:0 22px 46px color-mix(in srgb,var(--design-shadow) 90%,transparent),0 0 0 1px var(--design-border)}
 .codeContent{background:var(--design-code);color:var(--gp-code-text)}
@@ -578,3 +590,90 @@
 .landingLogoText{position:relative;display:inline-block;color:var(--landing-text);user-select:none}
 .landingLogoTextCanvas{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
 @media(prefers-reduced-motion:reduce){.landingLogoTextCanvas{display:none}}
+
+/* Design 与 Code/Work 共享同一套无硬分界线骨架；主题色仍由 Design 令牌控制。 */
+:global([data-ui-version='design']) .body { column-gap: 12px; padding: 10px 12px 12px; background: var(--design-background); }
+/* 业务意图：三栏共同分配空间，优先给预览保留稳定宽度，同时避免固定宽度把整体布局撑开。 */
+:global([data-ui-version='design']) .bodyWithRight { grid-template-columns: minmax(260px, 350px) minmax(480px, 1fr) 1px minmax(280px, var(--design-right-width, 312px)); }
+:global([data-ui-version='design']) .bodyWithoutRight { grid-template-columns: minmax(260px, 350px) minmax(480px, 1fr) 1px 0; }
+:global([data-ui-version='design']) .conversation,
+:global([data-ui-version='design']) .workspace,
+:global([data-ui-version='design']) .rightInspector { overflow: hidden; border: 0; border-radius: 16px; background: var(--design-surface); box-shadow: none; }
+:global([data-ui-version='design']) .conversationHeader,
+:global([data-ui-version='design']) .workspaceHeader,
+:global([data-ui-version='design']) .previewToolbar,
+:global([data-ui-version='design']) .codeToolbar,
+:global([data-ui-version='design']) .statusbar,
+:global([data-ui-version='design']) .inspectorTabs { border-color: transparent; background: var(--design-surface); }
+:global([data-ui-version='design']) .workspaceHeader { border-radius: 16px; overflow: hidden; }
+:global([data-ui-version='design']) .navigator { border-right: 0; box-shadow: none; }
+:global([data-ui-version='design']) .rightResizeHandle { width: 100%; background: transparent; }
+:global([data-ui-version='design']) .rightResizeHandle:hover,
+:global([data-ui-version='design']) .rightResizeHandle:focus-visible { background: transparent; }
+:global([data-ui-version='design']) .inspectorTabs { border-bottom: 0; }
+:global([data-ui-version='design']) .inspectorTabActions { border-left: 0; background: transparent; }
+:global([data-ui-version='design']) .inspectorTab,
+:global([data-ui-version='design']) .inspectorTab:hover,
+:global([data-ui-version='design']) .inspectorTab:focus-visible,
+:global([data-ui-version='design']) .inspectorTabActive,
+:global([data-ui-version='design']) .inspectorTabActive:hover { border-color: transparent; }
+:global([data-ui-version='design']) .inspectorTabActive,
+:global([data-ui-version='design']) .inspectorTabActive:hover,
+:global([data-ui-version='design']) .inspectorTabActive:focus-visible { background: var(--design-accent-soft); color: var(--design-accent); box-shadow: none; }
+:global([data-ui-version='design']) .tabs { border: 0; border-radius: 0; background: transparent; padding: 0; }
+:global([data-ui-version='design']) .tabs button { border: 0; border-radius: 6px; padding-right: 11px; padding-left: 11px; }
+:global([data-ui-version='design']) .tabs .tabActive,
+:global([data-ui-version='design']) .tabs .tabActive:hover { border: 0; background: var(--design-accent-soft); color: var(--design-accent); box-shadow: none; }
+:global([data-ui-version='design']) .tabs button:hover { background: var(--design-surface-hover); }
+:global([data-ui-version='design']) .rightInspector,
+:global([data-ui-version='design']) .inspectorTabs,
+:global([data-ui-version='design']) .inspectorTabActions { border: 0; }
+:global([data-ui-version='design']) .inspectorTab,
+:global([data-ui-version='design']) .inspectorTab:hover,
+:global([data-ui-version='design']) .inspectorTab:focus-visible,
+:global([data-ui-version='design']) .inspectorTabActive,
+:global([data-ui-version='design']) .inspectorTabActive:hover { border: 0; border-radius: 7px; }
+:global([data-ui-version='design']) .inspectorTab { height: 30px; gap: 7px; padding-right: 9px; padding-left: 9px; }
+:global([data-ui-version='design']) .inspectorTabActive,
+:global([data-ui-version='design']) .inspectorTabActive:hover,
+:global([data-ui-version='design']) .inspectorTabActive:focus-visible { background: var(--gp-selection); color: var(--gp-text); box-shadow: none; }
+:global([data-ui-version='design']) .statusbar { border-top-color: transparent; }
+/* 入口输入框不使用背景模糊或顶部色带，避免图标和文字后出现雾面矩形。 */
+:global([data-ui-version='design']) .landingComposer { backdrop-filter: none; }
+:global([data-ui-version='design']) .landingComposer textarea { height: 128px; }
+/* Design 选中态只用浅色表面和文字色区分，避免预览目标、页面与文件出现红色描边。 */
+:global([data-ui-version='design']) .deviceActive,
+:global([data-ui-version='design']) .deviceActive:hover,
+:global([data-ui-version='design']) .navigatorActive,
+:global([data-ui-version='design']) .navigatorActive:hover,
+:global([data-ui-version='design']) .fileTabActive,
+:global([data-ui-version='design']) .fileTabActive:hover { border-color: transparent; box-shadow: none; }
+/* hover 也不重新绘制描边；代码文件页签与页面/预览选中态统一只使用背景色反馈。 */
+:global([data-ui-version='design']) .deviceButton:hover,
+:global([data-ui-version='design']) .navigatorPage:hover,
+:global([data-ui-version='design']) .navigatorFile:hover,
+:global([data-ui-version='design']) .fileTabs button:hover,
+:global([data-ui-version='design']) .fileTabs button:focus-visible,
+:global([data-ui-version='design']) .fileTabs .fileActive,
+:global([data-ui-version='design']) .fileTabs .fileActive:hover,
+:global([data-ui-version='design']) .fileTabs .fileActive:focus-visible { border-color: transparent; box-shadow: none; }
+:global([data-ui-version='design']) .codeToolbar > .fileTabs button,
+:global([data-ui-version='design']) .codeToolbar > .fileTabs button:hover,
+:global([data-ui-version='design']) .codeToolbar > .fileTabs button:focus-visible,
+:global([data-ui-version='design']) .codeToolbar > .fileTabs .fileActive { border: 0; box-shadow: none; }
+
+@media (max-width: 760px) {
+	/* 窄屏仍使用单列工作区，避免桌面端的预览最小宽度覆盖移动端抽屉布局。 */
+	:global([data-ui-version='design']) .bodyWithRight,
+	:global([data-ui-version='design']) .bodyWithoutRight { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 900px) {
+	/* 与 CODE/WORK 的紧凑工作台保持一致：空间不足时优先保留中间工作区。 */
+	:global([data-ui-version='design']) .bodyWithRight,
+	:global([data-ui-version='design']) .bodyWithoutRight { grid-template-columns: 1fr; }
+	:global([data-ui-version='design']) .conversation,
+	:global([data-ui-version='design']) .rightResizeHandle,
+	:global([data-ui-version='design']) .rightResizeHandlePlaceholder,
+	:global([data-ui-version='design']) .rightInspector { display: none; }
+}

@@ -7,7 +7,7 @@
  * 浏览态（过滤/页码/详情）只存组件内存，切换任务回来重新拉第一页，不做持久化。
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Bug, ChevronLeft, ChevronRight, ClipboardList, Loader2, Network, RefreshCw, Search, Send, X } from 'lucide-react';
+import { ArrowClockwise, ArrowLeft, Bug, CaretLeft, CaretRight, CircleNotch, ClipboardText, MagnifyingGlass, Network, PaperPlaneTilt, X } from '@phosphor-icons/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { rpc } from '@/src/rpc/bridge';
@@ -106,10 +106,10 @@ function WorkItemDetailPane({ bundle, loading, onBack, onSend }: { bundle: WorkI
 	];
 	return <div className={styles.collabDetail}>
 		<div className={styles.collabDetailToolbar}>
-			<Hint content="返回列表"><Button type="button" variant="ghost" size="icon-sm" onClick={onBack} aria-label="返回工作项列表"><ArrowLeft size={15} /></Button></Hint>
+			<Hint content="返回列表"><Button type="button" variant="ghost" size="icon-sm" onClick={onBack} aria-label="返回工作项列表"><ArrowLeft weight="bold" size={15} /></Button></Hint>
 			<span className={styles.collabDetailCode}>{detail.workItemCode}</span>
 			<Button type="button" variant="default" size="sm" className={styles.collabDetailSend} onClick={() => onSend(detail)} disabled={loading}>
-				<Send size={13} aria-hidden="true" /><span>发送到对话</span>
+				<PaperPlaneTilt weight="regular" size={13} aria-hidden="true" /><span>发送到对话</span>
 			</Button>
 		</div>
 		<h3 className={styles.collabDetailTitle}>{detail.name}</h3>
@@ -213,11 +213,11 @@ export function WorkCollaborationPanel({ refreshKey, onSendToConversation }: Wor
 				</DropdownMenuContent>
 			</DropdownMenu>
 			<div className={styles.collabSearch}>
-				<Search size={13} aria-hidden="true" />
+				<MagnifyingGlass weight="regular" size={13} aria-hidden="true" />
 				<input value={keywordInput} onChange={(event) => setKeywordInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { event.preventDefault(); submitKeyword(); } }} placeholder="搜索工作项…" aria-label="搜索工作项" />
-				{keywordInput ? <button type="button" className={styles.collabSearchClear} onClick={() => { setKeywordInput(''); setKeyword(''); }} aria-label="清除搜索"><X size={12} /></button> : null}
+				{keywordInput ? <button type="button" className={styles.collabSearchClear} onClick={() => { setKeywordInput(''); setKeyword(''); }} aria-label="清除搜索"><X weight="bold" size={12} /></button> : null}
 			</div>
-			<Hint content="刷新当前页"><Button type="button" variant="ghost" size="icon-sm" onClick={() => { if (page) void loadPage(page.page); }} disabled={loading} aria-label="刷新工作项列表"><RefreshCw size={14} /></Button></Hint>
+			<Hint content="刷新当前页"><Button type="button" variant="ghost" size="icon-sm" onClick={() => { if (page) void loadPage(page.page); }} disabled={loading} aria-label="刷新工作项列表"><ArrowClockwise weight="regular" size={14} /></Button></Hint>
 		</div>
 		<div className={styles.collabChips} role="group" aria-label="按状态筛选">
 			<button type="button" className={`${styles.collabChip} ${status == null ? styles.collabChipActive : ''}`} onClick={() => setStatus(null)}>全部</button>
@@ -225,22 +225,22 @@ export function WorkCollaborationPanel({ refreshKey, onSendToConversation }: Wor
 		</div>
 		<div className={styles.collabChips} role="group" aria-label="按类型筛选">
 			{WORK_ITEM_TYPES.map((entry) => <button key={entry} type="button" className={`${styles.collabChip} ${workItemType === entry ? styles.collabChipActive : ''}`} onClick={() => setWorkItemType(workItemType === entry ? null : entry)}>
-				{entry === '缺陷' ? <Bug size={11} aria-hidden="true" /> : <ClipboardList size={11} aria-hidden="true" />}{entry}
+				{entry === '缺陷' ? <Bug weight="regular" size={11} aria-hidden="true" /> : <ClipboardText weight="regular" size={11} aria-hidden="true" />}{entry}
 			</button>)}
 		</div>
 		<div className={styles.collabListHeader}>
-			{loading ? <Loader2 className="animate-spin" size={13} aria-hidden="true" /> : null}
+			{loading ? <CircleNotch weight="bold" className="animate-spin" size={13} aria-hidden="true" /> : null}
 			<span>{page ? `共 ${page.total} 项 · 第 ${page.page}/${Math.max(page.totalPages, 1)} 页` : '加载中…'}</span>
 		</div>
 		{error ? <div className={styles.collabError} role="alert">{error}</div> : null}
 		<ScrollArea className={styles.collabScroll} fitContent>
 			{page && page.records.length > 0 ? <div className={styles.collabList} role="list">
 				{page.records.map((item) => <WorkItemRow key={item.id} item={item} onOpen={(target) => void openDetail(target)} />)}
-			</div> : !loading && !error ? <div className={styles.collabEmpty}><Network size={20} aria-hidden="true" /><span>没有匹配的工作项</span><small>调整项目、状态或关键词后再试。</small></div> : null}
+			</div> : !loading && !error ? <div className={styles.collabEmpty}><Network weight="regular" size={20} aria-hidden="true" /><span>没有匹配的工作项</span><small>调整项目、状态或关键词后再试。</small></div> : null}
 			{page && page.totalPages > 1 ? <div className={styles.collabPagination}>
-				<Hint content="上一页"><Button type="button" variant="outline" size="icon-sm" onClick={() => void loadPage(Math.max(page.page - 1, 1))} disabled={loading || page.page <= 1} aria-label="上一页"><ChevronLeft size={14} /></Button></Hint>
+				<Hint content="上一页"><Button type="button" variant="outline" size="icon-sm" onClick={() => void loadPage(Math.max(page.page - 1, 1))} disabled={loading || page.page <= 1} aria-label="上一页"><CaretLeft weight="bold" size={14} /></Button></Hint>
 				<span>{page.page} / {page.totalPages}</span>
-				<Hint content="下一页"><Button type="button" variant="outline" size="icon-sm" onClick={() => void loadPage(Math.min(page.page + 1, page.totalPages))} disabled={loading || page.page >= page.totalPages} aria-label="下一页"><ChevronRight size={14} /></Button></Hint>
+				<Hint content="下一页"><Button type="button" variant="outline" size="icon-sm" onClick={() => void loadPage(Math.min(page.page + 1, page.totalPages))} disabled={loading || page.page >= page.totalPages} aria-label="下一页"><CaretRight weight="bold" size={14} /></Button></Hint>
 			</div> : null}
 		</ScrollArea>
 	</div>;

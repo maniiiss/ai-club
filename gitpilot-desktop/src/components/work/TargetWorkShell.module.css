@@ -77,7 +77,7 @@
 
 /* ======================== 工作项协同浏览面板 ======================== */
 /* 布局骨架：面板整体为纵向 flex，滚动区独立，列表行紧凑双行结构适配窄侧栏。 */
-.collabRoot { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
+.collabRoot { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; font-family: var(--font-sans); }
 .collabScroll { min-height: 0; flex: 1; padding: 7px 7px 12px; }
 .collabToolbar { display: flex; min-width: 0; flex: 0 0 auto; align-items: center; gap: 5px; padding: 8px 8px 5px; }
 .collabProjectTrigger { max-width: 116px; min-width: 0; overflow: hidden; justify-content: flex-start; text-overflow: ellipsis; white-space: nowrap; font-size: calc(10px * var(--desktop-font-scale)); }
@@ -98,7 +98,7 @@
 .collabItem:hover { border-color: var(--gp-border); background: var(--gp-surface-hover); }
 .collabItem:focus-visible { border-color: var(--gp-border-strong); border-left-color: var(--gp-accent); outline: none; }
 .collabItemTitle { display: flex; min-width: 0; align-items: center; gap: 5px; }
-.collabItemCode { flex: 0 0 auto; color: var(--gp-text-muted); font: calc(9px * var(--desktop-font-scale)) var(--font-mono); }
+.collabItemCode { flex: 0 0 auto; color: var(--gp-text-muted); font: calc(9px * var(--desktop-font-scale)) var(--font-sans); }
 .collabItemType { display: inline-flex; height: 15px; flex: 0 0 auto; align-items: center; border: 1px solid color-mix(in srgb, var(--gp-accent) 28%, var(--gp-border)); border-radius: 4px; background: color-mix(in srgb, var(--gp-accent-soft) 72%, var(--gp-surface)); color: var(--gp-accent); font-size: calc(9px * var(--desktop-font-scale)); padding: 0 4px; }
 .collabItemName { min-width: 0; overflow: hidden; color: var(--gp-text); font-size: calc(11px * var(--desktop-font-scale)); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .collabItemMeta { display: flex; min-width: 0; align-items: center; gap: 6px; overflow: hidden; color: var(--gp-text-muted); font-size: calc(9px * var(--desktop-font-scale)); white-space: nowrap; }
@@ -116,7 +116,7 @@
 /* 覆盖式详情视图 */
 .collabDetail { display: flex; min-width: 0; flex-direction: column; gap: 10px; padding: 4px 3px 8px; }
 .collabDetailToolbar { display: flex; min-width: 0; align-items: center; gap: 7px; }
-.collabDetailCode { min-width: 0; flex: 1; overflow: hidden; color: var(--gp-text-muted); font: calc(10px * var(--desktop-font-scale)) var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.collabDetailCode { min-width: 0; flex: 1; overflow: hidden; color: var(--gp-text-muted); font: calc(10px * var(--desktop-font-scale)) var(--font-sans); text-overflow: ellipsis; white-space: nowrap; }
 .collabDetailSend { flex: 0 0 auto; gap: 4px; font-size: calc(10px * var(--desktop-font-scale)); }
 .collabDetailTitle { margin: 0; color: var(--gp-text); font: 600 calc(13px * var(--desktop-font-scale))/1.5 var(--font-sans); }
 .collabDetailFields { display: grid; min-width: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 10px; margin: 0; }
@@ -140,3 +140,25 @@
 .collabPendingChip strong { min-width: 0; overflow: hidden; color: var(--gp-accent); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .collabPendingChip button { display: inline-grid; width: 17px; height: 17px; flex: 0 0 17px; place-items: center; border: 0; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; }
 .collabPendingChip button:hover { background: var(--gp-danger); color: var(--primary-foreground); }
+
+/* Work 沿用 Code 的轻量工作台层次：外部留白负责分栏，面板本身用圆角表面承载内容。 */
+:global([data-ui-version='work']) .conversation { border-radius: 16px; background: var(--gp-surface); }
+:global([data-ui-version='work']) .fileTabs { border-bottom: 0; background: var(--gp-surface); }
+:global([data-ui-version='work']) .fileTabActions { border-left: 0; background: transparent; }
+/* 功能页签用选中背景和文字色区分，不再用描边或顶部色带制造分界。 */
+:global([data-ui-version='work']) .fileTab,
+:global([data-ui-version='work']) .fileTab:hover,
+:global([data-ui-version='work']) .fileTab:focus-visible,
+:global([data-ui-version='work']) .fileTabActive,
+:global([data-ui-version='work']) .fileTabActive:hover { border-color: transparent; }
+:global([data-ui-version='work']) .fileTab { height: 30px; gap: 7px; border: 0; border-radius: 7px; padding-right: 9px; padding-left: 9px; font-family: var(--font-sans); }
+:global([data-ui-version='work']) .fileTabActive,
+:global([data-ui-version='work']) .fileTabActive:hover,
+:global([data-ui-version='work']) .fileTabActive:focus-visible { background: var(--gp-selection); color: var(--gp-text); box-shadow: none; }
+/* 文件列表保留 hover/active 的可见反馈，但去除连续横线式外框。 */
+:global([data-ui-version='work']) .fileRow:hover,
+:global([data-ui-version='work']) .fileRow:focus-within { border-color: transparent; box-shadow: none; }
+:global([data-ui-version='work']) .fileRowActive,
+:global([data-ui-version='work']) .fileRowActive:hover,
+:global([data-ui-version='work']) .fileRowActive:focus-within { border-color: transparent; border-left-color: var(--gp-accent); box-shadow: none; }
+:global([data-ui-version='work']) .statusbar { border-top-color: transparent; background: var(--gp-background); }

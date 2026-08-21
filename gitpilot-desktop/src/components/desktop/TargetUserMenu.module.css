@@ -16,7 +16,7 @@
 .identity b, .identity small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .identity b { color: var(--gp-text); font-size: calc(12px * var(--desktop-font-scale)); font-weight: 600; }
 .identity small { margin-top: 2px; color: var(--gp-text-muted); font-family: var(--font-sans); font-size: calc(10px * var(--desktop-font-scale)); }
-.credits { display: flex; align-items: center; gap: 7px; margin: 0 4px 6px; border: 1px solid var(--gp-border); border-radius: var(--radius-sm); background: var(--gp-surface-hover); padding: 8px 9px; color: var(--gp-text-secondary); font-size: calc(11px * var(--desktop-font-scale)); }
+.credits { display: flex; align-items: center; gap: 7px; margin: 0 4px 6px; border: 0; border-radius: 0; background: transparent; padding: 8px 9px; color: var(--gp-text-secondary); font-size: calc(11px * var(--desktop-font-scale)); }
 .credits b { margin-left: auto; color: var(--gp-text); font-family: var(--font-sans); font-size: calc(13px * var(--desktop-font-scale)); }
 .themeChoices { display: grid; grid-template-columns: repeat(6, 28px); gap: 6px; padding: 4px 8px 8px; }
 .themeRadioItem { width: 28px; height: 28px; justify-content: center; border: 1px solid transparent; border-radius: 50%; padding: 0; }

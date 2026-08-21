@@ -9,7 +9,7 @@
  *   （图片走 prompt.images，文档文本以 <file> 块追加；UI 仅展示 chip 与缩略图）
  */
 import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Bug, ClipboardList, CornerUpRight, FileText, Image as ImageIcon, Loader2, Pencil, Plus, Send, Square, Trash2, X } from 'lucide-react';
+import { ArrowBendUpRight, Bug, CircleNotch, ClipboardText, FileText, Image as ImageIcon, NotePencil, PaperPlaneTilt, Plus, Square, Trash, X } from '@phosphor-icons/react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import Document from '@tiptap/extension-document';
 import HardBreak from '@tiptap/extension-hard-break';
@@ -582,13 +582,13 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 								</div>
 								<div className={styles.guidanceItemActions}>
 									<Hint content="再次引导"><Button type="button" variant="secondary" size="sm" className={styles.guidanceAction} onClick={() => void replayGuidance(item, 'steer')} disabled={!isStreaming || submitting || isStopping || isFlushingGuidance || item.status === 'submitting' || item.status === 'applying'}>
-										<CornerUpRight size={13} /> 引导
+										<ArrowBendUpRight weight="regular" size={13} /> 引导
 									</Button></Hint>
 									<Hint content="编辑后发送"><Button type="button" variant="ghost" size="icon-sm" className={styles.guidanceIconAction} onClick={() => editGuidance(item)} aria-label="编辑后发送">
-										<Pencil size={14} />
+										<NotePencil weight="regular" size={14} />
 									</Button></Hint>
 									<Hint content="删除记录"><Button type="button" variant="ghost" size="icon-sm" className={styles.guidanceIconAction} onClick={() => removeGuidance(item.id)} aria-label="删除记录" disabled={item.status === 'submitting' || item.status === 'applying'}>
-										<Trash2 size={14} />
+										<Trash weight="regular" size={14} />
 									</Button></Hint>
 								</div>
 							</div>
@@ -600,26 +600,26 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 						{attachments.map((a, idx) => (
 							a.kind === 'work-item' ? (
 								<Hint key={`${a.name}-${idx}`} content={a.workItem ? `${a.workItem.workItemCode} · ${a.name}` : a.name}><div className={`${styles.attachment} ${styles.workItemAttachment} ${a.workItem?.workItemType === '缺陷' ? styles.workItemAttachmentDefect : ''}`}>
-									{a.workItem?.workItemType === '缺陷' ? <Bug size={13} /> : <ClipboardList size={13} />}
+									{a.workItem?.workItemType === '缺陷' ? <Bug weight="regular" size={13} /> : <ClipboardText weight="regular" size={13} />}
 									<span className={styles.attachmentName}>{a.name}</span>
 									<Hint content="移除"><Button type="button" variant="ghost" size="icon-sm" className={styles.attachmentRemove} onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))} aria-label="移除工作项">
-										<X size={12} />
+										<X weight="bold" size={12} />
 									</Button></Hint>
 								</div></Hint>
 							) : (
 								<Hint key={`${a.name}-${idx}`} content={a.warnings?.join('\n') || a.name}><div className={styles.attachment}>
-									{a.kind === 'image' ? <ImageIcon size={13} /> : <FileText size={13} />}
+									{a.kind === 'image' ? <ImageIcon weight="regular" size={13} /> : <FileText weight="regular" size={13} />}
 									<span className={styles.attachmentName}>{a.name}</span>
 									<span className={styles.attachmentSize}>{formatSize(a.sizeBytes)}</span>
 									<Hint content="移除"><Button type="button" variant="ghost" size="icon-sm" className={styles.attachmentRemove} onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))} aria-label={`移除附件 ${a.name}`}>
-										<X size={12} />
+										<X weight="bold" size={12} />
 									</Button></Hint>
 								</div></Hint>
 							)
 						))}
 						{preparing && (
 							<div className={`${styles.attachment} ${styles.loading}`}>
-								<Loader2 size={13} className={styles.spin} />
+								<CircleNotch weight="bold" size={13} className={styles.spin} />
 								<span>解析中…</span>
 							</div>
 						)}
@@ -627,7 +627,7 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 							<Hint content={prepareError}><div className={`${styles.attachment} ${styles.error}`}>
 								<span>附件解析失败：{prepareError}</span>
 								<Button type="button" variant="ghost" size="icon-sm" className={styles.attachmentRemove} onClick={() => setPrepareError(null)}>
-									<X size={12} />
+									<X weight="bold" size={12} />
 								</Button>
 							</div></Hint>
 						)}
@@ -651,7 +651,7 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 							aria-expanded={addMenuOpen}
 							disabled={isSessionLoading}
 						>
-							<Plus size={17} />
+								<Plus weight="bold" size={17} />
 						</Button></Hint>
 						<ComposerAddMenu
 							open={addMenuOpen && !hasPendingConfirm && !hasPendingActionSelect}
@@ -675,7 +675,7 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 								className={styles.send}
 								aria-label="发送引导"
 							>
-								<Send size={15} />
+								<PaperPlaneTilt weight="regular" size={15} />
 							</Button></Hint>
 						) : isStreaming || isStopping ? (
 							<Hint content="停止当前任务并取消未执行引导"><Button
@@ -687,7 +687,7 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 								className={`${styles.send} ${styles.stop}`}
 								aria-label="停止当前任务并取消未执行引导"
 							>
-								<Square size={15} />
+								<Square weight="bold" size={15} />
 							</Button></Hint>
 						) : (
 							<Hint content="发送"><Button
@@ -698,7 +698,7 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 								disabled={!canSend || isSessionLoading}
 								className={styles.send}
 							>
-								<Send size={16} />
+								<PaperPlaneTilt weight="regular" size={16} />
 							</Button></Hint>
 						)}
 					</div>

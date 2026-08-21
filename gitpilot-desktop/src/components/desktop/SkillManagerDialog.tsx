@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Check, CirclePower, RefreshCw, Search, Sparkles } from 'lucide-react';
+import { ArrowClockwise as RefreshCw, Check, MagnifyingGlass as Search, Power as CirclePower, Sparkle as Sparkles, Warning as AlertTriangle } from '@phosphor-icons/react';
 import { rpc } from '@/src/rpc/bridge';
 import type { ManagedSkill, SkillMode } from '@/src/rpc/types';
 import { Button } from '@/src/components/ui/button';

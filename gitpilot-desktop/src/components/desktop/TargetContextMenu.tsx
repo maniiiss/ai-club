@@ -1,6 +1,6 @@
 /** 目标右键菜单：编辑区、工作目录与任务使用统一的桌面菜单语义。 */
 import { useState, type ReactNode } from 'react';
-import { CheckSquare, Clipboard, Copy, FilePlus2, FolderOpen, Scissors, Trash2 } from 'lucide-react';
+import { CheckSquare, ClipboardText as Clipboard, Copy, FilePlus as FilePlus2, FolderOpen, Scissors, Trash as Trash2 } from '@phosphor-icons/react';
 import { invoke } from '@tauri-apps/api/core';
 import { useSessionStore } from '@/src/store/session';
 import { useWorkStore } from '@/src/store/work';

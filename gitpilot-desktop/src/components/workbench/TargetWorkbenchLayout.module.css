@@ -13,6 +13,31 @@
 .resizeHandle::before { position: absolute; inset: 0 -5px; content: ''; }
 .resizeHandle > span { display: none; }
 .resizeHandle:hover, .resizeHandle:focus-visible { background: var(--gp-border); }
+
+/* CODE/WORK 工作区用留白和卡片边界建立层次，避免三列之间出现连续的硬分割线。 */
+:global([data-ui-version='target']) .panels,
+:global([data-ui-version='work']) .panels { background: var(--gp-background); }
+:global([data-ui-version='target']) .centerPane,
+:global([data-ui-version='target']) .rightPane[data-visible='true'],
+:global([data-ui-version='work']) .centerPane,
+:global([data-ui-version='work']) .rightPane[data-visible='true'] { margin-top: 10px; margin-bottom: 12px; border-radius: 16px; background: var(--gp-surface); }
+:global([data-ui-version='target']) .rightPane[data-visible='true'],
+:global([data-ui-version='work']) .rightPane[data-visible='true'] { margin-right: 12px; }
+:global([data-ui-version='target']) .resizeHandle,
+:global([data-ui-version='work']) .resizeHandle { width: 100%; background: transparent; }
+:global([data-ui-version='target']) .resizeHandle:hover,
+:global([data-ui-version='target']) .resizeHandle:focus-visible,
+:global([data-ui-version='work']) .resizeHandle:hover,
+:global([data-ui-version='work']) .resizeHandle:focus-visible { background: transparent; }
+:global([data-ui-version='target']) .resizeHandle::after,
+:global([data-ui-version='work']) .resizeHandle::after { display: none; }
+/* 两种模式的滚动条只保留滑块，移除 Radix 轨道自带的边框和内边距，避免滚动时出现细竖线。 */
+:global([data-ui-version='target']) .panels [data-orientation='vertical'],
+:global([data-ui-version='target']) .panels [data-orientation='horizontal'],
+:global([data-ui-version='work']) .panels [data-orientation='vertical'],
+:global([data-ui-version='work']) .panels [data-orientation='horizontal'] { z-index: 8; border: 0; padding: 0; background: transparent; }
+:global([data-ui-version='target']) .statusbar,
+:global([data-ui-version='work']) .statusbar { border-top-color: transparent; background: var(--gp-background); }
 .bottom { display: flex; height: 0; min-height: 0; flex-direction: column; overflow: hidden; border-top: 1px solid transparent; background: var(--gp-surface); opacity: 0; pointer-events: none; transform: translateY(8px); visibility: hidden; transition: height 210ms cubic-bezier(0.22, 0.8, 0.25, 1), opacity 130ms ease, transform 210ms ease, border-color 170ms ease, visibility 0s linear 210ms; }
 .bottomOpen { border-top-color: var(--gp-border); opacity: 1; pointer-events: auto; transform: translateY(0); visibility: visible; transition-delay: 0s; }
 /* 拖动过程中关闭高度过渡，让面板实时跟随鼠标；结束后恢复动画。 */

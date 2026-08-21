@@ -4,7 +4,7 @@
  * 业务意图：把当前会话的审批策略放在输入框左下角，用户无需打开设置页就能
  * 看见当前权限并快速切换；弹层只承载访问权限选择，沙箱执行模式仍由完整设置维护。
  */
-import { Check, Hand, Shield, ShieldAlert, type LucideIcon } from 'lucide-react';
+import { Check, Hand, Shield, ShieldWarning, type Icon } from '@phosphor-icons/react';
 import { Button } from '@/src/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/src/components/ui/popover';
 import { Hint } from '@/src/components/ui/tooltip';
@@ -16,7 +16,7 @@ export const ACCESS_OPTIONS: ReadonlyArray<{
 	value: SessionApprovalMode;
 	label: string;
 	description: string;
-	Icon: LucideIcon;
+	Icon: Icon;
 }> = [
 	{
 		value: 'per_request',
@@ -28,7 +28,7 @@ export const ACCESS_OPTIONS: ReadonlyArray<{
 		value: 'full_access',
 		label: '完全访问权限',
 		description: '本会话内需审批的操作直接放行；危险命令仍受安全策略限制。',
-		Icon: ShieldAlert,
+		Icon: ShieldWarning,
 	},
 ];
 
@@ -63,7 +63,7 @@ export function SecurityAccessMenu() {
 						className={`${styles.trigger} ${approvalMode === 'full_access' ? styles.triggerFullAccess : ''}`}
 						aria-label={`审批权限：${currentApprovalLabel}`}
 					>
-						<Shield size={15} aria-hidden="true" />
+						<Shield weight="regular" size={15} aria-hidden="true" />
 						<span>{currentApprovalLabel}</span>
 					</Button>
 				</PopoverTrigger>
@@ -72,7 +72,7 @@ export function SecurityAccessMenu() {
 				<div className={styles.panel}>
 					<div className={styles.header}>
 						<strong className={styles.title}>应如何批准 GitPilot 操作？</strong>
-						<span className={styles.headerIcon} aria-hidden="true"><Shield size={14} /></span>
+					<span className={styles.headerIcon} aria-hidden="true"><Shield weight="regular" size={14} /></span>
 					</div>
 					<div className={styles.modeList} role="radiogroup" aria-label="访问权限">
 						{ACCESS_OPTIONS.map(({ value, label, description, Icon }) => {
@@ -86,12 +86,12 @@ export function SecurityAccessMenu() {
 									className={`${styles.modeOption} ${active ? styles.modeOptionActive : ''} ${value === 'full_access' ? styles.modeOptionFullAccess : ''}`}
 									onClick={() => void changeMode(value)}
 								>
-									<span className={styles.optionIcon} aria-hidden="true"><Icon size={17} /></span>
+									<span className={styles.optionIcon} aria-hidden="true"><Icon weight="regular" size={17} /></span>
 									<span className={styles.optionCopy}>
 										<strong>{label}</strong>
 										<span>{description}</span>
 									</span>
-									{active && <Check size={16} className={styles.check} aria-hidden="true" />}
+									{active && <Check weight="bold" size={16} className={styles.check} aria-hidden="true" />}
 								</button>
 							);
 						})}

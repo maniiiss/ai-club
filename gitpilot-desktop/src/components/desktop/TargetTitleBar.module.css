@@ -4,11 +4,14 @@
 	height: 38px;
 	min-height: 38px;
 	align-items: center;
-	border-bottom: 1px solid var(--gp-border);
+	border-bottom: 0;
 	background: linear-gradient(90deg, var(--gp-panel-deep) 0%, var(--gp-surface-raised) 48%, var(--gp-panel-surface) 100%);
 	color: var(--gp-text);
 	user-select: none;
 }
+
+/* 三种模式共用无硬分界线的标题栏，模式选中态通过背景色区分。 */
+.titlebar::after { display: none; }
 
 .titlebar::after {
 	position: absolute;
@@ -52,7 +55,7 @@
 	letter-spacing: 0.14em;
 }
 
-.modeSwitcher { display: flex; height: 100%; align-items: center; gap: 2px; border-left: 1px solid var(--gp-border); padding-left: 7px; }
+.modeSwitcher { display: flex; height: 100%; align-items: center; gap: 2px; border-left: 0; padding-left: 7px; }
 .mode,
 .modeActive { display: inline-flex; height: 24px; align-items: center; gap: 4px; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; padding: 0 7px; color: var(--gp-text-muted); font-family: var(--font-sans); font-size: calc(9px * var(--desktop-font-scale)); letter-spacing: .12em; cursor: pointer; transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, transform 160ms ease; }
 .mode:hover { color: var(--gp-text); background: var(--gp-accent-soft); }
@@ -70,7 +73,7 @@
 
 .actions > button { width: 32px; height: 30px; border: 1px solid transparent; color: var(--gp-text-muted); }
 .actions > button:hover { border-color: var(--gp-border-strong); background: var(--gp-accent-soft); color: var(--gp-accent); }
-.divider { width: 1px; height: 16px; margin: 0 4px; background: var(--gp-border); }
+.divider { width: 1px; height: 16px; margin: 0 4px; background: transparent; }
 .close:hover { background: var(--gp-danger); color: var(--primary-foreground); }
 
 @media (max-width: 760px) {

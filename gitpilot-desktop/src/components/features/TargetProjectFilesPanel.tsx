@@ -1,4 +1,4 @@
-import { Check, ChevronRight, Copy, File, FileCode2, FileJson, FileText, Folder, FolderOpen, Loader2, Paperclip, RefreshCw, Search, TriangleAlert, X } from 'lucide-react';
+import { ArrowClockwise, CaretRight, Check, CircleNotch, Copy, File, FileCode, FileText, Folder, FolderOpen, MagnifyingGlass, Paperclip, WarningCircle, X } from '@phosphor-icons/react';
 import { useEffect, useMemo, useRef, useState, type DragEvent } from 'react';
 import { Button } from '@/src/components/ui/button';
 import { Hint } from '@/src/components/ui/tooltip';
@@ -14,12 +14,12 @@ function fileExtension(name: string): string {
 }
 
 function FileTypeIcon({ node }: { node: ProjectFileTreeNode }) {
-	if (node.kind === 'directory') return node.children.length > 0 ? <Folder size={14} /> : <FolderOpen size={14} />;
+	if (node.kind === 'directory') return node.children.length > 0 ? <Folder weight="regular" size={15} /> : <FolderOpen weight="regular" size={15} />;
 	const extension = fileExtension(node.name);
-	if (['ts', 'tsx', 'js', 'jsx', 'css', 'scss', 'html', 'vue', 'py', 'java', 'go', 'rs', 'sql', 'sh'].includes(extension)) return <FileCode2 size={14} />;
-	if (['json', 'jsonc', 'yaml', 'yml', 'toml'].includes(extension)) return <FileJson size={14} />;
-	if (['md', 'txt', 'log', 'csv'].includes(extension)) return <FileText size={14} />;
-	return <File size={14} />;
+	if (['ts', 'tsx', 'js', 'jsx', 'css', 'scss', 'html', 'vue', 'py', 'java', 'go', 'rs', 'sql', 'sh'].includes(extension)) return <FileCode weight="regular" size={15} />;
+	if (['json', 'jsonc', 'yaml', 'yml', 'toml'].includes(extension)) return <FileCode weight="regular" size={15} />;
+	if (['md', 'txt', 'log', 'csv'].includes(extension)) return <FileText weight="regular" size={15} />;
+	return <File weight="regular" size={15} />;
 }
 
 function joinWorkspacePath(workspacePath: string, relativePath: string): string {
@@ -57,11 +57,11 @@ function FileTree({ nodes, depth, expanded, selected, onToggle, onSelect, onAdd,
 					onDragStart={(event) => onDragStart(node, event)}
 				>
 					<Button type="button" variant="unstyled" className={styles.treeRowButton} onClick={(event) => onSelect(node, event)} aria-label={isDirectory ? `${isExpanded ? '收起' : '展开'} ${node.path}` : `选择 ${node.path}`}>
-						<span className={styles.treeDisclosure}>{isDirectory ? <ChevronRight size={13} className={isExpanded ? styles.treeDisclosureExpanded : ''} /> : null}</span>
+						<span className={styles.treeDisclosure}>{isDirectory ? <CaretRight weight="bold" size={14} className={isExpanded ? styles.treeDisclosureExpanded : ''} /> : null}</span>
 						<span className={`${styles.treeIcon} ${isDirectory ? styles.treeFolderIcon : ''}`}><FileTypeIcon node={node} /></span>
 						<span className={styles.treeName}>{node.name}</span>
 					</Button>
-					{!isDirectory && <Hint content="添加到对话框"><Button type="button" variant="ghost" size="icon-sm" className={styles.treeAction} onClick={(event) => { event.stopPropagation(); onAdd(node); }} aria-label={`添加 ${node.path} 到对话框`}><Paperclip size={12} /></Button></Hint>}
+					{!isDirectory && <Hint content="添加到对话框"><Button type="button" variant="ghost" size="icon-sm" className={styles.treeAction} onClick={(event) => { event.stopPropagation(); onAdd(node); }} aria-label={`添加 ${node.path} 到对话框`}><Paperclip weight="regular" size={13} /></Button></Hint>}
 				</div>
 				{isDirectory && isExpanded && node.children.length > 0 && <FileTree nodes={node.children} depth={depth + 1} expanded={expanded} selected={selected} onToggle={onToggle} onSelect={onSelect} onAdd={onAdd} onDragStart={onDragStart} />}
 			</div>;
@@ -74,10 +74,8 @@ export function TargetProjectFilesPanel() {
 	const workspacePath = useSessionStore((state) => state.currentProjectPath);
 	const sessionPath = useSessionStore((state) => state.selectedSessionPath ?? state.sessionState?.sessionFile ?? '__new__');
 	const entries = useProjectFilesStore((state) => state.entries);
-	const rootPath = useProjectFilesStore((state) => state.rootPath);
 	const loading = useProjectFilesStore((state) => state.loading);
 	const error = useProjectFilesStore((state) => state.error);
-	const truncated = useProjectFilesStore((state) => state.truncated);
 	const refresh = useProjectFilesStore((state) => state.refresh);
 	const queueProjectFileAttachments = useWorkbenchStore((state) => state.queueProjectFileAttachments);
 	const [query, setQuery] = useState('');
@@ -177,15 +175,14 @@ export function TargetProjectFilesPanel() {
 
 	return <section className={styles.panel} aria-label="工作空间文件">
 	<header className={styles.header}>
-		<div className={styles.headerTitle}><FolderOpen size={15} /><span>工作空间文件</span>{entries.length > 0 && <small>{entries.filter((entry) => entry.kind === 'file').length}</small>}</div>
-		<div className={styles.headerActions}><Hint content="刷新文件树"><Button type="button" variant="ghost" size="icon-sm" onClick={() => void refresh(workspacePath)} disabled={loading || !workspacePath} aria-label="刷新工作空间文件"><RefreshCw size={14} className={loading ? styles.spin : ''} /></Button></Hint></div>
+		<div className={styles.headerTitle}><FolderOpen weight="regular" size={16} /><span>工作空间文件</span>{entries.length > 0 && <small>{entries.filter((entry) => entry.kind === 'file').length}</small>}</div>
+		<div className={styles.headerActions}><Hint content="刷新文件树"><Button type="button" variant="ghost" size="icon-sm" onClick={() => void refresh(workspacePath)} disabled={loading || !workspacePath} aria-label="刷新工作空间文件"><ArrowClockwise weight="regular" size={16} className={loading ? styles.spin : ''} /></Button></Hint></div>
 	</header>
 	<div className={styles.toolbar}>
-		<div className={styles.search}><Search size={13} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索文件" aria-label="搜索工作空间文件" /><button type="button" onClick={() => setQuery('')} aria-label="清空搜索" className={styles.clearSearch} hidden={!query}><X size={12} /></button></div>
+		<div className={styles.search}><MagnifyingGlass weight="regular" size={15} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索文件" aria-label="搜索工作空间文件" /><button type="button" onClick={() => setQuery('')} aria-label="清空搜索" className={styles.clearSearch} hidden={!query}><X weight="bold" size={13} /></button></div>
 	</div>
-		{selectedFiles.length > 0 && <div className={styles.selectionBar}><span>已选 {selectedFiles.length} 个文件</span><div><Button type="button" size="sm" variant="secondary" onClick={addSelected}>添加到对话框</Button><Hint content="复制相对路径"><Button type="button" size="icon-sm" variant="ghost" onClick={() => void copySelectedPath()} aria-label="复制相对路径">{copied ? <Check size={13} /> : <Copy size={13} />}</Button></Hint></div></div>}
+		{selectedFiles.length > 0 && <div className={styles.selectionBar}><span>已选 {selectedFiles.length} 个文件</span><div><Button type="button" size="sm" variant="secondary" onClick={addSelected}>添加到对话框</Button><Hint content="复制相对路径"><Button type="button" size="icon-sm" variant="ghost" onClick={() => void copySelectedPath()} aria-label="复制相对路径">{copied ? <Check weight="bold" size={14} /> : <Copy weight="regular" size={14} />}</Button></Hint></div></div>}
 		{notice && <div className={styles.notice} role="status">{notice}</div>}
-	{!workspacePath ? <div className={styles.empty}><FolderOpen size={20} /><strong>尚未选择工作空间</strong><span>选择 Code 工作空间后，这里会显示只读文件树。</span></div> : loading && entries.length === 0 ? <div className={styles.empty}><Loader2 size={19} className={styles.spin} /><span>正在扫描工作空间文件…</span></div> : error ? <div className={styles.empty}><TriangleAlert size={20} /><strong>工作空间文件加载失败</strong><span>{error}</span><Button type="button" size="sm" variant="secondary" onClick={() => void refresh(workspacePath)}>重试</Button></div> : entries.length === 0 ? <div className={styles.empty}><File size={20} /><strong>工作空间中暂无可展示文件</strong><span>忽略目录、空目录和符号链接不会出现在列表中。</span></div> : filteredTree.length === 0 ? <div className={styles.empty}><Search size={20} /><strong>没有匹配文件</strong><span>尝试搜索文件名或相对路径。</span></div> : <ScrollArea className={styles.treeScroll} fitContent><div className={styles.tree} role="tree" aria-label="工作空间文件树"><FileTree nodes={filteredTree} depth={0} expanded={expanded} selected={selected} onToggle={onToggle} onSelect={selectNode} onAdd={(node) => enqueueFiles([node])} onDragStart={onDragStart} /></div></ScrollArea>}
-	{rootPath && <footer className={styles.footer}><span title={rootPath}>{rootPath}</span>{truncated && <Hint content="工作空间较大，文件树已达到扫描上限"><span className={styles.truncated}>仅显示部分文件</span></Hint>}</footer>}
+	{!workspacePath ? <div className={styles.empty}><FolderOpen weight="regular" size={21} /><strong>尚未选择工作空间</strong><span>选择 Code 工作空间后，这里会显示只读文件树。</span></div> : loading && entries.length === 0 ? <div className={styles.empty}><CircleNotch weight="bold" size={20} className={styles.spin} /><span>正在扫描工作空间文件…</span></div> : error ? <div className={styles.empty}><WarningCircle weight="regular" size={21} /><strong>工作空间文件加载失败</strong><span>{error}</span><Button type="button" size="sm" variant="secondary" onClick={() => void refresh(workspacePath)}>重试</Button></div> : entries.length === 0 ? <div className={styles.empty}><File weight="regular" size={21} /><strong>工作空间中暂无可展示文件</strong><span>忽略目录、空目录和符号链接不会出现在列表中。</span></div> : filteredTree.length === 0 ? <div className={styles.empty}><MagnifyingGlass weight="regular" size={21} /><strong>没有匹配文件</strong><span>尝试搜索文件名或相对路径。</span></div> : <ScrollArea className={styles.treeScroll} fitContent><div className={styles.tree} role="tree" aria-label="工作空间文件树"><FileTree nodes={filteredTree} depth={0} expanded={expanded} selected={selected} onToggle={onToggle} onSelect={selectNode} onAdd={(node) => enqueueFiles([node])} onDragStart={onDragStart} /></div></ScrollArea>}
 	</section>;
 }

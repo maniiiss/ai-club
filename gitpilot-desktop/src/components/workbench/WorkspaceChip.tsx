@@ -1,5 +1,5 @@
 /** 工作空间选择 chip：欢迎页输入框下方的当前工作空间入口，数据源由父级注入以复用 Code/Work 两种模式。 */
-import { Check, ChevronDown, Folder, FolderOpen, Plus } from 'lucide-react';
+import { CaretDown as ChevronDown, Check, Folder, FolderOpen, Plus } from '@phosphor-icons/react';
 import { Button } from '@/src/components/ui/button';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/src/components/ui/dropdown-menu';
 import styles from './WorkspaceChip.module.css';

@@ -12,7 +12,7 @@
 import { memo } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { FileCode, Terminal, AlertCircle } from 'lucide-react';
+import { FileCode, Terminal, WarningCircle } from '@phosphor-icons/react';
 import type { UIMessage } from '@/src/store/session';
 import styles from './CodeCard.module.css';
 
@@ -44,7 +44,7 @@ export const CodeCard = memo(function CodeCard({ message }: { message: UIMessage
 		return (
 			<div className={styles.card}>
 				<div className={styles.cardHeader}>
-					<FileCode size={13} />
+					<FileCode weight="regular" size={13} />
 					<span className={styles.mono}>{tool}</span>
 				</div>
 				<DiffView text={message.text} />
@@ -56,7 +56,7 @@ export const CodeCard = memo(function CodeCard({ message }: { message: UIMessage
 		return (
 			<div className={styles.card}>
 				<div className={styles.cardHeader}>
-					<Terminal size={13} />
+					<Terminal weight="regular" size={13} />
 					<span className={styles.mono}>bash</span>
 				</div>
 				<pre className={styles.code}>{message.text || ' '}</pre>
@@ -68,7 +68,7 @@ export const CodeCard = memo(function CodeCard({ message }: { message: UIMessage
 		return (
 			<div className={styles.card}>
 				<div className={styles.cardHeader}>
-					<FileCode size={13} />
+					<FileCode weight="regular" size={13} />
 					<span className={styles.mono}>{tool}</span>
 				</div>
 				<pre className={`${styles.code} ${styles.secondaryCode}`}>{message.text || ' '}</pre>
@@ -79,7 +79,7 @@ export const CodeCard = memo(function CodeCard({ message }: { message: UIMessage
 	if (message.kind === 'error') {
 		return (
 			<div className={styles.error}>
-				<AlertCircle size={15} />
+				<WarningCircle weight="regular" size={15} />
 				<span>{message.text}</span>
 			</div>
 		);

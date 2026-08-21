@@ -5,7 +5,7 @@
  * 选中后通过 onPick 回调执行。对应设计文档第 7.2 节。
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { CornerDownLeft } from 'lucide-react';
+import { ArrowBendDownLeft as CornerDownLeft } from '@phosphor-icons/react';
 import type { RpcSlashCommand } from '@/src/rpc/types';
 import { isHostActionCommand } from './host-actions';
 import { Command as CommandRoot, CommandEmpty, CommandItem, CommandList } from '@/src/components/ui/command';

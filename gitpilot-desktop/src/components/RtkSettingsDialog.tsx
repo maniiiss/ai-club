@@ -7,7 +7,7 @@
  */
 import { useSessionStore } from '@/src/store/session';
 import { Button } from '@/src/components/ui/button';
-import { Activity, BarChart3, FileKey2, RotateCcw, ShieldCheck } from 'lucide-react';
+import { ArrowClockwise as RotateCcw, ChartBar as BarChart3, Key as FileKey2, Pulse as Activity, ShieldCheck } from '@phosphor-icons/react';
 
 /** RTK 分区操作；实际配置仍由 sidecar 扩展持久化。 */
 export const RTK_ACTIONS = [

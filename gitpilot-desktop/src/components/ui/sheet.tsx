@@ -1,6 +1,6 @@
 import * as React from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
-import { X } from 'lucide-react';
+import { X } from '@phosphor-icons/react';
 import { cn } from '@/src/lib/utils';
 
 /** 移动/窄窗口使用的侧向工作台面板，复用 Dialog 的焦点与 Esc 语义。 */

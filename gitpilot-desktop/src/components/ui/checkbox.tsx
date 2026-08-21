@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Check } from 'lucide-react';
+import { Check } from '@phosphor-icons/react';
 import { cn } from '@/src/lib/utils';
 
 /** 桌面端统一复选框：保持原生 input 的键盘/表单语义，同时统一视觉和焦点反馈。 */

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Check, CheckCircle2, ChevronDown, CloudUpload, FileCode2, History, RotateCcw, Upload, X } from 'lucide-react';
+import { ArrowClockwise as RotateCcw, CaretDown as ChevronDown, Check, CheckCircle as CheckCircle2, ClockCounterClockwise as History, CloudArrowUp as CloudUpload, FileCode as FileCode2, UploadSimple as Upload, X } from '@phosphor-icons/react';
 import { Button } from '@/src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/src/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/src/components/ui/dropdown-menu';

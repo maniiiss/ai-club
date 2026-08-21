@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, CirclePower, Copy, Pencil, Plus, RefreshCw, Save, Trash2 } from 'lucide-react';
+import { ArrowClockwise as RefreshCw, ArrowLeft, Copy, FloppyDisk as Save, PencilSimple as Pencil, Plus, Power as CirclePower, Trash as Trash2 } from '@phosphor-icons/react';
 import { rpc } from '@/src/rpc/bridge';
 import type { ManagedMcpServer, McpMode, McpServerDefinition, McpTransport } from '@/src/rpc/types';
 import { Button } from '@/src/components/ui/button';

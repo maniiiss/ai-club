@@ -1,6 +1,6 @@
 /** 当前项目目录的应用内 Windows PowerShell 终端。 */
 import { useEffect, useRef, useState } from 'react';
-import { TerminalSquare } from 'lucide-react';
+import { TerminalWindow as TerminalSquare } from '@phosphor-icons/react';
 import { Hint } from '@/src/components/ui/tooltip';
 import '@xterm/xterm/css/xterm.css';
 import { closeTerminal, listenTerminalData, startTerminal, writeTerminal } from '@/src/desktop/terminal';

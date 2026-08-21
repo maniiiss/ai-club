@@ -10,7 +10,7 @@
  */
 import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { AlertCircle, BriefcaseBusiness, Code2, ExternalLink, Loader2, LogIn, Palette } from 'lucide-react';
+import { ArrowSquareOut as ExternalLink, Briefcase as BriefcaseBusiness, Code as Code2, Palette, SignIn as LogIn, CircleNotch as Loader2, WarningCircle as AlertCircle } from '@phosphor-icons/react';
 import { useSessionStore } from '@/src/store/session';
 import { rpc, isTauriEnv } from '@/src/rpc/bridge';
 import { DEPLOYMENT } from '@/src/lib/config';

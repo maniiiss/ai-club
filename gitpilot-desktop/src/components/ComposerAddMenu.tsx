@@ -6,7 +6,7 @@
  * 弹层与加号共享左侧锚点，避免工具栏移动后上下文菜单仍停留在旧位置。
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { Bug, ChevronDown, ClipboardList, FilePlus2, Loader2, Paperclip, RefreshCw, X } from 'lucide-react';
+import { ArrowClockwise, Bug, CaretDown, CircleNotch, ClipboardText, FilePlus, Paperclip, X } from '@phosphor-icons/react';
 import { rpc } from '@/src/rpc/bridge';
 import type { PreparedAttachment, RpcWorkItemSummary } from '@/src/rpc/types';
 import { Button } from '@/src/components/ui/button';
@@ -94,12 +94,12 @@ function WorkItemSection({
 }) {
 	const isDefect = group === 'defects';
 	const title = isDefect ? '缺陷' : '需求任务';
-	const Icon = isDefect ? Bug : ClipboardList;
+	const Icon = isDefect ? Bug : ClipboardText;
 	return (
 		<section className={styles.section}>
 			<button type="button" className={styles.sectionHeader} onClick={onToggle} aria-expanded={expanded}>
 				<span className={styles.sectionTitle}><Icon size={14} aria-hidden="true" /><strong>{title}</strong><span className={styles.count}>{items.length}</span></span>
-				<ChevronDown size={15} className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} aria-hidden="true" />
+				<CaretDown weight="bold" size={15} className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} aria-hidden="true" />
 			</button>
 			{expanded && <div className={styles.itemList}>
 				{items.length === 0 ? <p className={styles.sectionEmpty}>暂无{title}</p> : items.map((item) => (
@@ -196,25 +196,25 @@ export function ComposerAddMenu({ open, tab, onTabChange, onPickFiles, onSelectW
 		<div ref={panelRef} className={styles.panel} role="dialog" aria-label="添加上下文">
 			<div className={styles.panelHeader}>
 				<div><strong>添加上下文</strong></div>
-				<Hint content="关闭"><Button type="button" variant="ghost" size="icon-sm" onClick={onDismiss} aria-label="关闭添加上下文"><X size={15} /></Button></Hint>
+				<Hint content="关闭"><Button type="button" variant="ghost" size="icon-sm" onClick={onDismiss} aria-label="关闭添加上下文"><X weight="bold" size={15} /></Button></Hint>
 			</div>
 			<div className={styles.tabs} role="tablist" aria-label="添加类型">
-				<button type="button" role="tab" aria-selected={tab === 'attachments'} className={tab === 'attachments' ? styles.tabActive : styles.tab} onClick={() => onTabChange('attachments')}><Paperclip size={14} />附件</button>
-				<button type="button" role="tab" aria-selected={tab === 'work-items'} className={tab === 'work-items' ? styles.tabActive : styles.tab} onClick={() => onTabChange('work-items')}><ClipboardList size={14} />工作项</button>
+				<button type="button" role="tab" aria-selected={tab === 'attachments'} className={tab === 'attachments' ? styles.tabActive : styles.tab} onClick={() => onTabChange('attachments')}><Paperclip weight="regular" size={14} />附件</button>
+				<button type="button" role="tab" aria-selected={tab === 'work-items'} className={tab === 'work-items' ? styles.tabActive : styles.tab} onClick={() => onTabChange('work-items')}><ClipboardText weight="regular" size={14} />工作项</button>
 			</div>
 			{tab === 'attachments' ? (
 				<div className={styles.attachmentBody}>
-					<FilePlus2 size={22} aria-hidden="true" />
+					<FilePlus weight="regular" size={22} aria-hidden="true" />
 					<strong>附加本地文件</strong>
 					<span>支持文档、图片和代码文件，作为当前对话上下文。</span>
-					<Button type="button" size="sm" onClick={onPickFiles}><Paperclip size={14} />选择文件</Button>
+					<Button type="button" size="sm" onClick={onPickFiles}><Paperclip weight="regular" size={14} />选择文件</Button>
 				</div>
 			) : (
 				<div className={styles.workItemBody}>
-					<div className={styles.workItemToolbar}><span>我负责的工作项</span><Hint content="刷新工作项"><Button type="button" variant="ghost" size="icon-sm" onClick={() => void loadItems()} disabled={loading} aria-label="刷新工作项"><RefreshCw size={14} className={loading ? styles.spin : ''} /></Button></Hint></div>
-					{loading && <div className={styles.state}><Loader2 size={18} className={styles.spin} /><span>正在读取平台工作项…</span></div>}
+					<div className={styles.workItemToolbar}><span>我负责的工作项</span><Hint content="刷新工作项"><Button type="button" variant="ghost" size="icon-sm" onClick={() => void loadItems()} disabled={loading} aria-label="刷新工作项"><ArrowClockwise weight="regular" size={14} className={loading ? styles.spin : ''} /></Button></Hint></div>
+					{loading && <div className={styles.state}><CircleNotch weight="bold" size={18} className={styles.spin} /><span>正在读取平台工作项…</span></div>}
 					{!loading && error && <div className={styles.state}><span>{error}</span><Button type="button" variant="outline" size="sm" onClick={() => void loadItems()}>重试</Button></div>}
-					{!loading && !error && items.length === 0 && <div className={styles.state}><ClipboardList size={20} /><span>暂无分配给你的工作项</span><small>平台中的负责人字段匹配当前登录账号后会显示在这里。</small></div>}
+					{!loading && !error && items.length === 0 && <div className={styles.state}><ClipboardText weight="regular" size={20} /><span>暂无分配给你的工作项</span><small>平台中的负责人字段匹配当前登录账号后会显示在这里。</small></div>}
 					{!loading && !error && items.length > 0 && <div className={styles.sections}>
 						<WorkItemSection group="requirements" items={grouped.requirements} expanded={expanded.requirements} onToggle={() => setExpanded((current) => ({ ...current, requirements: !current.requirements }))} onSelect={onSelectWorkItem} />
 						<WorkItemSection group="defects" items={grouped.defects} expanded={expanded.defects} onToggle={() => setExpanded((current) => ({ ...current, defects: !current.defects }))} onSelect={onSelectWorkItem} />

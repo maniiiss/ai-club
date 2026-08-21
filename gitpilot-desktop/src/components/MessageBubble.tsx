@@ -7,7 +7,7 @@
  * - system/error：居中提示
  */
 import { Fragment, memo, useState, type ReactNode } from 'react';
-import { Bug, Check, ClipboardList, Copy, FileText, Image as ImageIcon, Pencil } from 'lucide-react';
+import { Bug, Check, ClipboardText, Copy, FileText, Image as ImageIcon, PencilSimple } from '@phosphor-icons/react';
 import { CodeCard } from './CodeCard';
 import { ExecutionBatch } from './ExecutionActivity';
 import { ChangedFilesCard } from './ChangedFilesCard';
@@ -37,7 +37,7 @@ function AttachmentRow({ attachments }: { attachments: NonNullable<UIMessage['at
 					<Hint key={`${a.name}-${idx}`} content={a.name}><img src={a.previewUrl} alt={a.name} className={styles.attachmentThumb} /></Hint>
 				) : (
 					<Hint key={`${a.name}-${idx}`} content={a.name}><span className={styles.attachmentChip}>
-						{a.kind === 'image' ? <ImageIcon size={12} /> : a.kind === 'work-item' ? (a.workItemType === '缺陷' ? <Bug size={12} /> : <ClipboardList size={12} />) : <FileText size={12} />}
+						{a.kind === 'image' ? <ImageIcon weight="regular" size={12} /> : a.kind === 'work-item' ? (a.workItemType === '缺陷' ? <Bug weight="regular" size={12} /> : <ClipboardText weight="regular" size={12} />) : <FileText weight="regular" size={12} />}
 						{a.name}
 					</span></Hint>
 				),
@@ -77,12 +77,12 @@ function UserMessageActions({ text }: { text: string }) {
 		<div className={styles.messageActions}>
 			<Hint content={copied ? '已复制' : '复制'}>
 				<Button type="button" variant="ghost" size="icon-sm" className={styles.messageAction} onClick={() => void copyMessage()} aria-label={copied ? '已复制问题' : '复制问题'}>
-					{copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}
+					{copied ? <Check weight="bold" size={14} aria-hidden="true" /> : <Copy weight="regular" size={14} aria-hidden="true" />}
 				</Button>
 			</Hint>
 			<Hint content="编辑">
 				<Button type="button" variant="ghost" size="icon-sm" className={styles.messageAction} onClick={editMessage} aria-label="编辑问题">
-					<Pencil size={14} aria-hidden="true" />
+					<PencilSimple weight="regular" size={14} aria-hidden="true" />
 				</Button>
 			</Hint>
 		</div>

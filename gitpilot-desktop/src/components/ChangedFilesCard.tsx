@@ -4,7 +4,7 @@
  * ChangedFileItem：状态标记 + 路径 + 行数变化，点击在右侧「审查」页签中打开该文件 diff。
  * 供任务结束后的改动文件结果卡片使用。
  */
-import { ChevronDown, ChevronUp, Folder } from 'lucide-react';
+import { CaretDown, CaretUp, Folder } from '@phosphor-icons/react';
 import { useState } from 'react';
 import type { ChangedFile, ChangeStatus } from '@/src/store/changed-files';
 import { useReviewStore } from '@/src/store/review';
@@ -52,7 +52,7 @@ export function ChangedFilesCard({ files }: { files: ChangedFile[] }) {
 	return (
 		<div className={styles.card}>
 			<div className={styles.header}>
-				<Folder size={13} />
+				<Folder weight="regular" size={13} />
 				<span>已编辑 {files.length} 个文件</span>
 				<span className={styles.headerStats}>
 					{added > 0 && <span className={styles.statsAdd}>+{added}</span>}
@@ -64,7 +64,7 @@ export function ChangedFilesCard({ files }: { files: ChangedFile[] }) {
 			</div>
 			{files.length > 3 && (
 				<Button type="button" variant="unstyled" size="sm" className={styles.more} onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
-					{expanded ? <ChevronUp size={13} aria-hidden="true" /> : <ChevronDown size={13} aria-hidden="true" />}
+					{expanded ? <CaretUp weight="bold" size={13} aria-hidden="true" /> : <CaretDown weight="bold" size={13} aria-hidden="true" />}
 					<span>{expanded ? '收起文件' : `再显示 ${hiddenCount} 个文件`}</span>
 				</Button>
 			)}

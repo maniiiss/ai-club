@@ -1,6 +1,6 @@
 import { Node, type JSONContent } from '@tiptap/core';
 import { NodeViewWrapper, ReactNodeViewRenderer, type NodeViewProps } from '@tiptap/react';
-import { ClipboardList, Cpu, Goal, ListChecks, MessageSquareText, Settings, Sparkles, Terminal, type LucideIcon } from 'lucide-react';
+import { ChatText as MessageSquareText, ClipboardText as ClipboardList, Cpu, Gear as Settings, ListChecks, Sparkle as Sparkles, Target as Goal, Terminal, type Icon } from '@phosphor-icons/react';
 import type { RpcSlashCommand } from '@/src/rpc/types';
 import styles from './InputBox.module.css';
 
@@ -17,7 +17,7 @@ export function getCommandIconKey(name: string, source?: RpcSlashCommand['source
 	return source === 'prompt' ? 'prompt' : 'extension';
 }
 
-const COMMAND_ICON_COMPONENTS: Record<CommandIconKey, LucideIcon> = {
+const COMMAND_ICON_COMPONENTS: Record<CommandIconKey, Icon> = {
 	goal: Goal,
 	plan: ListChecks,
 	requirement: ClipboardList,

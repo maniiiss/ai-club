@@ -1,6 +1,6 @@
 /** 目标工作台布局：单一 Grid 控制列宽，面板拖动和键盘调整共享同一状态。 */
 import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
-import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, SquareTerminal, X } from 'lucide-react';
+import { SidebarSimple, TerminalWindow, X } from '@phosphor-icons/react';
 import { useWorkbenchStore, WORKBENCH_BOTTOM_HEIGHT_LIMITS, WORKBENCH_WIDTH_LIMITS } from '@/src/store/workbench';
 import { Button } from '@/src/components/ui/button';
 import { Hint } from '@/src/components/ui/tooltip';
@@ -21,6 +21,8 @@ interface TargetWorkbenchLayoutProps {
 	workspacePath?: string | null;
 	/** 状态栏中的空间名称；未传入时显示当前模式的工作目录。 */
 	statusLabel?: string;
+	/** CODE/WORK 使用卡片式分栏留白；透明拖拽列仍保留可访问的调整命中区。 */
+	mode?: 'code' | 'work';
 	leftPanelTitle?: string;
 	leftPanelDescription?: string;
 	rightPanelTitle?: string;
@@ -102,6 +104,7 @@ export function TargetWorkbenchLayout({
 	showBottom = true,
 	workspacePath = null,
 	statusLabel,
+	mode = 'work',
 	leftPanelTitle = '工作空间与任务',
 	leftPanelDescription = '切换当前工作目录或会话。',
 	rightPanelTitle = '右侧窗口',
@@ -122,14 +125,16 @@ export function TargetWorkbenchLayout({
 		query.addEventListener('change', update);
 		return () => query.removeEventListener('change', update);
 	}, []);
-	const columns = isCompact ? 'minmax(0, 1fr)' : [layout.leftCollapsed ? '0px' : `${layout.leftWidth}px`, layout.leftCollapsed ? '0px' : '1px', 'minmax(360px, 1fr)', rightVisible ? '1px' : '0px', rightVisible ? `${layout.rightWidth}px` : '0px'].join(' ');
+	// 两种工作台模式都保留拖拽命中空间，但用透明留白取代可见竖线，保证面板层次由卡片和间距表达。
+	const resizeColumn = '12px';
+	const columns = isCompact ? 'minmax(0, 1fr)' : [layout.leftCollapsed ? '0px' : `${layout.leftWidth}px`, layout.leftCollapsed ? '0px' : resizeColumn, 'minmax(360px, 1fr)', rightVisible ? resizeColumn : '0px', rightVisible ? `${layout.rightWidth}px` : '0px'].join(' ');
 	const terminalOpen = showBottom && layout.bottomOpen && bottomView === 'terminal';
 	const leftPanelLabel = layout.leftCollapsed ? `打开${leftPanelTitle}` : `关闭${leftPanelTitle}`;
 	const rightPanelLabel = layout.rightCollapsed ? `打开${rightPanelTitle}` : `关闭${rightPanelTitle}`;
 	const displayedStatus = statusLabel ?? workspacePath ?? '未选择工作目录';
 	const terminalAvailable = showBottom && Boolean(workspacePath && terminal);
 
-	return <div className={styles.root}>
+	return <div className={styles.root} data-ui-mode={mode}>
 		<div className={`${styles.panels} ${layout.leftCollapsed ? styles.leftCollapsed : ''}`} style={{ gridTemplateColumns: columns }}>
 			{isCompact ? <div className={`${styles.pane} ${styles.centerPane}`}>{center}</div> : <>
 				<div className={`${styles.pane} ${styles.leftPane}`} aria-hidden={layout.leftCollapsed} data-collapsed={layout.leftCollapsed}>{left}</div>
@@ -143,16 +148,16 @@ export function TargetWorkbenchLayout({
 		{isCompact && right && <Sheet open={mobileRightOpen} onOpenChange={setMobileRightOpen}><SheetContent side="right" className={styles.mobileSheet}><SheetHeader><SheetTitle>{rightPanelTitle}</SheetTitle><SheetDescription>{rightPanelDescription}</SheetDescription></SheetHeader><div className={styles.mobileBody}>{right}</div></SheetContent></Sheet>}
 		{showBottom && <section className={`${styles.bottom} ${layout.bottomOpen ? styles.bottomOpen : ''} ${bottomResizing ? styles.bottomResizing : ''}`} style={layout.bottomOpen ? { height: layout.bottomHeight } : undefined} aria-hidden={!layout.bottomOpen} inert={!layout.bottomOpen}>
 			{layout.bottomOpen && <BottomResizeHandle onResizeStart={() => setBottomResizing(true)} onResizeEnd={() => setBottomResizing(false)} />}
-			<div className={styles.bottomHeader}><Tabs value={bottomView} onValueChange={(value) => setBottomView(value as 'terminal' | 'output')}><TabsList aria-label="底部面板"><TabsTrigger value="terminal">终端</TabsTrigger></TabsList></Tabs><Separator orientation="vertical" className="mx-2 h-4" /><Hint content="关闭底部面板"><Button type="button" variant="ghost" size="icon-sm" onClick={() => updateLayout({ bottomOpen: false })} aria-label="关闭底部面板"><X /></Button></Hint></div>
+			<div className={styles.bottomHeader}><Tabs value={bottomView} onValueChange={(value) => setBottomView(value as 'terminal' | 'output')}><TabsList aria-label="底部面板"><TabsTrigger value="terminal">终端</TabsTrigger></TabsList></Tabs><Separator orientation="vertical" className="mx-2 h-4" /><Hint content="关闭底部面板"><Button type="button" variant="ghost" size="icon-sm" onClick={() => updateLayout({ bottomOpen: false })} aria-label="关闭底部面板"><X weight="bold" /></Button></Hint></div>
 			<div className={styles.bottomContent}>{layout.bottomOpen && (bottomView === 'terminal' && terminal ? terminal : bottom)}</div>
 		</section>}
 		<footer className={styles.statusbar}>
-			<Hint content={leftPanelLabel}><Button type="button" variant="ghost" size="icon-sm" className={styles.leftPanelToggle} onClick={() => updateLayout({ leftCollapsed: !layout.leftCollapsed })} aria-label={leftPanelLabel}>{layout.leftCollapsed ? <PanelLeftOpen /> : <PanelLeftClose />}</Button></Hint>
+			<Hint content={leftPanelLabel}><Button type="button" variant="ghost" size="icon-sm" className={styles.leftPanelToggle} onClick={() => updateLayout({ leftCollapsed: !layout.leftCollapsed })} aria-label={leftPanelLabel}><SidebarSimple weight="regular" /></Button></Hint>
 			<Button type="button" variant="ghost" size="sm" className={styles.mobileToggle} onClick={() => setMobileLeftOpen(true)} aria-label={`打开${leftPanelTitle}`}>{leftPanelTitle}</Button>
 			{right && <Button type="button" variant="ghost" size="sm" className={styles.mobileToggle} onClick={() => setMobileRightOpen(true)} aria-label={`打开${rightPanelTitle}`}>{rightPanelTitle}</Button>}
-			{showBottom && <Hint content={terminalAvailable ? '在应用内打开当前工作空间终端' : '请先选择当前模式的工作目录'}><Button type="button" variant="ghost" size="icon-sm" className={terminalOpen ? styles.active : ''} disabled={!terminalAvailable} onClick={() => { if (!terminalAvailable) return; if (terminalOpen) updateLayout({ bottomOpen: false }); else { setBottomView('terminal'); updateLayout({ bottomOpen: true }); } }} aria-label="在应用内打开当前模式终端"><SquareTerminal /></Button></Hint>}
+			{showBottom && <Hint content={terminalAvailable ? '在应用内打开当前工作空间终端' : '请先选择当前模式的工作目录'}><Button type="button" variant="ghost" size="icon-sm" className={terminalOpen ? styles.active : ''} disabled={!terminalAvailable} onClick={() => { if (!terminalAvailable) return; if (terminalOpen) updateLayout({ bottomOpen: false }); else { setBottomView('terminal'); updateLayout({ bottomOpen: true }); } }} aria-label="在应用内打开当前模式终端"><TerminalWindow weight="regular" /></Button></Hint>}
 			<Hint content={displayedStatus}><span className={styles.path}>{displayedStatus}</span></Hint><span className={styles.grow} />
-			<Hint content={rightPanelLabel}><Button type="button" variant="ghost" size="icon-sm" className={styles.rightPanelToggle} onClick={() => updateLayout({ rightCollapsed: !layout.rightCollapsed })} aria-label={rightPanelLabel}>{layout.rightCollapsed ? <PanelRightOpen /> : <PanelRightClose />}</Button></Hint>
+			<Hint content={rightPanelLabel}><Button type="button" variant="ghost" size="icon-sm" className={styles.rightPanelToggle} onClick={() => updateLayout({ rightCollapsed: !layout.rightCollapsed })} aria-label={rightPanelLabel}><SidebarSimple weight="regular" /></Button></Hint>
 		</footer>
 	</div>;
 }

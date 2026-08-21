@@ -1,21 +1,21 @@
 .panel { display: flex; min-height: 0; flex: 1; flex-direction: column; background: var(--gp-surface); color: var(--gp-text); }
-.header { display: flex; min-height: 42px; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--gp-border); padding: 0 9px 0 12px; }
+.header { display: flex; min-height: 42px; align-items: center; justify-content: space-between; border-bottom: 0; padding: 0 9px 0 12px; }
 .headerTitle { display: flex; align-items: center; gap: 7px; color: var(--gp-text); font-size: calc(12px * var(--desktop-font-scale)); font-weight: 600; }
 .headerTitle svg { color: var(--gp-accent); }
 .headerTitle small { border-radius: 999px; background: var(--gp-accent-soft); padding: 1px 6px; color: var(--gp-text-muted); font: calc(9px * var(--desktop-font-scale))/1.4 var(--font-sans); }
 .headerActions { display: flex; align-items: center; }
 .headerActions button { color: var(--gp-text-muted); }
 .headerActions button:hover:not(:disabled) { color: var(--gp-accent); }
-.toolbar { border-bottom: 1px solid var(--gp-border); padding: 8px 10px; }
+.toolbar { border-bottom: 0; padding: 8px 10px; }
 .search { display: flex; min-width: 0; height: 29px; align-items: center; gap: 6px; border: 1px solid var(--gp-border); border-radius: 7px; background: var(--gp-panel-deep); padding: 0 7px; color: var(--gp-text-muted); }
 .search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--gp-text); font: calc(11px * var(--desktop-font-scale))/1.4 var(--font-sans); }
 .search input::placeholder { color: var(--gp-text-dim); }
 .clearSearch { display: grid; width: 18px; height: 18px; place-items: center; border: 0; border-radius: 4px; background: transparent; color: var(--gp-text-muted); }
 .clearSearch:hover { background: var(--gp-surface-hover); color: var(--gp-text); }
-.selectionBar { display: flex; min-height: 40px; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--gp-border); background: color-mix(in srgb, var(--gp-accent) 7%, var(--gp-surface)); padding: 5px 9px 5px 12px; color: var(--gp-text-secondary); font-size: calc(10px * var(--desktop-font-scale)); }
+.selectionBar { display: flex; min-height: 40px; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 0; background: color-mix(in srgb, var(--gp-accent) 7%, var(--gp-surface)); padding: 5px 9px 5px 12px; color: var(--gp-text-secondary); font-size: calc(10px * var(--desktop-font-scale)); }
 .selectionBar > div { display: flex; align-items: center; gap: 2px; }
 .selectionBar button { height: 27px; font-size: calc(10px * var(--desktop-font-scale)); }
-.notice { border-bottom: 1px solid var(--gp-border); background: color-mix(in srgb, var(--gp-status-success) 10%, var(--gp-surface)); padding: 6px 12px; color: var(--gp-status-success); font-size: calc(10px * var(--desktop-font-scale)); }
+.notice { border-bottom: 0; background: color-mix(in srgb, var(--gp-status-success) 10%, var(--gp-surface)); padding: 6px 12px; color: var(--gp-status-success); font-size: calc(10px * var(--desktop-font-scale)); }
 .treeScroll { width: 100%; min-height: 0; flex: 1; align-self: stretch; padding: 7px 5px 12px 4px; }
 .treeScroll :global([data-radix-scroll-area-viewport]) { width: 100%; }
 .treeScroll :global([data-radix-scroll-area-viewport] > div) { display: block; width: 100%; min-width: 0; }
@@ -40,9 +40,6 @@
 .empty strong { color: var(--gp-text-secondary); font-size: calc(12px * var(--desktop-font-scale)); font-weight: 600; }
 .empty span { max-width: 235px; font-size: calc(10px * var(--desktop-font-scale)); line-height: 1.55; }
 .empty button { margin-top: 5px; }
-.footer { display: flex; min-width: 0; min-height: 27px; align-items: center; justify-content: space-between; gap: 8px; border-top: 1px solid var(--gp-border); padding: 0 10px; color: var(--gp-text-dim); font: calc(9px * var(--desktop-font-scale))/1.3 var(--font-sans); }
-.footer > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.truncated { flex: 0 0 auto; color: var(--gp-status-warning); }
 .spin { animation: spin 900ms linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .treeRow { transition: none; } .spin { animation: none; } }

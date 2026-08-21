@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Check, CheckCircle2, ChevronDown, Download, FolderOpen, Plug, RefreshCw, Save, Settings2, ShieldCheck, SlidersHorizontal, Sparkles, Wrench, X } from 'lucide-react';
+import { ArrowClockwise as RefreshCw, Check, CheckCircle as CheckCircle2, CaretDown as ChevronDown, DownloadSimple as Download, FloppyDisk as Save, FolderOpen, Plug, ShieldCheck, SlidersHorizontal, SlidersHorizontal as Settings2, Sparkle as Sparkles, Warning as AlertTriangle, Wrench, X } from '@phosphor-icons/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { Button } from '@/src/components/ui/button';
@@ -9,7 +9,6 @@ import { Hint } from '@/src/components/ui/tooltip';
 import { isTauriEnv } from '@/src/rpc/bridge';
 import { THEME_OPTIONS, useThemeStore, type ThemeMode } from '@/src/store/theme';
 import { applyDesktopTypography, DESKTOP_FONT_OPTIONS, DESKTOP_FONT_SIZES, loadDesktopPreferences, RTK_SETTINGS_ENABLED, saveDesktopPreferences, useSettingsDialogStore, type DesktopFont, type DesktopPreferences, type SettingsSection } from '@/src/store/settings';
-import { SecuritySettings } from './SecuritySettings';
 import { McpSettingsPanel } from './McpManagerDialog';
 import { SkillSettingsPanel } from './SkillManagerDialog';
 import { RtkSettingsPanel } from '../RtkSettingsDialog';
@@ -201,7 +200,7 @@ function BasicSettings({ draft, dirty, directoryError, onChange, onChooseDirecto
 
 	return <>
 		<div className={styles.basicBody}>
-			<SecuritySettings />
+			{/* 安全与沙箱功能仍由会话层保留，设置页入口暂时隐藏，待隔离能力稳定后再恢复。 */}
 			<section className={styles.section}><div className={styles.sectionHeading}><h3>外观</h3></div><div className={styles.fieldGrid}><div className={styles.field}><label htmlFor="desktop-font">界面字体</label><DropdownMenu><DropdownMenuTrigger asChild><Button type="button" id="desktop-font" variant="unstyled" size="sm" className={styles.selectTrigger} aria-label="选择界面字体"><span style={{ fontFamily: selectedFont.stack }}>{selectedFont.label}</span><ChevronDown size={14} aria-hidden="true" /></Button></DropdownMenuTrigger><DropdownMenuContent align="start" className={styles.selectMenu}>{DESKTOP_FONT_OPTIONS.map((option) => <DropdownMenuItem key={option.value} className={`${styles.selectItem} ${draft.font === option.value ? styles.selectItemActive : ''}`} onSelect={() => onChange({ font: option.value as DesktopFont })}><span style={{ fontFamily: option.stack }}>{option.label}</span>{draft.font === option.value && <Check size={14} className={styles.selectItemCheck} aria-hidden="true" />}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu></div><div className={styles.field}><label>字号</label><div className={styles.sizeChoices} role="radiogroup" aria-label="界面字号">{DESKTOP_FONT_SIZES.map((size) => <button key={size} type="button" className={`${styles.sizeChoice} ${draft.fontSize === size ? styles.sizeChoiceActive : ''}`} role="radio" aria-checked={draft.fontSize === size} onClick={() => onChange({ fontSize: size })}>{size}px</button>)}</div></div></div></section>
 			<section className={styles.section}><div className={styles.sectionHeading}><h3>主题</h3></div><div className={styles.themeGrid}>{THEME_OPTIONS.map((option) => <button key={option.value} type="button" className={`${styles.themeChoice} ${draft.theme === option.value ? styles.themeChoiceActive : ''}`} onClick={() => onChange({ theme: option.value })} aria-pressed={draft.theme === option.value}><span className={`${styles.themeSwatch} ${themeSwatchClass(option.value)}`} aria-hidden="true" /><span className={styles.themeLabel}>{option.label}</span></button>)}</div></section>
 			<section className={styles.section}><div className={styles.sectionHeading}><h3>独立任务默认目录</h3></div><div className={styles.directoryRow}><div className={`${styles.directoryValue} ${!draft.defaultDirectory ? styles.directoryEmpty : ''}`} title={draft.defaultDirectory ?? undefined}>{draft.defaultDirectory ?? '未设置，将使用 GitPilot 根目录'}</div><Hint content="选择默认目录"><Button type="button" variant="outline" size="icon-sm" onClick={onChooseDirectory} aria-label="选择默认目录"><FolderOpen /></Button></Hint>{draft.defaultDirectory && <Hint content="清除默认目录"><Button type="button" variant="ghost" size="icon-sm" onClick={onClearDirectory} aria-label="清除默认目录"><X /></Button></Hint>}</div>{directoryError && <p role="alert" className="mt-2 text-xs text-[var(--destructive)]">{directoryError}</p>}</section>

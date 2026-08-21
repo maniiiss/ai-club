@@ -1,6 +1,6 @@
 /** 聊天流内的 Agent 执行摘要，所有信息均来自已归并的 sidecar 真实事件。 */
 import { useEffect, useState } from 'react';
-import { Brain, CheckCircle2, ChevronRight, FilePen, FileText, ListChecks, Terminal, Wrench } from 'lucide-react';
+import { Brain, CaretRight, CheckCircle, FileMagnifyingGlass, ListChecks, NotePencil, TerminalWindow, Wrench, type Icon } from '@phosphor-icons/react';
 import { formatDuration, getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionRun, type ExecutionStep } from '@/src/store/workbench';
 import { Button } from '@/src/components/ui/button';
 import { Hint } from '@/src/components/ui/tooltip';
@@ -72,13 +72,13 @@ export function describeExecutionBatch(steps: ExecutionStep[]): string {
 	return labels.length > 0 ? labels.join('、') : `调用了${steps.length}个工具`;
 }
 
-/** 按步骤类型匹配功能图标（lucide-react，shadcn-ui 推荐图标库）。 */
+/** 按步骤类型匹配功能图标，使用统一的 Phosphor 扁平化图标风格。 */
 function ExecutionStepIcon({ kind }: { kind: ExecutionStep['kind'] }) {
-	const map: Partial<Record<ExecutionStep['kind'], typeof FileText>> = {
-		read: FileText, edit: FilePen, command: Terminal, verify: CheckCircle2, plan: ListChecks, other: Wrench,
+	const map: Partial<Record<ExecutionStep['kind'], Icon>> = {
+		read: FileMagnifyingGlass, edit: NotePencil, command: TerminalWindow, verify: CheckCircle, plan: ListChecks, other: Wrench,
 	};
 	const Icon = map[kind] ?? Wrench;
-	return <Icon size={13} aria-hidden="true" className={styles.traceStepIcon} />;
+	return <Icon weight="regular" size={13} aria-hidden="true" className={styles.traceStepIcon} />;
 }
 
 /** 思考块：默认只显示标题，点击展开思考内容（执行过程详情默认收起）。 */
@@ -87,7 +87,7 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
 	return (
 		<div className={styles.traceStep}>
 			<span className={styles.traceStepTitle} role="button" tabIndex={0} onClick={() => setExpanded((v) => !v)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded((v) => !v); } }}>
-				<Brain size={13} aria-hidden="true" className={styles.traceStepIcon} />
+				<Brain weight="regular" size={13} aria-hidden="true" className={styles.traceStepIcon} />
 					<span className={styles.traceStepText}>思考过程</span>
 			</span>
 			{expanded && <pre className={styles.traceStepOutput}>{thinking}</pre>}
@@ -158,7 +158,7 @@ export function ExecutionBatch({ steps, thinking }: {
 	return (
 		<section className={styles.root} aria-label="已完成的 Agent 执行批次">
 			<Button type="button" variant="unstyled" size="sm" className={styles.summary} onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
-				<ChevronRight size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
+				<CaretRight weight="bold" size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
 				<span className={styles.label}>{summaryLabel}</span>
 			</Button>
 			{expanded && <ExecutionTrace items={items} />}
@@ -200,7 +200,7 @@ export function ExecutionTimer({ isRunning, startedAt, durationMs, items = [], i
 		<section className={`${styles.root} ${isCollapsing ? styles.settling : ''}`} aria-label={isRunning ? 'Agent 运行计时' : 'Agent 总耗时'}>
 			{canExpand ? (
 				<Button type="button" variant="unstyled" size="sm" className={styles.summary} onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
-					<ChevronRight size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
+					<CaretRight weight="bold" size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
 					{statusLabel}
 				</Button>
 			) : (
@@ -246,7 +246,7 @@ export function ExecutionActivity({ isStreaming, execution: executionOverride }:
 		<section className={styles.root} aria-label="Agent 执行过程">
 			{canExpand ? (
 				<Button type="button" variant="unstyled" size="sm" className={styles.summary} onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
-					<ChevronRight size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
+					<CaretRight weight="bold" size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
 					{activityLabel}
 				</Button>
 			) : <span className={`${styles.summary} ${styles.static}`} aria-live="polite">{activityLabel}</span>}

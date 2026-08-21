@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Check, Eye, Palette, Search } from 'lucide-react';
+import { Warning as AlertTriangle, Check, Eye, MagnifyingGlass as Search, Palette } from '@phosphor-icons/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { designPresetCatalog, filterDesignPresets } from '@/src/design/design-presets';

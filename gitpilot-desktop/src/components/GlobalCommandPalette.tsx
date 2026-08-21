@@ -1,6 +1,6 @@
 /** 面向整个工作台的命令面板；slash 命令仍保留在输入框附近。 */
 import { useMemo } from 'react';
-import { CornerDownLeft, Cpu, Plus, Square, Type } from 'lucide-react';
+import { ArrowBendDownLeft as CornerDownLeft, Cpu, Plus, Square, TextAa as Type } from '@phosphor-icons/react';
 import { useSessionStore } from '@/src/store/session';
 import { useWorkbenchStore, type WorkbenchCommand } from '@/src/store/workbench';
 import { isHostActionCommand } from './host-actions';

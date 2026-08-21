@@ -4,7 +4,7 @@
  * React 层只消费 IPC 事件与本地 UI 状态；项目文件、Git 与 Shell 能力仍只存在于 sidecar。
  */
 import { useEffect, type ReactNode } from 'react';
-import { Loader2, RefreshCw, WifiOff } from 'lucide-react';
+import { ArrowClockwise, CircleNotch, WifiSlash } from '@phosphor-icons/react';
 import { useSessionStore, useActiveExtensionUI } from '@/src/store/session';
 import { useWorkbenchStore } from '@/src/store/workbench';
 import { LoginPage } from '@/src/components/LoginPage';
@@ -90,9 +90,9 @@ export default function App() {
 	if (galleryRequested) {
 		content = <TargetUIGallery />;
 	} else if (connection === 'connecting' || connection === 'idle') {
-		content = <div className={styles.loading}><Loader2 size={22} className="animate-spin" /><span>正在连接 GitPilot…</span></div>;
+		content = <div className={styles.loading}><CircleNotch weight="bold" size={22} className="animate-spin" /><span>正在连接 GitPilot…</span></div>;
 	} else if (connection === 'disconnected') {
-		content = <div className={styles.disconnected}><WifiOff size={28} /><div><p>与 GitPilot 的连接已断开</p><small>sidecar 进程可能已退出</small></div><Button type="button" variant="outline" size="sm" onClick={() => void connect()}><RefreshCw />重新连接</Button></div>;
+		content = <div className={styles.disconnected}><WifiSlash weight="regular" size={28} /><div><p>与 GitPilot 的连接已断开</p><small>sidecar 进程可能已退出</small></div><Button type="button" variant="outline" size="sm" onClick={() => void connect()}><ArrowClockwise weight="regular" />重新连接</Button></div>;
 	} else if (!loggedIn) {
 		content = <LoginPage />;
 	} else {

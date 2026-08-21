@@ -1,4 +1,4 @@
-import { X } from 'lucide-react';
+import { X } from '@phosphor-icons/react';
 import { useWorkbenchStore } from '@/src/store/workbench';
 import { useSessionStore } from '@/src/store/session';
 import { Button } from '@/src/components/ui/button';
@@ -34,10 +34,11 @@ export function TargetDesktopShell({ newSession, abort, error, clearError }: Tar
 				bottom={<TargetExecutionOutputPanel />}
 				terminal={<TargetTerminalPanel />}
 				workspacePath={currentProjectPath}
+				mode="code"
 			/>
 			<TargetExtensionUIModal />
 			<ContentDrawer />
 			<TargetGlobalCommandPalette onNewSession={() => void newSession()} onAbort={() => void abort()} />
-			{error && <div className={styles.error}><span>{error}</span><Button type="button" variant="ghost" size="icon-sm" onClick={clearError} aria-label="关闭错误提示"><X /></Button></div>}
+			{error && <div className={styles.error}><span>{error}</span><Button type="button" variant="ghost" size="icon-sm" onClick={clearError} aria-label="关闭错误提示"><X weight="bold" /></Button></div>}
 	</div>;
 }
