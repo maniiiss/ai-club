@@ -1,8 +1,8 @@
 .surface { position: relative; display: flex; min-width: 0; min-height: 0; flex: 1; overflow: hidden; }
 .timelineRail { position: absolute; z-index: 3; top: 0; bottom: 0; left: 0; width: 24px; pointer-events: none; }
 .timelineRail :global(nav) { pointer-events: auto; }
-.scroll { display: flex; min-width: 0; min-height: 0; flex: 1; overflow-y: auto; background: var(--gp-panel-deep); scrollbar-width: thin; scrollbar-color: var(--gp-border-strong) transparent; }
-.scroll::-webkit-scrollbar { width: 6px; }
+.scroll { display: flex; min-width: 0; min-height: 0; flex: 1; overflow-y: auto; background: var(--gp-panel-deep); scrollbar-width: auto; scrollbar-color: auto; }
+.scroll::-webkit-scrollbar { width: 4px; height: 4px; }
 .scroll::-webkit-scrollbar-thumb { border-radius: 999px; background: var(--gp-border-strong); }
 .frame { display: grid; min-height: 100%; width: 100%; grid-template-columns: 24px minmax(0, 1fr) 24px; }
 .content { grid-column: 2; width: 100%; min-width: 0; max-width: 860px; margin: 0 auto; /* 输入框为悬浮层，底部留白随其真实高度变化，并保留一段安全间距抬高最底部状态条。 */ padding: 28px 24px calc(var(--gp-composer-bottom-space, 190px) + 16px); }

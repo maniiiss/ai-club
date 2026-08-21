@@ -2,7 +2,7 @@
 	display: inline-flex;
 	height: 32px;
 	gap: 6px;
-	border: 1px solid transparent;
+	border: 0;
 	border-radius: 8px;
 	padding: 0 9px;
 	color: var(--gp-text-muted);
@@ -11,17 +11,17 @@
 }
 
 .trigger:hover {
-	border-color: var(--gp-border);
+	border-color: transparent;
 	color: var(--gp-text);
 }
 
 .triggerFullAccess {
-	border-color: color-mix(in srgb, var(--gp-warm) 42%, transparent);
+	border-color: transparent;
 	color: var(--gp-warm);
 }
 
 .triggerFullAccess:hover {
-	border-color: color-mix(in srgb, var(--gp-warm) 62%, var(--gp-border));
+	border-color: transparent;
 	color: var(--gp-warm);
 }
 
@@ -78,7 +78,7 @@
 	width: 100%;
 	grid-template-columns: 30px minmax(0, 1fr) 18px;
 	align-items: start;
-	border: 1px solid transparent;
+	border: 0;
 	border-radius: 10px;
 	background: transparent;
 	padding: 9px 8px;
@@ -89,19 +89,19 @@
 }
 
 .modeOption:hover {
-	border-color: var(--gp-border);
+	border-color: transparent;
 	background: var(--gp-accent-soft);
 	color: var(--gp-text);
 }
 
 .modeOptionActive {
-	border-color: color-mix(in srgb, var(--gp-accent) 38%, var(--gp-border));
+	border-color: transparent;
 	background: color-mix(in srgb, var(--gp-accent) 10%, transparent);
 	color: var(--gp-text);
 }
 
 .modeOptionFullAccess.modeOptionActive {
-	border-color: color-mix(in srgb, var(--gp-warm) 54%, var(--gp-border));
+	border-color: transparent;
 	background: color-mix(in srgb, var(--gp-warm) 10%, transparent);
 }
 
@@ -109,21 +109,23 @@
 	display: inline-flex;
 	width: 26px;
 	height: 26px;
+	align-self: start;
+	margin-top: 3px;
 	align-items: center;
 	justify-content: center;
-	border: 1px solid var(--gp-border);
+	border: 0;
 	border-radius: 8px;
 	color: var(--gp-text-muted);
 }
 
 .modeOptionActive .optionIcon {
-	border-color: color-mix(in srgb, var(--gp-accent) 52%, var(--gp-border));
+	border-color: transparent;
 	background: var(--gp-accent-soft);
 	color: var(--gp-accent);
 }
 
 .modeOptionFullAccess.modeOptionActive .optionIcon {
-	border-color: color-mix(in srgb, var(--gp-warm) 62%, var(--gp-border));
+	border-color: transparent;
 	background: color-mix(in srgb, var(--gp-warm) 14%, transparent);
 	color: var(--gp-warm);
 }

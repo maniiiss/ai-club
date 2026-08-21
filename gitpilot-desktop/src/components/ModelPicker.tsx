@@ -99,7 +99,7 @@ export function ModelPicker({ showThinkingLevel = true }: { showThinkingLevel?: 
 		<div className={styles.picker}>
 			{/* 模型选择 */}
 			<Popover open={openModel} onOpenChange={(value) => { setOpenModel(value); if (value) setOpenThinking(false); }}>
-				<PopoverTrigger asChild><Button type="button" variant="outline" size="sm" className={`${styles.modelTrigger} focus-visible:outline-none focus-visible:ring-0`}><Cpu weight="regular" /><span className={styles.modelName}>{currentModel?.name ?? '未选择'}</span><CaretDown weight="bold" /></Button></PopoverTrigger>
+				<PopoverTrigger asChild><Button type="button" variant="ghost" size="sm" className={`${styles.modelTrigger} focus-visible:outline-none focus-visible:ring-0`}><Cpu weight="regular" /><span className={styles.modelName}>{currentModel?.name ?? '未选择'}</span><CaretDown weight="bold" /></Button></PopoverTrigger>
 				<PopoverContent side="top" align="start" className={styles.modelPopover}>
 					<CommandRoot>
 					<CommandInput placeholder="搜索模型…" containerClassName={styles.search} className={styles.searchInput} style={{ outline: 'none', border: 'none', boxShadow: 'none' }} />
@@ -109,7 +109,7 @@ export function ModelPicker({ showThinkingLevel = true }: { showThinkingLevel?: 
 			</Popover>
 
 			{showThinkingLevel && <DropdownMenu open={openThinking} onOpenChange={(value) => { setOpenThinking(value); if (value) setOpenModel(false); }}>
-				<Hint content={thinkingSupported ? undefined : '当前模型不支持思考'}><DropdownMenuTrigger asChild><Button type="button" variant="outline" size="sm" className="focus-visible:outline-none focus-visible:ring-0" disabled={!thinkingSupported}><Brain weight="regular" /><span>{getThinkingLevelLabel(currentThinkingLevel, thinkingLevels)}</span>{thinkingSupported && <CaretDown weight="bold" />}</Button></DropdownMenuTrigger></Hint>
+				<Hint content={thinkingSupported ? undefined : '当前模型不支持思考'}><DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="sm" className={`${styles.thinkingTrigger} focus-visible:outline-none focus-visible:ring-0`} disabled={!thinkingSupported}><Brain weight="regular" /><span>{getThinkingLevelLabel(currentThinkingLevel, thinkingLevels)}</span>{thinkingSupported && <CaretDown weight="bold" />}</Button></DropdownMenuTrigger></Hint>
 				<DropdownMenuContent side="top" align="end" className="w-32">
 					<DropdownMenuLabel>思维级别</DropdownMenuLabel>
 					<DropdownMenuSeparator />
