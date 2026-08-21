@@ -35,6 +35,21 @@ Desktop
 
 设置页展示当前模式、初始化状态、WSL2/Gondolin 缺失原因、默认网络策略和 timeout。工具执行前显示命令、目录、目标路径和风险等级，用户可以允许一次、本会话允许或拒绝。刷新和重连通过 `get_security_policy` 恢复 pending 审批摘要。
 
+## 对话界面审批入口（补充）
+
+Code 会话输入框工具栏新增盾牌按钮，点击展开浮层，用于查看当前策略和切换 **执行模式** 与 **访问权限**，无需打开设置弹窗；设置弹窗的 `SecuritySettings` 抽为共享组件，两处复用同一逻辑与 store。
+
+### 访问权限两级模式
+
+- `分请求批准`（默认）：读/搜索自动执行；写、Bash、网络、工作区外访问逐个弹出审批卡片确认。
+- `完全访问权限`：一次授权后，当前会话内所有需审批工具直接放行，不再弹卡。
+
+`完全访问权限` 是会话内即时授权：仅存在于当前 sidecar 会话 + 当前工作区，切换任务、新会话、abort、sidecar 重启即失效，不写入 localStorage，与既有"审批授权不落盘"约定一致。危险命令（全盘扫描、敏感目录、越界）即使处于该模式仍被 `command-policy` 强制拒绝。
+
+### 入参协议
+
+`get_security_policy` 返回增加 `approvalMode`（`per_request`/`full_access`）；新增命令 `set_session_approval_mode { mode }`，可在任务运行中切换，sidecar 端通过 `AgentSession.setSessionApprovalMode` 应用。
+
 ## 明确风险
 
 Windows 原生模式不能阻止恶意或未知子进程绕过 GitPilot 策略自行联网，因此网络命令采用风险识别与审批。需要系统级文件和网络隔离时必须安装并启用 Gondolin 增强模式。

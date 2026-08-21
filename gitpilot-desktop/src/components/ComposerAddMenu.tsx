@@ -1,8 +1,9 @@
 /**
- * 输入框右侧加号菜单。
+ * 输入框左侧加号菜单。
  *
- * 业务意图：把“附加文件”和“查询我负责的工作项”放进同一个轻量入口，
- * 用户不需要记住 /requirement，也不会在选择工作项时立即触发有副作用的执行。
+ * 业务意图：把“附加文件”和“查询我负责的工作项”放进输入框左侧的轻量入口，
+ * 用户不需要记住 /requirement，也不会在选择工作项时立即触发有副作用的执行；
+ * 弹层与加号共享左侧锚点，避免工具栏移动后上下文菜单仍停留在旧位置。
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Bug, ChevronDown, ClipboardList, FilePlus2, Loader2, Paperclip, RefreshCw, X } from 'lucide-react';

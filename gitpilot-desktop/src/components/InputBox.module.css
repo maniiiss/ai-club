@@ -30,6 +30,7 @@
 .commandToken { display: inline; margin-right: 7px; color: var(--gp-accent); font: inherit; font-size: inherit; font-weight: inherit; line-height: inherit; vertical-align: baseline; white-space: nowrap; }
 .commandToken svg { display: inline-block; width: 13px; height: 13px; margin-right: 3px; color: var(--gp-text-muted); vertical-align: -0.1em; }
 .toolbar { display: flex; min-height: 32px; align-items: center; gap: 10px; margin-top: 7px; }
+.toolbarLeading { position: relative; display: flex; min-width: 0; align-items: center; gap: 6px; }
 .actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .send { display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: var(--gp-action); color: var(--primary-foreground); cursor: pointer; transition: background 140ms ease, transform 140ms ease, opacity 140ms ease; }
 .send svg { width: 16px; height: 16px; }

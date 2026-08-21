@@ -19,7 +19,7 @@ import type { SessionEntry, SessionInfo, SessionTreeNode } from "../../core/sess
 import type { SourceInfo } from "../../core/source-info.ts";
 import type { WorkspaceChangeSet } from "../../core/workspace-changes.ts";
 import type { ManagedMcpServer, McpServerDefinition } from "../../extensions/gitpilot/mcp-manager.ts";
-import type { ApprovalDecision, SecurityApprovalRequest, SecurityPolicy, SandboxStatus } from "../../core/security/security-policy.ts";
+import type { ApprovalDecision, SecurityApprovalRequest, SecurityPolicy, SandboxStatus, SessionApprovalMode } from "../../core/security/security-policy.ts";
 
 export type SkillMode = "code" | "work" | "design";
 export interface ManagedSkill {
@@ -400,6 +400,8 @@ export type RpcCommand =
 	| { id?: string; type: "approval_response"; approvalId: string; decision: ApprovalDecision }
 	| { id?: string; type: "get_security_policy" }
 	| { id?: string; type: "set_security_policy"; policy: Partial<SecurityPolicy> }
+	/** 切换会话级访问权限；即时生效且只影响当前会话，不落盘。 */
+	| { id?: string; type: "set_session_approval_mode"; mode: SessionApprovalMode }
 
 	// Session
 	| { id?: string; type: "get_session_stats" }
@@ -684,8 +686,9 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "get_platform_account"; success: true; data: RpcPlatformAccount }
 	| { id?: string; type: "response"; command: "get_platform_connection"; success: true; data: RpcPlatformConnection }
 	| { id?: string; type: "response"; command: "approval_response"; success: true }
-	| { id?: string; type: "response"; command: "get_security_policy"; success: true; data: { policy: SecurityPolicy; sandbox: SandboxStatus; pendingApprovals: SecurityApprovalRequest[] } }
-	| { id?: string; type: "response"; command: "set_security_policy"; success: true; data: { policy: SecurityPolicy; sandbox: SandboxStatus } }
+       | { id?: string; type: "response"; command: "get_security_policy"; success: true; data: { policy: SecurityPolicy; sandbox: SandboxStatus; approvalMode: SessionApprovalMode; pendingApprovals: SecurityApprovalRequest[] } }
+       | { id?: string; type: "response"; command: "set_security_policy"; success: true; data: { policy: SecurityPolicy; sandbox: SandboxStatus } }
+       | { id?: string; type: "response"; command: "set_session_approval_mode"; success: true; data: { approvalMode: SessionApprovalMode } }
 	| { id?: string; type: "response"; command: "get_platform_projects"; success: true; data: { projects: Array<{ id: number; name: string; status?: string; description?: string; owner?: string }> } }
 	| { id?: string; type: "response"; command: "get_platform_work_items"; success: true; data: { items: RpcWorkItemSummary[] } }
 	| { id?: string; type: "response"; command: "logout"; success: true }

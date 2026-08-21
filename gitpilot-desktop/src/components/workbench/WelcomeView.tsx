@@ -57,7 +57,6 @@ export function WelcomeView({ mode, composer }: WelcomeViewProps) {
 			{mode === 'code'
 				? <WorkspaceChip items={projects} currentPath={currentProjectPath} onSelect={(path) => void switchProject(path)} onAdd={() => void addProject()} />
 				: <WorkspaceChip items={workspaces} currentPath={currentWorkspacePath} onSelect={selectWorkspace} onAdd={() => void addWorkspace()} />}
-			<span className={styles.permissionChip} title="桌面端默认在当前工作空间内读写文件，暂无独立权限模型">默认权限</span>
 		</div>
 	</div>;
 }

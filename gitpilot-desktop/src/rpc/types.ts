@@ -50,6 +50,7 @@ export interface PlatformConnection {
 export type SandboxMode = 'windows-native' | 'gondolin';
 export type ApprovalDecision = 'approve_once' | 'approve_session' | 'deny';
 export type ApprovalRisk = 'write' | 'command' | 'outside_workspace' | 'network' | 'dangerous';
+export type SessionApprovalMode = 'per_request' | 'full_access';
 export interface SecurityPolicy { sandboxMode: SandboxMode; network: 'deny-by-default'; approvalPolicy: 'read-auto-write-command-approve'; defaultTimeoutSeconds: number; maxTimeoutSeconds: number; }
 export interface SandboxStatus { mode: SandboxMode; available: boolean; initialized: boolean; message?: string; workspacePath?: string; guestWorkspacePath?: string; wsl2Installed?: boolean; virtualizationReady?: boolean; distributionInstalled?: boolean; nodeInstalled?: boolean; gondolinWorkerInstalled?: boolean; }
 export interface SecurityApprovalRequest { type: 'approval_required'; approvalId: string; sessionId: string; toolName: string; risk: ApprovalRisk; title: string; summary: string; command?: string; paths?: string[]; cwd: string; expiresAt: number; }
@@ -444,8 +445,9 @@ export type RpcCommand =
 	// 桌面版登录后注入平台 gpt_ token（复用 sidecar saveCliToken）
 	| { id?: string; type: 'set_token'; platformUrl: string; token: string }
 	| { id?: string; type: 'approval_response'; approvalId: string; decision: ApprovalDecision }
-	| { id?: string; type: 'get_security_policy' }
-	| { id?: string; type: 'set_security_policy'; policy: Partial<SecurityPolicy> }
+       | { id?: string; type: 'get_security_policy' }
+       | { id?: string; type: 'set_security_policy'; policy: Partial<SecurityPolicy> }
+       | { id?: string; type: 'set_session_approval_mode'; mode: SessionApprovalMode }
 	// 账户菜单的只读摘要与受控登出。
 	| { id?: string; type: 'get_platform_account' }
 	| { id?: string; type: 'get_platform_connection' }
@@ -551,8 +553,9 @@ export type RpcResponse =
 	| { id?: string; type: 'response'; command: 'get_platform_account'; success: true; data: PlatformAccount }
 	| { id?: string; type: 'response'; command: 'get_platform_connection'; success: true; data: PlatformConnection }
 	| { id?: string; type: 'response'; command: 'approval_response'; success: true }
-	| { id?: string; type: 'response'; command: 'get_security_policy'; success: true; data: { policy: SecurityPolicy; sandbox: SandboxStatus; pendingApprovals: Omit<SecurityApprovalRequest, 'type'>[] } }
-	| { id?: string; type: 'response'; command: 'set_security_policy'; success: true; data: { policy: SecurityPolicy; sandbox: SandboxStatus } }
+       | { id?: string; type: 'response'; command: 'get_security_policy'; success: true; data: { policy: SecurityPolicy; sandbox: SandboxStatus; approvalMode: SessionApprovalMode; pendingApprovals: Omit<SecurityApprovalRequest, 'type'>[] } }
+       | { id?: string; type: 'response'; command: 'set_security_policy'; success: true; data: { policy: SecurityPolicy; sandbox: SandboxStatus } }
+       | { id?: string; type: 'response'; command: 'set_session_approval_mode'; success: true; data: { approvalMode: SessionApprovalMode } }
 	| { id?: string; type: 'response'; command: 'get_platform_projects'; success: true; data: { projects: Array<{ id: number; name: string; status?: string; description?: string; owner?: string }> } }
 	| { id?: string; type: 'response'; command: 'get_platform_work_items'; success: true; data: { items: RpcWorkItemSummary[] } }
 	| { id?: string; type: 'response'; command: 'work_project_list'; success: true; data: { projects: RpcWorkProjectSummary[] } }

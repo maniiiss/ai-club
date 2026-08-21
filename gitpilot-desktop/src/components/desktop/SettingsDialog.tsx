@@ -6,9 +6,10 @@ import { Button } from '@/src/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/src/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/src/components/ui/dropdown-menu';
 import { Hint } from '@/src/components/ui/tooltip';
-import { isTauriEnv, rpc } from '@/src/rpc/bridge';
+import { isTauriEnv } from '@/src/rpc/bridge';
 import { THEME_OPTIONS, useThemeStore, type ThemeMode } from '@/src/store/theme';
-import { applyDesktopTypography, DESKTOP_FONT_OPTIONS, DESKTOP_FONT_SIZES, loadDesktopPreferences, loadSecurityPreferences, RTK_SETTINGS_ENABLED, saveDesktopPreferences, saveSecurityPreferences, useSettingsDialogStore, type DesktopFont, type DesktopPreferences, type SettingsSection } from '@/src/store/settings';
+import { applyDesktopTypography, DESKTOP_FONT_OPTIONS, DESKTOP_FONT_SIZES, loadDesktopPreferences, RTK_SETTINGS_ENABLED, saveDesktopPreferences, useSettingsDialogStore, type DesktopFont, type DesktopPreferences, type SettingsSection } from '@/src/store/settings';
+import { SecuritySettings } from './SecuritySettings';
 import { McpSettingsPanel } from './McpManagerDialog';
 import { SkillSettingsPanel } from './SkillManagerDialog';
 import { RtkSettingsPanel } from '../RtkSettingsDialog';
@@ -193,34 +194,6 @@ interface BasicSettingsProps {
 	onClearDirectory: () => void;
 	onDiscard: () => void;
 	onSave: () => void;
-}
-
-/** 安全设置面板：切换只对新任务生效，Gondolin 不可用时保留安装引导状态。 */
-function SecuritySettings() {
-	const policy = useSessionStore((state) => state.securityPolicy);
-	const sandbox = useSessionStore((state) => state.sandboxStatus);
-	const refreshAll = useSessionStore((state) => state.refreshAll);
-	const isStreaming = useSessionStore((state) => state.isStreaming);
-	const [busy, setBusy] = useState(false);
-	const [error, setError] = useState('');
-	const currentMode = policy?.sandboxMode ?? 'windows-native';
-	const changeMode = async (mode: 'windows-native' | 'gondolin') => {
-		if (mode === currentMode || (typeof window !== 'undefined' && !window.confirm(`切换到${mode === 'gondolin' ? '增强隔离' : 'Windows 原生防护'}？只会影响新任务。`))) return;
-		setBusy(true);
-		setError('');
-		try {
-			const response = await rpc.setSecurityPolicy({ sandboxMode: mode });
-			if (!response.success) throw new Error(response.error);
-			await refreshAll();
-			saveSecurityPreferences({ ...loadSecurityPreferences(), sandboxMode: mode });
-		} catch (reason) {
-			setError(reason instanceof Error ? reason.message : String(reason));
-		} finally {
-			setBusy(false);
-		}
-	};
-	const capabilityText = sandbox?.mode === 'gondolin' ? `WSL2 ${sandbox.wsl2Installed ? '已安装' : '缺失'} · 虚拟化 ${sandbox.virtualizationReady ? '就绪' : '未就绪'} · Linux ${sandbox.distributionInstalled ? '已安装' : '缺失'} · Node ${sandbox.nodeInstalled ? '已安装' : '缺失'} · worker ${sandbox.gondolinWorkerInstalled ? '已安装' : '缺失'}` : '';
-	return <section className={styles.section} aria-label="安全与沙箱"><div className={styles.sectionHeading}><h3>安全与沙箱</h3></div><div className={styles.fieldGrid}><div className={styles.field}><label htmlFor="sandbox-mode">执行模式</label><DropdownMenu><DropdownMenuTrigger asChild><Button type="button" id="sandbox-mode" variant="unstyled" size="sm" className={styles.selectTrigger} disabled={busy || isStreaming}><span>{currentMode === 'gondolin' ? '增强隔离（WSL2 + Gondolin）' : 'Windows 原生防护'}</span><ChevronDown size={14} /></Button></DropdownMenuTrigger><DropdownMenuContent align="start" className={styles.selectMenu}><DropdownMenuItem onSelect={() => void changeMode('windows-native')}>Windows 原生防护</DropdownMenuItem><DropdownMenuItem onSelect={() => void changeMode('gondolin')}>增强隔离（WSL2 + Gondolin）</DropdownMenuItem></DropdownMenuContent></DropdownMenu></div><div className={styles.field}><label>当前状态</label><div className={styles.directoryValue}>{sandbox?.initialized ? '已初始化' : sandbox?.message ?? '检测中'}</div></div></div><p className="mt-2 text-xs text-[var(--muted-foreground)]">读取和搜索自动执行；文件修改、Bash、网络及工作区外访问需要审批。默认 timeout {policy?.defaultTimeoutSeconds ?? 120} 秒，最大 {policy?.maxTimeoutSeconds ?? 600} 秒。</p>{capabilityText && <p className="mt-2 text-xs text-[var(--muted-foreground)]">{capabilityText}</p>}{currentMode === 'gondolin' && !sandbox?.available && <p role="alert" className="mt-2 text-xs text-[var(--destructive)]">请安装 WSL2、Linux 发行版和 GitPilot Gondolin worker 后重新检测；不会后台自动安装，也不会降级为无限制本机执行。</p>}{error && <p role="alert" className="mt-2 text-xs text-[var(--destructive)]">{error}</p>}<div className="mt-3"><Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => void refreshAll()}><RefreshCw />重新检测</Button></div></section>;
 }
 
 function BasicSettings({ draft, dirty, directoryError, onChange, onChooseDirectory, onClearDirectory, onDiscard, onSave }: BasicSettingsProps) {

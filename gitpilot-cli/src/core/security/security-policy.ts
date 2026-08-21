@@ -11,6 +11,9 @@ export type ApprovalPolicy = "read-auto-write-command-approve";
 
 export type ApprovalDecision = "approve_once" | "approve_session" | "deny";
 
+/** 会话级访问权限：分请求逐个审批，或本会话内一次授权全部放行。 */
+export type SessionApprovalMode = "per_request" | "full_access";
+
 export type ApprovalRisk = "write" | "command" | "outside_workspace" | "network" | "dangerous";
 
 /** 当前桌面端采用的安全执行策略。 */

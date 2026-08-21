@@ -71,6 +71,7 @@ import {
 	type ApprovalDecision,
 	type SecurityApprovalRequest,
 	type SecurityPolicy,
+	type SessionApprovalMode,
 } from "../../core/security/security-policy.ts";
 import { GondolinExecutor, WindowsNativeExecutor } from "../../core/security/sandbox-executor.ts";
 
@@ -2532,6 +2533,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				return success(id, "get_security_policy", {
 					policy: cloneSecurityPolicy(securityPolicy),
 					sandbox: sandboxExecutor.getStatus(),
+					approvalMode: session.sessionApprovalMode,
 					pendingApprovals: [...pendingSecurityApprovals.values()]
 						.filter((pending) => pending.sessionId === session.sessionId)
 						.map((pending) => pending.request),
@@ -2551,6 +2553,12 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				securityPolicy = nextPolicy;
 				session.configureSecurityPolicy(securityPolicy, requestSecurityApproval, () => nextReady);
 				return success(id, "set_security_policy", { policy: cloneSecurityPolicy(nextPolicy), sandbox: sandboxExecutor.getStatus() });
+			}
+
+			case "set_session_approval_mode": {
+				const mode: SessionApprovalMode = command.mode === "full_access" ? "full_access" : "per_request";
+				session.setSessionApprovalMode(mode);
+				return success(id, "set_session_approval_mode", { approvalMode: session.sessionApprovalMode });
 			}
 
 			case "bash": {

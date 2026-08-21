@@ -40,6 +40,7 @@ import type {
 	SecurityApprovalRequest,
 	SecurityPolicy,
 	SandboxStatus,
+	SessionApprovalMode,
 } from '@/src/rpc/types';
 import { getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionStep } from '@/src/store/workbench';
 import { aggregateChangedFiles, changedFilesFromWorkspaceChanges, parseExecutionStepsFromMessages, parseOpsFromMessages, parseOpsFromSteps, type ChangedFile, type EditOperation } from '@/src/store/changed-files';
@@ -556,6 +557,8 @@ interface SessionStore {
 	pendingSecurityApprovals: PendingSecurityApprovalEntry[];
 	securityPolicy: SecurityPolicy | null;
 	sandboxStatus: SandboxStatus | null;
+	/** 当前会话访问权限模式，用于对话界面入口展示与切换。 */
+	sessionApprovalMode: SessionApprovalMode;
 	// 扩展标准 UI 事件消费（notify/status/widget/title，v1 §6.2 补齐）
 	extensionNotifications: Array<{ id: string; message: string; type: 'info' | 'warning' | 'error'; at: number }>;
 	extensionStatuses: Map<string, string>;
@@ -609,6 +612,8 @@ interface SessionStore {
 	exportHtml: () => Promise<void>;
 	respondExtensionUI: (req: RpcExtensionUIRequest, value: { value: string } | { confirmed: boolean } | { cancelled: true }) => Promise<void>;
 	respondSecurityApproval: (approval: PendingSecurityApprovalEntry, decision: ApprovalDecision) => Promise<void>;
+	/** 切换当前会话访问权限模式；本地即时更新并通知 sidecar。 */
+	setSessionApprovalMode: (mode: SessionApprovalMode) => Promise<void>;
 	/** 标记已登录（登录流程成功后调用，与模型列表可用性解耦）。 */
 	markLoggedIn: () => void;
 	/** 退出登录时撤销平台会话并清空桌面侧账户展示。 */
@@ -1359,6 +1364,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 		pendingSecurityApprovals: [],
 		securityPolicy: null,
 		sandboxStatus: null,
+		sessionApprovalMode: 'per_request',
 		extensionNotifications: [],
 		extensionStatuses: new Map(),
 		extensionWidgets: new Map(),
@@ -1617,6 +1623,7 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 				const currentPath = next.selectedSessionPath ?? get().selectedSessionPath ?? null;
 				next.securityPolicy = securityRes.data.policy;
 				next.sandboxStatus = securityRes.data.sandbox;
+				next.sessionApprovalMode = securityRes.data.approvalMode;
 				next.pendingSecurityApprovals = securityRes.data.pendingApprovals.map((approval) => ({ ...approval, type: 'approval_required' as const, sessionPath: currentPath }));
 			}
 		} catch {}
@@ -2284,6 +2291,16 @@ export const useSessionStore = create<SessionStore>()((set, get) => ({
 			await rpc.approvalResponse(approval.approvalId, decision);
 		} catch (err) {
 			set((s) => ({ error: err instanceof Error ? err.message : String(err), pendingSecurityApprovals: [...s.pendingSecurityApprovals, approval] }));
+		}
+	},
+
+	setSessionApprovalMode: async (mode) => {
+		set({ sessionApprovalMode: mode });
+		try {
+			const response = await rpc.setSessionApprovalMode(mode);
+			if (response.success && response.command === 'set_session_approval_mode') set({ sessionApprovalMode: response.data.approvalMode });
+		} catch (err) {
+			set({ error: err instanceof Error ? err.message : String(err) });
 		}
 	},
 

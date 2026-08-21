@@ -133,6 +133,7 @@ import {
 	type SecurityApprovalHandler,
 	type SecurityPolicy,
 	type SecurityApprovalRequest,
+	type SessionApprovalMode,
 	normalizeSecurityPolicy,
 } from "./security/security-policy.ts";
 
@@ -425,6 +426,8 @@ export class AgentSession {
 	private _securityApprovalHandler: SecurityApprovalHandler | undefined;
 	private _securityExecutionReady: (() => boolean) | undefined;
 	private readonly _sessionApprovals = new Set<string>();
+	/** 完全访问权限开关：开启后本会话内需审批的工具直接放行，避免逐个弹卡。 */
+	private _securityApprovedEverything = false;
 
 	private _modelRuntime: ModelRuntime;
 	/** 当前模式的压缩提示配置；不改变 Pi 默认摘要结构。 */
@@ -447,11 +450,22 @@ export class AgentSession {
 		this._securityApprovalHandler = handler;
 		this._securityExecutionReady = ready;
 		this._sessionApprovals.clear();
+		this._securityApprovedEverything = false;
 	}
 
 	/** 返回当前任务的安全策略快照，供 RPC 状态和桌面设置页展示。 */
 	get securityPolicy(): SecurityPolicy | undefined {
 		return this._securityPolicy ? cloneSecurityPolicy(this._securityPolicy) : undefined;
+	}
+
+	/** 设置会话级访问权限；可在任务运行中切换，仅影响当前会话且不落盘。 */
+	setSessionApprovalMode(mode: SessionApprovalMode): void {
+		this._securityApprovedEverything = mode === "full_access";
+	}
+
+	/** 返回当前会话的访问权限模式。 */
+	get sessionApprovalMode(): SessionApprovalMode {
+		return this._securityApprovedEverything ? "full_access" : "per_request";
 	}
 
 	/** 在内置工具真正执行前等待 Desktop 决策；审批结果只影响当前会话。 */
@@ -497,6 +511,7 @@ export class AgentSession {
 		const result = evaluateToolRisk(toolName, params, this.sessionManager.getCwd());
 		if (!result.allowed) throw new Error(result.reason ?? "安全策略拒绝执行");
 		if (!result.needsApproval) return true;
+		if (this._securityApprovedEverything) return true;
 		const key = `${this.sessionId}:${this.sessionManager.getCwd()}:${toolName}:${result.risk ?? "command"}`;
 		if (this._sessionApprovals.has(key)) return true;
 		const decision = await this._requestSecurityApproval(toolName, params, result.risk ?? "dangerous", result.reason);

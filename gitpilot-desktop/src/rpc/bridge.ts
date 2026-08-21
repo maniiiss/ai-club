@@ -30,6 +30,7 @@ import type {
 	McpServerDefinition,
 	ApprovalDecision,
 	SecurityPolicy,
+	SessionApprovalMode,
 } from './types';
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -270,6 +271,7 @@ export const rpc = {
 	approvalResponse: (approvalId: string, decision: ApprovalDecision) => send({ type: 'approval_response', approvalId, decision }),
 	getSecurityPolicy: () => send({ type: 'get_security_policy' }),
 	setSecurityPolicy: (policy: Partial<SecurityPolicy>) => send({ type: 'set_security_policy', policy }),
+	setSessionApprovalMode: (mode: SessionApprovalMode) => send({ type: 'set_session_approval_mode', mode }),
 	respondValue: (id: string, value: string) => send({ type: 'extension_ui_response', id, value }),
 	respondConfirmed: (id: string, confirmed: boolean) => send({ type: 'extension_ui_response', id, confirmed }),
 	respondCancelled: (id: string) => send({ type: 'extension_ui_response', id, cancelled: true }),

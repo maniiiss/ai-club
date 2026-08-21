@@ -35,6 +35,7 @@ import { Hint } from '@/src/components/ui/tooltip';
 import styles from './InputBox.module.css';
 import { PlanProgressStatus } from './PlanProgressStatus';
 import { SecurityApprovalCard } from './SecurityApprovalCard';
+import { SecurityAccessMenu } from './security/SecurityAccessMenu';
 
 export { formatCommandLabel, getCommandIconKey } from './CommandTokenNode';
 
@@ -562,14 +563,6 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 			<ExtensionUIConfirmCard />
 			<ExtensionUISelectCard />
 			{showPalette && !hasPendingConfirm && !hasPendingActionSelect && <CommandPalette commands={commands} query={text.slice(1)} onPick={pickCommand} onDismiss={() => setShowPalette(false)} />}
-			<ComposerAddMenu
-				open={addMenuOpen && !hasPendingConfirm && !hasPendingActionSelect}
-				tab={addMenuTab}
-				onTabChange={setAddMenuTab}
-				onPickFiles={pickFiles}
-				onSelectWorkItem={selectWorkItem}
-				onDismiss={() => setAddMenuOpen(false)}
-			/>
 			{isDragOver && (
 				<div className={styles.dropHint}>松开以附加文件</div>
 			)}
@@ -645,7 +638,8 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 					<EditorContent editor={editor} className={`${styles.editorShell} ${styles.editorSurface}`} onPaste={onPaste} />
 				</div>
 				<div className={styles.toolbar}>
-					<div className={styles.actions}>
+					{/* 业务意图：输入框左下角固定放置附件与审批入口，模型和发送动作保持右侧。 */}
+					<div className={styles.toolbarLeading}>
 						<Hint content="添加附件或工作项"><Button
 							type="button"
 							variant="ghost"
@@ -659,6 +653,17 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 						>
 							<Plus size={17} />
 						</Button></Hint>
+						<ComposerAddMenu
+							open={addMenuOpen && !hasPendingConfirm && !hasPendingActionSelect}
+							tab={addMenuTab}
+							onTabChange={setAddMenuTab}
+							onPickFiles={pickFiles}
+							onSelectWorkItem={selectWorkItem}
+							onDismiss={() => setAddMenuOpen(false)}
+						/>
+						<SecurityAccessMenu />
+					</div>
+					<div className={styles.actions}>
 						<ModelPicker />
 						{(isStreaming && hasComposerContent) ? (
 							<Hint content="发送引导"><Button

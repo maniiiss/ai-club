@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { attachmentInputKey, buildCommandPrompt, canSubmitPrompt, dedupeAttachmentInputs, formatCommandLabel, getCommandIconKey, INPUT_COMPOSER_POINTER_POLICY, isExtensionQueueCommand } from './InputBox';
+import { ACCESS_OPTIONS, getSessionApprovalLabel } from './security/SecurityAccessMenu';
 import type { AttachmentInput } from '@/src/rpc/types';
 
 describe('输入器命中区与提交状态', () => {
@@ -47,5 +48,13 @@ describe('输入器命中区与提交状态', () => {
 		expect(getCommandIconKey('skill:frontend', 'skill')).toBe('skill');
 		expect(getCommandIconKey('custom', 'prompt')).toBe('prompt');
 		expect(getCommandIconKey('custom', 'extension')).toBe('extension');
+	});
+
+	it('审批入口只展示两种真实权限，并为触发器提供短名称', () => {
+		expect(ACCESS_OPTIONS.map((option) => option.value)).toEqual(['per_request', 'full_access']);
+		expect(ACCESS_OPTIONS.map((option) => option.label)).toEqual(['请求批准', '完全访问权限']);
+		expect(ACCESS_OPTIONS.every((option) => option.description.length > 0)).toBe(true);
+		expect(getSessionApprovalLabel('per_request')).toBe('请求批准');
+		expect(getSessionApprovalLabel('full_access')).toBe('完全访问');
 	});
 });
