@@ -15,9 +15,9 @@ const appIcon = new URL('../../../src-tauri/icons/icon.png', import.meta.url).hr
 
 /** 模式切换按钮的专属图标；未激活时图标占位淡出，避免按钮宽度跳动。 */
 const MODE_META: ReadonlyArray<{ key: AppMode; label: string; Icon: typeof Code }> = [
-	{ key: 'code', label: 'CODE', Icon: Code },
-	{ key: 'work', label: 'WORK', Icon: Briefcase },
-	{ key: 'design', label: 'DESIGN', Icon: Palette },
+	{ key: 'code', label: '代码', Icon: Code },
+	{ key: 'work', label: '工作', Icon: Briefcase },
+	{ key: 'design', label: '设计', Icon: Palette },
 ];
 
 export function TargetTitleBar() {

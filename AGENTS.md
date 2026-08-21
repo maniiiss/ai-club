@@ -60,7 +60,7 @@
 <!-- gitnexus:start -->
 # GitNexus MCP
 
-This project is indexed by GitNexus as **git-ai-club** (28063 symbols, 95839 relationships, 300 execution flows).
+This project is indexed by GitNexus as **git-ai-club** (28080 symbols, 95833 relationships, 300 execution flows).
 
 GitNexus provides a knowledge graph over this codebase — call chains, blast radius, execution flows, and semantic search.
 
