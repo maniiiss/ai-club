@@ -879,14 +879,6 @@
 	line-height: 1.6;
 }
 
-.designV2SectionKicker {
-	margin-bottom: 11px;
-	color: var(--design-text-muted);
-	font-size: calc(9px * var(--desktop-font-scale));
-	letter-spacing: .16em;
-	text-transform: uppercase;
-}
-
 .designV2OutputScroll h1,
 .designV2OutputScroll h2,
 .designV2OutputScroll h3 {
@@ -910,11 +902,44 @@
 	color: var(--design-accent);
 }
 
+.designV2OutputTitle {
+	overflow: hidden;
+	color: var(--design-text);
+	font-size: calc(11px * var(--desktop-font-scale));
+	font-weight: 600;
+	letter-spacing: .02em;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+}
+
+/* AI 思考过程压缩在一小块固定高度区域内滚动跟随，只承载当前这轮运行的思考；结束后整块收起。
+   不带边框和滚动条，滚动过去的内容直接被顶部渐隐吞掉；运行状态由上方会话导航的“正在思考”提示承担。 */
+.designV2Thinking {
+	flex: 0 0 auto;
+	height: 64px;
+	margin: 0 12px 8px;
+	border-radius: 10px;
+	background: color-mix(in srgb, var(--design-background) 36%, transparent);
+	overflow-y: auto;
+	overscroll-behavior: contain;
+	padding: 6px 9px 7px;
+	color: var(--design-text-muted);
+	font-size: calc(10px * var(--desktop-font-scale));
+	line-height: 1.55;
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	scrollbar-width: none;
+	/* 顶部渐隐强调这是被压缩的过程流，最新思考始终贴在可视区底部。 */
+	mask-image: linear-gradient(to bottom, transparent 0, #000 14px);
+	-webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px);
+}
+
+.designV2Thinking::-webkit-scrollbar { display: none; }
+
 .designV2OutputResult,
 .designV2OutputError,
 .designV2OutputEmpty,
-.designV2Approval,
-.designV2LiveStatus {
+.designV2Approval {
 	display: flex;
 	align-items: flex-start;
 	gap: 9px;
@@ -970,21 +995,6 @@
 
 .designV2OutputError {
 	color: var(--gp-status-error);
-}
-
-.designV2LiveStatus {
-	align-items: center;
-	color: var(--design-accent);
-	font-size: calc(10px * var(--desktop-font-scale));
-}
-
-.designV2LiveDot {
-	width: 6px;
-	height: 6px;
-	flex: 0 0 6px;
-	border-radius: 50%;
-	background: var(--design-accent);
-	box-shadow: 0 0 0 4px var(--design-accent-soft);
 }
 
 .designV2Approval {
@@ -1894,9 +1904,23 @@
 	pointer-events: auto;
 }
 
+/* 会话导航是独立浮层卡片：返回、工作空间切换和运行状态与 AI 输出面板彻底分离，且不随输出收起而消失。 */
+.designV2Frame[data-layout='output-history-pages-guidelines'] .designV2SessionBar {
+	display: flex;
+	flex: 0 0 auto;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	border-radius: 14px;
+	background: var(--design-floating-raised);
+	box-shadow: 0 14px 34px color-mix(in srgb, var(--design-shadow) 48%, transparent);
+	padding: 7px 9px;
+	pointer-events: auto;
+}
+
 .designV2Frame[data-layout='output-history-pages-guidelines'] .designV2Output {
-	/* 输出固定在左上约三分之一高度，避免把画布和历史区挤成普通侧栏。 */
-	flex: 0 0 clamp(190px, 34%, 320px);
+	/* 输出固定在左上并适当加高，为思考摘要和流式正文留出更充裕的可视高度。 */
+	flex: 0 0 clamp(220px, 38%, 400px);
 	overflow: hidden;
 }
 

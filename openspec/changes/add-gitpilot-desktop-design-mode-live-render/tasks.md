@@ -26,6 +26,8 @@
 - [x] 4.3 Implement interrupted settlement on abort and orphaned draft keep/discard RPC
 - [x] 4.4 Return draft metadata from `design_open` and update Agent prompt for small visual-area patch batches
 - [x] 4.6 Normalize legacy Canvas node payloads at the sidecar/Desktop boundary and reject non-renderable canonical nodes
+- [x] 4.7 Add semantic `icon` nodes, built-in/custom vector path resolution, Agent schema guidance and fallback rendering
+- [x] 4.8 Reduce Design Agent first-patch latency: optional planning, low reasoning budget, aggregated first batch and opt-in Web tools
 - [ ] 4.5 Add CLI integration tests for journal ordering, replay, idempotency, abort and recovery (当前已覆盖 Agent 异常 interrupted 收口、journal replay、orphaned keep/discard；active Agent patch/abort 仍需带真实凭据的 harness)
 
 ## 5. Documentation and verification

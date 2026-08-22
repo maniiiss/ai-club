@@ -38,7 +38,7 @@ export interface DesignToolOptions {
 
 const canvasNode = Type.Object({
 	id: Type.String({ minLength: 1 }),
-	type: Type.Union([Type.Literal("page"), Type.Literal("frame"), Type.Literal("group"), Type.Literal("rect"), Type.Literal("ellipse"), Type.Literal("line"), Type.Literal("path"), Type.Literal("text"), Type.Literal("image"), Type.Literal("instance")]),
+	type: Type.Union([Type.Literal("page"), Type.Literal("frame"), Type.Literal("group"), Type.Literal("rect"), Type.Literal("ellipse"), Type.Literal("line"), Type.Literal("path"), Type.Literal("text"), Type.Literal("image"), Type.Literal("icon"), Type.Literal("instance")]),
 	name: Type.String({ minLength: 1 }),
 	parentId: Type.Union([Type.String(), Type.Null()]),
 	childIds: Type.Array(Type.String()),
@@ -47,6 +47,15 @@ const canvasNode = Type.Object({
 	opacity: Type.Number({ minimum: 0, maximum: 1 }),
 	transform: Type.Object({ x: Type.Number(), y: Type.Number(), width: Type.Number({ minimum: 0 }), height: Type.Number({ minimum: 0 }), rotation: Type.Number(), scaleX: Type.Number(), scaleY: Type.Number() }),
 	layout: Type.Object({ mode: Type.Union([Type.Literal("absolute"), Type.Literal("stack"), Type.Literal("grid")]), width: Type.Union([Type.Number({ minimum: 0 }), Type.Literal("hug"), Type.Literal("fill")]), height: Type.Union([Type.Number({ minimum: 0 }), Type.Literal("hug"), Type.Literal("fill")]), padding: Type.Object({ top: Type.Number(), right: Type.Number(), bottom: Type.Number(), left: Type.Number() }), gap: Type.Number(), direction: Type.Union([Type.Literal("row"), Type.Literal("column")]), align: Type.Union([Type.Literal("start"), Type.Literal("center"), Type.Literal("end"), Type.Literal("stretch")]), justify: Type.Union([Type.Literal("start"), Type.Literal("center"), Type.Literal("end"), Type.Literal("space-between")]) }),
+	icon: Type.Optional(Type.Object({
+		library: Type.Optional(Type.Union([Type.Literal("phosphor"), Type.Literal("lucide"), Type.Literal("custom")])),
+		name: Type.String({ minLength: 1, description: "Phosphor 图标库的 kebab-case 语义名（如 phone、map-pin、shield-check、credit-card），共 1500+ 个可用；未知名称会被拒绝并返回近似候选。" }),
+		weight: Type.Optional(Type.Union([Type.Literal("thin"), Type.Literal("light"), Type.Literal("regular"), Type.Literal("bold"), Type.Literal("fill")])),
+		style: Type.Optional(Type.Union([Type.Literal("stroke"), Type.Literal("fill")])),
+		strokeWidth: Type.Optional(Type.Number({ minimum: 0.5 })),
+		color: Type.Optional(Type.String()),
+		svgPath: Type.Optional(Type.String({ description: "custom 图标的 24×24 SVG path；优先使用内置 name。" })),
+	}, { additionalProperties: false })),
 }, { additionalProperties: true });
 const canvasPaint = Type.Record(Type.String(), Type.Unknown());
 /** 设计 Agent 只提交场景语义操作，服务端会再次校验节点引用、父子关系和资源。 */
@@ -58,7 +67,8 @@ const updateText = Type.Object({ op: Type.Literal("update_text"), nodeId: Type.S
 const updatePath = Type.Object({ op: Type.Literal("update_path"), nodeId: Type.String({ minLength: 1 }), path: canvasPaint });
 const attachAsset = Type.Object({ op: Type.Literal("attach_asset"), nodeId: Type.String({ minLength: 1 }), assetId: Type.String({ minLength: 1 }) });
 const designPatchParams = Type.Object({
-	operations: Type.Array(Type.Union([createNode, updateNode, deleteNode, moveNode, updateText, updatePath, attachAsset])),
+	// 单批限制为 12 个操作；首批骨架由提示词进一步建议 4～8 个，避免模型长时间组织整页 JSON。
+	operations: Type.Array(Type.Union([createNode, updateNode, deleteNode, moveNode, updateText, updatePath, attachAsset]), { minItems: 1, maxItems: 12 }),
 	summary: Type.Optional(Type.String()),
 	risk: Type.Optional(Type.Union([Type.Literal("safe"), Type.Literal("high")])),
 	operationId: Type.Optional(Type.String()),
@@ -113,7 +123,7 @@ export function createDesignToolDefinitions(context: DesignToolContext, options:
 		{
 			name: "design_apply_patch",
 			label: "应用设计事务",
-			description: "将设计修改作为 Canvas 场景事务应用到当前工作区，只提交节点、布局、文字、路径和资源引用。禁止 HTML、CSS、JavaScript、CanvasKit API 和本地路径。",
+			description: "将设计修改作为 Canvas 场景事务应用到当前工作区，只提交节点、布局、文字、图标、路径和资源引用。需要图标时必须创建 type=icon 节点并填写 icon.name；不要把图标名写成无法渲染的普通字符串。禁止 HTML、CSS、JavaScript、CanvasKit API 和本地路径。",
 			promptSnippet: "应用 Canvas 场景节点设计 patch",
 			parameters: designPatchParams,
 			async execute(_toolCallId, params) {

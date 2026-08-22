@@ -65,7 +65,7 @@ DesignShell
   -> CanvasSceneRenderer.draw
 ```
 
-实现边界固定为：`canvas-document.ts` 只负责 canonical Canvas 事务归约，`store/design.ts` 负责 committed/draft/transient/manualQueue 事件状态，`render-scheduler.ts` 负责 RAF 与可见性调度，`canvas-renderer.ts` 只负责 CanvasKit 绘制，`canvas-interaction.ts` 负责 pointercancel/失焦/Escape 的 transient 取消语义；sidecar `rpc-mode.ts` 负责 journal、重放和正式/interrupted revision 原子收口。
+实现边界固定为：`canvas-document.ts` 只负责 canonical Canvas 事务归约，`store/design.ts` 负责 committed/draft/transient/manualQueue 事件状态，`render-scheduler.ts` 负责 RAF 与可见性调度，`canvas-renderer.ts` 只负责 CanvasKit 绘制，`canvas-icons.ts` 将 `type: "icon"` 的语义名称解析为内置/自定义矢量路径，`canvas-interaction.ts` 负责 pointercancel/失焦/Escape 的 transient 取消语义；sidecar `rpc-mode.ts` 负责 journal、重放和正式/interrupted revision 原子收口。
 
 `applyDesignPatch` 已经在 sidecar 校验节点树、应用操作、写入设计文件并发送增量事件；因此本方案优先复用 `design_patch_applied`，而不是另造一套并行的模型输出协议。
 
@@ -86,7 +86,7 @@ DesignShell
 - **输入优先于后台渲染**：指针拖动、选择和文本编辑优先获得下一帧；后台 patch 可以合并，但不能阻塞 pointer 事件。
 - **视觉确定性优先**：场景几何不因“出现动画”而改变；最多对受影响节点显示短暂高亮，截图和导出结果始终使用最终几何。
 - **失败可恢复**：事件乱序、重复、断线、渲染异常和 sidecar 重启都以 `design_open` 返回的 canonical snapshot 与运行恢复态重新对齐。
-- **渲染边界必须可绘制**：sidecar 在 journal 和事件之前把历史 `rectangle`、扁平 `fill`、字符串文本等旧节点归一化为 `CanvasDesignDocument`；Desktop 对旧 sidecar 快照执行同一兼容归一化，不能让缺少 `visible/layout` 的节点静默变成空点阵。
+- **渲染边界必须可绘制**：sidecar 在 journal 和事件之前把历史 `rectangle`、扁平 `fill`、字符串文本等旧节点归一化为 `CanvasDesignDocument`；Desktop 对旧 sidecar 快照执行同一兼容归一化，不能让缺少 `visible/layout` 的节点静默变成空点阵。图标必须是 `type: "icon"` 节点并携带 `icon.name`，未知名称绘制 fallback，避免 Agent 生成一个 CanvasKit 无法识别的普通 `icon` 字段后静默丢失。
 
 ## 4. 运行状态与数据模型
 
@@ -174,7 +174,7 @@ sidecar 必须按以下顺序处理：
 - 第三批：按钮、表单、列表和图标；
 - 后续批次：文本、状态、间距和细节修正。
 
-每批建议 1～12 个相关操作，单批上限仍由 sidecar 校验。系统提示词应要求“完成一个视觉区域就提交一次 patch”，而不是一次性返回整页所有节点。这样可以在不引入不稳定的 token 级 JSON 解析的前提下获得明显的渐进式绘制效果。
+sidecar 在 run 启动后先创建稳定的页面容器（空无限画板默认 1440×900；有限页面沿用页面尺寸），该 foundation patch 不等待模型。模型后续每批建议 1～12 个相关元素操作，优先提交导航、关键文字和首屏内容，再按视觉区域提交细节。系统提示词应要求“完成一个视觉区域就提交一次 patch”，而不是一次性返回整页所有节点。这样可以在不引入不稳定的 token 级 JSON 解析的前提下获得明显的渐进式绘制效果。
 
 ## 5. Desktop 事件归约与帧调度
 
@@ -238,9 +238,27 @@ class RenderScheduler {
 3. 临时交互层：拖动中的节点、自由路径、框选矩形；
 4. 选择层：选中框、控制点、受影响节点短暂高亮。
 
-每个节点缓存 `resolvedBounds/worldMatrix`、Paragraph 和 Image 资源；节点或祖先布局发生变化时才使对应缓存失效。`dirtyRects` 仅用于裁剪重绘和后续 tile cache，不能改变命中测试所使用的场景坐标。
+渲染器缓存稳定文档的 `resolvedBounds/worldMatrix` 结果、点阵 Path、Paragraph 和 Image 资源；节点或祖先布局发生变化时才使对应缓存失效。pointermove 期间的 pen path 保存在 Board ref 中，只通过 `RenderScheduler` 请求下一帧，不写 React state 或 Zustand；`pointerup` 才同步 transient 清理并创建 canonical transaction。`dirtyRects` 仅用于裁剪重绘和后续 tile cache，不能改变命中测试所使用的场景坐标。
 
 特别注意：`canvas.toDataURL('image/png')` 只能在用户请求上传、导出、截图或 run settle 后调用，不能放在普通 `drawFrame` 热路径。预览 PNG 编码应在下一帧或 Worker/sidecar 任务中异步完成。
+
+### 5.4 Agent 首屏延迟策略
+
+实时渲染不等于必须把页面拆成大量模型回合。Design Agent 的默认路径采用“首批可用、后续渐进”的节奏：
+
+- 简单需求不强制先调用 `skip_plan`/`update_plan`；sidecar 先提交页面容器 foundation patch，首个模型回合提交主导航、关键文字和首屏元素；
+- 首个模型元素批次建议 2～8 个操作，后续按视觉区域提交 2～8 个细节操作，禁止按单节点拆分成大量模型往返；
+- Design 不默认加载 Web 搜索工具，只有显式需要外部参考或素材时才打开，避免无关工具 schema 挤占首轮上下文；MCP 仍按项目作用域保留；
+- 首轮场景上下文只发送当前页面可达节点的紧凑摘要，并限制摘要节点数量；跨页或完整细节由 Agent 按需读取，避免大型画布反复占用首 token 延迟；
+- Design 会话 JSONL 在新回合前按消息数量和序列化大小裁剪，只保留最近需求/工具结果，并追加基于 canonical 场景的轻量 compaction 摘要；不会为裁剪额外发起模型请求；
+- Design 会将主会话的 `medium/high` 思考级别压到 `low`（`off` 仍保持关闭），优先让用户尽快看到首屏；模型不支持 `low` 时只向下选择 `minimal/off`，不允许通用 clamp 把请求抬到 `high`；
+- 首批 patch 到达后继续通过 `design_patch_applied` 增量渲染，质量优化在后续批次完成，不以等待整页完成作为首屏展示条件。
+
+### 5.5 AI 绘制中的视觉反馈
+
+模型尚未返回第一个 patch 时，CanvasKit Board 在独立的 transient 层绘制短路径和笔尖光标。该路径由本地 RAF 按视口生成，只用于表达“正在铺设页面骨架”，不进入 `CanvasDesignDocument`、撤销栈、RPC 或 draft journal；真实 patch 到达后仍由 draft scene 绘制，run settled/interrupted 时动画自动停止。窗口隐藏时只保留状态，不继续提交非必要绘制帧。
+
+这样可以减少一次计划工具回合、减少 Web 工具上下文和重复模型调用，同时保留 patch journal、settled/interrupted revision 与实时渲染的一致性。
 
 ## 6. 手工绘制与 AI 绘制的统一交互
 

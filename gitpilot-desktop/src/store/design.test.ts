@@ -97,7 +97,7 @@ function resetStore(): void {
 		zoom: 100,
 		previewMode: 'original',
 		selectedElementId: null,
-		messages: [{ id: 'welcome', kind: 'assistant', text: 'welcome' }],
+		messages: [],
 		pendingPlan: null,
 		pendingApproval: null,
 		execution: { status: 'idle', phase: 'idle', runId: null, requestId: null, sequence: 0, thinking: '', steps: [] },
@@ -249,7 +249,7 @@ describe('Design Mode snapshot', () => {
 
 	it('resetProject 返回 Landing 但保留完整工作区，历史点击可恢复当前项目', async () => {
 		const activeFile = 'pages/home/styles.css';
-		const messages = [{ id: 'welcome', kind: 'assistant' as const, text: 'welcome' }, { id: 'm1', kind: 'user' as const, text: '保留我', status: 'sent' as const }];
+		const messages = [{ id: 'm0', kind: 'assistant' as const, text: '历史回复' }, { id: 'm1', kind: 'user' as const, text: '保留我', status: 'sent' as const }];
 		writeWorkspace('project-test', { activeFile, activeTab: 'code', messages, queuedPrompts: [{ id: 'q1', text: '排队内容' }] });
 		useDesignStore.setState({ projects: [{ name: '项目', path: 'project-test', hasWorkspace: true }], hasWorkspace: true, isProjectStarted: true, activeFile, activeTab: 'code', messages, queuedPrompts: [{ id: 'q1', text: '排队内容' }] });
 		vi.spyOn(rpc, 'designOpen').mockResolvedValue({ id: 'open', type: 'response', command: 'design_open', success: true, data: { snapshot: workspaceSnapshot('project-test') } } as never);
@@ -258,7 +258,7 @@ describe('Design Mode snapshot', () => {
 		expect(useDesignStore.getState()).toMatchObject({ isProjectStarted: false, hasWorkspace: true, activeFile, activeTab: 'code', queuedPrompts: [{ id: 'q1', text: '排队内容' }] });
 
 		await useDesignStore.getState().openProjectHistory('project-test');
-		expect(useDesignStore.getState()).toMatchObject({ isProjectStarted: true, hasWorkspace: true, activeFile, activeTab: 'code', messages: [{ id: 'welcome', kind: 'assistant' }], queuedPrompts: [] });
+		expect(useDesignStore.getState()).toMatchObject({ isProjectStarted: true, hasWorkspace: true, activeFile, activeTab: 'code', messages: [], queuedPrompts: [] });
 	});
 
 	it('切换项目时恢复各自的页面、文件和对话 bucket', async () => {
@@ -272,11 +272,11 @@ describe('Design Mode snapshot', () => {
 
 		await useDesignStore.getState().openProjectHistory('project-b');
 		let state = useDesignStore.getState();
-		expect(state).toMatchObject({ projectPath: 'project-b', activeFile: fileB, activeTab: 'code', messages: [{ id: 'welcome', kind: 'assistant' }] });
+		expect(state).toMatchObject({ projectPath: 'project-b', activeFile: fileB, activeTab: 'code', messages: [] });
 
 		await useDesignStore.getState().openProjectHistory('project-a');
 		state = useDesignStore.getState();
-		expect(state).toMatchObject({ projectPath: 'project-a', activeFile: fileA, activeTab: 'preview', messages: [{ id: 'welcome', kind: 'assistant' }] });
+		expect(state).toMatchObject({ projectPath: 'project-a', activeFile: fileA, activeTab: 'preview', messages: [] });
 	});
 
 	it('切出再切回项目时保留后台运行态，并继续显示执行阶段', async () => {
@@ -315,7 +315,7 @@ describe('Design Mode snapshot', () => {
 
 		await useDesignStore.getState().hydrateSnapshot();
 
-		expect(useDesignStore.getState().messages).toEqual([{ id: 'welcome', kind: 'assistant', text: expect.any(String) }, ...messages]);
+		expect(useDesignStore.getState().messages).toEqual(messages);
 		const bucket = JSON.parse(localStorage.getItem(bucketKey('project-test')) ?? '{}');
 		expect(bucket).not.toHaveProperty('snapshot');
 		expect(bucket).not.toHaveProperty('messages');
@@ -542,7 +542,7 @@ describe('Design Mode snapshot', () => {
 		const state = useDesignStore.getState();
 		expect(state.execution.thinking).toBe('先检查页面。');
 		expect(state.messages.filter((message) => message.kind === 'assistant').at(-1)).toMatchObject({ text: '正在准备页面。' });
-		expect(state.messages.filter((message) => message.kind === 'assistant')).toHaveLength(2);
+		expect(state.messages.filter((message) => message.kind === 'assistant')).toHaveLength(1);
 	});
 
 	it('不把内部 user 指令或工具 JSON 渲染成 Design 正文', () => {
@@ -556,8 +556,7 @@ describe('Design Mode snapshot', () => {
 			message: { role: 'toolResult', toolName: 'design_apply_patch', content: [{ type: 'text', text: '{"operationId":"op-1","revisionId":"rev-2"}' }] },
 		}), sequence: 2 }));
 		const state = useDesignStore.getState();
-		expect(state.messages).toHaveLength(1);
-		expect(state.messages[0]).toMatchObject({ id: 'welcome' });
+		expect(state.messages).toHaveLength(0);
 	});
 
 	it('工具阶段覆盖 thinking 提示，并拒绝乱序/重复 sequence', () => {
@@ -648,6 +647,22 @@ describe('Design Mode snapshot', () => {
 		expect(useDesignStore.getState().manualQueue).toHaveLength(0);
 	});
 
+	it('同一批 patch 同时更新容器和子节点时，笔迹目标优先使用具体子节点', () => {
+		const current = useDesignStore.getState().snapshot;
+		const canvas = current.document.canvas!;
+		const root = canvas.nodes['canvas-root'];
+		const frame: CanvasNode = {
+			id: 'ai-target-frame', type: 'frame', name: '登录表单', parentId: root.id, childIds: [], visible: true, locked: false, opacity: 1,
+			transform: { x: 120, y: 120, width: 420, height: 260, rotation: 0, scaleX: 1, scaleY: 1 },
+			layout: { mode: 'absolute', width: 420, height: 260, padding: { top: 0, right: 0, bottom: 0, left: 0 }, gap: 0, direction: 'column', align: 'start', justify: 'start' },
+		};
+		const text: CanvasNode = { ...structuredClone(canvas.nodes.headline), id: 'ai-target-label', name: '登录标题', parentId: frame.id, childIds: [], transform: { x: 32, y: 32, width: 260, height: 48, rotation: 0, scaleX: 1, scaleY: 1 } };
+		const transaction = { transactionId: 'op-container-and-child', baseRevision: canvas.revision, source: 'ai' as const, operations: [{ op: 'create_node' as const, node: frame, parentId: root.id }, { op: 'create_node' as const, node: text, parentId: frame.id }], summary: '创建登录表单', createdAt: new Date().toISOString() };
+		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), operationId: transaction.transactionId, revisionId: 'draft-container-and-child', draftRevisionId: 'draft-container-and-child', operationIndex: 1, pageId: 'canvas', summary: transaction.summary, transaction, isDraft: true });
+
+		expect(useDesignStore.getState().draft?.lastPatchNodeIds).toEqual(['ai-target-label']);
+	});
+
 	it('连续 draft patch 按 operationIndex/sequence 归约，旧 run 与重复 operationId 被丢弃', () => {
 		const current = useDesignStore.getState().snapshot;
 		const firstNode = current.document.canvas!.nodes.subline;
@@ -665,6 +680,7 @@ describe('Design Mode snapshot', () => {
 		expect(state.getRenderScene().nodes.subline).toMatchObject({ opacity: 1 });
 		expect(state.getRenderScene().revision).toBe(firstNode ? current.document.canvas!.revision + 20 : beforeDuplicate);
 		expect(state.execution.sequence).toBe(20);
+		expect(state.draft?.lastPatchNodeIds).toEqual(['subline']);
 	});
 
 	it('Canvas transaction 事件只更新受影响节点，不再通过文件清单派生页面', () => {
@@ -767,7 +783,7 @@ describe('Design Mode snapshot', () => {
 
 	it('停止清空未执行队列但保留已完成 patch', async () => {
 		vi.spyOn(rpc, 'designAbort').mockResolvedValue({ id: 'abort', type: 'response', command: 'design_abort', success: true });
-		useDesignStore.setState({ isGenerating: true, execution: { status: 'running', phase: 'tool', runId, requestId, sequence: 2, thinking: '', steps: [] }, queuedPrompts: [{ id: 'q1', text: '未执行' }], messages: [{ id: 'welcome', kind: 'assistant', text: 'welcome' }, { id: 'q1', kind: 'user', text: '未执行', status: 'queued' }] });
+		useDesignStore.setState({ isGenerating: true, execution: { status: 'running', phase: 'tool', runId, requestId, sequence: 2, thinking: '', steps: [] }, queuedPrompts: [{ id: 'q1', text: '未执行' }], messages: [{ id: 'm0', kind: 'assistant', text: '历史回复' }, { id: 'q1', kind: 'user', text: '未执行', status: 'queued' }] });
 		await useDesignStore.getState().stop();
 		expect(useDesignStore.getState().queuedPrompts).toEqual([]);
 		expect(useDesignStore.getState().execution.status).toBe('stopped');

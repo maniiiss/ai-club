@@ -20,7 +20,6 @@ const MISSING_DESIGN_WORKSPACE_ERROR = '当前工作空间还没有设计工作�
 const CANVAS_SCENE_FILE = 'scene.json';
 const DESIGN_THINKING_MAX_CHARS = 12_000;
 const newId = () => `design-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-const WELCOME_MESSAGE: DesignMessage = { id: 'welcome', kind: 'assistant', text: '描述你想要的页面，我会把它变成可编辑的 CanvasKit 原生设计。' };
 
 export interface DesignProjectEntry {
 	name: string;
@@ -146,6 +145,8 @@ export interface DesignDraftState {
 	appliedOperationIds: string[];
 	pendingTransactions: CanvasDesignTransaction[];
 	highlightedNodeIds: string[];
+	/** 最近一批 AI patch 的真实操作目标；画布笔迹只在这些节点范围内播放。 */
+	lastPatchNodeIds: string[];
 }
 
 export interface DesignTransientState {
@@ -334,13 +335,12 @@ function toDesignMessages(messages: DesignRpcMessage[] | undefined): DesignMessa
 		if (message.kind === 'result' && typeof message.revisionId === 'string' && typeof message.summary === 'string') visible.push(message);
 		else if ((message.kind === 'user' || message.kind === 'assistant' || message.kind === 'error') && typeof message.text === 'string') visible.push(message);
 	}
-	return [WELCOME_MESSAGE, ...visible.filter((message) => message.id !== WELCOME_MESSAGE.id)];
+	return visible;
 }
 
 /** 只把用户可见的消息写回 sidecar；Design plan 是运行态，不进入持久化对话。 */
 function toRpcMessages(messages: DesignMessage[]): DesignRpcMessage[] {
 	return messages.flatMap((message): DesignRpcMessage[] => {
-		if (message.id === WELCOME_MESSAGE.id) return [];
 		if (message.kind === 'user') return [{ id: message.id, kind: 'user', text: message.text, ...(message.status ? { status: message.status } : {}) }];
 		if (message.kind === 'assistant' || message.kind === 'error') return [{ id: message.id, kind: message.kind, text: message.text }];
 		if (message.kind === 'result') return [{ id: message.id, kind: 'result', revisionId: message.revisionId, summary: message.summary }];
@@ -365,6 +365,39 @@ function messageText(message: unknown): string {
 
 function initialExecution(): DesignExecution {
 	return { status: 'idle', phase: 'idle', runId: null, requestId: null, sequence: 0, thinking: '', steps: [] };
+}
+
+/**
+ * 从事务操作提取本批 patch 的直接目标节点。
+ * 业务意图：affectedNodeIds 可能包含父容器和布局传播节点，不能直接用来
+ * 计算笔迹范围；只使用 create/update/delete 等操作真正触达的节点，避免范围扩散到空白区。
+ */
+function collectPatchTargetNodeIds(transaction: CanvasDesignTransaction, scene: CanvasDesignDocument): string[] {
+	const ids: string[] = [];
+	for (const operation of transaction.operations) {
+		switch (operation.op) {
+			case 'create_node':
+				ids.push(operation.node.id);
+				break;
+			case 'update_node':
+			case 'delete_node':
+			case 'move_node':
+			case 'update_text':
+			case 'update_path':
+			case 'attach_asset':
+				ids.push(operation.nodeId);
+				break;
+		}
+	}
+	const uniqueIds = [...new Set(ids)];
+	// 同一批 patch 常常同时创建/更新父级 frame 和其中的文本、按钮、图标。
+	// 父级 frame 的范围可能覆盖整块留白，因此只要本批存在具体子节点，
+	// 就把有子节点的容器从笔迹目标中剔除；纯容器 patch 仍然保留，兼容首个基础骨架。
+	const concreteIds = uniqueIds.filter((id) => {
+		const node = scene.nodes[id];
+		return node && !(node.type === 'frame' && node.childIds.length > 0);
+	});
+	return concreteIds.length > 0 ? concreteIds : uniqueIds;
 }
 
 /**
@@ -461,9 +494,7 @@ function updateBackgroundRun(previous: DesignBackgroundRun | undefined, line: De
 function updateAssistantMessage(messages: DesignMessage[], text: string, replace: boolean, messageId?: string): DesignMessage[] {
 	const actualIndex = messages.length - 1;
 	const current = messages[actualIndex];
-	// 欢迎语是固定内容，首个流式正文必须新建气泡，不能覆盖入口提示。
-	if (!current || current.kind !== 'assistant' || current.id === 'welcome') return [...messages, { id: messageId ?? newId(), kind: 'assistant', text }];
-	if (current.kind !== 'assistant') return messages;
+	if (!current || current.kind !== 'assistant') return [...messages, { id: messageId ?? newId(), kind: 'assistant', text }];
 	const next = [...messages];
 	next[actualIndex] = { ...current, text: replace ? text : `${current.text}${text}` };
 	return next;
@@ -661,7 +692,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
 			if (!response.success || response.command !== 'design_prompt') throw new Error(response.success ? 'Design sidecar 未返回运行标识' : response.error);
 			set((state) => ({
 				execution: { ...state.execution, status: 'running', phase: 'thinking', requestId: response.data.requestId, runId: response.data.runId },
-				draft: { runId: response.data.runId, requestId: response.data.requestId, baseRevisionId: state.snapshot.document.revisions.at(-1)?.id ?? '', draftRevisionId: `draft-${response.data.runId}`, scene: structuredClone(state.committedScene), operationCount: 0, lastSequence: 0, appliedOperationIds: [], pendingTransactions: [], highlightedNodeIds: [] },
+				draft: { runId: response.data.runId, requestId: response.data.requestId, baseRevisionId: state.snapshot.document.revisions.at(-1)?.id ?? '', draftRevisionId: `draft-${response.data.runId}`, scene: structuredClone(state.committedScene), operationCount: 0, lastSequence: 0, appliedOperationIds: [], pendingTransactions: [], highlightedNodeIds: [], lastPatchNodeIds: [] },
 				draftMetadata: null,
 				isResynchronizing: false,
 			}));
@@ -995,7 +1026,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
 					const recovered = response.data.execution ? recoverDesignExecution(response.data.execution) : retainedRuntime;
 					const recoveredDraft = response.data.draft;
 					const recoveredDraftScene = response.data.draftSnapshot?.document.canvas ? getCanvasDocument(toDesignSnapshot(response.data.draftSnapshot)) : getCanvasDocument(snapshot);
-					const activeDraft = recoveredDraft?.status === 'active' && recovered.execution.runId && recovered.execution.requestId ? { runId: recovered.execution.runId, requestId: recovered.execution.requestId, baseRevisionId: recoveredDraft.baseRevisionId, draftRevisionId: recoveredDraft.draftRevisionId, scene: structuredClone(recoveredDraftScene), operationCount: recoveredDraft.operationCount, lastSequence: recoveredDraft.lastSequence, appliedOperationIds: [], pendingTransactions: [], highlightedNodeIds: [] } satisfies DesignDraftState : null;
+					const activeDraft = recoveredDraft?.status === 'active' && recovered.execution.runId && recovered.execution.requestId ? { runId: recovered.execution.runId, requestId: recovered.execution.requestId, baseRevisionId: recoveredDraft.baseRevisionId, draftRevisionId: recoveredDraft.draftRevisionId, scene: structuredClone(recoveredDraftScene), operationCount: recoveredDraft.operationCount, lastSequence: recoveredDraft.lastSequence, appliedOperationIds: [], pendingTransactions: [], highlightedNodeIds: [], lastPatchNodeIds: [] } satisfies DesignDraftState : null;
 					set((state) => ({ projects, snapshot, committedScene: structuredClone(getCanvasDocument(snapshot)), draft: activeDraft, draftMetadata: recoveredDraft ?? null, transient: null, manualQueue: [], isResynchronizing: false, projectPath, activeProjectKey: projectKey(projectPath), activePageId: saved?.activePageId && snapshot.document.pages.some((page) => page.id === saved.activePageId) ? saved.activePageId : snapshot.document.entryPageId, messages: toDesignMessages(response.data.messages), hasWorkspace: true, isProjectStarted: true, error: null, ...recovered, execution: { ...recovered.execution, startedAt: state.execution.startedAt } }));
 				} else if (!response.success && response.command === 'design_open' && response.error === MISSING_DESIGN_WORKSPACE_ERROR) {
 					// 磁盘是 Design Workspace 的权威来源；缓存过期时必须回到入口，
@@ -1095,8 +1126,8 @@ export const useDesignStore = create<DesignState>((set, get) => {
 					const nextScene = applyCanvasOperations(baseScene, line.transaction.operations as CanvasDesignOperation[]);
 					const isDraft = line.isDraft !== false && (line.isDraft === true || current.isGenerating || Boolean(current.draft));
 					if (isDraft) {
-						const previousDraft = current.draft ?? { runId: line.runId ?? 'unknown', requestId: line.requestId, baseRevisionId: current.snapshot.document.revisions.at(-1)?.id ?? '', draftRevisionId: line.draftRevisionId ?? line.revisionId, scene: baseScene, operationCount: 0, lastSequence: 0, appliedOperationIds: [], pendingTransactions: [], highlightedNodeIds: [] };
-						const draft: DesignDraftState = { ...previousDraft, draftRevisionId: line.draftRevisionId ?? previousDraft.draftRevisionId, scene: nextScene, operationCount: line.operationIndex ?? previousDraft.operationCount + 1, lastSequence: line.sequence, appliedOperationIds: [...previousDraft.appliedOperationIds, line.operationId].slice(-512), pendingTransactions: [...previousDraft.pendingTransactions, line.transaction].slice(-128), highlightedNodeIds: [...new Set([...(previousDraft.highlightedNodeIds ?? []), ...(line.affectedNodeIds ?? [])])] };
+						const previousDraft = current.draft ?? { runId: line.runId ?? 'unknown', requestId: line.requestId, baseRevisionId: current.snapshot.document.revisions.at(-1)?.id ?? '', draftRevisionId: line.draftRevisionId ?? line.revisionId, scene: baseScene, operationCount: 0, lastSequence: 0, appliedOperationIds: [], pendingTransactions: [], highlightedNodeIds: [], lastPatchNodeIds: [] };
+						const draft: DesignDraftState = { ...previousDraft, draftRevisionId: line.draftRevisionId ?? previousDraft.draftRevisionId, scene: nextScene, operationCount: line.operationIndex ?? previousDraft.operationCount + 1, lastSequence: line.sequence, appliedOperationIds: [...previousDraft.appliedOperationIds, line.operationId].slice(-512), pendingTransactions: [...previousDraft.pendingTransactions, line.transaction].slice(-128), highlightedNodeIds: [...new Set([...(previousDraft.highlightedNodeIds ?? []), ...(line.affectedNodeIds ?? [])])], lastPatchNodeIds: collectPatchTargetNodeIds(line.transaction, nextScene) };
 						set((state) => ({ draft, draftMetadata: null, snapshot: withCanvasDocument(state.snapshot, nextScene), execution: { ...state.execution, status: 'running', phase: 'applying_patch' }, isResynchronizing: false }));
 					} else {
 						set((state) => ({ snapshot: withCanvasDocument(state.snapshot, nextScene), committedScene: structuredClone(nextScene), draft: null, execution: { ...state.execution, status: 'running', phase: 'applying_patch' } }));

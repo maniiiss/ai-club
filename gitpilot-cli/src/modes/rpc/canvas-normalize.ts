@@ -1,8 +1,12 @@
+import { DESIGN_ICON_NAME_SET } from "./design-icon-manifest.generated.ts";
 import type { CanvasDesignDocument, CanvasDesignOperation } from "./rpc-types.ts";
 
 type JsonRecord = Record<string, unknown>;
 
-const CANVAS_NODE_TYPES = new Set(["page", "frame", "group", "rect", "ellipse", "line", "path", "text", "image", "instance"]);
+const CANVAS_NODE_TYPES = new Set(["page", "frame", "group", "rect", "ellipse", "line", "path", "text", "image", "icon", "instance"]);
+
+/** question 是渲染兜底图标，始终合法；其余名称必须命中 Phosphor 清单。 */
+const ALWAYS_VALID_ICON_NAMES = new Set(["question"]);
 
 function isRecord(value: unknown): value is JsonRecord {
 	return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -98,6 +102,62 @@ function normalizeTextSpec(node: JsonRecord): JsonRecord {
 	};
 }
 
+/** 将图标保持为可序列化的语义节点；Desktop 会在 CanvasKit 边界解析成矢量路径。 */
+function normalizeIconSpec(node: JsonRecord): JsonRecord {
+	const source = typeof node.icon === "string" ? { name: node.icon } : cloneRecord(node.icon);
+	const weight = ["thin", "light", "bold", "fill"].includes(String(source.weight)) ? String(source.weight) : "regular";
+	const style = source.style === "fill" || weight === "fill" ? "fill" : "stroke";
+	const name = stringOr(source.name ?? node.name, "question");
+	return {
+		library: source.library === "lucide" || source.library === "custom" ? source.library : "phosphor",
+		name,
+		weight,
+		style,
+		...(typeof source.strokeWidth === "number" ? { strokeWidth: Math.max(0.5, source.strokeWidth) } : {}),
+		...(typeof source.color === "string" ? { color: source.color } : {}),
+		...(typeof source.svgPath === "string" && source.svgPath.trim() ? { svgPath: source.svgPath.trim() } : {}),
+	};
+}
+
+/** 未知图标名的近似候选用编辑距离挑选，让 Agent 在同一轮工具调用里自行改正。 */
+function levenshteinDistance(a: string, b: string): number {
+	const previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+	for (let i = 1; i <= a.length; i += 1) {
+		let carry = previous[0];
+		previous[0] = i;
+		for (let j = 1; j <= b.length; j += 1) {
+			const temp = previous[j];
+			previous[j] = Math.min(previous[j] + 1, previous[j - 1] + 1, carry + (a[i - 1] === b[j - 1] ? 0 : 1));
+			carry = temp;
+		}
+	}
+	return previous[b.length];
+}
+
+function suggestIconNames(name: string, limit = 3): string[] {
+	return [...DESIGN_ICON_NAME_SET]
+		.map((candidate) => ({ candidate, distance: levenshteinDistance(name, candidate) }))
+		.sort((left, right) => left.distance - right.distance)
+		.slice(0, limit)
+		.filter(({ distance }) => distance <= Math.max(2, Math.floor(name.length / 2)))
+		.map(({ candidate }) => candidate);
+}
+
+/**
+ * 模型输入边界的图标名硬校验：未知名称直接报错并附带近似候选。
+ * 只在 patch 归一化时调用；读取历史 design.json 仍走宽松路径，旧场景不被阻断。
+ */
+function assertKnownIconName(node: JsonRecord, nodeId: string): void {
+	const icon = node.icon;
+	if (!isRecord(icon)) return;
+	if (icon.library === "custom") return;
+	if (typeof icon.svgPath === "string" && icon.svgPath.trim()) return;
+	const name = stringOr(icon.name, "question");
+	if (ALWAYS_VALID_ICON_NAMES.has(name) || DESIGN_ICON_NAME_SET.has(name)) return;
+	const suggestions = suggestIconNames(name);
+	throw new Error(`Canvas 节点 ${nodeId} 的图标名 "${name}" 不在 Phosphor 图标库中${suggestions.length ? `；可改用：${suggestions.join("、")}` : ""}。图标名使用 kebab-case 语义名称（如 phone、map-pin、shield-check）`);
+}
+
 function normalizeTransform(node: JsonRecord): JsonRecord {
 	const source = cloneRecord(node.transform);
 	const width = Math.max(0, numberOr(source.width ?? node.width, 0));
@@ -141,7 +201,7 @@ export function normalizeCanvasNode(value: unknown, fallbackId?: string): JsonRe
 	const id = stringOr(value.id, fallbackId ?? "");
 	if (!id) throw new Error("Canvas 节点缺少 id；请为每个 create_node 提供稳定节点标识");
 	const rawType = stringOr(value.type, "");
-	const type = rawType === "rectangle" ? "rect" : rawType;
+	const type = rawType === "rectangle" ? "rect" : rawType === "svg" ? "icon" : rawType;
 	if (!CANVAS_NODE_TYPES.has(type)) throw new Error(`Canvas 节点 ${id} 使用不支持的类型 ${rawType || "unknown"}；请使用 rect、frame、text 等原生类型`);
 	const transform = normalizeTransform(value);
 	const normalized: JsonRecord = {
@@ -161,6 +221,7 @@ export function normalizeCanvasNode(value: unknown, fallbackId?: string): JsonRe
 	if (type === "text") normalized.text = normalizeTextSpec(value);
 	if (type === "path" && isRecord(value.path)) normalized.path = { ...value.path, fillRule: value.path.fillRule === "evenOdd" ? "evenOdd" : "nonZero", commands: Array.isArray(value.path.commands) ? value.path.commands : [] };
 	if (type === "image" && isRecord(value.image)) normalized.image = { ...value.image, fit: ["fill", "contain", "cover", "crop"].includes(String(value.image.fit)) ? value.image.fit : "contain" };
+	if (type === "icon") normalized.icon = normalizeIconSpec(value);
 	if (isRecord(value.prototype)) normalized.prototype = structuredClone(value.prototype);
 	return normalized;
 }
@@ -201,11 +262,18 @@ export function normalizeNativeCanvasDocument(value: unknown): CanvasDesignDocum
 /** 归一化 patch，使 journal、事件和 Desktop reducer 使用同一份操作语义。 */
 export function normalizeCanvasOperations(operations: CanvasDesignOperation[], source: CanvasDesignDocument): CanvasDesignOperation[] {
 	return operations.map((operation) => {
-		if (operation.op === "create_node") return { ...operation, node: normalizeCanvasNode(operation.node) };
+		if (operation.op === "create_node") {
+			const node = normalizeCanvasNode(operation.node);
+			// 新建图标节点全部由模型手写，名称必须可渲染；失败信息会作为工具错误回到模型。
+			if (node.type === "icon") assertKnownIconName(node, String(node.id));
+			return { ...operation, node };
+		}
 		if (operation.op === "update_node") {
 			const target = source.nodes[operation.nodeId];
 			if (!target) return operation;
 			const merged = normalizeCanvasNode({ ...target, ...operation.changes }, operation.nodeId);
+			// 只有本次确实改写了 icon 或把节点转成 icon 时才校验；旧场景遗留名称不阻断位置/样式更新。
+			if ((operation.changes.icon !== undefined || operation.changes.type === "icon") && merged.type === "icon") assertKnownIconName(merged, operation.nodeId);
 			const { id: _id, parentId: _parentId, childIds: _childIds, ...changes } = merged;
 			return { ...operation, changes };
 		}

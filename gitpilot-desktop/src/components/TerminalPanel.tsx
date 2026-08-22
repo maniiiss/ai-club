@@ -73,9 +73,22 @@ export function TerminalPanel() {
 					terminal.write(data);
 					if (sessionId) void writeTerminal(sessionId, data).catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)));
 				}).dispose;
-				const observer = new ResizeObserver(() => fit.fit());
+				// xterm 的 fit() 会按新尺寸整表重排并重绘全部可见行；窗口快速拉大拉小时
+				// 每个中间尺寸都同步执行会占满主线程，导致窗口不跟手。合并到尺寸稳定后执行一次。
+				let fitTimer: number | null = null;
+				const scheduleFit = () => {
+					if (fitTimer !== null) window.clearTimeout(fitTimer);
+					fitTimer = window.setTimeout(() => {
+						fitTimer = null;
+						fit.fit();
+					}, 100);
+				};
+				const observer = new ResizeObserver(scheduleFit);
 				observer.observe(host);
-				removeResizeObserver = () => observer.disconnect();
+				removeResizeObserver = () => {
+					observer.disconnect();
+					if (fitTimer !== null) window.clearTimeout(fitTimer);
+				};
 			} catch (cause) {
 				if (!disposed) setError(cause instanceof Error ? cause.message : String(cause));
 			}

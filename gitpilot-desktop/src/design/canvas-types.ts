@@ -1,6 +1,6 @@
 import type { DesignProjectGuidelines, DesignTarget, DesignViewport } from './design-types';
 
-export type CanvasNodeType = 'page' | 'frame' | 'group' | 'rect' | 'ellipse' | 'line' | 'path' | 'text' | 'image' | 'instance';
+export type CanvasNodeType = 'page' | 'frame' | 'group' | 'rect' | 'ellipse' | 'line' | 'path' | 'text' | 'image' | 'icon' | 'instance';
 
 export interface CanvasTransform {
 	x: number;
@@ -104,6 +104,18 @@ export interface CanvasPathSpec {
 	fillRule: 'nonZero' | 'evenOdd';
 }
 
+export interface CanvasIconSpec {
+	/** 内置图标使用 phosphor/lucide 语义名称；custom 可携带 svgPath。 */
+	library: 'phosphor' | 'lucide' | 'custom';
+	name: string;
+	weight?: 'thin' | 'light' | 'regular' | 'bold' | 'fill';
+	style?: 'stroke' | 'fill';
+	strokeWidth?: number;
+	color?: string;
+	/** 仅 custom 图标需要；路径坐标按 24×24 viewBox 解释。 */
+	svgPath?: string;
+}
+
 export interface CanvasImageSpec {
 	assetId: string;
 	fit: 'fill' | 'contain' | 'cover' | 'crop';
@@ -145,6 +157,7 @@ export interface CanvasNode {
 	paint?: CanvasPaintSpec;
 	text?: CanvasTextSpec;
 	path?: CanvasPathSpec;
+	icon?: CanvasIconSpec;
 	image?: CanvasImageSpec;
 	prototype?: CanvasPrototypeTrigger;
 }

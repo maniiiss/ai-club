@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { CanvasKit, Paragraph, TypefaceFontProvider } from 'canvaskit-wasm';
-import { CanvasSceneRenderer, createTransientPathNode, getDotGridCoordinates, type CanvasCamera } from './canvas-renderer';
+import { CanvasSceneRenderer, createTransientPathNode, getDotGridCoordinates, getRenderableSceneBounds, paintFillAlpha, type CanvasCamera } from './canvas-renderer';
 import type { CanvasResolvedNode } from './canvas-types';
 
 function expectDevicePixelAligned(values: number[], dpr: number): void {
@@ -113,6 +113,32 @@ describe('CanvasSceneRenderer 文本渲染', () => {
 });
 
 describe('CanvasSceneRenderer 临时几何', () => {
+	it('透明临时路径不会被填充成白色实心面', () => {
+		expect(paintFillAlpha(1, { fill: { kind: 'solid', color: '#ffffff', alpha: 0 }, opacity: 1 })).toBe(0);
+		expect(paintFillAlpha(0.8, { fill: { kind: 'solid', color: '#ffffff', alpha: 0.5 }, opacity: 0.5 })).toBeCloseTo(0.2);
+	});
+
+	it('只把已解析的可见界面节点作为 AI 笔迹锚点', () => {
+		const bounds = getRenderableSceneBounds([
+			{ id: 'root', type: 'page', parentId: null, visible: true, resolvedX: 0, resolvedY: 0, resolvedWidth: 1440, resolvedHeight: 900 } as CanvasResolvedNode,
+			{ id: 'group', type: 'group', parentId: 'root', visible: true, resolvedX: 0, resolvedY: 0, resolvedWidth: 1440, resolvedHeight: 900 } as CanvasResolvedNode,
+			{ id: 'card', type: 'frame', parentId: 'group', visible: true, resolvedX: 120, resolvedY: 80, resolvedWidth: 560, resolvedHeight: 320 } as CanvasResolvedNode,
+			{ id: 'hidden', type: 'rect', parentId: 'root', visible: false, resolvedX: 0, resolvedY: 0, resolvedWidth: 2000, resolvedHeight: 2000 } as CanvasResolvedNode,
+		], 'root');
+		expect(bounds).toEqual({ x: 120, y: 80, width: 560, height: 320 });
+		expect(getRenderableSceneBounds([{ id: 'root', type: 'page', parentId: null, visible: true, resolvedX: 0, resolvedY: 0, resolvedWidth: 1440, resolvedHeight: 900 } as CanvasResolvedNode], 'root')).toBeNull();
+	});
+
+	it('有 patch 聚焦节点时不会把其它空白区域纳入笔迹范围', () => {
+		const nodes = [
+			{ id: 'root', type: 'page', parentId: null, visible: true, resolvedX: 0, resolvedY: 0, resolvedWidth: 1440, resolvedHeight: 900 } as CanvasResolvedNode,
+			{ id: 'left-card', type: 'frame', parentId: 'root', visible: true, resolvedX: 80, resolvedY: 100, resolvedWidth: 480, resolvedHeight: 300 } as CanvasResolvedNode,
+			{ id: 'right-blank', type: 'frame', parentId: 'root', visible: true, resolvedX: 760, resolvedY: 100, resolvedWidth: 560, resolvedHeight: 300 } as CanvasResolvedNode,
+		];
+		expect(getRenderableSceneBounds(nodes, 'root', ['left-card'])).toEqual({ x: 80, y: 100, width: 480, height: 300 });
+		expect(getRenderableSceneBounds(nodes, 'root', [])).toBeNull();
+	});
+
 	it('将 pen transient 包装为渲染节点但不修改 canonical 场景或 revision', () => {
 		const document = {
 			schemaVersion: 2, id: 'design', name: 'Design', revision: 7, updatedAt: '2026-08-22T00:00:00.000Z', entryPageId: 'canvas',

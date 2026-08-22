@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
-import { Archive, ArrowDown, ArrowLeft, BookOpen, CaretDown as ChevronDown, CaretLeft as ChevronLeft, CaretRight as ChevronRight, ChatCircleDots, Check, ClockCounterClockwise as History, Code as Code2, CursorClick, FileText, FloppyDisk as Save, Folder, FrameCorners, Hand, Image as ImageIcon, ListChecks, CircleNotch as Loader2, Monitor, Paperclip, PencilSimple, Plus, SelectionAll, SidebarSimple, PaperPlaneTilt as Send, Sparkle as Sparkles, Square, Trash as Trash2, X } from '@phosphor-icons/react';
+import { Archive, ArrowDown, ArrowLeft, BookOpen, CaretDown as ChevronDown, CaretLeft as ChevronLeft, CaretRight as ChevronRight, ChatCircleDots, Check, ClockCounterClockwise as History, Code as Code2, CursorClick, FileText, FloppyDisk as Save, Folder, FrameCorners, Hand, Image as ImageIcon, ListChecks, CircleNotch as Loader2, Monitor, Paperclip, PenNib, PencilSimple, Plus, SelectionAll, SidebarSimple, PaperPlaneTilt as Send, Sparkle as Sparkles, Square, Trash as Trash2, X } from '@phosphor-icons/react';
 import { TargetTitleBar } from '@/src/components/desktop/TargetTitleBar';
 import { ModelPicker } from '@/src/components/ModelPicker';
 import { Button } from '@/src/components/ui/button';
@@ -341,7 +341,7 @@ function DesignNavigator({ onClose }: { onClose?: () => void }) {
 		void applyCanvasTransaction({ transactionId: `desktop-delete-${node.id}-${Date.now()}`, baseRevision: canvas.revision, source: 'user', operations: [{ op: 'delete_node', nodeId: node.id }], summary: `删除${node.name}`, createdAt: new Date().toISOString() });
 		selectElement(null);
 	};
-	const typeLabel: Record<CanvasNodeType, string> = { page: '页面', frame: '画框', group: '组', rect: '矩形', ellipse: '椭圆', line: '线段', path: '路径', text: '文本', image: '图片', instance: '实例' };
+	const typeLabel: Record<CanvasNodeType, string> = { page: '页面', frame: '画框', group: '组', rect: '矩形', ellipse: '椭圆', line: '线段', path: '路径', text: '文本', image: '图片', icon: '图标', instance: '实例' };
 	return <aside className={styles.navigator} aria-label="页面与图层">
 		<div className={styles.navigatorTopbar}><span>页面与图层</span><div className={styles.navigatorTopbarActions}><button type="button" onClick={() => void exportDesign()} title="导出 Canvas 场景" aria-label="导出 Canvas 场景"><Archive size={13} /></button>{onClose && <button type="button" onClick={onClose} title="收起目录" aria-label="收起目录">×</button>}</div></div>
 		<div className={styles.navigatorSection}><div className={styles.navigatorHeading}><div className={styles.navigatorHeadingCopy}><span>页面</span><span className={styles.navigatorCount}>{canvas.pages.length}</span></div><div className={styles.navigatorHeadingActions}><button type="button" onClick={() => addNode('frame')} title="在当前页面添加画框" aria-label="在当前页面添加画框"><FrameCorners size={12} /></button></div></div>{canvas.pages.map((page) => <button type="button" key={page.id} className={`${styles.navigatorPage} ${page.id === activePage?.id ? styles.navigatorActive : ''}`} onClick={() => { setActivePage(page.id); onClose?.(); }}><Monitor size={13} /><span>{page.name}</span><small>{page.route || '自由画布'}</small></button>)}</div>
@@ -490,11 +490,11 @@ function DesignCanvasToolRail({ activeTool, onToolChange, onOpenVersions, rightP
 		{ id: 'edit', label: '编辑元素', icon: PencilSimple },
 		{ id: 'pan', label: '拖动画布', icon: Hand },
 		{ id: 'design', label: '设计画框', icon: FrameCorners },
-		{ id: 'pen', label: '自由绘制', icon: PencilSimple },
+		{ id: 'pen', label: '自由绘制（实时预览）', icon: PenNib },
 	];
 	return <aside className={styles.designV2ToolRail} aria-label="画布工具栏">
 		<div className={styles.designV2ToolRailGroup} role="toolbar" aria-label="画布工具">
-			{tools.map(({ id, label, icon: Icon }) => <button key={id} type="button" className={activeTool === id ? styles.designV2ToolRailButtonActive : styles.designV2ToolRailButton} onClick={() => onToolChange(id)} aria-pressed={activeTool === id} title={label}><Icon size={19} /></button>)}
+			{tools.map(({ id, label, icon: Icon }) => <button key={id} type="button" className={activeTool === id ? styles.designV2ToolRailButtonActive : styles.designV2ToolRailButton} onClick={() => onToolChange(id)} aria-label={label} aria-pressed={activeTool === id} title={label}><Icon size={19} /></button>)}
 			<span className={styles.designV2ToolRailDivider} />
 			<button type="button" className={activeTab === 'code' ? styles.designV2ToolRailButtonActive : styles.designV2ToolRailButton} onClick={() => setTab(activeTab === 'code' ? 'preview' : 'code')} aria-pressed={activeTab === 'code'} title={activeTab === 'code' ? '返回 Canvas 画布' : '查看场景数据'} aria-label={activeTab === 'code' ? '返回 Canvas 画布' : '查看场景数据'}><Code2 size={19} /></button>
 			<button type="button" className={styles.designV2ToolRailButton} onClick={onOpenVersions} title="打开版本历史" aria-label="打开版本历史"><History size={19} /></button>
@@ -505,11 +505,10 @@ function DesignCanvasToolRail({ activeTool, onToolChange, onOpenVersions, rightP
 }
 
 /**
- * 左上角只展示最近一次 Design 输出，完整消息仍保留在左下历史区。
- * 业务意图：把“结果理解”和“历史回看”拆开，避免流式输出把页面画布挤到一侧。
+ * 会话导航独立成一张浮层卡片：返回入口、工作空间切换和运行状态不再嵌在 AI 输出面板头部。
+ * 业务意图：把“会话级操作”和“本轮输出”拆开，收起输出面板后仍能返回入口或切换工作空间。
  */
-function DesignOutputPanel({ onCollapse }: { onCollapse: () => void }) {
-	const messages = useDesignStore((state) => state.messages).filter((message) => message.kind !== 'plan');
+function DesignSessionBar() {
 	const projects = useDesignStore((state) => state.projects);
 	const projectPath = useDesignStore((state) => state.projectPath);
 	const switchProject = useDesignStore((state) => state.switchProject);
@@ -517,31 +516,61 @@ function DesignOutputPanel({ onCollapse }: { onCollapse: () => void }) {
 	const isGenerating = useDesignStore((state) => state.isGenerating);
 	const execution = useDesignStore((state) => state.execution);
 	const queuedPrompts = useDesignStore((state) => state.queuedPrompts);
+	const currentProject = projects.find((project) => project.path === projectPath);
+	const currentProjectName = currentProject?.name ?? projectPath?.split(/[\\/]/).pop() ?? '未选择工作空间';
+	// 当前项目可能来自旧版本缓存，未及时写入 Design 项目索引；仍要保证标题和下拉入口可用。
+	const projectOptions = projectPath && !projects.some((project) => project.path === projectPath) ? [{ name: currentProjectName, path: projectPath, hasWorkspace: false }, ...projects] : projects;
+	const liveStatus = getDesignLiveStatus(execution, isGenerating, queuedPrompts);
+	return <header className={styles.designV2SessionBar} aria-label="设计会话导航">
+		<div className={styles.designV2PanelHeaderMain}>
+			<button type="button" className={styles.designV2BackButton} onClick={resetProject} aria-label="返回设计入口" title="返回设计入口"><ArrowLeft size={15} /></button>
+			<DropdownMenu><DropdownMenuTrigger asChild><button type="button" className={styles.designV2ProjectSwitcher} aria-label={`当前工作空间：${currentProjectName}`}><Folder size={14} /><span><strong>{currentProjectName}</strong><small>设计工作区</small></span><ChevronDown size={13} /></button></DropdownMenuTrigger><DropdownMenuContent align="start">{projectOptions.length > 0 ? projectOptions.map((project) => <DropdownMenuItem key={project.path} onSelect={() => { if (project.path !== projectPath) void switchProject(project.path); }}><Folder size={14} /><span>{project.name}</span>{project.path === projectPath && <Check size={13} aria-label="当前工作空间" />}</DropdownMenuItem>) : <DropdownMenuItem disabled>暂无可切换工作空间</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu>
+		</div>
+		<span className={styles.designV2PanelStatus}>{liveStatus ?? '已就绪'}</span>
+	</header>;
+}
+
+/**
+ * AI 输出过程中的思考摘要：压缩在一小块固定高度区域内滚动跟随。
+ * Store 每轮 startPrompt 都会重置 execution.thinking，因此这里天然只显示当前这轮的思考；
+ * 运行结束后整体收起，把空间还给输出正文。
+ */
+function DesignThinkingStrip() {
+	const isGenerating = useDesignStore((state) => state.isGenerating);
+	const thinking = useDesignStore((state) => state.execution.thinking);
+	const viewportRef = useRef<HTMLDivElement>(null);
+	// 思考流持续贴底跟随，用户不需要手动滚动就能看到最新一段推理。
+	useEffect(() => {
+		const viewport = viewportRef.current;
+		if (viewport) viewport.scrollTop = viewport.scrollHeight;
+	}, [thinking, isGenerating]);
+	if (!isGenerating) return null;
+	return <div ref={viewportRef} className={styles.designV2Thinking} aria-label="思考过程">{thinking || '正在思考…'}</div>;
+}
+
+/**
+ * 左上角只展示最近一次 Design 输出，完整消息仍保留在左下历史区。
+ * 业务意图：把“结果理解”和“历史回看”拆开，避免流式输出把页面画布挤到一侧。
+ */
+function DesignOutputPanel({ onCollapse }: { onCollapse: () => void }) {
+	const messages = useDesignStore((state) => state.messages).filter((message) => message.kind !== 'plan');
 	const pendingApproval = useDesignStore((state) => state.pendingApproval);
 	const draftMetadata = useDesignStore((state) => state.draftMetadata);
 	const recoverDraft = useDesignStore((state) => state.recoverDraft);
 	const approve = useDesignStore((state) => state.approve);
-	const currentProject = projects.find((project) => project.path === projectPath);
-	const currentProjectName = currentProject?.name ?? projectPath?.split(/[\\/]/).pop() ?? '未选择工作空间';
-	const projectOptions = projectPath && !projects.some((project) => project.path === projectPath) ? [{ name: currentProjectName, path: projectPath, hasWorkspace: false }, ...projects] : projects;
 	const latestOutput = [...messages].reverse().find((message) => message.kind === 'assistant' || message.kind === 'result' || message.kind === 'error');
-	const liveStatus = getDesignLiveStatus(execution, isGenerating, queuedPrompts);
 
 	return <section className={styles.designV2Output} aria-label="AI 输出">
 		<header className={styles.designV2PanelHeader}>
-			<div className={styles.designV2PanelHeaderMain}>
-				<button type="button" className={styles.designV2BackButton} onClick={resetProject} aria-label="返回设计入口" title="返回设计入口"><ArrowLeft size={15} /></button>
-				<DropdownMenu><DropdownMenuTrigger asChild><button type="button" className={styles.designV2ProjectSwitcher} aria-label={`当前工作空间：${currentProjectName}`}><Folder size={14} /><span><strong>{currentProjectName}</strong><small>设计工作区</small></span><ChevronDown size={13} /></button></DropdownMenuTrigger><DropdownMenuContent align="start">{projectOptions.length > 0 ? projectOptions.map((project) => <DropdownMenuItem key={project.path} onSelect={() => { if (project.path !== projectPath) void switchProject(project.path); }}><Folder size={14} /><span>{project.name}</span>{project.path === projectPath && <Check size={13} aria-label="当前工作空间" />}</DropdownMenuItem>) : <DropdownMenuItem disabled>暂无可切换工作空间</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu>
-			</div>
-			<div className={styles.designV2PanelHeaderActions}><span className={styles.designV2PanelStatus}>{liveStatus ?? '已就绪'}</span><button type="button" className={styles.designV2PanelCollapse} onClick={onCollapse} aria-label="收起 AI 输出" title="收起 AI 输出"><ChevronLeft size={14} /></button></div>
+			<span className={styles.designV2OutputTitle}>AI 输出</span>
+			<div className={styles.designV2PanelHeaderActions}><button type="button" className={styles.designV2PanelCollapse} onClick={onCollapse} aria-label="收起 AI 输出" title="收起 AI 输出"><ChevronLeft size={14} /></button></div>
 		</header>
+		<DesignThinkingStrip />
 		<div className={`${styles.designV2OutputScroll} gp-scrollbar`}>
-			<div className={styles.designV2SectionKicker}>AI 输出</div>
 			{latestOutput?.kind === 'assistant' && <ReactMarkdown remarkPlugins={[remarkGfm]}>{latestOutput.text}</ReactMarkdown>}
 			{latestOutput?.kind === 'result' && <div className={styles.designV2OutputResult}><Check size={15} /><div><strong>设计修改已完成</strong><span>{latestOutput.summary}</span><small>修订版 {latestOutput.revisionId}</small></div></div>}
 			{latestOutput?.kind === 'error' && <div className={styles.designV2OutputError}><strong>本轮设计未完成</strong><span>{latestOutput.text}</span></div>}
 			{!latestOutput && <div className={styles.designV2OutputEmpty}><Sparkles size={18} /><strong>等待你的设计需求</strong><span>中央画布会展示当前工作区的全部页面。</span></div>}
-			{liveStatus && <div className={styles.designV2LiveStatus} role="status" aria-live="polite"><span className={styles.designV2LiveDot} />{liveStatus}</div>}
 			<DesignClarificationCard />
 			{draftMetadata?.status === 'orphaned' && <section className={styles.designV2Approval}><div><strong>发现未收口草稿</strong><span>已接受 {draftMetadata.operationCount} 批绘制，{draftMetadata.lastSummary ?? '等待恢复操作'}</span></div><div><button type="button" onClick={() => void recoverDraft('keep')}>保留为中断版本</button><button type="button" onClick={() => void recoverDraft('discard')}>放弃草稿</button></div></section>}
 			{pendingApproval && <section className={styles.designV2Approval}><div><strong>需要确认设计修改</strong><span>{pendingApproval.reason}</span></div><div><button type="button" onClick={() => void approve(true)}>继续</button><button type="button" onClick={() => void approve(false)}>拒绝</button></div></section>}
@@ -574,6 +603,9 @@ function DesignPagesCanvas({ canvasTool }: { canvasTool: DesignCanvasTool }) {
 	const activeTab = useDesignStore((state) => state.activeTab);
 	const selectedElementId = useDesignStore((state) => state.selectedElementId);
 	const selectedElementIds = useDesignStore((state) => state.selectedElementIds);
+	const draft = useDesignStore((state) => state.draft);
+	const isGenerating = useDesignStore((state) => state.isGenerating);
+	const execution = useDesignStore((state) => state.execution);
 	const zoom = useDesignStore((state) => state.zoom);
 	const selectElement = useDesignStore((state) => state.selectElement);
 	const selectElements = useDesignStore((state) => state.selectElements);
@@ -611,7 +643,7 @@ function DesignPagesCanvas({ canvasTool }: { canvasTool: DesignCanvasTool }) {
 
 	return <main className={styles.designV2Canvas} aria-label="设计页面画布">
 		<div className={styles.designV2CanvasBody}>
-			<DesignCanvasKitBoard document={canvasDocument} activePageId={activePage?.id ?? canvasDocument.entryPageId} selectedElementId={selectedElementId} selectedElementIds={selectedElementIds} zoomPercent={zoom} canvasTool={canvasTool} onSelectElement={selectElement} onSelectElements={selectElements} onTransformChange={commitTransform} onTransformChanges={commitTransforms} onTextChange={commitText} onPathChange={commitPath} onTransientChange={setTransient} onZoomChange={(nextZoom) => setZoom(Math.min(250, Math.max(20, nextZoom)))} />
+			<DesignCanvasKitBoard document={canvasDocument} activePageId={activePage?.id ?? canvasDocument.entryPageId} selectedElementId={selectedElementId} selectedElementIds={selectedElementIds} zoomPercent={zoom} canvasTool={canvasTool} aiRendering={isGenerating && execution.phase !== 'applying_patch'} aiFocusNodeIds={draft?.lastPatchNodeIds ?? []} onSelectElement={selectElement} onSelectElements={selectElements} onTransformChange={commitTransform} onTransformChanges={commitTransforms} onTextChange={commitText} onPathChange={commitPath} onTransientChange={setTransient} onZoomChange={(nextZoom) => setZoom(Math.min(250, Math.max(20, nextZoom)))} />
 			{activeTab === 'code' && <div className={styles.designV2CodeView}><CodePanel /></div>}
 		</div>
 	</main>;
@@ -652,6 +684,7 @@ function DesignWorkspaceV2({ onOpenVersions }: { onOpenVersions: () => void }) {
 	return <div className={styles.designV2Frame} data-layout="output-history-pages-guidelines" data-right-panel={rightPanelOpen ? 'open' : 'closed'}>
 		<div className={styles.designV2Body}>
 			<div className={styles.designV2Left} aria-label="Design 左侧浮层">
+				<DesignSessionBar />
 				{outputOpen ? <DesignOutputPanel onCollapse={() => setOutputOpen(false)} /> : <button type="button" className={styles.designV2CollapsedWindow} onClick={() => setOutputOpen(true)} title="展开 AI 输出"><Sparkles size={15} /><span>输出</span></button>}
 				{historyOpen ? <DesignConversationHistory onCollapse={() => setHistoryOpen(false)} /> : <button type="button" className={styles.designV2CollapsedWindow} onClick={() => setHistoryOpen(true)} title="展开对话历史"><History size={15} /><span>历史</span></button>}
 			</div>

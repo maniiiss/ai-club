@@ -1,12 +1,14 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react';
 import { CircleNotch as Loader2, WarningCircle } from '@phosphor-icons/react';
 import type { CanvasKit, CanvasKitInitOptions, Surface } from 'canvaskit-wasm';
 import canvasKitLoaderUrl from 'canvaskit-wasm/bin/canvaskit.js?url';
 import wasmUrl from 'canvaskit-wasm/bin/canvaskit.wasm?url';
 import { isInfiniteCanvasPage, type CanvasDesignDocument, type CanvasPathSpec, type CanvasResolvedNode, type CanvasStroke, type CanvasTransform } from '@/src/design/canvas-types';
 import type { Rect } from '@/src/design/canvas-geometry';
-import { hitTestCanvas } from '@/src/design/canvas-hit-test';
-import { CanvasSceneRenderer, type CanvasCamera } from '@/src/design/canvas-renderer';
+import { hitTestCanvas, marqueeSelectCanvas } from '@/src/design/canvas-hit-test';
+import { CanvasSceneRenderer, getRenderableSceneBounds, type CanvasCamera } from '@/src/design/canvas-renderer';
+import { ensureCanvasIconDictionary } from '@/src/design/canvas-icons';
+import { resolveCanvasPage } from '@/src/design/canvas-layout';
 import { cancelCanvasTransientInteraction, type CanvasTransientCancelReason } from '@/src/design/canvas-interaction';
 import { RenderScheduler } from '@/src/design/render-scheduler';
 import type { DesignTransientState } from '@/src/store/design';
@@ -66,6 +68,10 @@ interface DesignCanvasKitBoardProps {
 	onSelectElements?: (elementIds: string[]) => void;
 	onZoomChange: (zoomPercent: number) => void;
 	canvasTool: DesignCanvasTool;
+	/** AI 运行时的纯视觉笔尖反馈；不参与事务、撤销或 revision。 */
+	aiRendering?: boolean;
+	/** 最近一批 AI patch 的真实目标节点；笔迹包围盒只围绕这些节点计算。 */
+	aiFocusNodeIds?: string[];
 	/** 仅用于隐藏历史预览的显式 PNG capture；普通绘制帧不会调用该回调。 */
 	onPreviewReady?: (dataUrl: string) => void;
 	/** 拖动结束后只提交一次结构化 transform operation，避免每个 pointermove 都创建 revision。 */
@@ -87,6 +93,31 @@ function clamp(value: number, min: number, max: number): number {
 	return Math.min(max, Math.max(min, value));
 }
 
+/**
+ * 生成 AI 当前操作区域的定位反馈。
+ * 业务意图：反馈应像设计工具里的智能光标，直线移动到真实 patch 区域，
+ * 而不是绘制一条与最终节点无关的装饰路径。
+ */
+function createAiDrawingFrame(elapsedMs: number, sceneBounds: { x: number; y: number; width: number; height: number }) {
+	const insetX = Math.min(Math.max(8, sceneBounds.width * 0.12), 32);
+	const left = sceneBounds.x + Math.min(insetX, Math.max(0, sceneBounds.width / 3));
+	// 反馈只模拟当前文本/控件附近的一小段编辑，不扫过整个 frame。
+	const maxTravel = Math.min(180, Math.max(18, sceneBounds.width * 0.38));
+	const right = Math.min(sceneBounds.x + sceneBounds.width - Math.min(insetX, Math.max(0, sceneBounds.width / 3)), left + maxTravel);
+	const targetRect = { x: sceneBounds.x, y: sceneBounds.y, width: sceneBounds.width, height: sceneBounds.height };
+	// 每个 patch 只从目标区域内侧移动一次，抵达后停留在实际修改位置，
+	// 避免循环往返造成“随机绘制”的错觉。
+	const progress = Math.min(1, Math.max(0, elapsedMs / 720));
+	const eased = progress < 0.5 ? 2 * progress * progress : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+	return {
+		targetRect,
+		progress,
+		// 固定在目标区域中线，像编辑器里的输入光标一样横向推进，
+		// 不使用随机波形或对角线移动干扰用户对真实生成位置的判断。
+		cursor: { x: left + (right - left) * eased, y: sceneBounds.y + sceneBounds.height * 0.5 },
+	};
+}
+
 function disposeSurface(surface: Surface | null): void {
 	if (!surface) return;
 	try { surface.delete(); } catch { /* WebGL 上下文丢失时 CanvasKit 可能已自动释放。 */ }
@@ -95,7 +126,7 @@ function disposeSurface(surface: Surface | null): void {
 /**
  * Design 内容层只有一个 canvas。工具栏、页面标签等仍是 React UI，所有页面视觉节点和选择几何均来自 CanvasDesignDocument。
  */
-export function DesignCanvasKitBoard({ document, activePageId, selectedElementId, selectedElementIds, zoomPercent, canvasTool, onSelectElement, onSelectElements, onZoomChange, onPreviewReady, onTransformChange, onTransformChanges, onTextChange, onPathChange, onTransientChange }: DesignCanvasKitBoardProps) {
+export function DesignCanvasKitBoard({ document, activePageId, selectedElementId, selectedElementIds, zoomPercent, canvasTool, aiRendering = false, aiFocusNodeIds, onSelectElement, onSelectElements, onZoomChange, onPreviewReady, onTransformChange, onTransformChanges, onTextChange, onPathChange, onTransientChange }: DesignCanvasKitBoardProps) {
 	const stageRef = useRef<HTMLDivElement | null>(null);
 	const canvasRef = useRef<HTMLCanvasElement | null>(null);
 	const canvasKitRef = useRef<CanvasKit | null>(null);
@@ -116,7 +147,14 @@ export function DesignCanvasKitBoard({ document, activePageId, selectedElementId
 	const renderSchedulerRef = useRef<RenderScheduler | null>(null);
 	const drawFrameRef = useRef<() => void>(() => undefined);
 	const previewCapturedRef = useRef(false);
-	const [transientPath, setTransientPath] = useState<{ path: CanvasPathSpec; transform: CanvasTransform; stroke: CanvasStroke } | null>(null);
+	/**
+	 * 笔迹是 pointermove 期间的渲染输入，不应放入 React state：每个采样点写 state
+	 * 会让 DesignShell 和 Inspector 一起重渲染，导致画笔延迟。提交前只保存在 ref，
+	 * 由 RenderScheduler 驱动下一帧 CanvasKit 绘制，pointerup 才进入 canonical scene。
+	 */
+	const transientPathRef = useRef<{ path: CanvasPathSpec; transform: CanvasTransform; stroke: CanvasStroke } | null>(null);
+	const aiAnimationFrameRef = useRef<number | null>(null);
+	const aiAnimationStartRef = useRef(0);
 	const theme = useThemeStore((state) => state.theme);
 	const scheduleDraw = useCallback(() => {
 		renderSchedulerRef.current?.invalidate();
@@ -124,6 +162,11 @@ export function DesignCanvasKitBoard({ document, activePageId, selectedElementId
 	const selectedIds = (selectedElementIds?.length ? selectedElementIds : selectedElementId ? [selectedElementId] : []).filter((id) => Boolean(document.nodes[id]));
 	const zoom = clamp(zoomPercent / 100, MIN_ZOOM, MAX_ZOOM);
 	const activePage = document.pages.find((page) => page.id === activePageId) ?? document.pages[0] ?? null;
+	const canonicalResolved = useMemo(() => activePage ? resolveCanvasPage(document, activePage.id) : [], [activePage, document]);
+	const aiFocusIds = aiFocusNodeIds ?? [];
+	const aiFocusNodeIdsKey = aiFocusIds.join(',');
+	const aiSceneBounds = useMemo(() => activePage ? getRenderableSceneBounds(canonicalResolved, activePage.rootNodeId, aiFocusIds) : null, [activePage, canonicalResolved, aiFocusNodeIdsKey]);
+	const hasAiRenderableScene = Boolean(aiSceneBounds);
 
 	const drawFrame = useCallback(() => {
 		const surface = surfaceRef.current;
@@ -147,8 +190,14 @@ export function DesignCanvasKitBoard({ document, activePageId, selectedElementId
 		const renderDocument = renderTransforms
 			? { ...document, nodes: { ...document.nodes, ...Object.fromEntries(Object.entries(renderTransforms).map(([nodeId, transform]) => [nodeId, { ...document.nodes[nodeId], transform }])) } }
 			: document;
+		// 笔迹只在最近 patch 的节点范围内生成；没有解析到聚焦节点时保持静止，
+		// 不能回退到整页包围盒，否则空白区域也会被误认为生成目标。
+		const frameSceneBounds = aiSceneBounds;
+		const aiDrawing = aiRendering && hasAiRenderableScene && activePage && frameSceneBounds && !transientPathRef.current
+			? createAiDrawingFrame(Math.max(0, Date.now() - aiAnimationStartRef.current), frameSceneBounds)
+			: undefined;
 		try {
-			resolvedRef.current = renderer.draw(surface, renderDocument, camera, { activePageId: activePage?.id ?? null, workspaceBackground, gridColor, accentColor, hoverPoint: hoverPointRef.current, selectedNodeId: selectedElementId, selectedNodeIds: selectedIds, selectionRect, transientPath: transientPath ?? undefined, onAssetReady: scheduleDraw });
+			resolvedRef.current = renderer.draw(surface, renderDocument, camera, { activePageId: activePage?.id ?? null, workspaceBackground, gridColor, accentColor, hoverPoint: hoverPointRef.current, selectedNodeId: selectedElementId, selectedNodeIds: selectedIds, selectionRect, tool: canvasTool, transientPath: transientPathRef.current ?? undefined, aiDrawing, onAssetReady: scheduleDraw });
 			if (Object.keys(renderDocument.nodes).length > 1 && resolvedRef.current.length <= 1) {
 				setStatus('error');
 				setLoadError('Canvas 场景没有可绘制节点，请重新同步设计数据。');
@@ -157,15 +206,36 @@ export function DesignCanvasKitBoard({ document, activePageId, selectedElementId
 			setStatus('error');
 			setLoadError(error instanceof Error ? `Canvas 场景无法渲染：${error.message}` : 'Canvas 场景无法渲染，请重新同步设计数据。');
 		}
-	}, [activePage?.id, document, dragOffset.x, dragOffset.y, pan.x, pan.y, scheduleDraw, selectedElementId, selectedIds.join(','), selectionRect?.x, selectionRect?.y, selectionRect?.width, selectionRect?.height, theme, transientPath, zoom]);
+	}, [activePage, aiRendering, aiSceneBounds, canvasTool, document, dragOffset.x, dragOffset.y, hasAiRenderableScene, pan.x, pan.y, scheduleDraw, selectedElementId, selectedIds.join(','), selectionRect?.x, selectionRect?.y, selectionRect?.width, selectionRect?.height, theme, zoom]);
 	drawFrameRef.current = drawFrame;
 
-	const resizeSurface = useCallback(() => {
+	/** 尺寸稳定定时器；拖拽窗口期间每个中间尺寸都会触发 ResizeObserver，用它合并重建。 */
+	const surfaceResizeTimerRef = useRef<number | null>(null);
+	/**
+	 * 工作区是否可见。切到 Work/Code 模式时 stage 是 display:none，ResizeObserver 会上报 0×0；
+	 * 回到 Design 模式属于一次性尺寸跳变而非拖拽风暴，必须立即同步重建 surface——
+	 * 若走防抖等待，期间旧位图会被 CSS 拉伸成新尺寸，画板和点阵先“拉宽抖一下”再恢复清晰。
+	 */
+	const stageVisibleRef = useRef(false);
+	/** 最近一次尺寸变化到达时间；用于区分“静默后的一次性跳变”与“拖拽中的连续变化”。 */
+	const lastResizeActivityRef = useRef(0);
+
+	/**
+	 * 真正执行“重设 backing store + 重建 CanvasKit surface + 同步整帧重绘”。
+	 * 这一步开销大（删除并重建 WebGL surface、整场景重画），只允许在尺寸稳定后运行：
+	 * 重设 canvas.width 会立即清空位图，而 ResizeObserver 回调又晚于当帧 rAF 执行，
+	 * 所以重建后必须同步调用最新 drawFrame，让清空与重绘落在同一个任务、同一帧合成，
+	 * 既不闪空白帧、也不把重建成本摊到拖拽过程中的每一帧。
+	 */
+	const applySurfaceResize = useCallback(() => {
 		const stage = stageRef.current;
 		const canvas = canvasRef.current;
 		const canvasKit = canvasKitRef.current;
 		if (!stage || !canvas || !canvasKit) return;
 		const rect = stage.getBoundingClientRect();
+		// 工作区隐藏期间（防抖定时器可能在切走模式后触发）：保留旧 surface，
+		// 不把 backing store 重设成 1×1，重现时由 RO / 绘制前校正按真实尺寸重建。
+		if (rect.width <= 0 || rect.height <= 0) return;
 		const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
 		const width = Math.max(1, Math.round(rect.width * dpr));
 		const height = Math.max(1, Math.round(rect.height * dpr));
@@ -184,15 +254,81 @@ export function DesignCanvasKitBoard({ document, activePageId, selectedElementId
 		if (!surface) {
 			setStatus('error');
 			setLoadError('CanvasKit 无法创建绘图表面，请检查 GPU/WebView 支持。');
+			return;
 		}
+		drawFrameRef.current();
 	}, []);
+
+	const resizeSurface = useCallback(() => {
+		const stage = stageRef.current;
+		const canvas = canvasRef.current;
+		if (!stage || !canvas) return;
+		const rect = stage.getBoundingClientRect();
+		// 工作区隐藏（display:none，切到 Work/Code 模式）时尺寸为 0：跳过一切处理，
+		// 保留旧 surface，并记录“不可见”，让下次重现时走立即重建路径。
+		if (rect.width <= 0 || rect.height <= 0) {
+			stageVisibleRef.current = false;
+			return;
+		}
+		const revealedFromHidden = !stageVisibleRef.current;
+		stageVisibleRef.current = true;
+		// 每个中间尺寸只同步 CSS 尺寸（不会重置位图），拖拽期间由合成器把旧画面
+		// 平滑拉伸，保证窗口跟手；昂贵的重建防抖到尺寸稳定后执行一次。
+		canvas.style.width = `${rect.width}px`;
+		canvas.style.height = `${rect.height}px`;
+		// 首次出现（挂载）与从隐藏中重现（切换模式）是一次性跳变，立即同步重建，
+		// 不进入防抖；仅可见状态下的连续尺寸变化（拖拽窗口/面板）才需要合并。
+		if (revealedFromHidden || !canvasKitRef.current || !surfaceRef.current) {
+			applySurfaceResize();
+			// 显现后布局往往还有一两次离散跳变（滚动条出现/消失、flex settle），
+			// 它们紧跟着到来但彼此独立，重置静默计时让它们也走立即重建路径——
+			// 若落入防抖等待期，画布 CSS 已变宽而位图落后，右侧会露出无点阵竖条。
+			lastResizeActivityRef.current = 0;
+			return;
+		}
+		// 静默期后的一次性尺寸跳变（典型：模式切换后的二次排版，如滚动条出现/消失、
+		// flex 布局 settle）也必须立即重建：防抖等待期内画布 CSS 尺寸已更新而位图落后，
+		// 右侧会露出一条无点阵的底色竖条再“弹”齐，观感为抖动。只有 160ms 内持续
+		// 到来的连续变化（拖拽中）才进入 120ms 合并防抖保证跟手。
+		const now = performance.now();
+		const quiet = now - lastResizeActivityRef.current > 160;
+		lastResizeActivityRef.current = now;
+		if (quiet) {
+			applySurfaceResize();
+			return;
+		}
+		if (surfaceResizeTimerRef.current !== null) return;
+		surfaceResizeTimerRef.current = window.setTimeout(() => {
+			surfaceResizeTimerRef.current = null;
+			applySurfaceResize();
+		}, 120);
+	}, [applySurfaceResize]);
+
+	// 模式切换（Work/Code → Design）由 React commit 修改 display 触发，Board 随 App 重渲染。
+	// ResizeObserver 的显现通知在部分 WebView 渲染时序下可能晚于首帧绘制：CSS 尺寸已是
+	// 新值而位图仍是旧尺寸，画板和点阵会被拉伸显示一帧后“弹”回清晰。useLayoutEffect 在
+	// 同一个 commit、浏览器绘制之前同步运行，这里兜底校正——只要可见且 backing store
+	// 落后就立即重建，使显现的首帧即为目标尺寸，不依赖 RO 的投递时机。
+	useLayoutEffect(() => {
+		const stage = stageRef.current;
+		const canvas = canvasRef.current;
+		if (!stage || !canvas || !surfaceRef.current) return;
+		const rect = stage.getBoundingClientRect();
+		if (rect.width <= 0 || rect.height <= 0) return;
+		const dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+		const width = Math.max(1, Math.round(rect.width * dpr));
+		const height = Math.max(1, Math.round(rect.height * dpr));
+		if (canvas.width === width && canvas.height === height) return;
+		applySurfaceResize();
+	});
 
 	useEffect(() => {
 		let disposed = false;
 		let observer: ResizeObserver | null = null;
 		const load = async () => {
 			try {
-				const canvasKit = await loadCanvasKit();
+				// 图标字典（约 1.8MB 异步 chunk）与 CanvasKit WASM 并行加载，首帧即带全量 Phosphor 图标。
+				const [canvasKit] = await Promise.all([loadCanvasKit(), ensureCanvasIconDictionary()]);
 				if (disposed) return;
 				canvasKitRef.current = canvasKit;
 				rendererRef.current = new CanvasSceneRenderer(canvasKit);
@@ -213,6 +349,10 @@ export function DesignCanvasKitBoard({ document, activePageId, selectedElementId
 		return () => {
 			disposed = true;
 			observer?.disconnect();
+			if (surfaceResizeTimerRef.current !== null) {
+				window.clearTimeout(surfaceResizeTimerRef.current);
+				surfaceResizeTimerRef.current = null;
+			}
 			renderSchedulerRef.current?.dispose();
 			disposeSurface(surfaceRef.current);
 			surfaceRef.current = null;
@@ -233,6 +373,24 @@ export function DesignCanvasKitBoard({ document, activePageId, selectedElementId
 			if (renderSchedulerRef.current === scheduler) renderSchedulerRef.current = null;
 		};
 	}, []);
+
+	useEffect(() => {
+		if (!aiRendering || !hasAiRenderableScene || status !== 'ready') {
+			if (aiAnimationFrameRef.current !== null) window.cancelAnimationFrame(aiAnimationFrameRef.current);
+			aiAnimationFrameRef.current = null;
+			return;
+		}
+		aiAnimationStartRef.current = Date.now();
+		const tick = () => {
+			if (window.document.visibilityState !== 'hidden') renderSchedulerRef.current?.invalidate();
+			aiAnimationFrameRef.current = window.requestAnimationFrame(tick);
+		};
+		aiAnimationFrameRef.current = window.requestAnimationFrame(tick);
+		return () => {
+			if (aiAnimationFrameRef.current !== null) window.cancelAnimationFrame(aiAnimationFrameRef.current);
+			aiAnimationFrameRef.current = null;
+		};
+	}, [aiFocusNodeIdsKey, aiRendering, hasAiRenderableScene, status]);
 
 	useEffect(() => {
 		if (status === 'ready') resizeSurface();
@@ -352,8 +510,9 @@ export function DesignCanvasKitBoard({ document, activePageId, selectedElementId
 				event.currentTarget.setPointerCapture(event.pointerId);
 				dragRef.current = { pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, mode: 'pen', selectionStart: point };
 				const stroke = { paint: { kind: 'solid' as const, color: '#65e0c5' }, width: 2 / zoom, cap: 'round' as const, join: 'round' as const };
-				setTransientPath({ path: { fillRule: 'nonZero', commands: [{ op: 'moveTo', x: 0, y: 0 }] }, transform: { x: point.x, y: point.y, width: 1, height: 1, rotation: 0, scaleX: 1, scaleY: 1 }, stroke });
+				transientPathRef.current = { path: { fillRule: 'nonZero', commands: [{ op: 'moveTo', x: 0, y: 0 }] }, transform: { x: point.x, y: point.y, width: 1, height: 1, rotation: 0, scaleX: 1, scaleY: 1 }, stroke };
 				onTransientChange?.({ transforms: {}, stroke: { points: [point], style: stroke } });
+				scheduleDraw();
 				return;
 			}
 			if (canvasTool === 'frame') {
@@ -403,23 +562,41 @@ export function DesignCanvasKitBoard({ document, activePageId, selectedElementId
 		if (drag.mode === 'pen' && drag.selectionStart) {
 			const point = pointFromEvent(event);
 			if (!point) return;
-			const current = transientPath;
+			const current = transientPathRef.current;
 			const lastCommand = current?.path.commands.at(-1);
 			const lastPoint = lastCommand?.x !== undefined && lastCommand.y !== undefined ? { x: lastCommand.x + (current?.transform.x ?? point.x), y: lastCommand.y + (current?.transform.y ?? point.y) } : drag.selectionStart;
 			if (Math.hypot(point.x - lastPoint.x, point.y - lastPoint.y) < 3 / zoom) return;
-			const points = [...(current?.path.commands ?? []).filter((command) => command.op !== 'close').map((command) => ({ x: (command.x ?? 0) + (current?.transform.x ?? drag.selectionStart!.x), y: (command.y ?? 0) + (current?.transform.y ?? drag.selectionStart!.y) })), point];
-			const left = Math.min(...points.map((item) => item.x));
-			const top = Math.min(...points.map((item) => item.y));
-			const right = Math.max(...points.map((item) => item.x));
-			const bottom = Math.max(...points.map((item) => item.y));
-			const commands = points.map((item, index) => index === 0 ? { op: 'moveTo' as const, x: item.x - left, y: item.y - top } : { op: 'lineTo' as const, x: item.x - left, y: item.y - top });
-			const stroke = current?.stroke ?? { paint: { kind: 'solid' as const, color: '#65e0c5' }, width: 2 / zoom, cap: 'round' as const, join: 'round' as const };
-			setTransientPath({ path: { fillRule: 'nonZero', commands }, transform: { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top), rotation: 0, scaleX: 1, scaleY: 1 }, stroke });
-			onTransientChange?.({ transforms: {}, stroke: { points, style: stroke } });
+			if (!current) return;
+			const oldLeft = current.transform.x;
+			const oldTop = current.transform.y;
+			const oldRight = oldLeft + current.transform.width;
+			const oldBottom = oldTop + current.transform.height;
+			const left = Math.min(oldLeft, point.x);
+			const top = Math.min(oldTop, point.y);
+			const right = Math.max(oldRight, point.x);
+			const bottom = Math.max(oldBottom, point.y);
+			// 大多数采样点不会扩大包围盒；这时只追加一个 lineTo，避免长笔迹在每个
+			// pointermove 中重新复制整条 points 数组，复杂度从 O(n²) 降为近似 O(n)。
+			if (left !== oldLeft || top !== oldTop) {
+				const shiftX = oldLeft - left;
+				const shiftY = oldTop - top;
+				for (const command of current.path.commands) {
+					if (command.x !== undefined) command.x += shiftX;
+					if (command.y !== undefined) command.y += shiftY;
+					if (command.x1 !== undefined) command.x1 += shiftX;
+					if (command.y1 !== undefined) command.y1 += shiftY;
+					if (command.x2 !== undefined) command.x2 += shiftX;
+					if (command.y2 !== undefined) command.y2 += shiftY;
+				}
+			}
+			current.path.commands.push({ op: 'lineTo', x: point.x - left, y: point.y - top });
+			current.transform = { ...current.transform, x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) };
+			transientPathRef.current = current;
+			// 只请求一帧；不要在 pointermove 中更新 Zustand/React，避免画笔采样被父组件重渲染拖慢。
+			scheduleDraw();
 		} else if (drag.mode === 'move') {
 			const offset = { x: (event.clientX - drag.startX) / zoom, y: (event.clientY - drag.startY) / zoom };
 			setDragOffset(offset);
-			onTransientChange?.({ transforms: Object.fromEntries(Object.entries(drag.transforms ?? {}).map(([nodeId, transform]) => [nodeId, { ...transform, x: transform.x + offset.x, y: transform.y + offset.y }])) });
 		} else if ((drag.mode === 'resize' || drag.mode === 'rotate') && drag.transforms && drag.nodeIds?.[0]) {
 			const nodeId = drag.nodeIds[0];
 			const original = drag.transforms[nodeId];
@@ -435,7 +612,6 @@ export function DesignCanvasKitBoard({ document, activePageId, selectedElementId
 				transform = { ...transform, width, height, x: east ? original.x : original.x + original.width - width, y: south ? original.y : original.y + original.height - height };
 			}
 			drag.previewTransforms = { [nodeId]: transform };
-			onTransientChange?.({ transforms: drag.previewTransforms });
 		}
 		else if (drag.mode === 'select' && drag.selectionStart) {
 			const point = pointFromEvent(event);
@@ -443,21 +619,23 @@ export function DesignCanvasKitBoard({ document, activePageId, selectedElementId
 		} else if (drag.mode === 'pan') setPan({ x: (drag.panX ?? pan.x) + event.clientX - drag.startX, y: (drag.panY ?? pan.y) + event.clientY - drag.startY });
 	};
 	const finishPen = useCallback(() => {
-		const current = transientPath;
+		const current = transientPathRef.current;
 		if (current && current.path.commands.length >= 2) onPathChange?.(current.path, current.transform);
-		setTransientPath(null);
+		transientPathRef.current = null;
 		onTransientChange?.(null);
-	}, [onPathChange, onTransientChange, transientPath]);
+		scheduleDraw();
+	}, [onPathChange, onTransientChange, scheduleDraw]);
 	const cancelTransient = useCallback((reason: CanvasTransientCancelReason = 'pointercancel') => {
 		cancelCanvasTransientInteraction(reason, {
 			dragRef,
-			clearTransientPath: () => setTransientPath(null),
+			clearTransientPath: () => { transientPathRef.current = null; },
 			clearSelectionRect: () => setSelectionRect(null),
 			resetDragOffset: () => setDragOffset({ x: 0, y: 0 }),
 			setIsDragging,
 			onTransientChange,
 		});
-	}, [onTransientChange]);
+		scheduleDraw();
+	}, [onTransientChange, scheduleDraw]);
 	useEffect(() => {
 		const onBlur = () => cancelTransient('blur');
 		const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') cancelTransient('escape'); };
@@ -475,9 +653,9 @@ export function DesignCanvasKitBoard({ document, activePageId, selectedElementId
 				return;
 			}
 			if (drag.mode === 'select' && selectionRect) {
-				const right = selectionRect.x + selectionRect.width;
-				const bottom = selectionRect.y + selectionRect.height;
-				const ids = resolvedRef.current.filter((node) => node.type !== 'frame' && node.type !== 'group' && node.resolvedX < right && node.resolvedX + node.resolvedWidth > selectionRect.x && node.resolvedY < bottom && node.resolvedY + node.resolvedHeight > selectionRect.y).map((node) => node.id);
+				// 框选命中复用 hitTestCanvas 同源的排除语义（page/frame/group），
+				// 避免不可见的无限画布根节点因整页相交被误选中。
+				const ids = marqueeSelectCanvas(resolvedRef.current, selectionRect);
 				if (onSelectElements) onSelectElements(ids); else onSelectElement(ids.at(-1) ?? null);
 			} else if (drag.mode === 'move' && drag.transforms && (dragOffset.x !== 0 || dragOffset.y !== 0)) {
 				const changes = Object.entries(drag.transforms).map(([nodeId, transform]) => { const snapped = snapOffset(nodeId, transform.x + dragOffset.x, transform.y + dragOffset.y); return { nodeId, transform: { ...transform, ...snapped } }; });

@@ -90,3 +90,39 @@ Sidecar MUST normalize supported legacy Canvas node payloads before validation a
 
 - **WHEN** a patch submits a node type that CanvasKit does not support
 - **THEN** the patch is rejected before journaling or event emission with the node ID and supported type guidance
+
+### Requirement: Design icons have a renderable semantic representation
+
+Design Agent MUST represent interface icons as `type: "icon"` nodes with an `icon.name` and optional library, weight, color or 24×24 custom SVG path. Sidecar and Desktop MUST preserve and normalize this semantic payload, and CanvasKit MUST resolve built-in names or custom paths into vector drawing commands without requiring a React component or image asset.
+
+#### Scenario: Generated navigation icon is visible
+
+- **WHEN** an Agent patch creates an icon node named `home`, `search`, `heart`, `user`, `settings` or another supported built-in name
+- **THEN** Desktop renders the icon during the same draft RAF cycle as the patch and the node remains selectable in the layer tree
+
+#### Scenario: Unknown icon name does not disappear silently
+
+- **WHEN** a patch supplies an unknown icon name without a custom path
+- **THEN** Desktop renders a visible question/fallback glyph and keeps the original semantic name for later correction
+
+### Requirement: Design Agent first-patch latency is bounded
+
+For a simple single-page request, Design Agent MUST be allowed to submit element patches without a mandatory planning-tool round trip. Before the first model patch, the sidecar MUST create a stable page container with target dimensions (1440×900 for an empty infinite canvas unless a finite page already defines its dimensions). The default Design session SHOULD use a low reasoning level (while preserving an explicit `off` setting), avoid loading Web search tools unless the request explicitly asks for external references or assets, and send a compact page-scoped scene summary instead of the full multi-page node set. Subsequent element refinement MUST be limited to a small number of visual-area batches rather than one model call per node.
+
+#### Scenario: Simple page request gets an early page container
+
+- **WHEN** the user submits a simple single-page Design request
+- **THEN** the sidecar emits a first `design_patch_applied` transaction that creates the page container with stable width and height
+- **AND** Desktop can render that container before the first model element patch arrives
+- **AND** the first model patch contains primary navigation or content elements instead of recreating the page container
+
+#### Scenario: External reference is explicit
+
+- **WHEN** the user explicitly asks for a website, screenshot, reference image or online asset
+- **THEN** Design may load and use the Web tools for that run; otherwise Web search tools are not included in the default Design tool context
+
+#### Scenario: Existing canvas is large
+
+- **WHEN** the user starts a Design run on one page of a large multi-page canvas
+- **THEN** the initial model context contains a bounded summary of nodes reachable from the target page root
+- **AND** the Agent can explicitly read the scene if cross-page details are required

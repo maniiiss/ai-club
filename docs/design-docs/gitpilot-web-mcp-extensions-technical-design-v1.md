@@ -2,7 +2,7 @@
 
 ## 目标
 
-GitPilot 在 Code、Work、Design 中提供一致的 Web 研究能力，并将 MCP 服务连接定义与产品模式授权分离管理。
+GitPilot 在 Code、Work、Design 中提供可按需启用的 Web 研究能力，并将 MCP 服务连接定义与产品模式授权分离管理。Design 默认关闭 Web 搜索工具以缩短首轮 Canvas 生成延迟，用户明确需要外部参考或素材时再启用。
 
 ## 版本与打包
 
@@ -19,7 +19,7 @@ MCP 定义按以下优先级合并：GitPilot 全局覆盖层、小组共享项�
 
 ## 运行时和管理边界
 
-会话由模式化扩展工厂创建：Web 始终注册，MCP adapter 在构造时接收已经按模式过滤的配置。Work 继续使用受限的文件工具集合；Design 使用 `noTools: all` 的独立 AgentSession，不具有本地文件、Shell 或 Git 工具，仅可使用 Web 和授权 MCP。Design 必须返回完整的 `index.html`、`styles.css`、`main.js` JSON，sidecar 验证后持久化；无效输出直接报错，不能回退本地 mock。
+会话由模式化扩展工厂创建：Code/Work 默认注册 Web，Design 仅在请求显式需要外部参考或素材时注册 Web；MCP adapter 在构造时接收已经按模式过滤的配置。Work 继续使用受限的文件工具集合；Design 使用独立 AgentSession，不具有本地文件、Shell 或 Git 工具，仅可使用当前会话提供的授权 MCP/Web 与 Design 白名单工具。Design 生成 Canvas 事务由 sidecar 校验后持久化；无效输出直接报错，不能回退本地 mock。
 
 Desktop 的“MCP 管理”读取脱敏服务摘要、调整模式、添加全局服务、删除服务和重载会话。敏感字段只在用户提交写入时短暂进入 sidecar，绝不进入 React 状态、普通列表响应或日志。CLI 管理命令和 Desktop RPC 都复用同一配置与 scope 服务；原生 `/mcp` 保持运行态查看用途。
 

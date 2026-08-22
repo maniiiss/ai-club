@@ -35,3 +35,37 @@ describe("Canvas legacy payload normalization", () => {
 		expect(() => normalizeNativeCanvasDocument({ ...legacyScene(), nodes: { ...legacyScene().nodes, bad: { id: "bad", type: "html", childIds: [] } } })).toThrow(/bad.*不支持/);
 	});
 });
+
+describe("Canvas 图标名硬校验", () => {
+	function iconNode(id: string, name: string, extra = {}) {
+		return { id, type: "icon", name: id, parentId: "root", childIds: [], icon: { name, ...extra }, transform: { x: 0, y: 0, width: 24, height: 24, rotation: 0, scaleX: 1, scaleY: 1 } };
+	}
+
+	it("拒绝不在 Phosphor 图标库中的名称并给出近似候选", () => {
+		const scene = normalizeNativeCanvasDocument(legacyScene());
+		expect(() => normalizeCanvasOperations([{ op: "create_node", node: iconNode("icon-bad", "phoen"), parentId: "root" }], scene)).toThrow(/phoen.*phone|phone.*phoen/);
+	});
+
+	it("合法 Phosphor 名称与自定义 svgPath 透过校验", () => {
+		const scene = normalizeNativeCanvasDocument(legacyScene());
+		const operations = normalizeCanvasOperations([
+			{ op: "create_node", node: iconNode("icon-phone", "phone"), parentId: "root" },
+			{ op: "create_node", node: iconNode("icon-custom", "my-badge", { library: "custom", svgPath: "M4 4h16v16H4z" }), parentId: "root" },
+		], scene);
+		expect(operations[0]).toMatchObject({ op: "create_node", node: { icon: { name: "phone" } } });
+		expect(operations[1]).toMatchObject({ op: "create_node", node: { icon: { library: "custom", svgPath: "M4 4h16v16H4z" } } });
+	});
+
+	it("update_node 仅在改写 icon 时校验，旧场景遗留名称不阻断更新", () => {
+		const scene = normalizeNativeCanvasDocument({
+			...legacyScene(),
+			nodes: {
+				...legacyScene().nodes,
+				"icon-legacy": { id: "icon-legacy", type: "icon", name: "legacy-icon", parentId: "root", childIds: [], icon: { name: "some-legacy-name" }, transform: { x: 10, y: 10, width: 24, height: 24, rotation: 0, scaleX: 1, scaleY: 1 } },
+			},
+		});
+		const moved = normalizeCanvasOperations([{ op: "update_node", nodeId: "icon-legacy", changes: { transform: { x: 99, y: 10, width: 24, height: 24, rotation: 0, scaleX: 1, scaleY: 1 } } }], scene);
+		expect(moved[0]).toMatchObject({ op: "update_node", changes: { transform: { x: 99 } } });
+		expect(() => normalizeCanvasOperations([{ op: "update_node", nodeId: "icon-legacy", changes: { icon: { name: "not-exist-icon" } } }], scene)).toThrow(/not-exist-icon/);
+	});
+});

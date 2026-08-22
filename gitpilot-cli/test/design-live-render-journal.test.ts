@@ -53,7 +53,7 @@ function waitForRecord(predicate: (record: OutputRecord) => boolean): Promise<Ou
 		return record!;
 	});
 }
-async function startRpcMode(responseDelayMs = 2_000): Promise<{ lineHandler: (line: string) => void; projectPath: string; cleanup: () => Promise<void> }> {
+async function startRpcMode(responseDelayMs = 2_000, responseError?: string): Promise<{ lineHandler: (line: string) => void; projectPath: string; cleanup: () => Promise<void> }> {
 	rpcIo.outputLines = [];
 	rpcIo.lineHandler = undefined;
 	const projectPath = join(tmpdir(), `gitpilot-design-journal-${Date.now()}-${Math.random().toString(36).slice(2)}`);
@@ -67,7 +67,13 @@ async function startRpcMode(responseDelayMs = 2_000): Promise<{ lineHandler: (li
 			const stream = new DelayedAssistantStream();
 			queueMicrotask(() => {
 				stream.push({ type: "start", partial: assistantMessage("") });
-				setTimeout(() => stream.push({ type: "done", reason: "stop", message: assistantMessage("测试运行结束") }), responseDelayMs);
+				setTimeout(() => {
+					if (responseError) {
+						stream.push({ type: "error", reason: "error", error: { ...assistantMessage(""), stopReason: "error", errorMessage: responseError } });
+						return;
+					}
+					stream.push({ type: "done", reason: "stop", message: assistantMessage("测试运行结束") });
+				}, responseDelayMs);
 			});
 			return stream;
 		},
@@ -78,6 +84,20 @@ async function startRpcMode(responseDelayMs = 2_000): Promise<{ lineHandler: (li
 	await authStorage.modify("anthropic", async () => ({ type: "api_key", key: "test-key" }));
 	const modelRegistry = await createModelRegistry(authStorage, projectPath);
 	const modelRuntime = getModelRuntime(modelRegistry);
+	if (responseError) {
+		// Design 会话通过共享 ModelRuntime 发起请求；给测试运行时注入凭据，
+		// 再替换实际网络流，确保回归测试覆盖 agent_settled 的 failed 分支。
+		await modelRuntime.setRuntimeApiKey("anthropic", "test-key", { allowNetwork: false });
+		vi.spyOn(modelRuntime, "checkAuth").mockResolvedValue({ configured: true } as never);
+		vi.spyOn(modelRuntime, "streamSimple").mockImplementation(() => {
+			const stream = new DelayedAssistantStream();
+			queueMicrotask(() => {
+				stream.push({ type: "start", partial: assistantMessage("") });
+				setTimeout(() => stream.push({ type: "error", reason: "error", error: { ...assistantMessage(""), stopReason: "error", errorMessage: responseError } }), responseDelayMs);
+			});
+			return stream;
+		});
+	}
 	const session = new AgentSession({ agent, sessionManager, settingsManager, cwd: projectPath, modelRuntime, resourceLoader: createTestResourceLoader() });
 	const runtimeHost = {
 		session,
@@ -126,6 +146,28 @@ describe("Design live render draft journal", () => {
 			expect(settled.reason).toBe("interrupted");
 			expect(settled.snapshot.document.revisions).toHaveLength(baseRevisionCount);
 			expect(settled.snapshot.document.revisions.at(-1).id).toBe(baseRevisionId);
+		} finally { await cleanup(); }
+	});
+
+	it("模型连接失败会透传 design_error，并以 interrupted settled 收口", async () => {
+		const errorMessage = "Unable to connect. Is the computer able to access the url?";
+		const { lineHandler, projectPath, cleanup } = await startRpcMode(20, errorMessage);
+		try {
+			lineHandler(JSON.stringify({ id: "create-model-error", type: "design_create", projectPath, name: "模型错误 Design" }));
+			const created = await waitForRecord((record) => record.id === "create-model-error" && record.command === "design_create");
+			const designId = String(created.data.designId);
+			const baseRevisionCount = created.data.snapshot.document.revisions.length;
+			const baseRevisionId = String(created.data.snapshot.document.revisions.at(-1).id);
+
+			lineHandler(JSON.stringify({ id: "model-error-run", type: "design_prompt", projectPath, designId, pageId: "canvas", baseRevisionId, prompt: "生成一个登录页面" }));
+			await waitForRecord((record) => record.id === "model-error-run" && record.command === "design_prompt");
+			const error = await waitForRecord((record) => record.type === "design_error" && record.designId === designId);
+			const settled = await waitForRecord((record) => record.type === "design_run_settled" && record.designId === designId);
+
+			expect(error.error).toBe(errorMessage);
+			expect(settled.reason).toBe("interrupted");
+			expect(settled.sequence).toBe(error.sequence + 1);
+			expect(settled.snapshot.document.revisions).toHaveLength(baseRevisionCount);
 		} finally { await cleanup(); }
 	});
 

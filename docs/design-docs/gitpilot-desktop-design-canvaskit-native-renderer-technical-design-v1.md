@@ -181,6 +181,7 @@ interface CanvasNode {
 | `frame` | 可裁剪的容器和页面区域 | save、clip、子树递归 |
 | `text` | 单段或富文本 | `Paragraph` / `ParagraphBuilder` |
 | `image` | 位图或 SVG 光栅化资源 | `SkImage` + `drawImageRect` |
+| `icon` | 语义图标（内置库名或 24×24 custom SVG path） | `canvas-icons.ts` 解析后使用 `Path` fill/stroke |
 
 路径命令使用受限的 canonical 格式，不保存 CanvasKit 对象：
 

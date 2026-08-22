@@ -48,16 +48,15 @@
 	animation: mode-content-enter 320ms cubic-bezier(.22, .61, .36, 1) both;
 }
 
+/* 入场动画只保留纯淡入：scale 会让内容区初始窄 1%（边缘露底色细条再放大归位，
+   观感为“竖条 + 拉宽抖动”）；blur 对整块画布做大面积栅格化；translateY 的位移
+   会短暂撑出滚动区域，触发滚动条出现/消失造成 stage 尺寸二次跳变。均已移除。 */
 @keyframes mode-content-enter {
 	from {
 		opacity: 0;
-		transform: translateY(14px) scale(.99);
-		filter: blur(2px);
 	}
 	to {
 		opacity: 1;
-		transform: translateY(0) scale(1);
-		filter: blur(0);
 	}
 }
 

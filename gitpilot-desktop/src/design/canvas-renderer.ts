@@ -1,6 +1,8 @@
 import type { Canvas, CanvasKit, Image, Paint, Paragraph, Path, Surface } from 'canvaskit-wasm';
+import defaultCanvasFontUrl from '../assets/fonts/noto-sans-sc-chinese-simplified-400-normal.woff2?url';
 import { resolveCanvasPage } from './canvas-layout';
-import { isInfiniteCanvasPage, type CanvasDesignDocument, type CanvasPaint, type CanvasPaintSpec, type CanvasPathSpec, type CanvasResolvedNode, type CanvasStroke } from './canvas-types';
+import { resolveCanvasIconPath } from './canvas-icons';
+import { isInfiniteCanvasPage, type CanvasDesignDocument, type CanvasIconSpec, type CanvasPaint, type CanvasPaintSpec, type CanvasPathSpec, type CanvasResolvedNode, type CanvasStroke } from './canvas-types';
 
 type Rgba = [number, number, number, number];
 
@@ -25,6 +27,8 @@ export interface CanvasRenderOptions {
 	onAssetReady?: () => void;
 	/** pointermove 期间的临时路径；只绘制，不进入 CanvasDesignDocument。 */
 	transientPath?: { path: CanvasPathSpec; transform: CanvasResolvedNode['transform']; stroke: CanvasStroke };
+	/** AI 运行中的视觉反馈；仅存在于绘制帧，绝不写入 canonical scene。 */
+	aiDrawing?: { targetRect: { x: number; y: number; width: number; height: number }; cursor: { x: number; y: number }; progress: number };
 }
 
 function fontWeight(canvasKit: CanvasKit, weight: number) {
@@ -47,6 +51,7 @@ const DOT_ALPHA_FLOOR = 0.26;
 const DOT_ALPHA_MULTIPLIER = 4.4;
 const DOT_RADIUS = 0.75;
 const HOVER_GLOW_RADIUS = 112;
+const BUILTIN_FONT_FAMILY_ALIASES = ['sans-serif', 'Inter', 'Microsoft YaHei', 'Microsoft YaHei UI', 'Segoe UI', 'Segoe UI Variable', 'Arial'] as const;
 
 function getDotGridSize(zoom: number): number {
 	return DOT_GRID_STEPS.find((step) => step * zoom >= MIN_DOT_SCREEN_SPACING) ?? DOT_GRID_STEPS[DOT_GRID_STEPS.length - 1];
@@ -148,6 +153,46 @@ function makePaint(canvasKit: CanvasKit, color: Rgba, style: 'fill' | 'stroke', 
 	return paint;
 }
 
+/**
+ * 计算当前页面中真正可绘制节点的包围盒。
+ * 业务意图：AI 的临时笔迹必须锚定到已经出现的界面内容，不能在空画板或视口中心凭空游走。
+ */
+export function getRenderableSceneBounds(
+	nodes: readonly CanvasResolvedNode[],
+	pageRootNodeId: string,
+	focusNodeIds?: readonly string[],
+): { x: number; y: number; width: number; height: number } | null {
+	// AI 增量绘制只关注最近一批 patch 的真实目标节点；传入空数组时明确表示
+	// 当前还没有可定位的 patch，不能退回整页包围盒，否则笔迹会漂移到空白区域。
+	const focus = focusNodeIds ? new Set(focusNodeIds) : null;
+	const renderable = nodes.filter((node) =>
+		node.id !== pageRootNodeId &&
+		node.parentId !== null &&
+		node.type !== 'page' &&
+		node.type !== 'group' &&
+		(!focus || focus.has(node.id)) &&
+		node.visible !== false &&
+		Number.isFinite(node.resolvedX) &&
+		Number.isFinite(node.resolvedY) &&
+		Number.isFinite(node.resolvedWidth) &&
+		Number.isFinite(node.resolvedHeight) &&
+		node.resolvedWidth > 0 &&
+		node.resolvedHeight > 0,
+	);
+	if (renderable.length === 0) return null;
+	const left = Math.min(...renderable.map((node) => node.resolvedX));
+	const top = Math.min(...renderable.map((node) => node.resolvedY));
+	const right = Math.max(...renderable.map((node) => node.resolvedX + node.resolvedWidth));
+	const bottom = Math.max(...renderable.map((node) => node.resolvedY + node.resolvedHeight));
+	return { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) };
+}
+
+/** 保留 CanvasPaint 的显式 alpha，避免透明填充的临时 path 被错误画成实心白色。 */
+export function paintFillAlpha(nodeOpacity: number, paintSpec?: CanvasPaintSpec): number {
+	const fillAlpha = paintSpec?.fill?.kind === 'solid' ? paintSpec.fill.alpha ?? 1 : 1;
+	return clamp(nodeOpacity * (paintSpec?.opacity ?? 1) * fillAlpha, 0, 1);
+}
+
 function applyStrokeStyle(canvasKit: CanvasKit, paint: Paint, stroke: CanvasPaintSpec['stroke'] | undefined): void {
 	if (!stroke) return;
 	paint.setStrokeCap(canvasKit.StrokeCap[stroke.cap === 'round' ? 'Round' : stroke.cap === 'square' ? 'Square' : 'Butt']);
@@ -165,10 +210,14 @@ function setGradient(canvasKit: CanvasKit, paint: Paint, definition: CanvasPaint
 	paint.setShader(shader);
 }
 
-function drawPath(canvasKit: CanvasKit, canvas: Canvas, node: CanvasResolvedNode, paint: Paint): Path | null {
+function drawPath(canvasKit: CanvasKit, canvas: Canvas, node: CanvasResolvedNode, paint: Paint, drawFill = true): Path | null {
 	if (!node.path) return null;
+	return drawPathSpec(canvasKit, canvas, node.path, paint, drawFill);
+}
+
+function drawPathSpec(canvasKit: CanvasKit, canvas: Canvas, pathSpec: CanvasPathSpec, paint: Paint, shouldDraw = true): Path {
 	const builder = new canvasKit.PathBuilder();
-	for (const command of node.path.commands) {
+	for (const command of pathSpec.commands) {
 		if (command.op === 'moveTo') builder.moveTo(command.x ?? 0, command.y ?? 0);
 		else if (command.op === 'lineTo') builder.lineTo(command.x ?? 0, command.y ?? 0);
 		else if (command.op === 'quadTo') builder.quadTo(command.x1 ?? 0, command.y1 ?? 0, command.x ?? 0, command.y ?? 0);
@@ -176,8 +225,16 @@ function drawPath(canvasKit: CanvasKit, canvas: Canvas, node: CanvasResolvedNode
 		else builder.close();
 	}
 	const path = builder.detach();
-	canvas.drawPath(path, paint);
+	if (shouldDraw) canvas.drawPath(path, paint);
 	return path;
+}
+
+function iconStrokeWidth(icon: CanvasIconSpec): number {
+	if (typeof icon.strokeWidth === 'number' && Number.isFinite(icon.strokeWidth)) return Math.max(0.5, icon.strokeWidth);
+	if (icon.weight === 'thin') return 1;
+	if (icon.weight === 'light') return 1.5;
+	if (icon.weight === 'bold') return 2.5;
+	return 1.75;
 }
 
 /**
@@ -207,6 +264,13 @@ export class CanvasSceneRenderer {
 	private readonly fontLoading = new Set<string>();
 	private readonly fontLoaded = new Set<string>();
 	private readonly fontProvider;
+	private defaultFontLoading = false;
+	private defaultFontLoaded = false;
+	private defaultFontFailed = false;
+	/** 页面布局在笔迹/悬停帧之间不变，缓存 resolved geometry，避免每个 pointermove 重算整棵树。 */
+	private resolvedCache: { document: CanvasDesignDocument; pageId: string; nodes: CanvasResolvedNode[] } | null = null;
+	/** 点阵几何与场景节点无关；复用 Path 可避免每帧创建数千个圆点对象。 */
+	private dotGridCache: { key: string; path: Path } | null = null;
 
 	public constructor(private readonly canvasKit: CanvasKit) {
 		this.fontProvider = canvasKit.TypefaceFontProvider.Make();
@@ -220,7 +284,37 @@ export class CanvasSceneRenderer {
 		this.imageLoading.clear();
 		this.fontLoading.clear();
 		this.fontLoaded.clear();
+		this.defaultFontLoading = false;
+		this.defaultFontLoaded = false;
+		this.defaultFontFailed = false;
+		this.resolvedCache = null;
+		this.dotGridCache?.path.delete();
+		this.dotGridCache = null;
 		this.fontProvider.delete();
+	}
+
+	private resolvedNodesFor(document: CanvasDesignDocument, pageId: string): CanvasResolvedNode[] {
+		if (this.resolvedCache?.document === document && this.resolvedCache.pageId === pageId) return this.resolvedCache.nodes;
+		const nodes = resolveCanvasPage(document, pageId);
+		this.resolvedCache = { document, pageId, nodes };
+		return nodes;
+	}
+
+	private dotGridPathFor(dotGrid: { x: number[]; y: number[] }): Path {
+		const key = `${dotGrid.x.join(',')}|${dotGrid.y.join(',')}`;
+		if (this.dotGridCache?.key === key) return this.dotGridCache.path;
+		this.dotGridCache?.path.delete();
+		const builder = new this.canvasKit.PathBuilder();
+		for (const x of dotGrid.x) for (const y of dotGrid.y) builder.addCircle(x, y, DOT_RADIUS);
+		this.dotGridCache = { key, path: builder.detachAndDelete() };
+		return this.dotGridCache.path;
+	}
+
+	private invalidateParagraphCache(): void {
+		// 字体注册发生在首帧之后；此前创建的 Paragraph 可能已经把缺字结果缓存下来，
+		// 必须释放它们才能让下一帧重新按真实字体 shaping，避免“节点存在但文字为空”。
+		for (const paragraph of this.paragraphCache.values()) paragraph.delete();
+		this.paragraphCache.clear();
 	}
 
 	private paragraphFor(node: CanvasResolvedNode): Paragraph | null {
@@ -251,11 +345,31 @@ export class CanvasSceneRenderer {
 	}
 
 	private registerFonts(document: CanvasDesignDocument, options: CanvasRenderOptions): void {
+		if (!this.defaultFontLoading && !this.defaultFontLoaded && !this.defaultFontFailed) {
+			this.defaultFontLoading = true;
+			void fetch(defaultCanvasFontUrl).then((response) => {
+				if (!response.ok) throw new Error(`内置 Canvas 字体加载失败：${response.status}`);
+				return response.arrayBuffer();
+			}).then((bytes) => {
+				// CanvasKit WASM 不会读取 WebView/Windows 的系统字体；将同一份支持中文的
+				// 字体注册为协议默认别名，兼容 Agent 生成的 sans-serif 和历史 Inter 数据。
+				for (const family of BUILTIN_FONT_FAMILY_ALIASES) this.fontProvider.registerFont(bytes.slice(0), family);
+				this.defaultFontLoaded = true;
+				this.invalidateParagraphCache();
+			}).catch(() => {
+				// 自定义字体或浏览器 fallback 仍可继续尝试，字体失败不能阻塞色块渲染。
+				this.defaultFontFailed = true;
+			}).finally(() => {
+				this.defaultFontLoading = false;
+				options.onAssetReady?.();
+			});
+		}
 		for (const asset of Object.values(document.assets)) {
 			if (!asset.fontFamily || !asset.dataUrl || this.fontLoading.has(asset.id) || this.fontLoaded.has(asset.id)) continue;
 			this.fontLoading.add(asset.id);
 			void fetch(asset.dataUrl).then((response) => response.arrayBuffer()).then((bytes) => {
 				this.fontProvider.registerFont(bytes, asset.fontFamily!);
+				this.invalidateParagraphCache();
 			}).catch(() => { /* 字体失败时由 CanvasKit fallback 字体继续渲染，不能阻塞整个场景。 */ }).finally(() => {
 				this.fontLoading.delete(asset.id);
 				this.fontLoaded.add(asset.id);
@@ -291,7 +405,7 @@ export class CanvasSceneRenderer {
 		const paintSpec = node.paint;
 		const fill = makePaint(canvasKit, paintColor(paintSpec?.fill, '#ffffff'), 'fill');
 		const stroke = paintSpec?.stroke ? makePaint(canvasKit, paintColor(paintSpec.stroke.paint), 'stroke', paintSpec.stroke.width) : null;
-		fill.setAlphaf(clamp(node.opacity * (paintSpec?.opacity ?? 1), 0, 1));
+		fill.setAlphaf(paintFillAlpha(node.opacity, paintSpec));
 		stroke?.setAlphaf(clamp(node.opacity * (paintSpec?.opacity ?? 1), 0, 1));
 		if (paintSpec?.fill) setGradient(canvasKit, fill, paintSpec.fill, node.transform.width, node.transform.height);
 		if (paintSpec?.stroke) setGradient(canvasKit, stroke!, paintSpec.stroke.paint, node.transform.width, node.transform.height);
@@ -316,9 +430,38 @@ export class CanvasSceneRenderer {
 			const second = node.path.commands.find((command) => command.op === 'lineTo');
 			if (first.x !== undefined && first.y !== undefined && second?.x !== undefined && second.y !== undefined) canvas.drawLine(first.x, first.y, second.x, second.y, stroke ?? fill);
 		} else if (node.type === 'path') {
-			const path = drawPath(canvasKit, canvas, node, fill);
+			const path = drawPath(canvasKit, canvas, node, fill, Boolean(paintSpec?.fill) && paintFillAlpha(node.opacity, paintSpec) > 0);
 			if (path && stroke) canvas.drawPath(path, stroke);
 			path?.delete();
+		} else if (node.type === 'icon') {
+			const icon = node.icon;
+			if (icon) {
+				const resolved = resolveCanvasIconPath(icon);
+				const useFill = icon.style === 'fill' || icon.weight === 'fill';
+				// Phosphor 字典 path 处于 256 视口；描边宽度按视口比例放大，保证最终视觉粗细与 24 网格一致。
+				const gridScale = resolved.viewBox / 24;
+				let iconPaint = fill;
+				let ownedIconPaint: Paint | null = null;
+				if (!useFill) {
+					if (stroke && gridScale === 1) iconPaint = stroke;
+					else {
+						ownedIconPaint = makePaint(canvasKit, paintColor(paintSpec?.stroke?.paint ?? paintSpec?.fill, '#ffffff'), 'stroke', iconStrokeWidth(icon) * gridScale);
+						ownedIconPaint.setStrokeCap(canvasKit.StrokeCap.Round);
+						ownedIconPaint.setStrokeJoin(canvasKit.StrokeJoin.Round);
+						ownedIconPaint.setAlphaf(clamp(node.opacity * (paintSpec?.opacity ?? 1), 0, 1));
+						iconPaint = ownedIconPaint;
+					}
+				}
+				if (icon.color) iconPaint.setColor(parseColor(icon.color));
+				const width = Math.max(1, node.transform.width);
+				const height = Math.max(1, node.transform.height);
+				canvas.save();
+				canvas.scale(width / resolved.viewBox, height / resolved.viewBox);
+				const iconPath = drawPathSpec(canvasKit, canvas, resolved.path, iconPaint);
+				iconPath.delete();
+				canvas.restore();
+				ownedIconPaint?.delete();
+			}
 		} else if (node.type === 'text') {
 			const paragraph = this.paragraphFor(node);
 			if (paragraph) {
@@ -374,7 +517,9 @@ export class CanvasSceneRenderer {
 		const dotPaint = makePaint(this.canvasKit, withAlpha(grid, Math.max(DOT_ALPHA_FLOOR, grid[3] * DOT_ALPHA_MULTIPLIER)), 'fill');
 		const hoverGlowPaint = makePaint(this.canvasKit, withAlpha(accent, 0.07), 'fill');
 		const hoverDotPaint = makePaint(this.canvasKit, withAlpha(accent, 0.085), 'fill');
-		const hoverPoint = options.hoverPoint;
+		// 笔工具已经有 transient path 反馈；关闭 hover shader 和点阵高亮，避免每个采样点
+		// 额外创建渐变 shader 并遍历整张点阵，保证手绘帧优先使用 GPU 时间。
+		const hoverPoint = options.tool === 'pen' ? null : options.hoverPoint;
 		if (hoverPoint) {
 			const glowShader = this.canvasKit.Shader.MakeRadialGradient(
 				[hoverPoint.x, hoverPoint.y],
@@ -390,16 +535,13 @@ export class CanvasSceneRenderer {
 		}
 		// 默认点阵不使用 PointMode.Points：CanvasKit 在部分 WebGL/WebView 组合下会把细小 stroke 点抗锯齿到不可见。
 		// 将圆点批量放入一个 Path 后一次绘制，既与悬停点使用同一可靠的几何类型，也避免逐点 drawCircle 带来的调用开销。
-		const dotPathBuilder = new this.canvasKit.PathBuilder();
-		for (const x of dotGrid.x) {
-			for (const y of dotGrid.y) dotPathBuilder.addCircle(x, y, DOT_RADIUS);
-		}
-		const dotPath = dotPathBuilder.detachAndDelete();
+		const dotPath = this.dotGridPathFor(dotGrid);
 		canvas.drawPath(dotPath, dotPaint);
-		dotPath.delete();
 		if (hoverPoint) {
 			for (const x of dotGrid.x) {
+				if (Math.abs(x - hoverPoint.x) > HOVER_GLOW_RADIUS) continue;
 				for (const y of dotGrid.y) {
+					if (Math.abs(y - hoverPoint.y) > HOVER_GLOW_RADIUS) continue;
 					const distance = Math.hypot(x - hoverPoint.x, y - hoverPoint.y);
 					const hoverStrength = clamp(1 - distance / HOVER_GLOW_RADIUS, 0, 1);
 					if (hoverStrength <= 0) continue;
@@ -413,7 +555,7 @@ export class CanvasSceneRenderer {
 		hoverDotPaint.delete();
 		canvas.translate(camera.panX, camera.panY);
 		canvas.scale(camera.zoom, camera.zoom);
-		const resolved = page ? resolveCanvasPage(document, page.id) : [];
+		const resolved = page ? this.resolvedNodesFor(document, page.id) : [];
 		if (page) {
 			const pagePaint = makePaint(this.canvasKit, background, 'fill');
 			if (!isInfiniteCanvasPage(page)) canvas.drawRect([0, 0, page.width, page.height], pagePaint);
@@ -422,6 +564,30 @@ export class CanvasSceneRenderer {
 			if (options.transientPath) {
 				const node = createTransientPathNode(page, options.transientPath);
 				this.drawNode(this.canvasKit, canvas, document, node, options);
+			}
+			if (options.aiDrawing && !options.transientPath) {
+				// AI 反馈是“当前正在处理这个区域”的定位提示，不是伪造一条随机路径。
+				// 直线和光标都使用 page-local 坐标，天然与真实节点保持同一套 camera 变换。
+				const { targetRect, cursor, progress } = options.aiDrawing;
+				const pulse = 0.5 + Math.sin(progress * Math.PI * 2) * 0.5;
+				// 仅绘制目标区域内的一条短直线，模拟智能体正在该位置编辑；
+				// 不再画整块框或波浪线，避免把视觉反馈误解为随机涂鸦。
+				const lineInset = Math.min(12 / camera.zoom, targetRect.width * 0.18);
+				const lineStartX = targetRect.x + Math.max(1, lineInset);
+				const lineY = cursor.y;
+				const linePaint = makePaint(this.canvasKit, withAlpha(accent, 0.72 + pulse * 0.18), 'stroke', 2.5 / camera.zoom);
+				linePaint.setStrokeCap(this.canvasKit.StrokeCap.Round);
+				if (cursor.x > lineStartX) canvas.drawLine(lineStartX, lineY, cursor.x, lineY, linePaint);
+				const cursorHalo = makePaint(this.canvasKit, withAlpha(accent, 0.12 + pulse * 0.1), 'fill');
+				canvas.drawCircle(cursor.x, cursor.y, (12 + pulse * 4) / camera.zoom, cursorHalo);
+				const cursorPaint = makePaint(this.canvasKit, accent, 'fill');
+				const cursorOutline = makePaint(this.canvasKit, [1, 1, 1, 0.94], 'stroke', 1.5 / camera.zoom);
+				canvas.drawCircle(cursor.x, cursor.y, 5 / camera.zoom, cursorPaint);
+				canvas.drawCircle(cursor.x, cursor.y, 7 / camera.zoom, cursorOutline);
+				linePaint.delete();
+				cursorHalo.delete();
+				cursorPaint.delete();
+				cursorOutline.delete();
 			}
 			if (options.selectionRect) {
 				const frame = makePaint(this.canvasKit, [0.35, 0.95, 0.84, 0.18], 'fill');
@@ -434,7 +600,9 @@ export class CanvasSceneRenderer {
 				outline.delete();
 			}
 			const selectedIds = new Set(options.selectedNodeIds?.length ? options.selectedNodeIds : options.selectedNodeId ? [options.selectedNodeId] : []);
-			const selectedNodes = resolved.filter((candidate) => selectedIds.has(candidate.id));
+			// page 根节点是整页逻辑容器，选中集合即使被外部误写入也绝不绘制选中框，
+			// 防止无限画布的巨型边界再次以虚线形式泄漏到视口。
+			const selectedNodes = resolved.filter((candidate) => candidate.type !== 'page' && selectedIds.has(candidate.id));
 			if (selectedNodes.length > 0) {
 				const selection = makePaint(this.canvasKit, [0.4, 0.95, 0.84, 1], 'stroke', 2 / camera.zoom);
 				selection.setPathEffect(this.canvasKit.PathEffect.MakeDash([7 / camera.zoom, 3 / camera.zoom], 0));

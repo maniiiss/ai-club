@@ -64,6 +64,7 @@ import type { Context } from "@earendil-works/pi-ai/compat";
 import type { CanvasDesignDocument, CanvasDesignOperation, DesignClarificationRequiredEvent, DesignDraftMetadata, DesignOpenData, DesignPatch, DesignPatchAppliedEvent, DesignPlanStep, DesignPlanUpdatedEvent, DesignPreviewHandle, DesignProjectGuidelines, DesignRpcMessage, DesignRpcSnapshot, DesignRunRecoveryState, DesignStreamMetadata, WorkFileSnapshot, WorkResearchSource } from "./rpc-types.ts";
 import { buildDesignCompactionInstructions, collectCanvasPatchDelta, projectDesignAgentEvent } from "./design-events.ts";
 import { createDesignToolDefinitions, isDesignPatchOperation, type DesignPatchResult } from "./design-tools.ts";
+import { createDesignFoundationOperations } from "./design-pipeline.ts";
 import { isCanonicalCanvasNode, normalizeCanvasOperations, normalizeNativeCanvasDocument } from "./canvas-normalize.ts";
 import { defaultProjectGuidelines, normalizeProjectGuidelines } from "./design-guidelines.ts";
 import { listCodeProjectFiles } from "./project-files.ts";
@@ -95,13 +96,31 @@ const WORK_SYSTEM_PROMPT = `你是 GitPilot Work 模式的工作协同助手。
  * 无法被页面索引识别的路径中。
  */
 const DESIGN_SYSTEM_PROMPT = `你是 GitPilot Design 模式的界面设计助手。
-只使用 Design 白名单工具修改当前 snapshot；可以按需使用只读 Web/MCP 工具，但不能使用 Shell、Git 或任意本地文件工具。
- 每轮开始先根据真实需求调用 skip_plan 或 update_plan 完成执行方式决策；在决策完成前不要调用 design_apply_patch。只有会改变设计方向或交付边界的关键歧义才调用 design_request_clarification。
-只提交 Canvas 节点、布局、文字、路径和资源操作；禁止输出或生成 HTML、CSS、JavaScript、CanvasKit API 调用和本地路径。create_node 必须提供 id、type、name、parentId、childIds、visible、locked、opacity、transform 和 layout；原生矩形类型是 rect（不是 rectangle），颜色放在 paint.fill，圆角放在 paint.cornerRadius，文本必须使用 text 对象。
+只使用 Design 白名单工具修改当前 snapshot；是否联网由你根据需求自行判断：仅在确需外部参考、最新资料或在线素材时才调用只读 Web/MCP 工具，普通设计需求直接产出 Canvas patch，不要为了凑信息而搜索。不能使用 Shell、Git 或任意本地文件工具。
+默认优先快速让用户看到结果：简单需求不要先调用 skip_plan/update_plan，也不要为了确认而调用 design_read_scene 或 design_check；首个模型回合应直接提交第一批可渲染的 Canvas patch。只有复杂、多页面或会改变交付边界的需求才先调用 update_plan；只有关键歧义才调用 design_request_clarification。
+只提交 Canvas 节点、布局、文字、图标、路径和资源操作；禁止输出或生成 HTML、CSS、JavaScript、CanvasKit API 调用和本地路径。create_node 必须提供 id、type、name、parentId、childIds、visible、locked、opacity、transform 和 layout；原生矩形类型是 rect（不是 rectangle），颜色放在 paint.fill，圆角放在 paint.cornerRadius，文本必须使用 text 对象。需要 UI 图标时必须创建 type=icon 节点并提供 icon.name；图标名使用 Phosphor 图标库的 kebab-case 语义名称（如 phone、map-pin、shield-check、trash、credit-card），可用名称超过 1500 个，未知名称会被拒绝并返回近似候选，weight 支持 regular/bold/fill。不要把图标写成普通文本，也不要只创建空的 path 节点；图标按矢量路径实时绘制，优先使用语义名称而不是图片资源。
 页面通过 CanvasDesignDocument.pages 管理；节点必须使用现有父节点和资源引用，复杂效果拆成明确的原生节点。
- 用户未指定页面底色时默认使用白色或近白色，不要自行使用墨绿色或深色大面积背景；只有用户或项目规范明确要求时才使用深色背景。
+用户未指定页面底色时默认使用白色或近白色，不要自行使用墨绿色或深色大面积背景；只有用户或项目规范明确要求时才使用深色背景。
 每次 patch 后用一句中文说明结果，不要复述内部协议、工具 schema 或场景全文。
-为了让 Desktop 能够边绘制边渲染，请按视觉区域多次提交小批次 patch：每批优先包含 1～12 个相关操作，完成页面骨架、导航、主要容器、控件和细节后分别提交；不要等待整页所有节点都完成才调用工具。`;
+页面容器由 sidecar 在 run 开始时先建立并固定长宽。模型首批 patch 不要重复创建页面容器或修改其尺寸，应优先提交主导航、关键文字和第一批图标；随后按导航、首屏内容、卡片/列表等视觉区域分批提交，每批建议 2～8 个相关操作。不要把每个节点拆成单独调用，也不要等待整页所有细节完成后才提交首批元素。`;
+
+/**
+ * Design 以“先看到可用首屏”为默认目标，避免沿用 Code 模式的深度推理预算。
+ * 业务意图：用户仍可把主会话切换为 off/low；medium/high 在 Design 中降为 low，
+ * 让模型把预算用于首批布局和文字，而不是长时间规划完整页面。
+ */
+const DESIGN_THINKING_LEVEL = "low" as const;
+
+/**
+ * Design 只追求首屏低延迟。通用 clamp 在模型不支持 low 时会向上抬到 high，
+ * 对 DeepSeek V4 这类仅支持 off/high/max 的模型尤其慢，因此这里始终选择最低可用档位。
+ */
+function resolveDesignThinkingLevel(model: { reasoning?: boolean; thinkingLevelMap?: Record<string, string | null | undefined> } | undefined): "off" | "minimal" | "low" {
+	if (!model?.reasoning) return "off";
+	if (!model.thinkingLevelMap || model.thinkingLevelMap.low !== null) return DESIGN_THINKING_LEVEL;
+	if (model.thinkingLevelMap.minimal !== null) return "minimal";
+	return "off";
+}
 
 // Re-export types for consumers
 export type {
@@ -499,12 +518,17 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		workingRevisionId: string;
 		/** 当前 run 的内存 draft；canonical design.json 只在 settle 时更新。 */
 		draftScene: CanvasDesignDocument;
+		/** run 启动时的正式场景，用于 foundation-only 失败时回滚执行期容器。 */
+		baseScene: CanvasDesignDocument;
 		operationCount: number;
 		hasChanges: boolean;
+		/** 只有 sidecar 页面容器、尚未接受模型元素 patch 时，不生成正式 revision。 */
+		foundationOnly: boolean;
+		foundationOperationId?: string;
 		lastSummary?: string;
 		/** 当前 Agent 所处阶段，供项目切换或 Desktop 重连后恢复执行面板。 */
 		phase: DesignRunRecoveryState["phase"];
-		/** 新回合开始时要求模型先用 skip_plan/update_plan 完成一次结构化执行方式决策。 */
+		/** 复杂任务进入计划阶段时为 true；简单任务保持 false，可直接提交首批 patch。 */
 		planDecisionPending: boolean;
 		/** 仅保留审批/澄清恢复所需的轻量元数据，避免把完整 patch 长期挂在运行态。 */
 		pendingApproval?: { approvalId: string; reason: string; pageId: string };
@@ -941,15 +965,41 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		designSnapshots.set(cacheKey, snapshot);
 		return snapshot;
 	};
-	/** 给兼容性 generate 接口提供受限场景摘要；模型不接收文件正文或本地路径。 */
-	const describeCanvasSnapshot = (snapshot: DesignRpcSnapshot): string => {
+	/**
+	 * 给 Design 首轮提供当前页面的紧凑场景摘要；模型不接收文件正文或本地路径。
+	 * 业务意图：大型多页面场景不能在每轮重复发送最多 500 个全局节点，首批 patch
+	 * 只需要当前页面树；如需跨页细节，Agent 仍可显式调用 design_read_scene。
+	 */
+	const describeCanvasSnapshot = (snapshot: DesignRpcSnapshot, pageId?: string): string => {
 		const canvas = nativeCanvasFromSnapshot(snapshot);
-		const nodeSummary = Object.values(canvas.nodes).map((node) => {
+		const page = canvas.pages.find((candidate) => candidate.id === pageId) ?? canvas.pages.find((candidate) => candidate.id === canvas.entryPageId);
+		const nodeIds: string[] = [];
+		const visited = new Set<string>();
+		const pending: string[] = typeof page?.rootNodeId === "string" ? [page.rootNodeId] : [];
+		const maxSummaryNodes = 240;
+		while (pending.length > 0 && nodeIds.length < maxSummaryNodes) {
+			const nodeId = pending.shift()!;
+			if (visited.has(nodeId)) continue;
+			visited.add(nodeId);
+			const node = canvas.nodes[nodeId];
+			if (!node) continue;
+			nodeIds.push(nodeId);
+			const childIds = Array.isArray(node.childIds) ? node.childIds.filter((childId): childId is string => typeof childId === "string") : [];
+			for (const childId of childIds) if (!visited.has(childId)) pending.push(childId);
+		}
+		const referencedAssetIds = new Set<string>();
+		const nodeSummary = nodeIds.map((nodeId) => {
+			const node = canvas.nodes[nodeId];
 			const text = node.text && typeof node.text === "object" ? node.text as Record<string, unknown> : undefined;
 			const image = node.image && typeof node.image === "object" ? node.image as Record<string, unknown> : undefined;
-			return { id: node.id, type: node.type, name: node.name, parentId: node.parentId, childIds: node.childIds, transform: node.transform, text: text ? { text: String(text.text ?? "").slice(0, 160), fontFamily: text.fontFamily, fontSize: text.fontSize } : undefined, assetId: image?.assetId };
-		}).slice(0, 500);
-		return JSON.stringify({ pages: canvas.pages, nodes: nodeSummary, assets: Object.values(canvas.assets).map((asset) => ({ id: asset.id, mimeType: asset.mimeType, width: asset.width, height: asset.height, fontFamily: asset.fontFamily })), guidelines: snapshot.guidelines }, null, 2);
+			const icon = node.icon && typeof node.icon === "object" ? node.icon as Record<string, unknown> : undefined;
+			if (typeof image?.assetId === "string") referencedAssetIds.add(image.assetId);
+			return { id: node.id, type: node.type, name: node.name, parentId: node.parentId, childIds: node.childIds, transform: node.transform, text: text ? { text: String(text.text ?? "").slice(0, 160), fontFamily: text.fontFamily, fontSize: text.fontSize } : undefined, icon: icon ? { library: icon.library, name: icon.name, weight: icon.weight, style: icon.style } : undefined, assetId: image?.assetId };
+		});
+		const assets = Object.values(canvas.assets)
+			.filter((asset) => (typeof asset.id === "string" && referencedAssetIds.has(asset.id)) || typeof asset.fontFamily === "string")
+			.map((asset) => ({ id: asset.id, mimeType: asset.mimeType, width: asset.width, height: asset.height, fontFamily: asset.fontFamily }));
+		return JSON.stringify({ page, pages: canvas.pages.map(({ id, name, route, rootNodeId }) => ({ id, name, route, rootNodeId })), nodes: nodeSummary, summarizedNodeCount: nodeSummary.length, truncated: pending.length > 0, assets, guidelines: snapshot.guidelines });
 	};
 	/** 页面名称属于工作区元数据；独立生成修订并落盘，避免 UI 本地改名在重启后被 canonical snapshot 覆盖。 */
 	const renameDesignPage = (designId: string, projectPath: string, pageId: string, name: string, baseRevisionId: string): DesignRpcSnapshot => {
@@ -1002,6 +1052,36 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		const manager = openDesignSessionManager(designId, projectPath);
 		designSessionManagers.set(cacheKey, manager);
 		return manager;
+	};
+	/**
+	 * Design 会话只保留最近几轮可执行上下文，避免长期 JSONL 让每次首轮推理都重新
+	 * 读取完整页面和旧思考。摘要由当前 canonical 场景提供事实，避免再增加一次模型调用。
+	 */
+	const trimDesignConversation = (manager: SessionManager, snapshot: DesignRpcSnapshot, pageId: string): void => {
+		const contextEntries = manager.buildContextEntries();
+		const messageEntries = contextEntries.filter((entry) => entry.type === "message");
+		const maxMessages = 14;
+		const maxContextChars = 32_000;
+		const contextChars = JSON.stringify(messageEntries).length;
+		if (messageEntries.length <= maxMessages && contextChars <= maxContextChars) return;
+		// 从尾部按大小选择连续后缀，确保当前需求和最近工具结果优先；
+		// compaction 的 firstKeptEntryId 会让旧前缀在下一次上下文构建时被丢弃。
+		const kept: typeof messageEntries = [];
+		let keptChars = 0;
+		for (let index = messageEntries.length - 1; index >= 0 && kept.length < 8; index -= 1) {
+			const entry = messageEntries[index];
+			const entryChars = JSON.stringify(entry).length;
+			if (kept.length > 0 && keptChars + entryChars > maxContextChars) break;
+			kept.unshift(entry);
+			keptChars += entryChars;
+		}
+		const firstKeptEntryId = kept[0]?.id;
+		if (!firstKeptEntryId) return;
+		const canvas = snapshot.document.canvas as CanvasDesignDocument | undefined;
+		const nodeCount = canvas ? Object.keys(canvas.nodes).length : 0;
+		const summary = `Design 会话上下文已裁剪。当前页面 ${pageId} 的权威场景包含 ${nodeCount} 个节点。保留最近需求和工具结果，旧的逐字思考不再作为输入。`;
+		manager.appendCompaction(summary, firstKeptEntryId, 0, { source: "gitpilot-design-bounded-context", pageId });
+		manager.flushToDisk();
 	};
 	/** 返回场景检查与渲染配置；预览不会生成页面源码或启动第二套内容容器。 */
 	const buildDesignPreview = (projectPath: string, designId: string, pageId: string, revisionId?: string, requestedSnapshot?: DesignRpcSnapshot): { snapshot: DesignRpcSnapshot; previewHandle: DesignPreviewHandle; checks: Array<{ level: "error" | "warning" | "info"; message: string }> } => {
@@ -1115,6 +1195,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				run.draftScene = nextCanvas;
 				run.operationCount = operationIndex;
 				run.hasChanges = true;
+				if (run.foundationOperationId !== operationId) run.foundationOnly = false;
 				run.lastSummary = summary;
 				run.phase = "applying_patch";
 				writeDraftCheckpoint(run, { operationId, sequence, operationIndex, pageId, summary, transaction });
@@ -1146,6 +1227,14 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		if (!run.hasChanges) {
 			removeDraftJournal(run.projectPath, designId, run.runId);
 			return getDesignSnapshot(designId, run.projectPath);
+		}
+		if (run.foundationOnly) {
+			const current = getDesignSnapshot(designId, run.projectPath);
+			const base = run.baseScene;
+			const canonical = { ...current, document: { ...current.document, version: base.revision, pages: base.pages.map((page) => ({ id: page.id, name: page.name, route: page.route, rootNodeId: page.rootNodeId, entryFileId: "", fileIds: [] })), canvas: base } } as DesignRpcSnapshot;
+			designSnapshots.set(cacheKey, canonical);
+			removeDraftJournal(run.projectPath, designId, run.runId);
+			return canonical;
 		}
 		const current = getDesignSnapshot(designId, run.projectPath);
 		const canvas = run.draftScene;
@@ -1245,7 +1334,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			if (run.active) run.phase = "thinking";
 		});
 	};
-	/** 复杂任务由模型通过 update_plan 提交，简单任务由 skip_plan 显式跳过。 */
+	/** 复杂任务可通过 update_plan 提交计划；简单任务无需额外计划工具往返。 */
 	const updateDesignPlan = async (designId: string, steps: DesignPlanStep[], explanation?: string): Promise<void> => {
 		const run = designRuns.get(designCacheKey(designId));
 		if (!run?.active) throw new Error("Design 当前没有可更新计划的运行任务");
@@ -1273,6 +1362,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// provider 配置和当前模型选择在独立 Agent 会话中保持一致。
 			modelRuntime: runtimeHost.services.modelRuntime,
 			// Design 仅注册 Web/MCP 扩展；内置文件/Shell/Git 工具关闭，但保留下方 Design custom tools。
+			// Web 工具常驻会话：是否联网搜索由智能体结合系统提示词自行判断，不再做关键字预判。
 			resourceLoaderOptions: { extensionFactories: createModeExtensions("design", normalizeDesignProjectPath(projectPath)), systemPrompt: DESIGN_SYSTEM_PROMPT, skillMode: "design" },
 		});
 		// Design 使用固定 conversation.jsonl；内存 AgentSession 可以按运行释放，下一轮会从同一文件恢复上下文。
@@ -1282,7 +1372,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			sessionManager,
 			model: session.model,
 			// builtin 模式关闭内置本地文件/Shell 工具，同时只开放 Design 白名单 custom tools。
-			thinkingLevel: session.thinkingLevel,
+			// Design 首屏生成优先低延迟；AgentSession 会按模型能力自动 clamp，
+			// 不支持 low 的 reasoning 模型仍会使用其可用档位。
+			thinkingLevel: session.thinkingLevel === "off" ? "off" : resolveDesignThinkingLevel(session.model),
 			noTools: "builtin",
 			compactionInstructions: () => buildDesignCompactionInstructions(getDesignSnapshot(designId, projectPath), designRuns.get(cacheKey)?.pageId),
 			customTools: createDesignToolDefinitions({
@@ -1311,10 +1403,21 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			if (event.type === "agent_settled") {
 				const run = designRuns.get(cacheKey);
 				if (run?.active) {
-					const settledSnapshot = settleDesignRun(designId, cacheKey);
+					// AgentSession 在 agent_settled 之前已经把本轮结果写入执行快照。
+					// 不能把 failed/stopped 当成 completed，否则 Desktop 会清掉生成态，
+					// 但用户既看不到错误，也无法知道为什么没有产生设计。
+					const execution = created.session.executionSnapshot;
+					const interrupted = execution.status === "failed" || execution.status === "stopped";
+					if (interrupted) {
+						const errorMetadata = designMetadata(designId);
+						const errorMessage = execution.lastError
+							|| (execution.status === "stopped" ? "Design Agent 执行已中断。" : "Design Agent 执行失败。请检查模型连接后重试。");
+						output({ type: "design_error", ...errorMetadata, error: errorMessage });
+					}
+					const settledSnapshot = settleDesignRun(designId, cacheKey, interrupted ? "interrupted" : "completed");
 					const settledMetadata = designMetadata(designId);
 					run.active = false;
-					output({ type: "design_run_settled", ...settledMetadata, snapshot: settledSnapshot, reason: "completed" });
+					output({ type: "design_run_settled", ...settledMetadata, snapshot: settledSnapshot, reason: interrupted ? "interrupted" : "completed" });
 				}
 				// 释放本轮内存对象，但保留固定 JSONL；下一轮 createDesignSession 会重新打开并恢复上下文。
 				// abort 后 run 已提前标记 inactive，也必须走这里，否则停止任务会泄漏 AgentSession。
@@ -1339,6 +1442,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		const currentRevisionId = String(revisions.at(-1)?.id ?? "");
 		if (command.baseRevisionId && command.baseRevisionId !== currentRevisionId) throw new Error(`Design revision 冲突：当前为 ${currentRevisionId || "unknown"}，请求基于 ${command.baseRevisionId}`);
 		if (!Array.isArray(current.document.pages) || !(current.document.pages as Array<Record<string, unknown>>).some((page) => page.id === command.pageId)) throw new Error(`Design 页面不存在：${command.pageId}`);
+		trimDesignConversation(getDesignSessionManager(command.designId, projectPath), current, command.pageId);
 		const requestId = command.id ?? crypto.randomUUID();
 		const designSession = await createDesignSession(command.designId, projectPath);
 		// Design 会话按 designId 缓存；主会话切换模型后，下一次生成要跟随新的选择，
@@ -1347,7 +1451,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			await designSession.setModel(session.model);
 		}
 		if (!designSession.model) throw new Error("Design 尚未选择可用模型");
-		const sceneSummary = describeCanvasSnapshot(current);
+		const sceneSummary = describeCanvasSnapshot(current, command.pageId);
 		// 兼容接口仍要求完整 JSON；临时关闭工具，确保 generate 只返回可校验的原生事务。
 		const activeDesignTools = designSession.getActiveToolNames();
 		designSession.setActiveToolsByName([]);
@@ -1364,7 +1468,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		try {
 			const parsed = JSON.parse(modelText.replace(/^```json\s*/i, "").replace(/\s*```$/, "")) as { summary?: unknown; operations?: unknown };
 			if (typeof parsed.summary === "string") generatedSummary = parsed.summary;
-			if (Array.isArray(parsed.operations) && parsed.operations.length > 0 && parsed.operations.length <= 20 && parsed.operations.every(isDesignPatchOperation)) generatedOperations = parsed.operations as CanvasDesignOperation[];
+			if (Array.isArray(parsed.operations) && parsed.operations.length > 0 && parsed.operations.length <= 12 && parsed.operations.every(isDesignPatchOperation)) generatedOperations = parsed.operations as CanvasDesignOperation[];
 		} catch { /* 非结构化响应会在下方转为明确错误，禁止本地 mock 回退。 */ }
 		if (!generatedOperations) throw new Error("Design Agent 未返回合法的 Canvas 场景事务");
 		const summary = generatedSummary || "已应用 Design Agent 的结构化生成结果。";
@@ -1397,6 +1501,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		const currentRevisionId = String(revisions.at(-1)?.id ?? "");
 		if (command.baseRevisionId && command.baseRevisionId !== currentRevisionId) throw new Error(`Design revision 冲突：当前为 ${currentRevisionId || "unknown"}，请求基于 ${command.baseRevisionId}`);
 		if (!Array.isArray(current.document.pages) || !(current.document.pages as Array<Record<string, unknown>>).some((page) => page.id === command.pageId)) throw new Error(`Design 页面不存在：${command.pageId}`);
+		trimDesignConversation(getDesignSessionManager(command.designId, projectPath), current, command.pageId);
 		designRuns.set(cacheKey, {
 			designId: command.designId,
 			requestId,
@@ -1409,39 +1514,76 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			baseRevisionId: currentRevisionId,
 			workingRevisionId: `draft-${runId}`,
 			draftScene: structuredClone(nativeCanvasFromSnapshot(current)),
+			baseScene: structuredClone(nativeCanvasFromSnapshot(current)),
 			operationCount: 0,
 			hasChanges: false,
+			foundationOnly: false,
 			phase: "thinking",
-			planDecisionPending: true,
+			// 计划是复杂任务的可选工具；简单任务直接进入首批 patch，减少一次模型往返。
+			planDecisionPending: false,
 		});
 		createDraftJournal(designRuns.get(cacheKey)!);
 		getDesignSessionManager(command.designId, projectPath);
 		appendDesignUiMessage(cacheKey, { id: command.uiMessageId ?? `design-user-${requestId}`, kind: "user", text: command.prompt, status: "sent" });
-		try {
-			const designSession = await createDesignSession(command.designId, projectPath);
-			if (session.model && (!designSession.model || designSession.model.provider !== session.model.provider || designSession.model.id !== session.model.id)) await designSession.setModel(session.model);
-			if (!designSession.model) throw new Error("Design 尚未选择可用模型");
-			const sceneSummary = describeCanvasSnapshot(current);
-			const prompt = `用户需求：\n${command.prompt}\n\n交付格式：\n- 直接修改当前 CanvasDesignDocument，产出可编辑的原生设计结果。\n- 遵循用户指定的页面范围、交互要求、布局和视觉规范。\n- 只通过 Design 工具提交 Canvas 节点、布局、文字、路径和资源操作。\n- 禁止输出源码、渲染引擎 API 和本地路径。\n\n当前场景摘要：\n${sceneSummary}`;
-			void designSession.prompt(prompt, { source: "rpc", persistUserMessageBeforeRun: true }).catch((error: unknown) => {
-				const run = designRuns.get(cacheKey);
-				if (!run?.active) return;
-				// Agent 异常也是一次可恢复的中断边界：先把已接受 patch 固化为
-				// interrupted revision，再清理 active，避免 journal 永久停留在悬挂状态。
-				const interruptedSnapshot = settleDesignRun(command.designId, cacheKey, "interrupted");
-				run.active = false;
-				const metadata = designMetadata(command.designId);
-				output({ type: "design_error", ...metadata, error: error instanceof Error ? error.message : String(error) });
-				run.sequence += 1;
-				output({ type: "design_run_settled", ...metadata, sequence: run.sequence, emittedAt: Date.now(), snapshot: interruptedSnapshot, reason: "interrupted" });
-				void flushSkillReload("design");
-			});
-			return { requestId, runId };
-		} catch (error) {
-			designRuns.delete(cacheKey);
-			releaseIdleDesignSessionManager(cacheKey);
-			throw error;
-		}
+		const settleDesignStartupError = (error: unknown): void => {
+			const run = designRuns.get(cacheKey);
+			if (!run?.active) return;
+			// Agent 初始化/执行异常也是一次可恢复的中断边界：先把已接受 patch 固化为
+			// interrupted revision，再清理 active，避免 journal 永久停留在悬挂状态。
+			const interruptedSnapshot = settleDesignRun(command.designId, cacheKey, "interrupted");
+			run.active = false;
+			const metadata = designMetadata(command.designId);
+			output({ type: "design_error", ...metadata, error: error instanceof Error ? error.message : String(error) });
+			run.sequence += 1;
+			output({ type: "design_run_settled", ...metadata, sequence: run.sequence, emittedAt: Date.now(), snapshot: interruptedSnapshot, reason: "interrupted" });
+			void flushSkillReload("design");
+		};
+		// Session 初始化包含 extension/resource/model 准备，不应阻塞 Desktop 进入“生成中”。
+		// 先返回 runId，后台完成初始化后再开始模型回合；用户可以立即看到状态并执行停止。
+		void (async () => {
+			try {
+				// 让 design_prompt 的响应先回到 Desktop，避免首个 foundation 事件早于
+				// 本地 draft 状态初始化而被错误归约；下一轮事件循环立即建立页面容器。
+				await new Promise<void>((resolve) => setTimeout(resolve, 0));
+				const foundationRun = designRuns.get(cacheKey);
+				if (!foundationRun?.active) return;
+				const foundationOperations = createDesignFoundationOperations(foundationRun.draftScene, command.pageId);
+				if (foundationOperations.length > 0) {
+					const foundationResult = await applyDesignPatch(command.designId, command.pageId, {
+						baseRevisionId: foundationRun.baseRevisionId,
+						operations: foundationOperations,
+						summary: "建立页面容器",
+						operationId: `design-foundation-${runId}`,
+					});
+					foundationRun.foundationOperationId = foundationResult.operationId;
+					foundationRun.foundationOnly = true;
+				}
+				const designSession = await createDesignSession(command.designId, projectPath);
+				const activeRun = designRuns.get(cacheKey);
+				if (!activeRun?.active) {
+					// 用户可能在 Session 初始化期间点击停止；此时不能再启动旧 run。
+					designSessions.delete(cacheKey);
+					designSession.dispose();
+					releaseIdleDesignSessionManager(cacheKey);
+					return;
+				}
+				if (session.model && (!designSession.model || designSession.model.provider !== session.model.provider || designSession.model.id !== session.model.id)) await designSession.setModel(session.model);
+				if (!designSession.model) throw new Error("Design 尚未选择可用模型");
+				const latestSnapshot = getDesignSnapshot(command.designId, projectPath);
+				const latestCanvas = nativeCanvasFromSnapshot(latestSnapshot);
+				const latestPage = latestCanvas.pages.find((page) => page.id === command.pageId) ?? latestCanvas.pages[0];
+				const pageRootNodeId = typeof latestPage?.rootNodeId === "string" ? latestPage.rootNodeId : undefined;
+				const latestRoot = pageRootNodeId ? latestCanvas.nodes[pageRootNodeId] : undefined;
+				const rootChildIds: string[] = Array.isArray(latestRoot?.childIds) ? latestRoot.childIds.filter((id: unknown): id is string => typeof id === "string") : [];
+				const containerId = rootChildIds.find((id: string) => latestCanvas.nodes[id]?.type === "frame") ?? pageRootNodeId ?? "";
+				const sceneSummary = describeCanvasSnapshot(latestSnapshot, command.pageId);
+				const prompt = `用户需求：\n${command.prompt}\n\n交付格式：\n- 直接修改当前 CanvasDesignDocument，产出可编辑的原生设计结果。\n- 页面容器已经由 sidecar 建立，容器节点 id=${containerId}；新增 UI 元素的 parentId 必须优先使用该容器，不要把内容直接挂到 page root。\n- 本轮只提交元素 patch，不要重复创建或修改页面容器的长宽。\n- 遵循用户指定的页面范围、交互要求、布局和视觉规范。\n- 只通过 Design 工具提交 Canvas 节点、布局、文字、路径和资源操作；完成一个视觉区域后再提交下一批。\n- 禁止输出源码、渲染引擎 API 和本地路径。\n\n当前场景摘要：\n${sceneSummary}`;
+				await designSession.prompt(prompt, { source: "rpc", persistUserMessageBeforeRun: true });
+			} catch (error) {
+				settleDesignStartupError(error);
+			}
+		})();
+		return { requestId, runId };
 	};
 
 	const loadWorkResearch = async (query: string, signal: AbortSignal): Promise<WorkResearchSource[]> => {
@@ -2245,7 +2387,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				let draftScene = base.canvas;
 				const records = readDraftRecords(projectPath, command.designId, command.runId);
 				for (const record of records) draftScene = applyNativeCanvasOperations(draftScene, record.transaction.operations);
-				const recoveredRun: DesignRun = { designId: command.designId, requestId: metadata.requestId, runId: command.runId, pageId: draftScene.entryPageId, projectPath, sequence: metadata.lastSequence, active: false, baseRevisionId: metadata.baseRevisionId, workingRevisionId: metadata.draftRevisionId, draftScene, operationCount: records.length, hasChanges: records.length > 0, lastSummary: metadata.lastSummary, phase: "idle", planDecisionPending: false };
+				const baseScene = structuredClone(base.canvas);
+				const foundationRecord = records.length > 0 && records[0].operationId.startsWith("design-foundation-") && records.every((record) => record.operationId.startsWith("design-foundation-")) ? records[0] : undefined;
+				const recoveredRun: DesignRun = { designId: command.designId, requestId: metadata.requestId, runId: command.runId, pageId: draftScene.entryPageId, projectPath, sequence: metadata.lastSequence, active: false, baseRevisionId: metadata.baseRevisionId, workingRevisionId: metadata.draftRevisionId, draftScene, baseScene, operationCount: records.length, hasChanges: records.length > 0, foundationOnly: Boolean(foundationRecord), foundationOperationId: foundationRecord?.operationId, lastSummary: metadata.lastSummary, phase: "idle", planDecisionPending: false };
 			designRuns.set(cacheKey, recoveredRun);
 			designSnapshots.set(cacheKey, { ...current, document: { ...current.document, version: draftScene.revision, pages: draftScene.pages.map((page) => ({ id: page.id, name: page.name, route: page.route, rootNodeId: page.rootNodeId, entryFileId: "", fileIds: [] })), canvas: draftScene } });
 			const snapshot = settleDesignRun(command.designId, cacheKey, "interrupted");

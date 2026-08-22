@@ -12,6 +12,7 @@
     "release:artifacts": "node scripts/package-release.mjs",
     "release:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-release-windows.ps1",
     "lint": "tsc --noEmit",
+    "icons:generate": "node ../scripts/generate-canvas-icon-dictionary.mjs",
     "check:ui-boundaries": "python ../scripts/check_ui_style_boundaries.py",
     "tauri": "tauri"
   },

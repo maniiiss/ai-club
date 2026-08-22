@@ -1,5 +1,5 @@
 import type { DesignDocument, DesignSnapshot } from './design-types';
-import type { CanvasDesignDocument, CanvasDesignOperation, CanvasImageSpec, CanvasLayoutSpec, CanvasNode, CanvasNodeType, CanvasPaint, CanvasPage, CanvasPaintSpec, CanvasPathSpec, CanvasTextSpec, CanvasTransform } from './canvas-types';
+import type { CanvasDesignDocument, CanvasDesignOperation, CanvasIconSpec, CanvasImageSpec, CanvasLayoutSpec, CanvasNode, CanvasNodeType, CanvasPaint, CanvasPage, CanvasPaintSpec, CanvasPathSpec, CanvasTextSpec, CanvasTransform } from './canvas-types';
 
 /** 新建无限画板的默认页面底色；具体设计节点仍可按项目规范覆盖。 */
 const DEFAULT_BACKGROUND: CanvasPaint = { kind: 'solid', color: '#ffffff' };
@@ -9,7 +9,7 @@ function baseLayout(width: number, height: number) {
 }
 
 type LegacyRecord = Record<string, unknown>;
-const CANVAS_NODE_TYPES = new Set<CanvasNodeType>(['page', 'frame', 'group', 'rect', 'ellipse', 'line', 'path', 'text', 'image', 'instance']);
+const CANVAS_NODE_TYPES = new Set<CanvasNodeType>(['page', 'frame', 'group', 'rect', 'ellipse', 'line', 'path', 'text', 'image', 'icon', 'instance']);
 
 function isRecord(value: unknown): value is LegacyRecord {
 	return Boolean(value && typeof value === 'object' && !Array.isArray(value));
@@ -95,6 +95,19 @@ function legacyPaintSpec(node: LegacyRecord): CanvasPaintSpec | undefined {
 	return Object.keys(result).length ? result : undefined;
 }
 
+function legacyIcon(node: LegacyRecord): CanvasIconSpec {
+	const source = typeof node.icon === 'string' ? { name: node.icon } : isRecord(node.icon) ? node.icon : {};
+	const weight = source.weight === 'thin' || source.weight === 'light' || source.weight === 'bold' || source.weight === 'fill' ? source.weight : 'regular';
+	const style = source.style === 'fill' || weight === 'fill' ? 'fill' : 'stroke';
+	return {
+		library: source.library === 'lucide' || source.library === 'custom' ? source.library : 'phosphor',
+		name: stringOr(source.name ?? node.name, 'question'), weight, style,
+		...(typeof source.strokeWidth === 'number' ? { strokeWidth: Math.max(0.5, source.strokeWidth) } : {}),
+		...(typeof source.color === 'string' ? { color: source.color } : {}),
+		...(typeof source.svgPath === 'string' && source.svgPath.trim() ? { svgPath: source.svgPath.trim() } : {}),
+	};
+}
+
 /**
  * 兼容旧 Agent 生成的扁平 Canvas 节点。
  * 业务意图：Desktop 即使暂时连接到旧 sidecar，也不能因为缺少 visible/layout 而显示空点阵。
@@ -104,7 +117,7 @@ export function normalizeCanvasDocument(value: unknown): CanvasDesignDocument {
 	const nodes = Object.fromEntries(Object.entries(value.nodes).map(([id, raw]) => {
 		if (!isRecord(raw)) throw new Error(`Canvas 节点无效：${id}`);
 		const rawType = stringOr(raw.type, '');
-		const type = (rawType === 'rectangle' ? 'rect' : rawType) as CanvasNodeType;
+		const type = (rawType === 'rectangle' ? 'rect' : rawType === 'svg' ? 'icon' : rawType) as CanvasNodeType;
 		if (!CANVAS_NODE_TYPES.has(type)) throw new Error(`Canvas 节点 ${id} 使用不支持的类型：${rawType || 'unknown'}`);
 		const transform = legacyTransform(raw);
 		const node: CanvasNode = {
@@ -117,6 +130,7 @@ export function normalizeCanvasDocument(value: unknown): CanvasDesignDocument {
 		if (type === 'text') node.text = legacyText(raw);
 		if (type === 'path' && isRecord(raw.path)) node.path = { fillRule: raw.path.fillRule === 'evenOdd' ? 'evenOdd' : 'nonZero', commands: (Array.isArray(raw.path.commands) ? raw.path.commands : []) as CanvasPathSpec['commands'] };
 		if (type === 'image' && isRecord(raw.image)) node.image = { assetId: stringOr(raw.image.assetId, ''), fit: ['fill', 'contain', 'cover', 'crop'].includes(String(raw.image.fit)) ? raw.image.fit as CanvasImageSpec['fit'] : 'contain', ...(typeof raw.image.cornerRadius === 'number' ? { cornerRadius: raw.image.cornerRadius } : {}) };
+		if (type === 'icon') node.icon = legacyIcon(raw);
 		return [id, node];
 	}));
 	const pages = (Array.isArray(value.pages) ? value.pages : []).filter(isRecord).map((page) => ({
