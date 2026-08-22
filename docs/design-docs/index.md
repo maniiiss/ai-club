@@ -32,6 +32,7 @@
 - [GitPilot Desktop Git 与代码审查工作台技术设计](gitpilot-desktop-git-review-workbench-technical-design-v1.md) - 受限 sidecar Git、不可变审查快照、结构化 finding、平台治理与 GitLab 显式发布
 - [GitPilot Desktop 云端发布与在线升级技术设计](gitpilot-desktop-release-update-technical-design-v1.md) - Windows x64 stable 已签名产物发布、公开下载、Tauri updater 和安全安装重启
 - [GitPilot Work 技术设计](gitpilot-work-technical-design-v1.md) - Code/Work 双模式、本机任务空间与受控联网研究
+- [GitPilot Desktop HTML 预览技术设计](gitpilot-desktop-html-preview-technical-design-v1.md) - CODE/WORK 模式浏览器接入：Tauri preview:// 自定义协议 + 授权根注册 + iframe sandbox，对话卡片与独立面板双入口，文件变更防抖自动刷新，v1 主做 CODE 模式
 - [GitPilot Desktop AI UI 设计编辑器技术设计](gitpilot-desktop-ai-ui-design-editor-technical-design-v1.md) - 单人结构化设计文档、DOM/CSS 画布、AI DesignPatch 与 Canvas/协作演进边界
 - [GitPilot Pi 生产力扩展技术设计](gitpilot-pi-productivity-extensions-technical-design-v1.md) - 内置 slopchop、goal、plan-mode、subagents、pi-rtk-optimizer 的 CLI/Desktop 双宿主适配、离线打包、自主委派边界与命令重写/输出压缩
 - [GitPilot Plannotator Desktop 原生适配技术设计](gitpilot-plannotator-desktop-integration-technical-design-v1.md) - Plannotator 计划清单、Desktop 右侧计划 Tab、原生审核与执行进度事件
