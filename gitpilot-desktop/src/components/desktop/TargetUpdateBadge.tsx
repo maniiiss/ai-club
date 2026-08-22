@@ -1,5 +1,5 @@
 /** 标题栏新版本提示：后台静默检查发现更新后，在账户头像左侧提供直达“设置-版本与更新”的入口。 */
-import { ArrowUpCircle } from 'lucide-react';
+import { ArrowCircleUp as ArrowUpCircle } from '@phosphor-icons/react';
 import { useDesktopUpdateStore } from '@/src/store/desktop-update';
 import { useSettingsDialogStore } from '@/src/store/settings';
 import { Button } from '@/src/components/ui/button';

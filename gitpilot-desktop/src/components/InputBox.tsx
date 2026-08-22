@@ -3,14 +3,15 @@
  *
  * - Enter 发送，Shift+Enter 换行
  * - 输入 / 触发命令面板（见 CommandPalette）
+ * - 输入 @ 触发工作空间文件提及面板（见 FileMentionPalette），选中后走附件链路
  * - 流式中输入为 steer（不打断当前回合）；有输入时主按钮发送，没有输入时才显示停止按钮
  * - 模型与思维级别选择器置于悬浮编辑器底部操作栏，发送指令前可就近调整
  * - 附件：右侧加号菜单选文件 / 拖拽放入 / 粘贴图片，经 sidecar 解析后随消息注入
  *   （图片走 prompt.images，文档文本以 <file> 块追加；UI 仅展示 chip 与缩略图）
  */
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { Bug, ClipboardList, CornerUpRight, FileText, Image as ImageIcon, Loader2, Pencil, Plus, Send, Square, Trash2, X } from 'lucide-react';
-import { useEditor, EditorContent } from '@tiptap/react';
+import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { ArrowBendUpRight, Bug, CircleNotch, ClipboardText, FileText, Image as ImageIcon, NotePencil, PaperPlaneTilt, Plus, Square, Trash, X } from '@phosphor-icons/react';
+import { useEditor, EditorContent, type Editor } from '@tiptap/react';
 import Document from '@tiptap/extension-document';
 import HardBreak from '@tiptap/extension-hard-break';
 import History from '@tiptap/extension-history';
@@ -20,13 +21,15 @@ import Text from '@tiptap/extension-text';
 import { CommandTokenNode, createCommandDocument, findCommandToken, serializeCommandContent } from './CommandTokenNode';
 import { useSessionStore, useActiveExtensionUI, type GuidanceMode, type GuidanceQueueItem } from '@/src/store/session';
 import { CommandPalette } from './CommandPalette';
+import { FileMentionPalette } from './FileMentionPalette';
+import { buildFileMentionRows, detectFileMention, filterFileMentionRows, joinWorkspacePath, type FileMentionMatch, type FileMentionRow } from './file-mention';
 import { buildWorkItemPrompt, ComposerAddMenu, createWorkItemAttachment, type ComposerAddTab } from './ComposerAddMenu';
 import { ExtensionUIConfirmCard, ExtensionUISelectCard, isActionSelect } from './ExtensionUIModal';
 import { isHostActionCommand } from './host-actions';
 import { RTK_SETTINGS_ENABLED } from '@/src/store/settings';
 import { ModelPicker } from './ModelPicker';
 import { useWorkbenchStore } from '@/src/store/workbench';
-import { PROJECT_FILE_DRAG_MIME } from '@/src/store/project-files';
+import { PROJECT_FILE_DRAG_MIME, useProjectFilesStore } from '@/src/store/project-files';
 import { useSettingsDialogStore } from '@/src/store/settings';
 import { isTauriEnv, rpc } from '@/src/rpc/bridge';
 import type { AttachmentInput, PreparedAttachment, RpcSlashCommand, RpcWorkItemSummary } from '@/src/rpc/types';
@@ -34,6 +37,8 @@ import { Button } from '@/src/components/ui/button';
 import { Hint } from '@/src/components/ui/tooltip';
 import styles from './InputBox.module.css';
 import { PlanProgressStatus } from './PlanProgressStatus';
+import { SecurityApprovalCard } from './SecurityApprovalCard';
+import { SecurityAccessMenu } from './security/SecurityAccessMenu';
 
 export { formatCommandLabel, getCommandIconKey } from './CommandTokenNode';
 
@@ -116,6 +121,23 @@ function mergePreparedAttachments(previous: PreparedAttachment[], next: Prepared
 	return merged;
 }
 
+/** 粘贴纯文本超过该字符数时不再进入编辑器，转为与文件一致的文本附件。 */
+export const LONG_TEXT_ATTACHMENT_THRESHOLD = 1500;
+
+/** 超长粘贴文本转文本附件：chip 名称只保留前缀预览，完整内容发送时以 <file> 块注入上下文。 */
+export function createLongTextAttachment(text: string): PreparedAttachment | null {
+	const normalized = text.replace(/\r\n/g, '\n');
+	if (normalized.length < LONG_TEXT_ATTACHMENT_THRESHOLD) return null;
+	const preview = normalized.slice(0, 30).replace(/\s+/g, ' ').trim();
+	return {
+		name: `文本：${preview}${normalized.length > 30 ? '…' : ''}`,
+		kind: 'text',
+		mimeType: 'text/plain',
+		sizeBytes: new TextEncoder().encode(normalized).length,
+		text: normalized,
+	};
+}
+
 export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inline' }) {
 	const composerSessionPath = useSessionStore((s) => s.selectedSessionPath ?? s.sessionState?.sessionFile ?? '__new__');
 	const composerWorkspacePath = useSessionStore((s) => s.currentProjectPath);
@@ -152,13 +174,27 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 	const consumeComposerPrefill = useWorkbenchStore((s) => s.consumeComposerPrefill);
 	const projectFileAttachmentRequests = useWorkbenchStore((s) => s.projectFileAttachmentRequests);
 	const consumeProjectFileAttachmentRequests = useWorkbenchStore((s) => s.consumeProjectFileAttachmentRequests);
+	// @ 提及的文件数据源与文件树面板共用同一 store；stale-while-revalidate 见下方 effect。
+	const projectEntries = useProjectFilesStore((s) => s.entries);
+	const projectFilesWorkspace = useProjectFilesStore((s) => s.workspacePath);
+	const projectFilesLoading = useProjectFilesStore((s) => s.loading);
+	const projectFilesError = useProjectFilesStore((s) => s.error);
+	const projectFilesTruncated = useProjectFilesStore((s) => s.truncated);
+	const refreshProjectFiles = useProjectFilesStore((s) => s.refresh);
 
 	const [text, setText] = useState('');
 	/** 从命令面板选中的命令名（输入框不显示 / 前缀，发送时自动补上） */
 	const [selectedCommand, setSelectedCommand] = useState<string | null>(null);
 	const [showPalette, setShowPalette] = useState(false);
+	/** 光标所处的 @ 提及词（含文档位置范围）；null 表示不在提及状态。 */
+	const [mention, setMention] = useState<FileMentionMatch | null>(null);
+	/** Esc 关闭后抑制重新打开，直到触发条件失效（离开 @ 词或删除 @），避免"关不掉"。 */
+	const [mentionDismissed, setMentionDismissed] = useState(false);
+	/** @ 提及与 / 命令面板互斥：@ 优先（/@foo 场景打开文件面板而非命令面板）。 */
+	const mentionOpen = mention !== null && !mentionDismissed && !hasPendingConfirm && !hasPendingActionSelect;
 	const [addMenuOpen, setAddMenuOpen] = useState(false);
 	const [addMenuTab, setAddMenuTab] = useState<ComposerAddTab>('attachments');
+
 	const [attachments, setAttachments] = useState<PreparedAttachment[]>([]);
 	const [preparing, setPreparing] = useState(false);
 	const [prepareError, setPrepareError] = useState<string | null>(null);
@@ -172,6 +208,7 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 	const composerDraftRef = useRef({ text: '', selectedCommand: null as string | null, attachments: [] as PreparedAttachment[], guidanceMode: 'steer' as GuidanceMode });
 	const showPaletteRef = useRef(false);
 	const hasActionSelectRef = useRef(false);
+	const mentionOpenRef = useRef(false);
 	const isStreamingRef = useRef(isStreaming);
 	/** React state 更新前可能连续收到两个 Enter/click；用同步锁避免创建两条相同引导队列项。 */
 	const guidanceSubmittingRef = useRef(false);
@@ -179,8 +216,26 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 	const addInputsRef = useRef<(items: AttachmentInput[]) => Promise<void>>(async () => undefined);
 	showPaletteRef.current = showPalette;
 	hasActionSelectRef.current = hasPendingActionSelect;
+	mentionOpenRef.current = mentionOpen;
 	isStreamingRef.current = isStreaming;
 	composerSessionPathRef.current = composerSessionPath;
+
+	/** 文档或光标变化后同步 @ 提及状态；原子节点用 \uFFFC 占位，保证本地偏移与文档位置对齐。 */
+	const syncFileMention = (currentEditor: Editor) => {
+		const { selection } = currentEditor.state;
+		const { $from } = selection;
+		if (!selection.empty || !$from.parent.isTextblock) {
+			setMention(null);
+			return;
+		}
+		const textBefore = $from.parent.textBetween(0, $from.parentOffset, undefined, '\uFFFC');
+		const textAfter = $from.parentOffset < $from.parent.content.size
+			? $from.parent.textBetween($from.parentOffset, $from.parentOffset + 1, undefined, '\uFFFC')
+			: '';
+		const match = detectFileMention(textBefore, textAfter, $from.start(), $from.pos);
+		setMention(match);
+		if (match === null) setMentionDismissed(false);
+	};
 
 	const editor = useEditor({
 		extensions: COMPOSER_EXTENSIONS,
@@ -193,8 +248,8 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 				'aria-label': '任务输入',
 			},
 			handleKeyDown: (_view, event) => {
-				// 命令面板与动作型 select 浮层都注册了全局键盘监听，编辑器只让事件继续冒泡。
-				if (showPaletteRef.current || hasActionSelectRef.current) {
+				// 命令面板、动作型 select 与 @ 文件提及浮层都注册了全局键盘监听，编辑器只让事件继续冒泡。
+				if (showPaletteRef.current || hasActionSelectRef.current || mentionOpenRef.current) {
 					if (event.key === 'ArrowDown' || event.key === 'ArrowUp' || event.key === 'Enter' || event.key === 'Escape') {
 						event.preventDefault();
 						return true;
@@ -208,11 +263,25 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 				}
 				return false;
 			},
+			// 超长纯文本必须在 ProseMirror 层拦截：React 合成事件晚于编辑器自身的粘贴处理，
+			// 等到 onPaste 再 preventDefault 时文本已经插入，会在输入框和附件 chip 中重复出现。
+			handlePaste: (_view, event) => {
+				const longText = createLongTextAttachment(event.clipboardData?.getData('text/plain') ?? '');
+				if (!longText) return false;
+				event.preventDefault();
+				setAttachments((prev) => mergePreparedAttachments(prev, [longText]));
+				return true;
+			},
 		},
 		onUpdate: ({ editor: currentEditor }) => {
 			setText(serializeCommandContent(currentEditor.getJSON().content));
 			const token = findCommandToken(currentEditor.getJSON().content);
 			setSelectedCommand(token?.name ?? null);
+			syncFileMention(currentEditor);
+		},
+		onSelectionUpdate: ({ editor: currentEditor }) => {
+			// 光标移动不改文档，但仍需开合 @ 提及面板（移入词中关闭、回到词尾重开）。
+			syncFileMention(currentEditor);
 		},
 	});
 
@@ -239,11 +308,28 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 		};
 	}, []);
 
-	// / 开头且无空格时显示命令面板；/ 后的文本就是命令筛选条件。
+	// / 开头且无空格时显示命令面板；/ 后的文本就是命令筛选条件。@ 提及优先于命令面板。
 	useEffect(() => {
 		const m = text.match(/^\/(\S*)$/);
-		setShowPalette(selectedCommand === null && m !== null);
-	}, [selectedCommand, text]);
+		setShowPalette(selectedCommand === null && m !== null && mention === null);
+	}, [selectedCommand, text, mention]);
+
+	// @ 提及面板打开时按 stale-while-revalidate 刷新文件数据：
+	// 无缓存先加载（面板显示加载态）；有缓存先展示旧结果，后台刷新返回后原地更新（同工作区刷新 store 保留旧 entries，不闪空）。
+	useEffect(() => {
+		if (!mentionOpen || !composerWorkspacePath) return;
+		void refreshProjectFiles(composerWorkspacePath);
+	}, [mentionOpen, composerWorkspacePath, refreshProjectFiles]);
+
+	// 候选预计算与过滤分离：entries 变化只重建搜索行，键入只做线性扫描并 top-N 截断。
+	const mentionRows = useMemo(() => buildFileMentionRows(projectEntries), [projectEntries]);
+	const mentionRowsValid = projectFilesWorkspace === composerWorkspacePath && mentionRows.length > 0;
+	// useDeferredValue 让过滤渲染让位打字：大仓库下键入事件永不阻塞。
+	const deferredMentionQuery = useDeferredValue(mention?.query ?? '');
+	const mentionResults = useMemo(
+		() => (mentionRowsValid ? filterFileMentionRows(mentionRows, deferredMentionQuery) : []),
+		[mentionRows, mentionRowsValid, deferredMentionQuery],
+	);
 
 	useEffect(() => {
 		if (!isStreaming) setGuidanceMode('steer');
@@ -380,7 +466,7 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 		requestAnimationFrame(() => editor.commands.focus('end'));
 	};
 
-	/** 粘贴：剪贴板图片 blob -> base64 -> 内联附件。 */
+	/** 粘贴：剪贴板图片 blob -> base64 -> 内联附件；超长纯文本由编辑器 handlePaste 拦截转文本 chip。 */
 	const onPaste = (e: React.ClipboardEvent<HTMLElement>) => {
 		const items = e.clipboardData?.items;
 		if (!items) return;
@@ -510,6 +596,15 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 		requestAnimationFrame(() => editor.commands.focus('end'));
 	};
 
+	/** @ 面板选中文件：删除正文里的 @query 词，文件按文件树"添加到对话框"同一链路进入附件。 */
+	const pickMentionFile = (row: FileMentionRow) => {
+		const match = mention;
+		setMention(null);
+		if (editor && match) editor.chain().focus().deleteRange({ from: match.from, to: match.to }).run();
+		if (!composerWorkspacePath) return;
+		void addInputs([{ path: joinWorkspacePath(composerWorkspacePath, row.path), name: row.name }]);
+	};
+
 	const canSend = canSubmitPrompt(selectedCommand ?? text, attachments.length, preparing || isSessionLoading) && !submitting && !isStopping && !isFlushingGuidance;
 	const visibleGuidance = guidanceQueue.slice(-5);
 	const hasComposerContent = selectedCommand !== null || text.trim().length > 0 || attachments.length > 0;
@@ -561,21 +656,27 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 			<ExtensionUIConfirmCard />
 			<ExtensionUISelectCard />
 			{showPalette && !hasPendingConfirm && !hasPendingActionSelect && <CommandPalette commands={commands} query={text.slice(1)} onPick={pickCommand} onDismiss={() => setShowPalette(false)} />}
-			<ComposerAddMenu
-				open={addMenuOpen && !hasPendingConfirm && !hasPendingActionSelect}
-				tab={addMenuTab}
-				onTabChange={setAddMenuTab}
-				onPickFiles={pickFiles}
-				onSelectWorkItem={selectWorkItem}
-				onDismiss={() => setAddMenuOpen(false)}
-			/>
+			{mentionOpen && (
+				<FileMentionPalette
+					results={mentionResults}
+					loading={projectFilesLoading && !mentionRowsValid}
+					error={!mentionRowsValid ? projectFilesError : null}
+					truncated={projectFilesTruncated && mentionRowsValid}
+					onRetry={() => {
+						if (composerWorkspacePath) void refreshProjectFiles(composerWorkspacePath);
+					}}
+					onPick={pickMentionFile}
+					onDismiss={() => setMentionDismissed(true)}
+				/>
+			)}
 			{isDragOver && (
 				<div className={styles.dropHint}>松开以附加文件</div>
 			)}
 			{/* 业务意图：步骤状态独立显示在输入框上方，避免占用编辑区内部空间。 */}
 			<div className={styles.composerStack}>
 				<PlanProgressStatus />
-				<div className={styles.surface}>
+					<div className={styles.surface}>
+						<SecurityApprovalCard />
 				{visibleGuidance.length > 0 && (
 					<div className={styles.guidanceList} aria-label="已发送引导">
 						{visibleGuidance.map((item) => (
@@ -587,13 +688,13 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 								</div>
 								<div className={styles.guidanceItemActions}>
 									<Hint content="再次引导"><Button type="button" variant="secondary" size="sm" className={styles.guidanceAction} onClick={() => void replayGuidance(item, 'steer')} disabled={!isStreaming || submitting || isStopping || isFlushingGuidance || item.status === 'submitting' || item.status === 'applying'}>
-										<CornerUpRight size={13} /> 引导
+										<ArrowBendUpRight weight="regular" size={13} /> 引导
 									</Button></Hint>
 									<Hint content="编辑后发送"><Button type="button" variant="ghost" size="icon-sm" className={styles.guidanceIconAction} onClick={() => editGuidance(item)} aria-label="编辑后发送">
-										<Pencil size={14} />
+										<NotePencil weight="regular" size={14} />
 									</Button></Hint>
 									<Hint content="删除记录"><Button type="button" variant="ghost" size="icon-sm" className={styles.guidanceIconAction} onClick={() => removeGuidance(item.id)} aria-label="删除记录" disabled={item.status === 'submitting' || item.status === 'applying'}>
-										<Trash2 size={14} />
+										<Trash weight="regular" size={14} />
 									</Button></Hint>
 								</div>
 							</div>
@@ -605,26 +706,26 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 						{attachments.map((a, idx) => (
 							a.kind === 'work-item' ? (
 								<Hint key={`${a.name}-${idx}`} content={a.workItem ? `${a.workItem.workItemCode} · ${a.name}` : a.name}><div className={`${styles.attachment} ${styles.workItemAttachment} ${a.workItem?.workItemType === '缺陷' ? styles.workItemAttachmentDefect : ''}`}>
-									{a.workItem?.workItemType === '缺陷' ? <Bug size={13} /> : <ClipboardList size={13} />}
+									{a.workItem?.workItemType === '缺陷' ? <Bug weight="regular" size={13} /> : <ClipboardText weight="regular" size={13} />}
 									<span className={styles.attachmentName}>{a.name}</span>
 									<Hint content="移除"><Button type="button" variant="ghost" size="icon-sm" className={styles.attachmentRemove} onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))} aria-label="移除工作项">
-										<X size={12} />
+										<X weight="bold" size={12} />
 									</Button></Hint>
 								</div></Hint>
 							) : (
 								<Hint key={`${a.name}-${idx}`} content={a.warnings?.join('\n') || a.name}><div className={styles.attachment}>
-									{a.kind === 'image' ? <ImageIcon size={13} /> : <FileText size={13} />}
+									{a.kind === 'image' ? <ImageIcon weight="regular" size={13} /> : <FileText weight="regular" size={13} />}
 									<span className={styles.attachmentName}>{a.name}</span>
 									<span className={styles.attachmentSize}>{formatSize(a.sizeBytes)}</span>
 									<Hint content="移除"><Button type="button" variant="ghost" size="icon-sm" className={styles.attachmentRemove} onClick={() => setAttachments((prev) => prev.filter((_, i) => i !== idx))} aria-label={`移除附件 ${a.name}`}>
-										<X size={12} />
+										<X weight="bold" size={12} />
 									</Button></Hint>
 								</div></Hint>
 							)
 						))}
 						{preparing && (
 							<div className={`${styles.attachment} ${styles.loading}`}>
-								<Loader2 size={13} className={styles.spin} />
+								<CircleNotch weight="bold" size={13} className={styles.spin} />
 								<span>解析中…</span>
 							</div>
 						)}
@@ -632,7 +733,7 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 							<Hint content={prepareError}><div className={`${styles.attachment} ${styles.error}`}>
 								<span>附件解析失败：{prepareError}</span>
 								<Button type="button" variant="ghost" size="icon-sm" className={styles.attachmentRemove} onClick={() => setPrepareError(null)}>
-									<X size={12} />
+									<X weight="bold" size={12} />
 								</Button>
 							</div></Hint>
 						)}
@@ -643,7 +744,8 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 					<EditorContent editor={editor} className={`${styles.editorShell} ${styles.editorSurface}`} onPaste={onPaste} />
 				</div>
 				<div className={styles.toolbar}>
-					<div className={styles.actions}>
+					{/* 业务意图：输入框左下角固定放置附件与审批入口，模型和发送动作保持右侧。 */}
+					<div className={styles.toolbarLeading}>
 						<Hint content="添加附件或工作项"><Button
 							type="button"
 							variant="ghost"
@@ -655,8 +757,19 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 							aria-expanded={addMenuOpen}
 							disabled={isSessionLoading}
 						>
-							<Plus size={17} />
+								<Plus weight="bold" size={17} />
 						</Button></Hint>
+						<ComposerAddMenu
+							open={addMenuOpen && !hasPendingConfirm && !hasPendingActionSelect}
+							tab={addMenuTab}
+							onTabChange={setAddMenuTab}
+							onPickFiles={pickFiles}
+							onSelectWorkItem={selectWorkItem}
+							onDismiss={() => setAddMenuOpen(false)}
+						/>
+						<SecurityAccessMenu />
+					</div>
+					<div className={styles.actions}>
 						<ModelPicker />
 						{(isStreaming && hasComposerContent) ? (
 							<Hint content="发送引导"><Button
@@ -668,7 +781,7 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 								className={styles.send}
 								aria-label="发送引导"
 							>
-								<Send size={15} />
+								<PaperPlaneTilt weight="regular" size={15} />
 							</Button></Hint>
 						) : isStreaming || isStopping ? (
 							<Hint content="停止当前任务并取消未执行引导"><Button
@@ -680,7 +793,7 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 								className={`${styles.send} ${styles.stop}`}
 								aria-label="停止当前任务并取消未执行引导"
 							>
-								<Square size={15} />
+								<Square weight="bold" size={15} />
 							</Button></Hint>
 						) : (
 							<Hint content="发送"><Button
@@ -691,7 +804,7 @@ export function InputBox({ variant = 'floating' }: { variant?: 'floating' | 'inl
 								disabled={!canSend || isSessionLoading}
 								className={styles.send}
 							>
-								<Send size={16} />
+								<PaperPlaneTilt weight="regular" size={16} />
 							</Button></Hint>
 						)}
 					</div>

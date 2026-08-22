@@ -1,6 +1,6 @@
 /** 开发态视觉画廊：用于快速检查 token、焦点、长文本、状态和 reduced-motion。 */
 import { useEffect } from 'react';
-import { Check, CircleAlert, LoaderCircle, Pencil, Search, X } from 'lucide-react';
+import { Check, CircleNotch as LoaderCircle, MagnifyingGlass as Search, PencilSimple as Pencil, WarningCircle as CircleAlert, X } from '@phosphor-icons/react';
 import { Button } from '@/src/components/ui/button';
 import { Input } from '@/src/components/ui/input';
 import { TargetSessionSidebar } from '@/src/components/workbench/TargetSessionSidebar';

@@ -7,22 +7,27 @@
 /* 业务意图：使用不透明表面替代实时背景模糊，避免侧栏切换时对聊天正文做大面积重绘。 */
 .composerStack { display: flex; width: min(860px, 100%); min-width: 0; flex-direction: column; }
 .surface { position: relative; z-index: 1; display: flex; width: min(860px, 100%); min-width: 0; flex-direction: column; overflow: visible; border: 1px solid var(--gp-border-strong); border-radius: 14px; background: linear-gradient(180deg, var(--gp-surface-raised), var(--gp-surface)); padding: 12px 14px 10px; box-shadow: var(--shadow-lg), 0 0 0 1px var(--gp-accent-soft); transition: border-color 140ms ease, box-shadow 140ms ease; }
+:global([data-ui-version='target']) .surface { border-radius: 18px; }
+:global([data-ui-version='work']) .surface { border-radius: 18px; }
+/* CODE 输入框采用纯净的圆角表面，隐藏顶部装饰色带，避免形成新的视觉分界线。 */
+:global([data-ui-version='target']) .surface::before,
+:global([data-ui-version='work']) .surface::before { display: none; }
 .surface::before { position: absolute; top: 0; right: 14px; left: 14px; height: 2px; background: linear-gradient(90deg, var(--gp-accent), transparent 68%, var(--gp-warm)); content: ''; opacity: .85; }
 .surface:focus-within { border-color: color-mix(in srgb, var(--gp-accent) 65%, var(--gp-border)); box-shadow: 0 20px 54px var(--gp-shadow-color), 0 0 0 3px var(--gp-accent-soft); }
 .guidanceList { display: flex; max-height: 188px; flex-direction: column; gap: 6px; margin: -2px 0 8px; overflow-y: auto; padding: 0 0 2px; }
 .guidanceItem { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--gp-border); border-radius: 12px; background: color-mix(in srgb, var(--gp-surface) 78%, transparent); padding: 8px 8px 8px 10px; }
 .guidanceItemBody { display: flex; min-width: 0; align-items: center; gap: 8px; }
-.guidanceGrip { flex: 0 0 auto; color: var(--gp-text-dim); font-size: calc(14px * var(--desktop-font-scale)); letter-spacing: -2px; line-height: 1; }
-.guidanceItemText { min-width: 0; overflow: hidden; color: var(--gp-text); font-size: calc(12px * var(--desktop-font-scale)); line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
-.guidanceItemStatus { flex: 0 0 auto; color: var(--gp-text-muted); font-size: calc(10px * var(--desktop-font-scale)); }
+.guidanceGrip { flex: 0 0 auto; color: var(--gp-text-dim); font-size: var(--text-xs); letter-spacing: -2px; line-height: 1; }
+.guidanceItemText { min-width: 0; overflow: hidden; color: var(--gp-text); font-size: var(--text-xs); line-height: 1.4; text-overflow: ellipsis; white-space: nowrap; }
+.guidanceItemStatus { flex: 0 0 auto; color: var(--gp-text-muted); font-size: var(--text-xs); }
 .guidanceItemActions { display: flex; flex: 0 0 auto; align-items: center; gap: 2px; }
-.guidanceAction { height: 26px; gap: 4px; border-radius: 7px; padding: 0 9px; font-size: calc(11px * var(--desktop-font-scale)); }
+.guidanceAction { height: 26px; gap: 4px; border-radius: 7px; padding: 0 9px; font-size: var(--text-xs); }
 .guidanceIconAction { width: 28px; height: 28px; color: var(--gp-text-muted); }
 .guidanceIconAction:hover { color: var(--gp-text); }
 .composerRow { min-width: 0; }
 /* 业务意图：Tiptap 编辑区承载真正的 inline command node，参数与命令共享同一个光标和换行模型。 */
 .editorShell { width: 100%; min-width: 0; }
-.editorSurface { box-sizing: border-box; display: block; min-height: 44px; max-height: 200px; width: 100%; overflow-y: auto; border: 0; background: transparent; padding: 0; color: var(--gp-text); font: calc(13px * var(--desktop-font-scale))/1.55 var(--font-sans); outline: 0; user-select: text; -webkit-user-select: text; }
+.editorSurface { box-sizing: border-box; display: block; min-height: 44px; max-height: 200px; width: 100%; overflow-y: auto; border: 0; background: transparent; padding: 0; color: var(--gp-text); font: var(--text-xs)/1.55 var(--font-sans); outline: 0; user-select: text; -webkit-user-select: text; }
 .editorSurface :global(p) { min-height: 44px; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .editorSurface :global(.is-editor-empty:first-child::before) { float: left; height: 0; color: var(--gp-text-muted); content: attr(data-placeholder); pointer-events: none; }
 .editorSurface :global(.ProseMirror-focused) { outline: 0; }
@@ -30,6 +35,7 @@
 .commandToken { display: inline; margin-right: 7px; color: var(--gp-accent); font: inherit; font-size: inherit; font-weight: inherit; line-height: inherit; vertical-align: baseline; white-space: nowrap; }
 .commandToken svg { display: inline-block; width: 13px; height: 13px; margin-right: 3px; color: var(--gp-text-muted); vertical-align: -0.1em; }
 .toolbar { display: flex; min-height: 32px; align-items: center; gap: 10px; margin-top: 7px; }
+.toolbarLeading { position: relative; display: flex; min-width: 0; align-items: center; gap: 6px; }
 .actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .send { display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border: 0; border-radius: 50%; background: var(--gp-action); color: var(--primary-foreground); cursor: pointer; transition: background 140ms ease, transform 140ms ease, opacity 140ms ease; }
 .send svg { width: 16px; height: 16px; }
@@ -41,9 +47,9 @@
 .attach:hover:not(:disabled) { background: var(--gp-accent-soft); color: var(--gp-accent); }
 .attach:disabled { cursor: not-allowed; opacity: .4; }
 .dragOver .surface { box-shadow: 0 0 0 2px var(--gp-action), 0 17px 46px var(--gp-shadow-color); }
-.dropHint { position: absolute; z-index: 31; top: -28px; left: 50%; transform: translateX(-50%); border-radius: 999px; background: var(--gp-action); padding: 4px 12px; color: var(--primary-foreground); font-size: calc(12px * var(--desktop-font-scale)); white-space: nowrap; }
+.dropHint { position: absolute; z-index: 31; top: -28px; left: 50%; transform: translateX(-50%); border-radius: 999px; background: var(--gp-action); padding: 4px 12px; color: var(--primary-foreground); font-size: var(--text-xs); white-space: nowrap; }
 .attachments { display: flex; flex-wrap: wrap; gap: 6px; max-height: 120px; overflow-y: auto; padding: 2px 2px 8px; }
-.attachment { display: inline-flex; max-width: 220px; align-items: center; gap: 5px; border: 1px solid var(--gp-border); border-radius: 8px; background: var(--gp-accent-soft); padding: 4px 6px 4px 8px; color: var(--gp-text); font-size: calc(12px * var(--desktop-font-scale)); line-height: 1.4; }
+.attachment { display: inline-flex; max-width: 220px; align-items: center; gap: 5px; border: 1px solid var(--gp-border); border-radius: 8px; background: var(--gp-accent-soft); padding: 4px 6px 4px 8px; color: var(--gp-text); font-size: var(--text-xs); line-height: 1.4; }
 .workItemAttachment { border-color: color-mix(in srgb, var(--gp-accent) 42%, var(--gp-border)); background: color-mix(in srgb, var(--gp-accent) 12%, var(--gp-accent-soft)); }
 .workItemAttachmentDefect { border-color: color-mix(in srgb, var(--gp-danger) 48%, var(--gp-border)); background: color-mix(in srgb, var(--gp-danger) 12%, var(--gp-accent-soft)); color: var(--gp-danger); }
 .attachmentName { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

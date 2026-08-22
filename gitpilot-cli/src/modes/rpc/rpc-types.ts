@@ -15,10 +15,12 @@ import type {
 import type { AttachmentInput, PreparedAttachment } from "../../core/attachments/prepare-attachment.ts";
 import type { BashResult } from "../../core/bash-executor.ts";
 import type { CompactionResult } from "../../core/compaction/index.ts";
+import type { GitBranchInfo, GitDiffResult, GitRepositoryState } from "../../core/git/git-types.ts";
 import type { SessionEntry, SessionInfo, SessionTreeNode } from "../../core/session-manager.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 import type { WorkspaceChangeSet } from "../../core/workspace-changes.ts";
 import type { ManagedMcpServer, McpServerDefinition } from "../../extensions/gitpilot/mcp-manager.ts";
+import type { ApprovalDecision, SecurityApprovalRequest, SecurityPolicy, SandboxStatus, SessionApprovalMode } from "../../core/security/security-policy.ts";
 
 export type SkillMode = "code" | "work" | "design";
 export interface ManagedSkill {
@@ -154,6 +156,41 @@ export interface DesignRpcFile {
 	content: string;
 	hash?: string;
 }
+
+/**
+ * Design Mode 的视觉事实源。Canvas 节点只保存设计语义，不允许携带 HTML/CSS/JavaScript 源码。
+ * 业务意图：Desktop、sidecar 和平台版本都消费同一份可校验场景，而不是各自重建页面。
+ */
+export interface CanvasDesignDocument {
+	schemaVersion: 2;
+	id: string;
+	name: string;
+	revision: number;
+	updatedAt: string;
+	entryPageId: string;
+	pages: Array<Record<string, unknown>>;
+	nodes: Record<string, Record<string, unknown>>;
+	assets: Record<string, Record<string, unknown>>;
+	guidelines?: DesignProjectGuidelines;
+}
+
+export type CanvasDesignOperation =
+	| { op: "create_node"; node: Record<string, unknown>; parentId: string; index?: number }
+	| { op: "update_node"; nodeId: string; changes: Record<string, unknown> }
+	| { op: "delete_node"; nodeId: string }
+	| { op: "move_node"; nodeId: string; parentId: string; index: number }
+	| { op: "update_text"; nodeId: string; text: Record<string, unknown> }
+	| { op: "update_path"; nodeId: string; path: Record<string, unknown> }
+	| { op: "attach_asset"; nodeId: string; assetId: string };
+
+export interface CanvasDesignTransaction {
+	transactionId: string;
+	baseRevision: number;
+	source: "user" | "ai" | "system";
+	operations: CanvasDesignOperation[];
+	summary: string;
+	createdAt: string;
+}
 export interface DesignProjectContext { projectId: string; projectPath: string; designId: string }
 /** 项目级长期设计约束，和某次页面 revision 分开保存，供后续 Design run 稳定继承。 */
 export interface DesignProjectGuidelines {
@@ -191,23 +228,19 @@ export interface DesignUploadResult {
 	revisionId: string;
 	createdAt: string;
 }
-/** sidecar 构建的受控预览载荷；Desktop 只把 html 放进 sandbox iframe，不接触项目文件系统。 */
+/** sidecar 构建的受控场景检查载荷；预览不再生成 HTML。 */
 export interface DesignPreviewHandle {
 	id: string;
 	projectId: string;
 	designId: string;
 	pageId: string;
 	revisionId: string;
-	html: string;
+	scene: CanvasDesignDocument;
+	checks: Array<{ level: "error" | "warning" | "info"; message: string }>;
 	expiresAt: number;
 }
-export type DesignPatchOperation =
-	| { op: "create_file"; path: string; content: string; language: DesignRpcFile["language"] }
-	| { op: "replace_file"; path: string; content: string }
-	| { op: "replace_text"; path: string; search: string; replacement: string }
-	| { op: "insert_text"; path: string; anchor: string; text: string; position: "before" | "after"; occurrence?: number }
-	| { op: "rename_file"; path: string; newPath: string }
-	| { op: "delete_file"; path: string };
+/** Design Mode 只接受场景图事务；文件 patch 属于旧 HTML 工作区协议，已明确下线。 */
+export type DesignPatchOperation = CanvasDesignOperation;
 export interface DesignPatch { baseRevisionId: string; operations: DesignPatchOperation[]; affectedPaths?: string[]; summary?: string; risk?: "safe" | "high"; operationId?: string }
 export interface DesignStreamMetadata extends DesignProjectContext { requestId: string; runId?: string; sequence: number; emittedAt: number }
 /**
@@ -221,20 +254,20 @@ export type DesignAgentEvent =
 	| { type: "message_end"; message: { role: "assistant"; content: Array<{ type: "text"; text: string }> } }
 	| { type: "tool_execution_start" | "tool_execution_update" | "tool_execution_end"; toolCallId: string; toolName: string; summary?: string; isError?: boolean };
 export interface DesignStreamEvent extends DesignStreamMetadata { type: "design_event"; event: DesignAgentEvent }
-export interface DesignPatchAppliedEvent extends DesignStreamMetadata { type: "design_patch_applied"; operationId: string; revisionId: string; pageId: string; summary: string; changedFiles: DesignRpcFile[]; removedPaths: string[]; /** Agent run 中的增量 patch 仍是 draft，不应在 Desktop 侧新增历史 revision。 */ isDraft?: boolean }
+export interface DesignPatchAppliedEvent extends DesignStreamMetadata { type: "design_patch_applied"; operationId: string; revisionId: string; pageId: string; summary: string; transaction: CanvasDesignTransaction; affectedNodeIds: string[]; /** Agent run 中的增量 patch 仍是 draft，不应在 Desktop 侧新增历史 revision。 */ isDraft?: boolean; /** 当前 run 的稳定 draft 身份；旧 sidecar 不提供时由 Desktop 使用 revisionId 回退。 */ draftRevisionId?: string; /** 已接受的 patch 批次编号，不代表模型进度百分比。 */ operationIndex?: number; /** page-local 脏矩形，供渲染器后续裁剪使用。 */ dirtyRects?: Array<{ x: number; y: number; width: number; height: number }> }
 export interface DesignApprovalRequiredEvent extends DesignStreamMetadata { type: "design_approval_required"; approvalId: string; pageId: string; patch: DesignPatch; reason: string }
 /** Design Agent 发现关键歧义时暂停当前工具调用，等待 Desktop 返回用户决策。 */
 export interface DesignClarificationRequiredEvent extends DesignStreamMetadata { type: "design_clarification_required"; clarificationId: string; question: string; context?: string; options: string[] }
 /** 复杂任务由模型通过 update_plan 提交，简单任务由 skip_plan 显式跳过。 */
 export interface DesignPlanStep { id: string; text: string; state: "pending" | "active" | "done" }
 export interface DesignPlanUpdatedEvent extends DesignStreamMetadata { type: "design_plan_updated"; steps: DesignPlanStep[]; explanation?: string }
-export interface DesignRunSettledEvent extends DesignStreamMetadata { type: "design_run_settled"; snapshot: DesignRpcSnapshot }
+export interface DesignRunSettledEvent extends DesignStreamMetadata { type: "design_run_settled"; snapshot: DesignRpcSnapshot; reason?: "completed" | "interrupted" }
 export interface DesignErrorEvent extends DesignStreamMetadata { type: "design_error"; error: string }
 
 /**
  * Design 工作区重新打开或前端重连时恢复的最小运行态。
  * 业务意图：审批正文可能很大，不重复传回完整 patch；只恢复继续审批所需的标识和原因，
- * 页面正文仍以 canonical snapshot 为准，避免把审批恢复变成新的大对象传输。
+ * 页面正文仍以 canonical snapshot 为准；active draft 若需要重连由 design_open 单独返回一次 draftSnapshot。
  */
 export interface DesignRunRecoveryState {
 	status: "idle" | "running" | "awaiting_approval" | "awaiting_clarification";
@@ -244,6 +277,27 @@ export interface DesignRunRecoveryState {
 	sequence: number;
 	pendingApproval?: { approvalId: string; pageId: string; reason: string };
 	pendingClarification?: { clarificationId: string; question: string; context?: string; options: string[] };
+}
+
+/** Design 打开时返回的草稿摘要；不携带完整 patch，避免恢复响应复制整个场景。 */
+export interface DesignDraftMetadata {
+	status: "active" | "orphaned";
+	runId: string;
+	requestId: string;
+	baseRevisionId: string;
+	draftRevisionId: string;
+	operationCount: number;
+	lastSequence: number;
+	lastSummary?: string;
+}
+export interface DesignOpenData {
+	designId: string;
+	snapshot: DesignRpcSnapshot;
+	messages?: DesignRpcMessage[];
+	execution?: DesignRunRecoveryState;
+	draft?: DesignDraftMetadata;
+	/** active draft 的完整场景只通过 RPC 返回，不写入 Desktop localStorage；用于重连后继续增量归约。 */
+	draftSnapshot?: DesignRpcSnapshot;
 }
 
 // ============================================================================
@@ -263,12 +317,18 @@ export type RpcSessionExecutionSummary = AgentExecutionSummary;
 export const RPC_CAPABILITY_SESSION_EXECUTION_SNAPSHOT_V1 = "session_execution_snapshot_v1";
 export const RPC_CAPABILITY_SESSION_EVENT_METADATA_V1 = "session_event_metadata_v1";
 export const RPC_CAPABILITY_SWITCH_SESSION_SNAPSHOT_V1 = "switch_session_snapshot_v1";
+/** Code 模式右侧栏 Git 面板能力：受限 sidecar Git 服务（core/git）。 */
+export const RPC_CAPABILITY_DESKTOP_GIT_PANEL_V1 = "desktop_git_panel_v1";
+/** Git 面板 v2：状态标注误跟踪文件（ignoredTracked）并支持 git_untrack_paths 解除跟踪。 */
+export const RPC_CAPABILITY_DESKTOP_GIT_PANEL_V2 = "desktop_git_panel_v2";
 
 /** 当前 sidecar 宣告的全部能力。 */
 export const RPC_CAPABILITIES: readonly string[] = [
 	RPC_CAPABILITY_SESSION_EXECUTION_SNAPSHOT_V1,
 	RPC_CAPABILITY_SESSION_EVENT_METADATA_V1,
 	RPC_CAPABILITY_SWITCH_SESSION_SNAPSHOT_V1,
+	RPC_CAPABILITY_DESKTOP_GIT_PANEL_V1,
+	RPC_CAPABILITY_DESKTOP_GIT_PANEL_V2,
 ];
 
 /**
@@ -321,6 +381,24 @@ export type RpcCommand =
 	// Attachments（桌面端上传附件预解析：路径或内联 base64 -> 文本/图片，结果随下一条 prompt 注入）
 	| { id?: string; type: "prepare_attachments"; items: AttachmentInput[] }
 	| { id?: string; type: "code_file_list" }
+	// Desktop Code 模式右侧栏 Git 面板：受限 sidecar Git，确定性操作，不进模型上下文。
+	// 设计文档：docs/design-docs/gitpilot-desktop-code-git-panel-technical-design-v1.md
+	| { id?: string; type: "git_get_state" }
+	| { id?: string; type: "git_get_diff"; scope: "worktree" | "staged"; path: string }
+	| { id?: string; type: "git_list_branches" }
+	| { id?: string; type: "git_stage_paths"; paths: string[] }
+	| { id?: string; type: "git_unstage_paths"; paths: string[] }
+	/** 解除误跟踪：只从 index 移除保留工作区文件，提交删除后忽略规则才生效。 */
+	| { id?: string; type: "git_untrack_paths"; paths: string[] }
+	| { id?: string; type: "git_commit"; message: string; expectedVersion?: number }
+	/** 空提交信息时由 sidecar 用一次性模型会话基于暂存 diff 生成建议，不落盘、不带工具。 */
+	| { id?: string; type: "git_suggest_commit_message" }
+	| { id?: string; type: "git_create_branch"; name: string; switchTo?: boolean }
+	| { id?: string; type: "git_switch_branch"; name: string; expectedVersion?: number }
+	| { id?: string; type: "git_fetch"; remote?: string }
+	| { id?: string; type: "git_pull_ff_only"; expectedVersion?: number }
+	| { id?: string; type: "git_push"; expectedVersion?: number; setUpstream?: boolean }
+	| { id?: string; type: "git_cancel_operation"; operationId: string }
 	| { id?: string; type: "new_work_session"; taskId: string; workspacePath?: string }
 	| { id?: string; type: "work_prompt"; taskId: string; message: string; history?: WorkConversationMessage[]; research?: boolean }
 	| { id?: string; type: "work_abort"; requestId?: string }
@@ -336,7 +414,7 @@ export type RpcCommand =
 	| { id?: string; type: "work_item_detail"; workItemId: number }
 	| { id?: string; type: "design_open"; projectPath: string }
 	| { id?: string; type: "design_sync_messages"; projectPath: string; designId: string; messages: DesignRpcMessage[] }
-	| { id?: string; type: "design_save_guidelines"; projectPath: string; designId: string; guidelines: DesignProjectGuidelines }
+	| { id?: string; type: "design_save_guidelines"; projectPath: string; designId: string; guidelines: DesignProjectGuidelines; canvas?: CanvasDesignDocument }
 	| { id?: string; type: "design_rename_page"; projectPath: string; designId: string; pageId: string; name: string; baseRevisionId: string }
 	| { id?: string; type: "design_create"; projectPath: string; name?: string }
 	| { id?: string; type: "design_get_snapshot"; projectPath: string; designId: string }
@@ -346,13 +424,14 @@ export type RpcCommand =
 	| { id?: string; type: "design_clarification_response"; projectPath: string; designId: string; clarificationId: string; answer: string }
 	| { id?: string; type: "design_follow_up"; projectPath: string; designId: string; message: string }
 	| { id?: string; type: "design_abort"; projectPath: string; designId: string }
+	| { id?: string; type: "design_recover_draft"; projectPath: string; designId: string; runId: string; action: "keep" | "discard" }
 	| { id?: string; type: "design_approval_response"; projectPath: string; designId: string; approvalId: string; approved: boolean }
 	| { id?: string; type: "design_generate"; projectPath: string; designId: string; pageId: string; prompt: string; baseRevisionId?: string; targetProfiles: Array<"mobile" | "tablet" | "desktop"> }
 	| { id?: string; type: "design_apply_patch"; projectPath: string; designId: string; pageId: string; baseRevisionId: string; patch: Record<string, unknown> }
 	| { id?: string; type: "design_preview"; projectPath: string; designId: string; pageId: string; revisionId?: string }
 	| { id?: string; type: "design_check"; projectPath: string; designId: string; pageId: string; revisionId?: string }
 	| { id?: string; type: "design_revert"; projectPath: string; designId: string; revisionId: string }
-	| { id?: string; type: "design_upload"; projectPath: string; designId: string; revisionId: string; platformProjectId: number; title?: string; summary?: string }
+	| { id?: string; type: "design_upload"; projectPath: string; designId: string; revisionId: string; platformProjectId: number; title?: string; summary?: string; previewPng?: string }
 	| { id?: string; type: "design_export"; projectPath: string; designId: string; outputPath?: string }
 	// MCP 管理传输标准服务定义；查询响应中的 env、headers 等敏感值始终是脱敏占位符。
 	| { id?: string; type: "mcp_list" }
@@ -393,8 +472,14 @@ export type RpcCommand =
 	| { id?: string; type: "abort_retry" }
 
 	// Bash
-	| { id?: string; type: "bash"; command: string; excludeFromContext?: boolean }
+	| { id?: string; type: "bash"; command: string; excludeFromContext?: boolean; timeout?: number }
 	| { id?: string; type: "abort_bash" }
+	/** Code 工具审批响应；授权仅存在于当前 sidecar 会话内。 */
+	| { id?: string; type: "approval_response"; approvalId: string; decision: ApprovalDecision }
+	| { id?: string; type: "get_security_policy" }
+	| { id?: string; type: "set_security_policy"; policy: Partial<SecurityPolicy> }
+	/** 切换会话级访问权限；即时生效且只影响当前会话，不落盘。 */
+	| { id?: string; type: "set_session_approval_mode"; mode: SessionApprovalMode }
 
 	// Session
 	| { id?: string; type: "get_session_stats" }
@@ -519,6 +604,14 @@ export type RpcResponse =
 	// Attachments（预解析附件，结果不触发事件流，直接随 response 返回）
 	| { id?: string; type: "response"; command: "prepare_attachments"; success: true; data: { attachments: PreparedAttachment[] } }
 	| { id?: string; type: "response"; command: "code_file_list"; success: true; data: CodeProjectFileList }
+	// Git 面板：写操作返回新版本号 + 强制重读后的完整状态，UI 无需再发 get_state。
+	| { id?: string; type: "response"; command: "git_get_state"; success: true; data: GitRepositoryState }
+	| { id?: string; type: "response"; command: "git_get_diff"; success: true; data: GitDiffResult }
+	| { id?: string; type: "response"; command: "git_list_branches"; success: true; data: { branches: GitBranchInfo[] } }
+	| { id?: string; type: "response"; command: "git_stage_paths" | "git_unstage_paths" | "git_untrack_paths" | "git_create_branch" | "git_switch_branch" | "git_fetch" | "git_pull_ff_only" | "git_push"; success: true; data: { repositoryVersion: number; state: GitRepositoryState } }
+	| { id?: string; type: "response"; command: "git_commit"; success: true; data: { repositoryVersion: number; state: GitRepositoryState; commitSha: string } }
+	| { id?: string; type: "response"; command: "git_suggest_commit_message"; success: true; data: { message: string } }
+	| { id?: string; type: "response"; command: "git_cancel_operation"; success: true; data: { cancelled: boolean } }
 	| { id?: string; type: "response"; command: "new_work_session"; success: true; data: { taskId: string; sessionId: string; sessionPath: string; workspacePath: string; title: string } }
 	| { id?: string; type: "response"; command: "work_prompt"; success: true; data: { requestId: string } }
 	| { id?: string; type: "response"; command: "work_abort"; success: true }
@@ -531,7 +624,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "work_project_list"; success: true; data: { projects: RpcWorkProjectSummary[] } }
 	| { id?: string; type: "response"; command: "work_item_page"; success: true; data: RpcWorkItemPage }
 	| { id?: string; type: "response"; command: "work_item_detail"; success: true; data: { detail: RpcWorkItemDetail; links: RpcWorkItemLinks } }
-	| { id?: string; type: "response"; command: "design_open" | "design_create" | "design_save_guidelines" | "design_rename_page"; success: true; data: { designId: string; snapshot: DesignRpcSnapshot; messages?: DesignRpcMessage[]; execution?: DesignRunRecoveryState } }
+	| { id?: string; type: "response"; command: "design_open" | "design_create" | "design_save_guidelines" | "design_rename_page"; success: true; data: DesignOpenData }
 	| { id?: string; type: "response"; command: "design_sync_messages"; success: true; data: { designId: string; messages: DesignRpcMessage[] } }
 	| { id?: string; type: "response"; command: "design_get_snapshot" | "design_get_revision" | "design_check"; success: true; data: { snapshot?: DesignRpcSnapshot; checks?: Array<{ level: "error" | "warning" | "info"; message: string }> } }
 	| { id?: string; type: "response"; command: "design_preview"; success: true; data: { snapshot?: DesignRpcSnapshot; previewHandle: DesignPreviewHandle; checks?: Array<{ level: "error" | "warning" | "info"; message: string }> } }
@@ -539,6 +632,7 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "design_clarification_response"; success: true }
 	| { id?: string; type: "response"; command: "design_follow_up"; success: true; data: { queued: true } }
 	| { id?: string; type: "response"; command: "design_abort"; success: true }
+	| { id?: string; type: "response"; command: "design_recover_draft"; success: true; data: { designId: string; action: "keep" | "discard"; snapshot: DesignRpcSnapshot; reason?: "interrupted" | "discarded" } }
 	| { id?: string; type: "response"; command: "design_approval_response"; success: true }
 	| { id?: string; type: "response"; command: "design_generate"; success: true; data: { requestId: string; snapshot?: DesignRpcSnapshot; summary?: string } }
 	| { id?: string; type: "response"; command: "design_apply_patch" | "design_revert"; success: true; data: { snapshot: DesignRpcSnapshot } }
@@ -678,6 +772,10 @@ export type RpcResponse =
 	| { id?: string; type: "response"; command: "set_token"; success: true }
 	| { id?: string; type: "response"; command: "get_platform_account"; success: true; data: RpcPlatformAccount }
 	| { id?: string; type: "response"; command: "get_platform_connection"; success: true; data: RpcPlatformConnection }
+	| { id?: string; type: "response"; command: "approval_response"; success: true }
+       | { id?: string; type: "response"; command: "get_security_policy"; success: true; data: { policy: SecurityPolicy; sandbox: SandboxStatus; approvalMode: SessionApprovalMode; pendingApprovals: SecurityApprovalRequest[] } }
+       | { id?: string; type: "response"; command: "set_security_policy"; success: true; data: { policy: SecurityPolicy; sandbox: SandboxStatus } }
+       | { id?: string; type: "response"; command: "set_session_approval_mode"; success: true; data: { approvalMode: SessionApprovalMode } }
 	| { id?: string; type: "response"; command: "get_platform_projects"; success: true; data: { projects: Array<{ id: number; name: string; status?: string; description?: string; owner?: string }> } }
 	| { id?: string; type: "response"; command: "get_platform_work_items"; success: true; data: { items: RpcWorkItemSummary[] } }
 	| { id?: string; type: "response"; command: "logout"; success: true }
@@ -737,6 +835,22 @@ export type RpcExtensionUIRequest = (
 	| { type: "extension_ui_request"; id: string; method: "setTitle"; title: string }
 	| { type: "extension_ui_request"; id: string; method: "set_editor_text"; text: string }
 ) & RpcExtensionUISessionMetadata;
+
+/** Code 工具执行前发给 Desktop 的独立审批事件，不复用 Design 审批状态。 */
+export interface RpcApprovalRequiredEvent extends SecurityApprovalRequest {
+	type: "approval_required";
+}
+
+/**
+ * Git 面板事件：core/git RepositoryService 广播的操作生命周期与状态变化。
+ * Desktop 桥接层按 "git_" 前缀分流到独立回调，不进入 Code 会话 reducer。
+ */
+export type RpcGitEvent =
+	| { type: "git_operation_started"; operationId: string; kind: string }
+	| { type: "git_operation_completed"; operationId: string; kind: string; repositoryVersion: number }
+	| { type: "git_operation_failed"; operationId: string; kind: string; errorCode: string; message: string }
+	| { type: "git_operation_cancelled"; operationId: string; kind: string }
+	| { type: "git_state_changed"; repositoryVersion: number };
 
 // ============================================================================
 // Extension UI Commands (stdin)

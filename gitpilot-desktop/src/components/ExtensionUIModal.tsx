@@ -6,7 +6,7 @@
  * 始终处理队列首部请求，用户交互后通过 respondExtensionUI 回传结果。
  */
 import { useEffect, useRef, useState } from 'react';
-import { CircleAlert, Check, CornerDownLeft, X } from 'lucide-react';
+import { WarningCircle as CircleAlert, Check, ArrowBendDownLeft as CornerDownLeft, X } from '@phosphor-icons/react';
 import { useSessionStore, useActiveExtensionUI } from '@/src/store/session';
 import type { RpcExtensionUIRequest } from '@/src/rpc/types';
 import { Button } from '@/src/components/ui/button';
@@ -128,7 +128,7 @@ export function ExtensionUIModal() {
 							value={value}
 							onChange={(e) => setValue(e.target.value)}
 							rows={12}
-							className="min-h-48 resize-y bg-[var(--gp-code-surface)] font-mono text-xs"
+							className="min-h-48 resize-y bg-[var(--gp-code-surface)] font-mono text-[length:var(--text-[length:var(--text-xs)])]"
 						/>
 					)}
 				</div>
@@ -171,7 +171,7 @@ export function ExtensionUIConfirmCard() {
 		<div className={styles.confirmCard} role="alertdialog" aria-modal="false" aria-labelledby="extension-confirm-title" aria-describedby="extension-confirm-message">
 			<div className={styles.confirmHeader}>
 				<CircleAlert size={15} aria-hidden="true" />
-				<strong id="extension-confirm-title">{display.title}</strong>
+				<span id="extension-confirm-title">{display.title}</span>
 			</div>
 			<p id="extension-confirm-message" className={styles.confirmMessage}>{display.message}</p>
 			<div className={styles.confirmActions}>

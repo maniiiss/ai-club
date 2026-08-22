@@ -200,6 +200,19 @@ if (Test-Path -LiteralPath $bundleDir) {
 }
 $tempConfigPath = Join-Path ([System.IO.Path]::GetTempPath()) "gitpilot-tauri-release-$([guid]::NewGuid().ToString('N')).json"
 $configOverlay = [ordered]@{
+    # 业务意图：resources/bin 内的 rg/fd 仅在打包时由本脚本预置（见上方「预置 rg/fd」步骤），
+    # 因此不能放进基础 tauri.conf.json，否则 dev 模式（目录为空）会因 glob 匹配不到而构建失败。
+    # 这里在 release overlay 中补回完整的 resources 列表（含 resources/bin/*），仅打包期生效。
+    bundle = [ordered]@{
+        resources = @(
+            'resources/package.json',
+            'resources/plannotator.json',
+            'resources/theme/*',
+            'resources/export-html/**/*',
+            'resources/skills/**/*',
+            'resources/bin/*'
+        )
+    }
     plugins = [ordered]@{
         updater = [ordered]@{
             endpoints = @($UpdaterEndpoint)

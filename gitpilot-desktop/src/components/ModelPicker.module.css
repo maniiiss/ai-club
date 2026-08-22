@@ -1,18 +1,21 @@
 /* 模型选择器保持紧凑的 IDE 密度，搜索输入不会再撑大整个输入器。 */
 .picker { display: flex; align-items: center; gap: 6px; }
-.modelTrigger { min-width: 0; max-width: 176px; }
+.modelTrigger { min-width: 0; max-width: 176px; border: 0; background: transparent; box-shadow: none; color: var(--gp-text-muted); }
+.modelTrigger:hover:not(:disabled), .thinkingTrigger:hover:not(:disabled) { background: var(--gp-accent-soft); color: var(--gp-text); }
+.modelTrigger:focus-visible, .thinkingTrigger:focus-visible { outline: 2px solid var(--gp-accent-soft); outline-offset: 1px; box-shadow: none; }
+.thinkingTrigger { border: 0; background: transparent; box-shadow: none; color: var(--gp-text-muted); }
 .modelName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .modelPopover { width: min(232px, calc(100vw - 32px)); padding: 0; }
-.search { height: 30px; padding: 0 8px; }
-.searchInput { font-size: calc(11px * var(--desktop-font-scale)); }
+.search { height: 30px; border-bottom: 0; padding: 0 8px; }
+.searchInput { font-size: var(--text-xs); }
 .modelList { max-height: 224px; padding: 4px; }
 .modelItem { min-height: 36px; gap: 7px; padding: 6px 8px; }
 .modelItem:hover, .selected { background: var(--gp-selection); color: var(--gp-action); }
 .modelCopy { display: block; min-width: 0; flex: 1; overflow: hidden; }
 .modelTitle { display: flex; min-width: 0; align-items: center; gap: 8px; }
-.modelTitleText { min-width: 0; flex: 1 1 auto; overflow: hidden; color: var(--gp-text); font-size: calc(11px * var(--desktop-font-scale)); text-overflow: ellipsis; white-space: nowrap; }
+.modelTitleText { min-width: 0; flex: 1 1 auto; overflow: hidden; color: var(--gp-text); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
 .modelBadges { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; margin-left: auto; }
-.multimodalBadge { flex: 0 0 auto; border: 1px solid color-mix(in srgb, var(--gp-action) 54%, var(--gp-border)); border-radius: 999px; background: color-mix(in srgb, var(--gp-action) 14%, transparent); padding: 1px 5px; color: var(--gp-action); font-size: calc(9px * var(--desktop-font-scale)); font-weight: 600; letter-spacing: .02em; line-height: 1.35; white-space: nowrap; }
-.billingBadge { flex: 0 0 auto; border: 1px solid color-mix(in srgb, var(--gp-success, #2f9e44) 52%, var(--gp-border)); border-radius: 999px; background: color-mix(in srgb, var(--gp-success, #2f9e44) 12%, transparent); padding: 1px 5px; color: var(--gp-success, #2f9e44); font-size: calc(9px * var(--desktop-font-scale)); font-weight: 600; letter-spacing: .02em; line-height: 1.35; white-space: nowrap; }
+/* 计费徽章退化为纯文字：弱化色仅靠文字区分，避免彩色胶囊边框抢焦点。 */
+.billingBadge { flex: 0 0 auto; padding: 0; color: var(--gp-text-muted); font-size: var(--text-xs); font-weight: 400; letter-spacing: .02em; line-height: 1.35; white-space: nowrap; }
 .modelCopy > small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.modelCopy > small { margin-top: 2px; color: var(--gp-text-muted); font-size: calc(10px * var(--desktop-font-scale)); }
+.modelCopy > small { margin-top: 2px; color: var(--gp-text-muted); font-size: var(--text-xs); }

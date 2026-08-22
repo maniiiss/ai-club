@@ -1,6 +1,6 @@
 /** 空会话欢迎页：标题、输入框与工作空间入口整体居中；有消息时由父级换回常规对话布局。 */
 import type { ReactNode } from 'react';
-import { Sparkles } from 'lucide-react';
+import { Sparkle } from '@phosphor-icons/react';
 import { useSessionStore } from '@/src/store/session';
 import { useThemeStore } from '@/src/store/theme';
 import { useWorkStore } from '@/src/store/work';
@@ -49,7 +49,7 @@ export function WelcomeView({ mode, composer }: WelcomeViewProps) {
 			<DesignLandingBackground theme={theme} />
 		</div>
 		<div className={styles.hero}>
-			<span className={styles.heroIcon} aria-hidden="true"><Sparkles size={28} /></span>
+			<span className={styles.heroIcon} aria-hidden="true"><Sparkle weight="regular" size={28} /></span>
 			<h1 className={styles.title}>{getWelcomeCopy(mode)}</h1>
 		</div>
 		<div className={styles.composer}>{composer}</div>
@@ -57,7 +57,6 @@ export function WelcomeView({ mode, composer }: WelcomeViewProps) {
 			{mode === 'code'
 				? <WorkspaceChip items={projects} currentPath={currentProjectPath} onSelect={(path) => void switchProject(path)} onAdd={() => void addProject()} />
 				: <WorkspaceChip items={workspaces} currentPath={currentWorkspacePath} onSelect={selectWorkspace} onAdd={() => void addWorkspace()} />}
-			<span className={styles.permissionChip} title="桌面端默认在当前工作空间内读写文件，暂无独立权限模型">默认权限</span>
 		</div>
 	</div>;
 }

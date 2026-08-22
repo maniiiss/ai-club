@@ -25,7 +25,7 @@
 	background: color-mix(in srgb, var(--gp-danger) 12%, var(--gp-background));
 	padding: 8px 10px;
 	color: var(--gp-status-error);
-	font-size: calc(12px * var(--desktop-font-scale));
+	font-size: var(--text-xs);
 	line-height: 1.5;
 	overflow-wrap: anywhere;
 	box-shadow: var(--shadow-md);

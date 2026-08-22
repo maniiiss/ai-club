@@ -1,16 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from 'react';
-import { Archive, ArrowDown, ArrowLeft, BookOpen, Check, ChevronDown, ChevronLeft, ChevronRight, Clipboard, Code2, ExternalLink, FileText, Folder, Globe2, History, Image as ImageIcon, ListChecks, Loader2, LockKeyhole, Monitor, MoreHorizontal, PanelRightClose, PanelRightOpen, Paperclip, Plus, RotateCcw, Save, Send, Smartphone, Sparkles, Square, Star, Tablet, Trash2, Upload, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
+import { Archive, ArrowDown, ArrowLeft, BookOpen, CaretDown as ChevronDown, CaretLeft as ChevronLeft, CaretRight as ChevronRight, ChatCircleDots, Check, ClockCounterClockwise as History, Code as Code2, CursorClick, FileText, FloppyDisk as Save, Folder, FrameCorners, Hand, Image as ImageIcon, ListChecks, CircleNotch as Loader2, Monitor, Paperclip, PencilSimple, Plus, SelectionAll, SidebarSimple, PaperPlaneTilt as Send, Sparkle as Sparkles, Square, Trash as Trash2, X } from '@phosphor-icons/react';
 import { TargetTitleBar } from '@/src/components/desktop/TargetTitleBar';
 import { ModelPicker } from '@/src/components/ModelPicker';
 import { Button } from '@/src/components/ui/button';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/src/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/src/components/ui/dropdown-menu';
-import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from '@/src/components/ui/context-menu';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { createDefaultProjectGuidelines, DESIGN_TARGETS, DESIGN_VIEWPORT_PRESETS, type DesignFile, type DesignPreviewMode, type DesignProjectGuidelines, type DesignSnapshot, type DesignTarget } from '@/src/design/design-types';
+import { createDefaultProjectGuidelines, type DesignProjectGuidelines } from '@/src/design/design-types';
+import { getCanvasDocument } from '@/src/design/canvas-document';
+import type { CanvasNode, CanvasNodeType, CanvasPathSpec, CanvasTransform } from '@/src/design/canvas-types';
 import { isTauriEnv, rpc } from '@/src/rpc/bridge';
-import type { AttachmentInput, DesignPatchOperation, PreparedAttachment } from '@/src/rpc/types';
+import type { AttachmentInput, PreparedAttachment } from '@/src/rpc/types';
 import { listDesignProjectHistory, useDesignStore } from '@/src/store/design';
 import { useThemeStore } from '@/src/store/theme';
 import { DesignLandingBackground } from './DesignLandingBackground';
@@ -18,58 +18,8 @@ import { DesignLandingLogo } from './DesignLandingLogo';
 import { DesignPlanProgressStatus } from './DesignPlanProgressStatus';
 import { DesignPresetPicker } from './DesignPresetPicker';
 import { DesignVersionManager } from './DesignVersionManager';
-import { formatDesignCode } from '@/src/design/code-format';
+import { DesignCanvasKitBoard, type DesignCanvasTool } from './DesignCanvasKitBoard';
 import styles from './DesignShell.module.css';
-
-function filesForPage(snapshot: DesignSnapshot, pageId: string) {
-	const page = snapshot.document.pages.find((candidate) => candidate.id === pageId) ?? snapshot.document.pages[0];
-	if (!page) return [];
-	const ids = new Set(page.fileIds ?? []);
-	return snapshot.files.filter((file) => (file.id && ids.has(file.id)) || file.path.startsWith(`pages/${page.id}/`));
-}
-
-function previewDocument(snapshot: DesignSnapshot, pageId: string): string {
-	const page = snapshot.document.pages.find((candidate) => candidate.id === pageId) ?? snapshot.document.pages[0];
-	const pageFiles = filesForPage(snapshot, page?.id ?? pageId);
-	// sidecar 返回前，客户端兜底预览也要把 shared/ 资源加载进来，避免页面依赖公共库时直接空白。
-	const sharedFiles = snapshot.files.filter((file) => file.scope === 'shared' || file.scope === 'asset');
-	const files = pageFiles.concat(sharedFiles);
-	const html = files.find((file) => file.id === page?.entryFileId || file.path.endsWith('/index.html') || file.path === 'index.html')?.content ?? '';
-	const css = files.filter((file) => file.language === 'css').map((file) => file.content ?? '').join('\n');
-	const js = files.filter((file) => file.language === 'javascript').map((file) => file.content ?? '').join('\n');
-	return html.replace('</head>', `<style>${css}</style></head>`).replace('</body>', `<script>${js}</script></body>`);
-}
-
-/** 预览窗口复用 iframe 的最终 HTML，确保“新窗口”看到的内容与当前画布完全一致。 */
-function openDesignPreview(html: string): void {
-	const previewWindow = window.open('', 'gitpilot-design-preview', 'popup=yes,width=1280,height=800,resizable=yes,scrollbars=yes');
-	if (!previewWindow) return;
-	previewWindow.document.open();
-	previewWindow.document.write(html);
-	previewWindow.document.close();
-	previewWindow.focus();
-}
-
-function designLanguageForPath(path: string): DesignFile['language'] {
-	const extension = path.slice(path.lastIndexOf('.')).toLowerCase();
-	if (extension === '.html' || extension === '.htm') return 'html';
-	if (extension === '.css') return 'css';
-	if (extension === '.js' || extension === '.mjs' || extension === '.cjs') return 'javascript';
-	if (extension === '.json') return 'json';
-	return 'unknown';
-}
-
-function designImportFileName(name: string): string {
-	const basename = name.split(/[\\/]/).pop()?.trim() ?? '';
-	const cleaned = basename.replace(/[\\/]/g, '_').replace(/\.\.+/g, '_').replace(/[\u0000-\u001f<>:"|?*]/g, '_');
-	return (!cleaned || cleaned === '.' ? 'imported-file' : cleaned).slice(0, 180);
-}
-
-type NavigatorDialogState =
-	| { kind: 'create-page'; value: string }
-	| { kind: 'create-file'; pageId: string; value: string }
-	| { kind: 'rename-file'; file: DesignFile; value: string }
-	| { kind: 'delete-file'; file: DesignFile; highRisk: boolean };
 
 function formatProjectHistoryTime(timestamp: number | null): string {
 	if (!timestamp) return '暂无活动';
@@ -290,7 +240,7 @@ function DesignClarificationCard() {
 		void respondClarification(answer);
 	};
 	return <form className={styles.clarificationCard} onSubmit={submit} aria-label="设计需求澄清">
-		<header className={styles.clarificationHeader}><span className={styles.clarificationIcon}><Sparkles size={15} /></span><div><strong>需要确认一个关键问题</strong><p>Agent 发现这个选择会影响后续设计，回答后会继续当前任务。</p></div></header>
+		<header className={styles.clarificationHeader}><span className={styles.clarificationIcon}><Sparkles size={15} /></span><div><strong>需要确认一个关键问题</strong><p>设计智能体发现这个选择会影响后续设计，回答后会继续当前任务。</p></div></header>
 		{request.context && <p className={styles.clarificationContext}>{request.context}</p>}
 		<p className={styles.clarificationQuestion}>{request.question}</p>
 		{request.options.length > 0 && <div className={styles.clarificationOptions}>{request.options.map((option) => <button type="button" key={option} className={styles.clarificationOption} onClick={() => setAnswer(option)} aria-pressed={answer === option}>{option}</button>)}</div>}
@@ -344,171 +294,58 @@ function Conversation() {
 	return <aside className={styles.conversation} aria-label="设计对话"><header className={styles.conversationHeader}><div className={styles.conversationHeading}><Button type="button" variant="ghost" size="icon-sm" className={styles.backButton} onClick={resetProject} title="返回设计入口" aria-label="返回设计入口"><ArrowLeft size={16} /></Button><DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="sm" className={`${styles.projectSwitcher} focus-visible:outline-none focus-visible:ring-0`} aria-label={`当前工作空间：${currentProjectName}，切换工作空间`}><Folder size={14} aria-hidden="true" /><span>{currentProjectName}</span><ChevronDown size={13} aria-hidden="true" /></Button></DropdownMenuTrigger><DropdownMenuContent align="start" className={styles.projectSwitcherMenu}>{projectOptions.length > 0 ? projectOptions.map((project) => <DropdownMenuItem key={project.path} className={`${styles.projectSwitcherItem} ${project.path === projectPath ? styles.projectSwitcherItemActive : ""}`} onSelect={() => { if (project.path !== projectPath) void switchProject(project.path); }}><Folder size={14} aria-hidden="true" /><span className={styles.projectSwitcherItemCopy}><strong>{project.name}</strong><small>{project.hasWorkspace ? "设计工作区" : "尚未创建设计工作区"}</small></span>{project.path === projectPath && <Check size={13} className={styles.projectSwitcherItemCheck} aria-label="当前工作空间" />}</DropdownMenuItem>) : <DropdownMenuItem disabled>暂无可切换工作空间</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu></div></header><div className={styles.conversationScrollFrame}><div ref={viewportRef} className={`${styles.messageList} gp-scrollbar`}>{messages.map((message) => <article key={message.id} className={`${styles.message} ${styles[`message_${message.kind}`]}`}><div className={styles.messageMeta}>{message.kind === 'user' ? `你${message.status === 'queued' ? ' · 排队中' : message.status === 'cancelled' ? ' · 已取消' : ''}` : message.kind === 'error' ? '错误' : 'GITPILOT'}</div>{message.kind === 'assistant' ? <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.text}</ReactMarkdown> : <p>{message.kind === 'result' ? message.summary : message.text}</p>}{message.kind === 'result' && <span className={styles.revision}>修订版 {message.revisionId}</span>}</article>)}<DesignClarificationCard />{liveStatus && <div className={styles.liveStatus} role="status" aria-live="polite"><span className={styles.pulse} /><span>{liveStatus}</span></div>}{pendingApproval && <div className={styles.approvalCard}><strong>需要确认高风险设计修改</strong><p>{pendingApproval.reason}</p><div><Button size="sm" onClick={() => void approve(true)}><Check size={13} />继续</Button><Button size="sm" variant="ghost" onClick={() => void approve(false)}><X size={13} />拒绝</Button></div></div>}</div>{!isFollowing && <button type="button" className={styles.scrollToLatest} onClick={scrollToLatest} title="回到最新位置" aria-label="回到最新位置"><ArrowDown size={13} /><span>回到最新</span></button>}</div><DesignPlanProgressStatus /><form className={styles.composer} onSubmit={submit}><textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) submit(); }} placeholder="描述你想设计的页面…" aria-label="设计需求" /><div className={styles.composerFooter}><div className={styles.composerModelPicker}><ModelPicker showThinkingLevel={false} /></div><div className={styles.composerActions}><Button type={isGenerating ? 'button' : 'submit'} size="icon" variant={isGenerating ? 'ghost' : 'default'} onClick={isGenerating ? () => void stop() : undefined} disabled={!isGenerating && !text.trim()} className={`${styles.composerButton} ${isGenerating ? styles.composerStop : ''}`} aria-label={isGenerating ? '停止设计任务' : '发送设计需求'} title={isGenerating ? '停止' : '发送'}>{isGenerating ? <Square size={14} /> : <Send size={15} />}</Button></div></div></form></aside>;
 }
 
-function DeviceButton({ target, active, onClick }: { target: DesignTarget; active: boolean; onClick: () => void }) {
-	const Icon = target === 'mobile' ? Smartphone : target === 'tablet' ? Tablet : Monitor;
-	return <button type="button" className={`${styles.deviceButton} ${active ? styles.deviceActive : ''}`} onClick={onClick}><Icon size={14} />{DESIGN_TARGETS[target].label}</button>;
-}
-
 function DesignNavigator({ onClose }: { onClose?: () => void }) {
-	const snapshot = useDesignStore((state) => state.snapshot);
+	const getRenderScene = useDesignStore((state) => state.getRenderScene);
 	const activePageId = useDesignStore((state) => state.activePageId);
-	const activeFile = useDesignStore((state) => state.activeFile);
+	const selectedElementId = useDesignStore((state) => state.selectedElementId);
 	const setActivePage = useDesignStore((state) => state.setActivePage);
-	const setActiveFile = useDesignStore((state) => state.setActiveFile);
-	const setTab = useDesignStore((state) => state.setTab);
-	const applyPatch = useDesignStore((state) => state.applyPatch);
-	const renamePage = useDesignStore((state) => state.renamePage);
+	const selectElement = useDesignStore((state) => state.selectElement);
+	const applyCanvasTransaction = useDesignStore((state) => state.applyCanvasTransaction);
 	const exportDesign = useDesignStore((state) => state.exportDesign);
-	const setError = useDesignStore((state) => state.setError);
-	const importInputRef = useRef<HTMLInputElement>(null);
-	const renameInputRef = useRef<HTMLInputElement>(null);
-	const renameSubmittingRef = useRef<string | null>(null);
-	const renameCancelRef = useRef<string | null>(null);
-	const [importing, setImporting] = useState(false);
-	const [dialog, setDialog] = useState<NavigatorDialogState | null>(null);
-	const [renamingPageId, setRenamingPageId] = useState<string | null>(null);
-	const [pageNameDraft, setPageNameDraft] = useState('');
-	const activePage = snapshot.document.pages.find((page) => page.id === activePageId) ?? snapshot.document.pages[0];
-	const pageFiles = activePage ? filesForPage(snapshot, activePage.id) : [];
-	const sharedFiles = snapshot.files.filter((file) => file.scope === 'shared' || file.scope === 'asset');
-	const baseRevisionId = snapshot.document.revisions.at(-1)?.id ?? '';
-	const beginPageRename = (page: DesignSnapshot['document']['pages'][number]) => {
-		setError(null);
-		renameCancelRef.current = null;
-		setRenamingPageId(page.id);
-		setPageNameDraft(page.name);
+	const canvas = getRenderScene();
+	const activePage = canvas.pages.find((page) => page.id === activePageId) ?? canvas.pages[0];
+	const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+
+	const visibleLayers = useMemo(() => {
+		if (!activePage) return [] as Array<{ node: CanvasNode; depth: number }>;
+		const result: Array<{ node: CanvasNode; depth: number }> = [];
+		const visit = (id: string, depth: number) => {
+			const node = canvas.nodes[id];
+			if (!node) return;
+			result.push({ node, depth });
+			if (expanded[id] !== false) node.childIds.forEach((childId) => visit(childId, depth + 1));
+		};
+		visit(activePage.rootNodeId, 0);
+		return result;
+	}, [activePage, canvas, expanded]);
+
+	const addNode = (type: CanvasNodeType) => {
+		if (!activePage) return;
+		const parent = canvas.nodes[activePage.rootNodeId];
+		if (!parent) return;
+		const id = `${type}-${Date.now()}`;
+		const size = type === 'text' ? { width: 360, height: 64 } : { width: 220, height: 120 };
+		const node: CanvasNode = {
+			id, type, name: type === 'text' ? '文本' : type === 'ellipse' ? '椭圆' : '矩形', parentId: parent.id, childIds: [], visible: true, locked: false, opacity: 1,
+			transform: { x: 80 + parent.childIds.length * 12, y: 80 + parent.childIds.length * 12, ...size, rotation: 0, scaleX: 1, scaleY: 1 },
+			layout: { mode: 'absolute', width: size.width, height: size.height, padding: { top: 0, right: 0, bottom: 0, left: 0 }, gap: 0, direction: 'column', align: 'start', justify: 'start' },
+			...(type === 'text' ? { text: { text: '双击编辑文本', fontFamily: 'Inter', fontSize: 24, fontWeight: 500, lineHeight: 32, letterSpacing: 0, color: '#f5f4ed', align: 'left' as const, verticalAlign: 'top' as const, wrap: 'wrap' as const } } : { paint: { fill: { kind: 'solid' as const, color: type === 'ellipse' ? '#5eead4' : '#2f6feb' }, cornerRadius: type === 'rect' ? 12 : 0 } }),
+		};
+		void applyCanvasTransaction({ transactionId: `desktop-create-${id}`, baseRevision: canvas.revision, source: 'user', operations: [{ op: 'create_node', node, parentId: parent.id }], summary: `创建${node.name}`, createdAt: new Date().toISOString() });
+		selectElement(id);
 	};
-	const cancelPageRename = () => {
-		renameCancelRef.current = renamingPageId;
-		setRenamingPageId(null);
-		setPageNameDraft('');
+	const updateNode = (node: CanvasNode, changes: Partial<CanvasNode>) => void applyCanvasTransaction({ transactionId: `desktop-update-${node.id}-${Date.now()}`, baseRevision: canvas.revision, source: 'user', operations: [{ op: 'update_node', nodeId: node.id, changes }], summary: `更新${node.name}`, createdAt: new Date().toISOString() });
+	const deleteSelected = () => {
+		const node = selectedElementId ? canvas.nodes[selectedElementId] : null;
+		if (!node || !node.parentId) return;
+		void applyCanvasTransaction({ transactionId: `desktop-delete-${node.id}-${Date.now()}`, baseRevision: canvas.revision, source: 'user', operations: [{ op: 'delete_node', nodeId: node.id }], summary: `删除${node.name}`, createdAt: new Date().toISOString() });
+		selectElement(null);
 	};
-	useEffect(() => {
-		if (!renamingPageId) return;
-		const frame = window.requestAnimationFrame(() => {
-			renameInputRef.current?.focus();
-			renameInputRef.current?.select();
-		});
-		return () => window.cancelAnimationFrame(frame);
-	}, [renamingPageId]);
-	const commitPageRename = async (page: DesignSnapshot['document']['pages'][number]) => {
-		if (renameCancelRef.current === page.id) {
-			renameCancelRef.current = null;
-			return;
-		}
-		if (renameSubmittingRef.current === page.id) return;
-		const nextName = pageNameDraft.trim();
-		if (!nextName) {
-			setError('页面名称不能为空');
-			renameInputRef.current?.focus();
-			return;
-		}
-		if (nextName === page.name) {
-			cancelPageRename();
-			return;
-		}
-		renameSubmittingRef.current = page.id;
-		try {
-			await renamePage(page.id, nextName);
-			cancelPageRename();
-		} catch {
-			renameInputRef.current?.focus();
-		} finally {
-			renameSubmittingRef.current = null;
-		}
-	};
-	const submitDialog = (event: FormEvent<HTMLFormElement>) => {
-		event.preventDefault();
-		if (!dialog) return;
-		if (dialog.kind === 'create-page') {
-			const pageId = dialog.value.trim();
-			if (!/^[a-zA-Z0-9_-]+$/.test(pageId)) { setError('页面标识只能使用字母、数字、- 或 _'); return; }
-			if (snapshot.document.pages.some((page) => page.id === pageId)) { setError(`页面已存在：${pageId}`); return; }
-			const path = `pages/${pageId}/index.html`;
-			setDialog(null);
-			void applyPatch(pageId, { baseRevisionId, operationId: `desktop-page-${Date.now()}`, affectedPaths: [path], operations: [{ op: 'create_file', path, language: 'html', content: '<!doctype html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><main data-design-id="root"></main></body></html>' }], summary: `创建页面 ${pageId}` });
-			return;
-		}
-		if (dialog.kind === 'create-file') {
-			const input = dialog.value.trim();
-			if (!input) { setError('请输入文件路径'); return; }
-			const path = input.includes('/') ? input : `pages/${dialog.pageId}/${input}`;
-			if (snapshot.files.some((file) => file.path === path)) { setError(`文件已存在：${path}`); return; }
-			setDialog(null);
-			void applyPatch(dialog.pageId, { baseRevisionId, operationId: `desktop-file-${Date.now()}`, affectedPaths: [path], operations: [{ op: 'create_file', path, language: designLanguageForPath(path), content: '' }], summary: `创建 ${path}` });
-			return;
-		}
-		if (dialog.kind === 'rename-file') {
-			const nextPath = dialog.value.trim();
-			if (!nextPath || nextPath === dialog.file.path) { setDialog(null); return; }
-			if (snapshot.files.some((file) => file.path === nextPath)) { setError(`文件已存在：${nextPath}`); return; }
-			setDialog(null);
-			void applyPatch(activePage?.id ?? activePageId, { baseRevisionId, operationId: `desktop-rename-${Date.now()}`, affectedPaths: [dialog.file.path, nextPath], risk: 'high', operations: [{ op: 'rename_file', path: dialog.file.path, newPath: nextPath }], summary: `重命名 ${dialog.file.path}` });
-			return;
-		}
-		setDialog(null);
-		void applyPatch(activePage?.id ?? activePageId, { baseRevisionId, operationId: `desktop-delete-${Date.now()}`, affectedPaths: [dialog.file.path], risk: dialog.highRisk ? 'high' : 'safe', operations: [{ op: 'delete_file', path: dialog.file.path }], summary: `删除 ${dialog.file.path}` });
-	};
-	/**
-	 * 文件导入一次提交一个 patch，保持 revision 原子递增；同名文件按替换处理，
-	 * 这样导入后的文件立即进入 canonical manifest 和右侧文件树。
-	 */
-	const importFiles = async (event: ChangeEvent<HTMLInputElement>) => {
-		const selectedFiles = Array.from(event.target.files ?? []);
-		event.target.value = '';
-		const currentState = useDesignStore.getState();
-		const targetPage = currentState.snapshot.document.pages.find((page) => page.id === currentState.activePageId) ?? currentState.snapshot.document.pages[0];
-		if (!selectedFiles.length || !targetPage) return;
-		if (selectedFiles.length > 20) {
-			setError('一次最多导入 20 个文件');
-			return;
-		}
-		setImporting(true);
-		try {
-			const existing = new Map(currentState.snapshot.files.map((file) => [file.path, file]));
-			const seen = new Set<string>();
-			const operations: DesignPatchOperation[] = [];
-			for (const file of selectedFiles) {
-				if (file.size > 2_000_000) throw new Error(`文件过大，无法导入：${file.name}`);
-				const path = `pages/${targetPage.id}/${designImportFileName(file.name)}`;
-				if (seen.has(path)) continue;
-				seen.add(path);
-				const content = await file.text();
-				if (content.length > 2_000_000) throw new Error(`文件过大，无法导入：${file.name}`);
-				if (existing.has(path)) operations.push({ op: 'replace_file', path, content });
-				else operations.push({ op: 'create_file', path, language: designLanguageForPath(path), content });
-			}
-			if (!operations.length) return;
-			const affectedPaths = operations.map((operation) => operation.path);
-			await applyPatch(targetPage.id, {
-				baseRevisionId: currentState.snapshot.document.revisions.at(-1)?.id ?? '',
-				operationId: `desktop-import-${Date.now()}`,
-				affectedPaths,
-				operations,
-				summary: `导入 ${operations.length} 个文件`,
-			});
-		} catch (error) {
-			setError(error instanceof Error ? error.message : String(error));
-		} finally {
-			setImporting(false);
-		}
-	};
-	return <aside className={styles.navigator} aria-label="页面与文件">
-		<div className={styles.navigatorTopbar}><span>页面与文件</span><div className={styles.navigatorTopbarActions}><button type="button" onClick={() => void exportDesign()} title="导出 ZIP" aria-label="导出 ZIP"><Archive size={13} /></button>{onClose && <button type="button" onClick={onClose} title="收起目录" aria-label="收起目录">×</button>}</div></div>
-		<div className={styles.navigatorSection}><div className={styles.navigatorHeading}><span>页面</span><span className={styles.navigatorCount}>{snapshot.document.pages.length}</span><button type="button" onClick={() => setDialog({ kind: 'create-page', value: 'dashboard' })} title="新建页面" aria-label="新建页面"><Plus size={12} /></button></div>
-			{snapshot.document.pages.map((page) => <ContextMenu key={page.id}>
-				<ContextMenuTrigger asChild>
-					{/* 页面菜单嵌在桌面级菜单中，右键事件只允许当前页面菜单处理，避免全局编辑菜单叠加出现。 */}
-					{renamingPageId === page.id ? <div onContextMenu={(event) => event.stopPropagation()} className={`${styles.navigatorPage} ${page.id === activePageId ? styles.navigatorActive : ''}`}><Monitor size={13} /><input ref={renameInputRef} className={styles.navigatorPageRenameInput} value={pageNameDraft} onChange={(event) => setPageNameDraft(event.target.value)} onKeyDown={(event) => { if (event.key === 'Escape') { event.preventDefault(); cancelPageRename(); } if (event.key === 'Enter') { event.preventDefault(); void commitPageRename(page); } }} onBlur={() => void commitPageRename(page)} aria-label={`重命名页面：${page.name}`} /><small>{page.route}</small></div> : <button type="button" onContextMenu={(event) => event.stopPropagation()} className={`${styles.navigatorPage} ${page.id === activePageId ? styles.navigatorActive : ''}`} onClick={() => { setActivePage(page.id); onClose?.(); }}><Monitor size={13} /><span>{page.name}</span><small>{page.route}</small></button>}
-				</ContextMenuTrigger>
-				<ContextMenuContent className={styles.navigatorContextMenu}><ContextMenuItem onSelect={() => beginPageRename(page)}><span aria-hidden="true">✎</span>重命名</ContextMenuItem></ContextMenuContent>
-			</ContextMenu>)}
-		</div>
-		<div className={styles.navigatorSection}><input ref={importInputRef} type="file" multiple className={styles.hiddenFileInput} onChange={(event) => void importFiles(event)} /><div className={styles.navigatorHeading}><span>{activePage?.name ?? '当前页面'} 文件</span><span className={styles.navigatorCount}>{pageFiles.length}</span><button type="button" onClick={() => importInputRef.current?.click()} title="导入文件" aria-label="导入文件" disabled={!activePage || importing}><Upload size={12} /></button><button type="button" onClick={() => activePage && setDialog({ kind: 'create-file', pageId: activePage.id, value: 'components.js' })} title="新建文件" aria-label="新建文件" disabled={!activePage}><Plus size={12} /></button></div>
-			{pageFiles.map((file) => <div key={file.path} className={styles.navigatorFileRow}><button type="button" className={`${styles.navigatorFile} ${file.path === activeFile ? styles.navigatorActive : ''}`} onClick={() => { setActiveFile(file.path); setTab('code'); onClose?.(); }}><FileText size={12} /><span title={file.path}>{file.path.split('/').pop()}</span></button><button type="button" onClick={() => setDialog({ kind: 'rename-file', file, value: file.path })} title="重命名文件"><span>↗</span></button><button type="button" onClick={() => setDialog({ kind: 'delete-file', file, highRisk: file.id === activePage?.entryFileId || file.scope === 'shared' })} title="删除文件"><Trash2 size={11} /></button></div>)}
-		</div>
-		{sharedFiles.length > 0 && <div className={styles.navigatorSection}><div className={styles.navigatorHeading}><span>共享与资源</span><span className={styles.navigatorCount}>{sharedFiles.length}</span></div>{sharedFiles.map((file) => <div key={file.path} className={styles.navigatorFileRow}><button type="button" className={`${styles.navigatorFile} ${file.path === activeFile ? styles.navigatorActive : ''}`} onClick={() => { setActiveFile(file.path); setTab('code'); onClose?.(); }}><Folder size={12} /><span title={file.path}>{file.path}</span></button><button type="button" onClick={() => setDialog({ kind: 'rename-file', file, value: file.path })} title="重命名文件"><span>↗</span></button><button type="button" onClick={() => setDialog({ kind: 'delete-file', file, highRisk: true })} title="删除共享文件"><Trash2 size={11} /></button></div>)}</div>}
-		{dialog && <Dialog open onOpenChange={(open) => { if (!open) setDialog(null); }}><DialogContent className={styles.navigatorDialog} aria-describedby="design-navigator-dialog-description"><form onSubmit={submitDialog}><DialogHeader><DialogTitle>{dialog.kind === 'create-page' ? '新建页面' : dialog.kind === 'create-file' ? '新建文件' : dialog.kind === 'rename-file' ? '重命名文件' : '确认删除文件'}</DialogTitle><DialogDescription id="design-navigator-dialog-description">{dialog.kind === 'create-page' ? '页面标识会作为页面目录和访问路由使用。' : dialog.kind === 'create-file' ? '页面文件可只填文件名，也可填写完整相对路径。' : dialog.kind === 'rename-file' ? '重命名会影响页面中的引用路径，请确认后继续。' : `${dialog.highRisk ? '该文件会影响页面入口或共享依赖。' : '删除后可通过修订记录恢复。'}\n${dialog.file.path}`}</DialogDescription></DialogHeader>{dialog.kind !== 'delete-file' && <div className={styles.navigatorDialogBody}><label className={styles.navigatorDialogField}><span>{dialog.kind === 'create-page' ? '页面标识' : '文件路径'}</span><input autoFocus value={dialog.value} onChange={(event) => setDialog((current) => current && current.kind !== 'delete-file' ? { ...current, value: event.target.value } : current)} /></label><p>{dialog.kind === 'create-page' ? '仅支持字母、数字、- 和 _。' : dialog.kind === 'create-file' ? '同名文件已存在时不会被覆盖。' : '将由 Design 变更确认流程继续校验引用影响。'}</p></div>}<DialogFooter><Button type="button" variant="ghost" onClick={() => setDialog(null)}>取消</Button><Button type="submit" variant={dialog.kind === 'delete-file' ? 'destructive' : 'default'}>{dialog.kind === 'create-page' || dialog.kind === 'create-file' ? '创建' : dialog.kind === 'rename-file' ? '保存' : '删除'}</Button></DialogFooter></form></DialogContent></Dialog>}
+	const typeLabel: Record<CanvasNodeType, string> = { page: '页面', frame: '画框', group: '组', rect: '矩形', ellipse: '椭圆', line: '线段', path: '路径', text: '文本', image: '图片', instance: '实例' };
+	return <aside className={styles.navigator} aria-label="页面与图层">
+		<div className={styles.navigatorTopbar}><span>页面与图层</span><div className={styles.navigatorTopbarActions}><button type="button" onClick={() => void exportDesign()} title="导出 Canvas 场景" aria-label="导出 Canvas 场景"><Archive size={13} /></button>{onClose && <button type="button" onClick={onClose} title="收起目录" aria-label="收起目录">×</button>}</div></div>
+		<div className={styles.navigatorSection}><div className={styles.navigatorHeading}><div className={styles.navigatorHeadingCopy}><span>页面</span><span className={styles.navigatorCount}>{canvas.pages.length}</span></div><div className={styles.navigatorHeadingActions}><button type="button" onClick={() => addNode('frame')} title="在当前页面添加画框" aria-label="在当前页面添加画框"><FrameCorners size={12} /></button></div></div>{canvas.pages.map((page) => <button type="button" key={page.id} className={`${styles.navigatorPage} ${page.id === activePage?.id ? styles.navigatorActive : ''}`} onClick={() => { setActivePage(page.id); onClose?.(); }}><Monitor size={13} /><span>{page.name}</span><small>{page.route || '自由画布'}</small></button>)}</div>
+		<div className={styles.navigatorSection}><div className={styles.navigatorHeading}><div className={styles.navigatorHeadingCopy}><span>图层</span><span className={styles.navigatorCount}>{visibleLayers.length}</span></div><div className={styles.navigatorHeadingActions}><button type="button" onClick={() => addNode('rect')} title="添加矩形" aria-label="添加矩形"><Square size={12} /></button><button type="button" onClick={() => addNode('text')} title="添加文本" aria-label="添加文本"><PencilSimple size={12} /></button><button type="button" onClick={deleteSelected} title="删除选中图层" aria-label="删除选中图层" disabled={!selectedElementId}><Trash2 size={12} /></button></div></div>{visibleLayers.map(({ node, depth }) => <div key={node.id} className={`${styles.navigatorFileRow} ${selectedElementId === node.id ? styles.navigatorActive : ''}`} style={{ paddingLeft: `${8 + depth * 14}px` }}><button type="button" className={styles.navigatorFile} onClick={() => selectElement(node.id)}><span onClick={(event) => { event.stopPropagation(); setExpanded((current) => ({ ...current, [node.id]: current[node.id] === false })); }}>{node.childIds.length > 0 ? (expanded[node.id] === false ? '▸' : '▾') : '·'}</span><span title={node.name}>{node.name}</span><small>{typeLabel[node.type]}</small></button><button type="button" onClick={() => updateNode(node, { visible: !node.visible })} title={node.visible ? '隐藏图层' : '显示图层'} aria-label={node.visible ? '隐藏图层' : '显示图层'}>{node.visible ? '◉' : '○'}</button><button type="button" onClick={() => updateNode(node, { locked: !node.locked })} title={node.locked ? '解锁图层' : '锁定图层'} aria-label={node.locked ? '解锁图层' : '锁定图层'}>{node.locked ? '⊘' : '⌑'}</button></div>)}</div>
 	</aside>;
 }
 
@@ -581,7 +418,7 @@ function DesignGuidelinesInspector() {
 		}
 	};
 
-	return <div className={`${styles.guidelinesInspector} gp-scrollbar`}><header className={styles.guidelinesHeader}><div><strong>工作空间规范</strong><span>Design Agent 会遵循这些约束</span></div><div className={styles.guidelinesActions}><DesignPresetPicker className={styles.guidelinesPreset} selectedPresetId={selectedPresetId} onApply={applyPreset} /><button type="button" className={styles.guidelinesSave} onClick={() => void save()} disabled={saving}><Save size={13} />{saving ? '保存中' : '保存'}</button></div></header><div className={styles.guidelinesForm}><label className={styles.guidelinesField}><span>品牌名称</span><input value={draft.brand.name} onChange={(event) => updateBrand('name', event.target.value)} placeholder="例如：GitPilot" /></label><label className={styles.guidelinesField}><span>设计语气</span><input value={draft.brand.tone} onChange={(event) => updateBrand('tone', event.target.value)} placeholder="清晰、专业、易使用" /></label><label className={styles.guidelinesField}><span>最低对比度</span><select value={draft.accessibility.minContrast} onChange={(event) => setDraft((current) => ({ ...current, accessibility: { minContrast: event.target.value === 'AAA' ? 'AAA' : 'AA' } }))}><option value="AA">AA</option><option value="AAA">AAA</option></select></label><GuidelineMapEditor title="颜色 Token" values={draft.tokens.colors} valuePlaceholder="#0f766e" onChange={(values) => updateTokenGroup('colors', values)} /><GuidelineMapEditor title="字体 Token" values={draft.tokens.typography} valuePlaceholder="例如：16px / 1.5" onChange={(values) => updateTokenGroup('typography', values)} /><GuidelineMapEditor title="间距 Token" values={draft.tokens.spacing} valuePlaceholder="例如：16px" onChange={(values) => updateTokenGroup('spacing', values)} /><GuidelineMapEditor title="圆角 Token" values={draft.tokens.radius} valuePlaceholder="例如：8px" onChange={(values) => updateTokenGroup('radius', values)} /><GuidelineMapEditor title="阴影 Token" values={draft.tokens.shadows} valuePlaceholder="例如：0 8px 24px #0002" onChange={(values) => updateTokenGroup('shadows', values)} /><GuidelineMapEditor title="组件规则" values={draft.components} valuePlaceholder="例如：主按钮使用品牌色" onChange={updateComponents} /><label className={styles.guidelinesField}><span>设计规则</span><textarea value={draft.rules.join('\n')} onChange={(event) => setDraft((current) => ({ ...current, rules: event.target.value.split('\n').map((rule) => rule.trim()).filter(Boolean) }))} placeholder="每行一条规则" rows={5} /></label>{saved && <span className={styles.guidelinesSaved}>已保存到当前工作空间</span>}</div></div>;
+	return <div className={`${styles.guidelinesInspector} gp-scrollbar`}><header className={styles.guidelinesHeader}><div><strong>工作空间规范</strong><span>设计智能体会遵循这些约束</span></div><div className={styles.guidelinesActions}><DesignPresetPicker className={styles.guidelinesPreset} selectedPresetId={selectedPresetId} onApply={applyPreset} /><button type="button" className={styles.guidelinesSave} onClick={() => void save()} disabled={saving}><Save size={13} />{saving ? '保存中' : '保存'}</button></div></header><div className={styles.guidelinesForm}><label className={styles.guidelinesField}><span>品牌名称</span><input value={draft.brand.name} onChange={(event) => updateBrand('name', event.target.value)} placeholder="例如：GitPilot" /></label><label className={styles.guidelinesField}><span>设计语气</span><input value={draft.brand.tone} onChange={(event) => updateBrand('tone', event.target.value)} placeholder="清晰、专业、易使用" /></label><label className={styles.guidelinesField}><span>最低对比度</span><select value={draft.accessibility.minContrast} onChange={(event) => setDraft((current) => ({ ...current, accessibility: { minContrast: event.target.value === 'AAA' ? 'AAA' : 'AA' } }))}><option value="AA">AA</option><option value="AAA">AAA</option></select></label><GuidelineMapEditor title="颜色 Token" values={draft.tokens.colors} valuePlaceholder="#0f766e" onChange={(values) => updateTokenGroup('colors', values)} /><GuidelineMapEditor title="字体 Token" values={draft.tokens.typography} valuePlaceholder="例如：16px / 1.5" onChange={(values) => updateTokenGroup('typography', values)} /><GuidelineMapEditor title="间距 Token" values={draft.tokens.spacing} valuePlaceholder="例如：16px" onChange={(values) => updateTokenGroup('spacing', values)} /><GuidelineMapEditor title="圆角 Token" values={draft.tokens.radius} valuePlaceholder="例如：8px" onChange={(values) => updateTokenGroup('radius', values)} /><GuidelineMapEditor title="阴影 Token" values={draft.tokens.shadows} valuePlaceholder="例如：0 8px 24px #0002" onChange={(values) => updateTokenGroup('shadows', values)} /><GuidelineMapEditor title="组件规则" values={draft.components} valuePlaceholder="例如：主按钮使用品牌色" onChange={updateComponents} /><label className={styles.guidelinesField}><span>设计规则</span><textarea value={draft.rules.join('\n')} onChange={(event) => setDraft((current) => ({ ...current, rules: event.target.value.split('\n').map((rule) => rule.trim()).filter(Boolean) }))} placeholder="每行一条规则" rows={5} /></label>{saved && <span className={styles.guidelinesSaved}>已保存到当前工作空间</span>}</div></div>;
 }
 
 type DesignInspectorTabId = 'execution' | 'files' | 'guidelines';
@@ -640,130 +477,219 @@ function DesignRightInspector({ open }: { open: boolean }) {
 	</aside>;
 }
 
-function parseViewportDimension(value: string, fallback: number): number {
-	const parsed = Number.parseInt(value, 10);
-	return Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, 5000) : fallback;
+/**
+ * 画板工具栏放在右侧浮层，避免顶部横条把无限画布切成普通页面布局。
+ * 业务意图：选择、画框、编辑、拖动和设计是画布工具状态，后续元素编辑能力可以在同一事实源上继续扩展。
+ */
+function DesignCanvasToolRail({ activeTool, onToolChange, onOpenVersions, rightPanelOpen, onToggleRightPanel }: { activeTool: DesignCanvasTool; onToolChange: (tool: DesignCanvasTool) => void; onOpenVersions: () => void; rightPanelOpen: boolean; onToggleRightPanel: () => void }) {
+	const activeTab = useDesignStore((state) => state.activeTab);
+	const setTab = useDesignStore((state) => state.setTab);
+	const tools: Array<{ id: DesignCanvasTool; label: string; icon: typeof CursorClick }> = [
+		{ id: 'select', label: '点击选择', icon: CursorClick },
+		{ id: 'frame', label: '框选区域', icon: SelectionAll },
+		{ id: 'edit', label: '编辑元素', icon: PencilSimple },
+		{ id: 'pan', label: '拖动画布', icon: Hand },
+		{ id: 'design', label: '设计画框', icon: FrameCorners },
+		{ id: 'pen', label: '自由绘制', icon: PencilSimple },
+	];
+	return <aside className={styles.designV2ToolRail} aria-label="画布工具栏">
+		<div className={styles.designV2ToolRailGroup} role="toolbar" aria-label="画布工具">
+			{tools.map(({ id, label, icon: Icon }) => <button key={id} type="button" className={activeTool === id ? styles.designV2ToolRailButtonActive : styles.designV2ToolRailButton} onClick={() => onToolChange(id)} aria-pressed={activeTool === id} title={label}><Icon size={19} /></button>)}
+			<span className={styles.designV2ToolRailDivider} />
+			<button type="button" className={activeTab === 'code' ? styles.designV2ToolRailButtonActive : styles.designV2ToolRailButton} onClick={() => setTab(activeTab === 'code' ? 'preview' : 'code')} aria-pressed={activeTab === 'code'} title={activeTab === 'code' ? '返回 Canvas 画布' : '查看场景数据'} aria-label={activeTab === 'code' ? '返回 Canvas 画布' : '查看场景数据'}><Code2 size={19} /></button>
+			<button type="button" className={styles.designV2ToolRailButton} onClick={onOpenVersions} title="打开版本历史" aria-label="打开版本历史"><History size={19} /></button>
+			<button type="button" className={styles.designV2ToolRailButton} title="评论" aria-label="评论"><ChatCircleDots size={19} /></button>
+			<button type="button" className={rightPanelOpen ? styles.designV2ToolRailButtonActive : styles.designV2ToolRailButton} title={rightPanelOpen ? '收起工作区规范' : '展开工作区规范'} aria-label={rightPanelOpen ? '收起工作区规范' : '展开工作区规范'} aria-pressed={rightPanelOpen} onClick={onToggleRightPanel}><SidebarSimple size={19} /></button>
+		</div>
+	</aside>;
 }
 
-function ResolutionPicker() {
-	const target = useDesignStore((state) => state.target);
-	const viewport = useDesignStore((state) => state.viewport);
-	const setViewport = useDesignStore((state) => state.setViewport);
-	const [widthText, setWidthText] = useState(String(viewport.width));
-	const [heightText, setHeightText] = useState(String(viewport.height));
-	const presets = DESIGN_VIEWPORT_PRESETS[target];
-	const presetId = presets.find((preset) => preset.width === viewport.width && preset.height === viewport.height)?.id ?? 'custom';
-
-	useEffect(() => {
-		setWidthText(String(viewport.width));
-		setHeightText(String(viewport.height));
-	}, [viewport.height, viewport.width]);
-
-	const commit = () => {
-		const width = parseViewportDimension(widthText, viewport.width);
-		const height = parseViewportDimension(heightText, viewport.height);
-		setWidthText(String(width));
-		setHeightText(String(height));
-		setViewport({ width, height });
-	};
-	const applyPreset = (id: string) => {
-		const preset = presets.find((candidate) => candidate.id === id);
-		if (!preset) return;
-		setViewport({ width: preset.width, height: preset.height });
-	};
-	const commitOnEnter = (event: ReactKeyboardEvent<HTMLInputElement>) => {
-		if (event.key === 'Enter') { event.preventDefault(); commit(); }
-	};
-
-	return <div className={styles.viewportControls} aria-label="预览分辨率"><span className={styles.viewportLabel}>画布尺寸</span><select className={styles.viewportSelect} value={presetId} onChange={(event) => applyPreset(event.target.value)} aria-label="分辨率预设"><option value="custom">自定义</option>{presets.map((preset) => <option key={preset.id} value={preset.id}>{preset.label} {preset.width} × {preset.height}</option>)}</select><input className={styles.viewportInput} inputMode="numeric" value={widthText} onChange={(event) => setWidthText(event.target.value)} onBlur={commit} onKeyDown={commitOnEnter} aria-label="画布宽度" /><span>×</span><input className={styles.viewportInput} inputMode="numeric" value={heightText} onChange={(event) => setHeightText(event.target.value)} onBlur={commit} onKeyDown={commitOnEnter} aria-label="画布高度" /></div>;
-}
-
-const PREVIEW_DISPLAY_MODES: Array<{ id: DesignPreviewMode; label: string }> = [
-	{ id: 'original', label: '原始尺寸' },
-	{ id: 'fit', label: '自适应屏幕' },
-	{ id: 'browser', label: '浏览器模式' },
-];
-
-/** 预览模式统一放在工具栏右侧，避免再次使用系统原生下拉菜单。 */
-function PreviewDisplayPicker({ mode, onChange }: { mode: DesignPreviewMode; onChange: (mode: DesignPreviewMode) => void }) {
-	const current = PREVIEW_DISPLAY_MODES.find((item) => item.id === mode) ?? PREVIEW_DISPLAY_MODES[0];
-	return <DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="sm" className={`${styles.previewModeTrigger} focus-visible:outline-none focus-visible:ring-0`} aria-label={`预览显示设置：${current.label}`}><span>{current.label}</span><ChevronDown size={13} aria-hidden="true" /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className={styles.previewModeMenu}>{PREVIEW_DISPLAY_MODES.map((item) => <DropdownMenuItem key={item.id} className={`${styles.previewModeItem} ${item.id === mode ? styles.previewModeItemActive : ''}`} onSelect={() => onChange(item.id)}><span>{item.label}</span>{item.id === mode && <Check size={13} className={styles.previewModeCheck} />}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>;
-}
-
-/** 浏览器模式只模拟查看器外壳，页面仍在隔离 iframe 中运行，不接管系统浏览器。 */
-function BrowserFrame({ route, children }: { route: string; children: ReactNode }) {
-	return <div className={styles.browserFrame}><div className={styles.browserTabStrip}><div className={styles.browserTrafficLights} aria-hidden="true"><span /><span /><span /></div><div className={styles.browserTab}><Globe2 size={12} /><span>GitPilot Preview</span><X size={11} /></div><span className={styles.browserNewTab} aria-hidden="true"><Plus size={13} /></span><span className={styles.browserTabSpacer} /></div><div className={styles.browserToolbar}><div className={styles.browserNavControls} aria-hidden="true"><ChevronLeft size={14} /><ChevronRight size={14} /><RotateCcw size={13} /></div><div className={styles.browserAddress}><LockKeyhole size={12} /><span>gitpilot.local{route}</span></div><div className={styles.browserToolbarActions} aria-hidden="true"><Star size={13} /><MoreHorizontal size={14} /></div></div><div className={styles.browserBookmarks}><span className={styles.browserBookmarkActive}>GitPilot</span><span>设计工作区</span><span>常用页面</span></div><div className={styles.browserViewport}>{children}</div></div>;
-}
-
-function PreviewPanel() {
-	const snapshot = useDesignStore((state) => state.snapshot);
-	const activePageId = useDesignStore((state) => state.activePageId);
-	const target = useDesignStore((state) => state.target);
-	const viewport = useDesignStore((state) => state.viewport);
-	const previewMode = useDesignStore((state) => state.previewMode);
-	const setTarget = useDesignStore((state) => state.setTarget);
-	const setPreviewMode = useDesignStore((state) => state.setPreviewMode);
-	const selectElement = useDesignStore((state) => state.selectElement);
+/**
+ * 左上角只展示最近一次 Design 输出，完整消息仍保留在左下历史区。
+ * 业务意图：把“结果理解”和“历史回看”拆开，避免流式输出把页面画布挤到一侧。
+ */
+function DesignOutputPanel({ onCollapse }: { onCollapse: () => void }) {
+	const messages = useDesignStore((state) => state.messages).filter((message) => message.kind !== 'plan');
+	const projects = useDesignStore((state) => state.projects);
 	const projectPath = useDesignStore((state) => state.projectPath);
-	const designId = snapshot.context?.designId ?? snapshot.document.id;
-	const activePage = snapshot.document.pages.find((page) => page.id === activePageId) ?? snapshot.document.pages[0];
-	const [previewHtml, setPreviewHtml] = useState<string | null>(null);
-	const [previewError, setPreviewError] = useState<string | null>(null);
-	useEffect(() => { const onMessage = (event: MessageEvent) => { if (event.data?.type === 'design:select' && typeof event.data.id === 'string') selectElement(event.data.id); }; window.addEventListener('message', onMessage); return () => window.removeEventListener('message', onMessage); }, [selectElement]);
-	useEffect(() => {
-		let cancelled = false;
-		if (!projectPath) return () => { cancelled = true; };
-		// 一次 Design run 可能连续产生多个 patch；预览只在短暂静默后刷新，避免每个片段都重建完整 HTML。
-		const timer = window.setTimeout(() => {
-			void rpc.designPreview(projectPath, designId, activePageId, snapshot.document.revisions.at(-1)?.id).then((response) => {
-				if (cancelled) return;
-				if (response.success && response.command === 'design_preview' && response.data?.previewHandle?.html) { setPreviewHtml(response.data.previewHandle.html); setPreviewError(null); }
-				else if (!response.success) { setPreviewHtml(null); setPreviewError(response.error); }
-			}).catch((error) => { if (!cancelled) { setPreviewHtml(null); setPreviewError(error instanceof Error ? error.message : String(error)); } });
-		}, 300);
-		return () => { cancelled = true; window.clearTimeout(timer); };
-	}, [activePageId, designId, projectPath, snapshot.document.revisions, snapshot.document.version]);
-	const dimensions = viewport;
-	const srcDoc = useMemo(() => previewDocument(snapshot, activePageId), [snapshot, activePageId]);
-	const stageClassName = previewMode === 'browser' ? styles.previewStageBrowser : previewMode === 'fit' ? styles.previewStageFit : styles.previewStageOriginal;
-	const frameClassName = previewMode === 'fit' ? styles.deviceFrameFit : styles.deviceFrameOriginal;
-	const frameStyle: CSSProperties | undefined = previewMode === 'original' ? { width: dimensions.width, height: dimensions.height } : undefined;
-	const previewFrame = <iframe title="设计预览" sandbox="allow-scripts" srcDoc={previewHtml ?? srcDoc} />;
-	return <div className={styles.previewPanel}><div className={styles.previewToolbar}><div className={styles.deviceGroup}>{(['mobile', 'tablet', 'desktop'] as DesignTarget[]).map((item) => <DeviceButton key={item} target={item} active={target === item} onClick={() => setTarget(item)} />)}</div><div className={styles.previewActions}>{previewError && <span className={styles.statusHint} title={previewError}>检查失败</span>}<PreviewDisplayPicker mode={previewMode} onChange={setPreviewMode} /><button type="button" title="刷新预览" onClick={() => { setPreviewHtml(null); selectElement(null); }}><RotateCcw size={14} /></button><button type="button" title="在新窗口打开预览" onClick={() => openDesignPreview(previewHtml ?? srcDoc)}><ExternalLink size={14} /></button></div></div><div className={`${styles.previewStage} ${stageClassName}`}>{previewMode === 'browser' ? <BrowserFrame route={activePage?.route ?? '/'}>{previewFrame}</BrowserFrame> : <div className={`${styles.deviceFrame} ${frameClassName}`} style={frameStyle}>{previewFrame}</div>}</div></div>;
+	const switchProject = useDesignStore((state) => state.switchProject);
+	const resetProject = useDesignStore((state) => state.resetProject);
+	const isGenerating = useDesignStore((state) => state.isGenerating);
+	const execution = useDesignStore((state) => state.execution);
+	const queuedPrompts = useDesignStore((state) => state.queuedPrompts);
+	const pendingApproval = useDesignStore((state) => state.pendingApproval);
+	const draftMetadata = useDesignStore((state) => state.draftMetadata);
+	const recoverDraft = useDesignStore((state) => state.recoverDraft);
+	const approve = useDesignStore((state) => state.approve);
+	const currentProject = projects.find((project) => project.path === projectPath);
+	const currentProjectName = currentProject?.name ?? projectPath?.split(/[\\/]/).pop() ?? '未选择工作空间';
+	const projectOptions = projectPath && !projects.some((project) => project.path === projectPath) ? [{ name: currentProjectName, path: projectPath, hasWorkspace: false }, ...projects] : projects;
+	const latestOutput = [...messages].reverse().find((message) => message.kind === 'assistant' || message.kind === 'result' || message.kind === 'error');
+	const liveStatus = getDesignLiveStatus(execution, isGenerating, queuedPrompts);
+
+	return <section className={styles.designV2Output} aria-label="AI 输出">
+		<header className={styles.designV2PanelHeader}>
+			<div className={styles.designV2PanelHeaderMain}>
+				<button type="button" className={styles.designV2BackButton} onClick={resetProject} aria-label="返回设计入口" title="返回设计入口"><ArrowLeft size={15} /></button>
+				<DropdownMenu><DropdownMenuTrigger asChild><button type="button" className={styles.designV2ProjectSwitcher} aria-label={`当前工作空间：${currentProjectName}`}><Folder size={14} /><span><strong>{currentProjectName}</strong><small>设计工作区</small></span><ChevronDown size={13} /></button></DropdownMenuTrigger><DropdownMenuContent align="start">{projectOptions.length > 0 ? projectOptions.map((project) => <DropdownMenuItem key={project.path} onSelect={() => { if (project.path !== projectPath) void switchProject(project.path); }}><Folder size={14} /><span>{project.name}</span>{project.path === projectPath && <Check size={13} aria-label="当前工作空间" />}</DropdownMenuItem>) : <DropdownMenuItem disabled>暂无可切换工作空间</DropdownMenuItem>}</DropdownMenuContent></DropdownMenu>
+			</div>
+			<div className={styles.designV2PanelHeaderActions}><span className={styles.designV2PanelStatus}>{liveStatus ?? '已就绪'}</span><button type="button" className={styles.designV2PanelCollapse} onClick={onCollapse} aria-label="收起 AI 输出" title="收起 AI 输出"><ChevronLeft size={14} /></button></div>
+		</header>
+		<div className={`${styles.designV2OutputScroll} gp-scrollbar`}>
+			<div className={styles.designV2SectionKicker}>AI 输出</div>
+			{latestOutput?.kind === 'assistant' && <ReactMarkdown remarkPlugins={[remarkGfm]}>{latestOutput.text}</ReactMarkdown>}
+			{latestOutput?.kind === 'result' && <div className={styles.designV2OutputResult}><Check size={15} /><div><strong>设计修改已完成</strong><span>{latestOutput.summary}</span><small>修订版 {latestOutput.revisionId}</small></div></div>}
+			{latestOutput?.kind === 'error' && <div className={styles.designV2OutputError}><strong>本轮设计未完成</strong><span>{latestOutput.text}</span></div>}
+			{!latestOutput && <div className={styles.designV2OutputEmpty}><Sparkles size={18} /><strong>等待你的设计需求</strong><span>中央画布会展示当前工作区的全部页面。</span></div>}
+			{liveStatus && <div className={styles.designV2LiveStatus} role="status" aria-live="polite"><span className={styles.designV2LiveDot} />{liveStatus}</div>}
+			<DesignClarificationCard />
+			{draftMetadata?.status === 'orphaned' && <section className={styles.designV2Approval}><div><strong>发现未收口草稿</strong><span>已接受 {draftMetadata.operationCount} 批绘制，{draftMetadata.lastSummary ?? '等待恢复操作'}</span></div><div><button type="button" onClick={() => void recoverDraft('keep')}>保留为中断版本</button><button type="button" onClick={() => void recoverDraft('discard')}>放弃草稿</button></div></section>}
+			{pendingApproval && <section className={styles.designV2Approval}><div><strong>需要确认设计修改</strong><span>{pendingApproval.reason}</span></div><div><button type="button" onClick={() => void approve(true)}>继续</button><button type="button" onClick={() => void approve(false)}>拒绝</button></div></section>}
+		</div>
+	</section>;
 }
+
+/** 左下角的历史区只保留可定位的摘要，完整正文由上方输出区展示，降低视觉噪声。 */
+function DesignConversationHistory({ onCollapse }: { onCollapse: () => void }) {
+	const messages = useDesignStore((state) => state.messages).filter((message) => message.kind !== 'plan');
+	const [selectedId, setSelectedId] = useState<string | null>(messages.at(-1)?.id ?? null);
+	const history = messages.slice(-7).reverse();
+
+	return <section className={styles.designV2History} aria-label="对话历史">
+		<header className={styles.designV2HistoryHeader}><span>对话历史</span><span>{messages.length} 条</span><button type="button" className={styles.designV2PanelCollapse} onClick={onCollapse} aria-label="收起对话历史" title="收起对话历史"><ChevronLeft size={14} /></button></header>
+		<div className={styles.designV2HistoryList}>
+			{history.length > 0 ? history.map((message) => {
+				const label = message.kind === 'user' ? '你的需求' : message.kind === 'result' ? '设计结果' : message.kind === 'error' ? '错误信息' : '设计回复';
+				const summary = message.kind === 'result' ? message.summary : message.text;
+				return <button type="button" key={message.id} className={`${styles.designV2HistoryItem} ${selectedId === message.id ? styles.designV2HistoryItemActive : ''}`} onClick={() => setSelectedId(message.id)} aria-pressed={selectedId === message.id}><span className={styles.designV2HistoryDot} /><span><strong>{label}</strong><small>{summary.slice(0, 42)}{summary.length > 42 ? '…' : ''}</small></span></button>;
+			}) : <p className={styles.designV2HistoryEmpty}>还没有对话记录</p>}
+		</div>
+	</section>;
+}
+
+/** 中央画布只接收结构化 CanvasDesignDocument，页面视觉内容不再从文件拼装。 */
+function DesignPagesCanvas({ canvasTool }: { canvasTool: DesignCanvasTool }) {
+	const getRenderScene = useDesignStore((state) => state.getRenderScene);
+	const activePageId = useDesignStore((state) => state.activePageId);
+	const activeTab = useDesignStore((state) => state.activeTab);
+	const selectedElementId = useDesignStore((state) => state.selectedElementId);
+	const selectedElementIds = useDesignStore((state) => state.selectedElementIds);
+	const zoom = useDesignStore((state) => state.zoom);
+	const selectElement = useDesignStore((state) => state.selectElement);
+	const selectElements = useDesignStore((state) => state.selectElements);
+	const applyCanvasTransaction = useDesignStore((state) => state.applyCanvasTransaction);
+	const setTransient = useDesignStore((state) => state.setTransient);
+	const setZoom = useDesignStore((state) => state.setZoom);
+	const canvasDocument = getRenderScene();
+	const activePage = canvasDocument.pages.find((page) => page.id === activePageId) ?? canvasDocument.pages[0];
+
+	const commitTransform = useCallback((nodeId: string, transform: CanvasNode['transform']) => {
+		void applyCanvasTransaction({ transactionId: `desktop-move-${nodeId}-${Date.now()}`, baseRevision: canvasDocument.revision, source: 'user', operations: [{ op: 'update_node', nodeId, changes: { transform } }], summary: '移动图层', createdAt: new Date().toISOString() });
+	}, [applyCanvasTransaction, canvasDocument.revision]);
+	const commitTransforms = useCallback((changes: Array<{ nodeId: string; transform: CanvasNode['transform'] }>) => {
+		if (changes.length === 0) return;
+		void applyCanvasTransaction({ transactionId: `desktop-transform-${Date.now()}`, baseRevision: canvasDocument.revision, source: 'user', operations: changes.map(({ nodeId, transform }) => ({ op: 'update_node' as const, nodeId, changes: { transform } })), summary: changes.length > 1 ? '变换多个图层' : '变换图层', createdAt: new Date().toISOString() });
+	}, [applyCanvasTransaction, canvasDocument.revision]);
+	const commitText = useCallback((nodeId: string, text: string) => {
+		const node = canvasDocument.nodes[nodeId];
+		if (!node?.text || node.text.text === text) return;
+		void applyCanvasTransaction({ transactionId: `desktop-text-${nodeId}-${Date.now()}`, baseRevision: canvasDocument.revision, source: 'user', operations: [{ op: 'update_text', nodeId, text: { ...node.text, text } }], summary: '编辑文本', createdAt: new Date().toISOString() });
+	}, [applyCanvasTransaction, canvasDocument]);
+	const commitPath = useCallback((path: CanvasPathSpec, transform: CanvasTransform) => {
+		const page = canvasDocument.pages.find((candidate) => candidate.id === activePageId) ?? canvasDocument.pages[0];
+		const parent = page ? canvasDocument.nodes[page.rootNodeId] : undefined;
+		if (!page || !parent || path.commands.length < 2) return;
+		const id = `path-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+		const node: CanvasNode = {
+			id, type: 'path', name: '自由路径', parentId: parent.id, childIds: [], visible: true, locked: false, opacity: 1,
+			transform, layout: { mode: 'absolute', width: transform.width, height: transform.height, padding: { top: 0, right: 0, bottom: 0, left: 0 }, gap: 0, direction: 'column', align: 'start', justify: 'start' },
+			paint: { fill: { kind: 'solid', color: '#ffffff', alpha: 0 }, stroke: { paint: { kind: 'solid', color: '#65e0c5' }, width: 2, cap: 'round', join: 'round' } }, path,
+		};
+		void applyCanvasTransaction({ transactionId: `desktop-pen-${id}`, baseRevision: canvasDocument.revision, source: 'user', operations: [{ op: 'create_node', node, parentId: parent.id }], summary: '自由绘制路径', createdAt: new Date().toISOString() });
+		selectElement(id);
+	}, [activePageId, applyCanvasTransaction, canvasDocument, selectElement]);
+
+	return <main className={styles.designV2Canvas} aria-label="设计页面画布">
+		<div className={styles.designV2CanvasBody}>
+			<DesignCanvasKitBoard document={canvasDocument} activePageId={activePage?.id ?? canvasDocument.entryPageId} selectedElementId={selectedElementId} selectedElementIds={selectedElementIds} zoomPercent={zoom} canvasTool={canvasTool} onSelectElement={selectElement} onSelectElements={selectElements} onTransformChange={commitTransform} onTransformChanges={commitTransforms} onTextChange={commitText} onPathChange={commitPath} onTransientChange={setTransient} onZoomChange={(nextZoom) => setZoom(Math.min(250, Math.max(20, nextZoom)))} />
+			{activeTab === 'code' && <div className={styles.designV2CodeView}><CodePanel /></div>}
+		</div>
+	</main>;
+}
+
+/**
+ * 对话输入固定在中央画布底部，输入行为复用 Design Store 的队列、停止和审批状态。
+ * 业务意图：输入属于画布上下文，不再占用左侧输出与历史的垂直空间。
+ */
+function DesignCanvasComposer() {
+	const [text, setText] = useState('');
+	const isGenerating = useDesignStore((state) => state.isGenerating);
+	const sendPrompt = useDesignStore((state) => state.sendPrompt);
+	const stop = useDesignStore((state) => state.stop);
+	const submit = (event?: FormEvent) => {
+		event?.preventDefault();
+		if (isGenerating) { void stop(); return; }
+		const prompt = text.trim();
+		if (!prompt) return;
+		void sendPrompt(prompt);
+		setText('');
+	};
+	const submitOnEnter = (event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
+		if (event.key !== 'Enter' || event.shiftKey || event.nativeEvent.isComposing) return;
+		event.preventDefault();
+		submit();
+	};
+
+	return <form className={styles.designV2Composer} onSubmit={submit}><textarea value={text} onChange={(event) => setText(event.target.value)} onKeyDown={submitOnEnter} placeholder="描述你想修改或创建的内容…" aria-label="设计需求" /><div className={styles.designV2ComposerFooter}><button type="button" className={styles.designV2ComposerTool} aria-label="添加内容">＋</button><button type="button" className={styles.designV2ComposerTool} aria-label="输入命令">/</button><span className={styles.designV2ComposerHint}>Shift + Enter 换行</span><span className={styles.designV2ComposerGrow} /><div className={styles.designV2ComposerModel}><ModelPicker showThinkingLevel={false} /></div><button type={isGenerating ? 'button' : 'submit'} className={`${styles.designV2ComposerSend} ${isGenerating ? styles.designV2ComposerStop : ''}`} onClick={isGenerating ? () => void stop() : undefined} disabled={!isGenerating && !text.trim()} aria-label={isGenerating ? '停止设计任务' : '发送设计需求'}>{isGenerating ? <Square size={14} /> : <Send size={15} />}</button></div></form>;
+}
+
+/** 新版 Design 详情布局：左侧输出/历史，中间页面集合与输入，右侧项目级规范。 */
+function DesignWorkspaceV2({ onOpenVersions }: { onOpenVersions: () => void }) {
+	const [outputOpen, setOutputOpen] = useState(true);
+	const [historyOpen, setHistoryOpen] = useState(true);
+	const [rightPanelOpen, setRightPanelOpen] = useState(false);
+	const [activeTool, setActiveTool] = useState<DesignCanvasTool>('select');
+	return <div className={styles.designV2Frame} data-layout="output-history-pages-guidelines" data-right-panel={rightPanelOpen ? 'open' : 'closed'}>
+		<div className={styles.designV2Body}>
+			<div className={styles.designV2Left} aria-label="Design 左侧浮层">
+				{outputOpen ? <DesignOutputPanel onCollapse={() => setOutputOpen(false)} /> : <button type="button" className={styles.designV2CollapsedWindow} onClick={() => setOutputOpen(true)} title="展开 AI 输出"><Sparkles size={15} /><span>输出</span></button>}
+				{historyOpen ? <DesignConversationHistory onCollapse={() => setHistoryOpen(false)} /> : <button type="button" className={styles.designV2CollapsedWindow} onClick={() => setHistoryOpen(true)} title="展开对话历史"><History size={15} /><span>历史</span></button>}
+			</div>
+			<div className={styles.designV2Center}><DesignPagesCanvas canvasTool={activeTool} /><DesignCanvasComposer /></div>
+			<aside className={`${styles.designV2Guidelines} ${rightPanelOpen ? styles.designV2GuidelinesOpen : styles.designV2GuidelinesClosed}`} aria-label="项目级设计规范" aria-hidden={!rightPanelOpen} inert={!rightPanelOpen}><DesignGuidelinesInspector /></aside>
+			<DesignCanvasToolRail activeTool={activeTool} onToolChange={setActiveTool} onOpenVersions={onOpenVersions} rightPanelOpen={rightPanelOpen} onToggleRightPanel={() => setRightPanelOpen((open) => !open)} />
+		</div>
+	</div>;
+}
+
+// 旧版详情面板暂时保留，便于兼容历史布局数据；新版工作台不再挂载这些入口。
+void Conversation;
+void DesignRightResizeHandle;
+void DesignRightInspector;
 
 function CodePanel() {
 	const snapshot = useDesignStore((state) => state.snapshot);
 	const activePageId = useDesignStore((state) => state.activePageId);
-	const activeFile = useDesignStore((state) => state.activeFile);
-	const setActiveFile = useDesignStore((state) => state.setActiveFile);
-	const file = filesForPage(snapshot, activePageId).concat(snapshot.files.filter((candidate) => candidate.scope === 'shared' || candidate.scope === 'asset')).find((candidate) => candidate.path === activeFile) ?? snapshot.files[0];
-	const displayContent = useMemo(() => file ? formatDesignCode(file.content ?? '', file.language) : '', [file?.content, file?.language]);
-	const copy = async () => { if (file) await navigator.clipboard?.writeText(file.content ?? ''); };
-	const visibleFiles = filesForPage(snapshot, activePageId).concat(snapshot.files.filter((candidate) => candidate.scope === 'shared' || candidate.scope === 'asset'));
-	return <div className={styles.codePanel}><div className={styles.codeToolbar}><div className={styles.fileTabs}>{visibleFiles.map((candidate) => { const label = candidate.path.split('/').slice(-2).join('/') || candidate.path; return <button type="button" key={candidate.path} className={activeFile === candidate.path ? styles.fileActive : ''} onClick={() => setActiveFile(candidate.path)} title={candidate.path}>{label}</button>; })}</div><button type="button" onClick={() => void copy()} title="复制文件"><Clipboard size={14} />复制</button></div><pre className={`${styles.codeContent} gp-scrollbar`}><code>{displayContent}</code></pre></div>;
+	const canvasDocument = getCanvasDocument(snapshot);
+	const page = canvasDocument.pages.find((candidate) => candidate.id === activePageId) ?? canvasDocument.pages[0];
+	const sceneSummary = useMemo(() => JSON.stringify({ schemaVersion: canvasDocument.schemaVersion, id: canvasDocument.id, revision: canvasDocument.revision, entryPageId: canvasDocument.entryPageId, activePageId: page?.id ?? null, pages: canvasDocument.pages.map((item) => ({ id: item.id, name: item.name, route: item.route, width: item.width, height: item.height, rootNodeId: item.rootNodeId })), nodeCount: Object.keys(canvasDocument.nodes).length, assetCount: Object.keys(canvasDocument.assets).length, nodes: canvasDocument.nodes }, null, 2), [canvasDocument, page?.id]);
+	const copy = async () => { await navigator.clipboard?.writeText(sceneSummary); };
+	return <div className={styles.codePanel}><div className={styles.codeToolbar}><div className={styles.fileTabs}><span>Canvas 场景检查</span><span>{Object.keys(canvasDocument.nodes).length} 节点</span><span>修订 {canvasDocument.revision}</span></div><button type="button" onClick={() => void copy()} title="复制场景数据">复制场景</button></div><pre className={`${styles.codeContent} gp-scrollbar`}><code>{sceneSummary}</code></pre></div>;
 }
 
 export function DesignShell() {
 	const isProjectStarted = useDesignStore((state) => state.isProjectStarted);
 	const hydrateSnapshot = useDesignStore((state) => state.hydrateSnapshot);
 	const currentProjectPath = useDesignStore((state) => state.projectPath);
-	const activeTab = useDesignStore((state) => state.activeTab);
-	const setTab = useDesignStore((state) => state.setTab);
-	const setActivePage = useDesignStore((state) => state.setActivePage);
 	const snapshot = useDesignStore((state) => state.snapshot);
-	const activePageId = useDesignStore((state) => state.activePageId);
 	const error = useDesignStore((state) => state.error);
 	const clearError = useDesignStore((state) => state.clearError);
 	const messages = useDesignStore((state) => state.messages);
-	const [rightInspectorOpen, setRightInspectorOpen] = useState(true);
-	const [rightInspectorWidth, setRightInspectorWidth] = useState(312);
 	const [versionManagerOpen, setVersionManagerOpen] = useState(false);
 	const hasGeneratedDesign = snapshot.document.version > 1 || messages.some((message) => message.kind === 'result');
 	// 项目切换后重新读取该项目的 Design bucket；sidecar snapshot 是权威来源，缓存只负责首屏占位。
 	// 只在项目目录变化时恢复；首次发送会直接把 design_create 返回的快照切入工作页，
 	// 不应因 isProjectStarted 变化再次发起 design_open。
 	useEffect(() => { void hydrateSnapshot(); }, [currentProjectPath, hydrateSnapshot]);
-	const activePage = snapshot.document.pages.find((page) => page.id === activePageId) ?? snapshot.document.pages[0];
-	return <div className={styles.shell} data-ui-version="design" data-design-empty={!hasGeneratedDesign} data-design-landing={!isProjectStarted}><TargetTitleBar />{!isProjectStarted ? <DesignLanding /> : <div className={`${styles.body} ${rightInspectorOpen ? styles.bodyWithRight : styles.bodyWithoutRight}`} style={{ '--design-right-width': `${rightInspectorWidth}px` } as CSSProperties}><Conversation /><main className={styles.workspace}><header className={styles.workspaceHeader}><div className={styles.pageSwitcher}><span className={styles.pageDot} aria-hidden="true" /><DropdownMenu><DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="sm" className={`${styles.pageSwitcherTrigger} focus-visible:outline-none focus-visible:ring-0`} aria-label="切换设计页面"><span>{activePage?.name ?? '首页'}</span><ChevronDown size={13} aria-hidden="true" /></Button></DropdownMenuTrigger><DropdownMenuContent align="start" className={styles.pageSwitcherMenu}>{snapshot.document.pages.map((page) => <DropdownMenuItem key={page.id} className={`${styles.pageSwitcherItem} ${page.id === activePageId ? styles.pageSwitcherItemActive : ''}`} onSelect={() => setActivePage(page.id)}><span>{page.name}</span>{page.id === activePageId && <Check size={13} className={styles.pageSwitcherItemCheck} />}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu></div><div className={styles.tabs}><button type="button" className={activeTab === 'preview' ? styles.tabActive : ''} onClick={() => setTab('preview')}><Monitor size={14} />预览</button><button type="button" className={activeTab === 'code' ? styles.tabActive : ''} onClick={() => setTab('code')}><Code2 size={14} />代码</button></div><div className={styles.workspaceActions}><Button type="button" size="sm" variant="ghost" onClick={() => setVersionManagerOpen(true)}><History size={14} />版本</Button></div></header><div className={styles.workspaceBody}><div className={styles.canvas}><div className={styles.canvasContent}>{activeTab === 'preview' ? <PreviewPanel /> : <CodePanel />}</div></div></div></main>{rightInspectorOpen ? <DesignRightResizeHandle value={rightInspectorWidth} onChange={setRightInspectorWidth} /> : <div className={styles.rightResizeHandlePlaceholder} aria-hidden="true" />}<DesignRightInspector open={rightInspectorOpen} /></div>}<footer className={styles.statusbar}><ResolutionPicker /><span className={styles.statusGrow} /><Button type="button" variant="ghost" size="icon-sm" className={`${styles.workspaceInspectorToggle} ${styles.rightPanelToggle}`} onClick={() => setRightInspectorOpen((open) => !open)} title={rightInspectorOpen ? '收起右侧栏' : '展开右侧栏'} aria-label={rightInspectorOpen ? '收起右侧栏' : '展开右侧栏'} aria-pressed={rightInspectorOpen}><span className={`${styles.workspaceInspectorToggleIcon} ${rightInspectorOpen ? styles.workspaceInspectorToggleIconVisible : ''}`} aria-hidden="true"><PanelRightClose size={14} /></span><span className={`${styles.workspaceInspectorToggleIcon} ${rightInspectorOpen ? '' : styles.workspaceInspectorToggleIconVisible}`} aria-hidden="true"><PanelRightOpen size={14} /></span></Button></footer><DesignVersionManager open={versionManagerOpen} onOpenChange={setVersionManagerOpen} />{error && <div className={styles.error}><span>{error}</span><button type="button" onClick={clearError} aria-label="关闭错误提示"><X size={14} /></button></div>}</div>;
+	return <div className={styles.shell} data-ui-version="design-v2" data-design-empty={!hasGeneratedDesign} data-design-landing={!isProjectStarted}><TargetTitleBar />{!isProjectStarted ? <DesignLanding /> : <DesignWorkspaceV2 onOpenVersions={() => setVersionManagerOpen(true)} />}<DesignVersionManager open={versionManagerOpen} onOpenChange={setVersionManagerOpen} />{error && <div className={styles.error}><span>{error}</span><button type="button" onClick={clearError} aria-label="关闭错误提示"><X size={14} /></button></div>}</div>;
 }

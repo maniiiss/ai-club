@@ -5,7 +5,7 @@
  * 同一文件被多次编辑时逐轮展示全部 diff（每轮一个块），
  * 与卡片的累计行数统计口径保持一致。
  */
-import { FileDiff, FolderOpen } from 'lucide-react';
+import { FolderOpen, GitDiff as FileDiff } from '@phosphor-icons/react';
 import { useReviewStore } from '@/src/store/review';
 import type { ChangedFile, ChangeStatus } from '@/src/store/changed-files';
 import { Button } from '@/src/components/ui/button';

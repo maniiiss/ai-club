@@ -6,10 +6,9 @@
 .background > canvas { width: 100%; height: 100%; opacity: .86; }
 .hero { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .heroIcon { display: inline-flex; width: 64px; height: 64px; align-items: center; justify-content: center; border: 1px solid var(--gp-border); border-radius: 20px; background: var(--gp-accent-soft); color: var(--gp-accent); }
-.title { margin: 0; color: var(--gp-text); font-size: calc(22px * var(--desktop-font-scale)); font-weight: 650; letter-spacing: .2px; }
+.title { margin: 0; color: var(--gp-text); /* 欢迎页主标题保留大字号层级，仍跟随设置字号缩放 */ font-size: calc(22px * var(--desktop-font-scale)); font-weight: 400; letter-spacing: .2px; }
 .composer { position: relative; z-index: 1; width: min(720px, 100%); }
 .chips { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; }
-.permissionChip { border: 1px solid var(--gp-border); border-radius: 999px; padding: 4px 12px; color: var(--gp-text-muted); font-size: calc(11px * var(--desktop-font-scale)); cursor: default; }
 
 /* 主题色板：与 DesignShell.landing 保持一致，靠 data-welcome-theme 切换；变量未匹配时回落到浅色默认值。 */
 .root[data-welcome-theme='current'] { --landing-bg: #0b1519; --landing-text: #e8f1f2; --landing-glow: radial-gradient(circle at 72% 27%, rgba(86,170,154,.22), transparent 35%), radial-gradient(circle at 50% 68%, rgba(13,44,50,.75), transparent 48%); }

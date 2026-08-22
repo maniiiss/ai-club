@@ -1,13 +1,13 @@
-import { Check, Clock3, Loader2 } from 'lucide-react';
+import { Check, CircleNotch, Clock } from '@phosphor-icons/react';
 import { useState } from 'react';
 import { useSessionStore } from '@/src/store/session';
 import { parsePlanProgress, type PlanProgressStep } from './plan-progress';
 import styles from './PlanProgressStatus.module.css';
 
 function StepIcon({ status }: { status: PlanProgressStep['status'] }) {
-	if (status === 'completed') return <Check size={13} strokeWidth={2.8} aria-hidden="true" />;
-	if (status === 'running') return <Loader2 size={13} className={styles.spin} aria-hidden="true" />;
-	return <Clock3 size={12} aria-hidden="true" />;
+	if (status === 'completed') return <Check weight="bold" size={13} aria-hidden="true" />;
+	if (status === 'running') return <CircleNotch weight="bold" size={13} className={styles.spin} aria-hidden="true" />;
+	return <Clock weight="regular" size={12} aria-hidden="true" />;
 }
 
 /**

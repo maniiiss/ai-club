@@ -13,6 +13,10 @@ export default defineConfig(async () => ({
       '@': path.resolve(__dirname, '.'),
     },
   },
+  // CanvasKit 自带 Emscripten loader 和独立 WASM 文件，不参与 Vite 依赖预构建，避免开发服务命中过期的 .vite/deps 模块。
+  optimizeDeps: {
+    exclude: ['canvaskit-wasm'],
+  },
   // Tauri 要求固定端口且不能被占用，strictPort 保证端口不可用时报错而非顺延。
   clearScreen: false,
   server: {

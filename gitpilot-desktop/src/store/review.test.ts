@@ -12,7 +12,7 @@ describe('右侧审查页签数据容器', () => {
 		useReviewStore.setState({ sessionPath: null, files: [], expandedPaths: [] });
 		useWorkbenchStore.setState({
 			layout: { leftWidth: 272, rightWidth: 344, bottomOpen: false, bottomHeight: 220, leftCollapsed: false, rightCollapsed: true },
-			rightPanelTabs: { plans: [], executionOpen: true, filesOpen: false, reviewOpen: false, activeTabId: 'execution' },
+			rightPanelTabs: { plans: [], executionOpen: true, filesOpen: false, reviewOpen: false, gitOpen: false, activeTabId: 'execution' },
 		});
 	});
 

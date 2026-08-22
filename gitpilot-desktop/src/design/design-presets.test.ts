@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDesignPresetCatalog, designPresetCatalog, filterDesignPresets, sanitizePresetPreviewHtml } from './design-presets';
+import { createDesignPresetCatalog, designPresetCatalog, filterDesignPresets } from './design-presets';
 
 const manifest = {
 	schema: 'open-design.design-manifest.v1',
@@ -30,13 +30,10 @@ const handoff = `# Neutral Modern handoff
 ## Agent Prompt Guide
 - Preserve the token names and do not replace product modules with generic cards.`;
 
-const entryHtml = `<!doctype html><html><head><style>:root { --bg: #ffffff; --fg: #111111; --accent: #2f6feb; --display: Inter, sans-serif; --body: system-ui, sans-serif; --radius-card: 8px; --shadow-card: 0 8px 24px #0002; }</style></head><body><script data-od-srcdoc-transport>window.parent.postMessage('bridge', '*')</script><main>Preview</main></body></html>`;
-
 function sources() {
 	return {
 		manifests: { './presets/neutral-modern/DESIGN-MANIFEST.json': manifest },
 		handoffs: { './presets/neutral-modern/DESIGN-HANDOFF.md': handoff },
-		entries: { './presets/neutral-modern/index.html': entryHtml },
 	};
 }
 
@@ -56,14 +53,12 @@ describe('Design preset catalog', () => {
 		expect(catalog.presets).toHaveLength(1);
 		const preset = catalog.presets[0];
 		expect(preset).toMatchObject({ id: 'neutral-modern', title: 'Neutral Modern', source: 'Open Design', license: 'unknown' });
-		expect(preset.tokens.colors).toMatchObject({ bg: '#ffffff', accent: '#2f6feb' });
-		expect(preset.tokens.typography).toMatchObject({ display: 'Inter, sans-serif', body: 'system-ui, sans-serif' });
-		expect(preset.tokens.radius).toMatchObject({ 'radius-card': '8px' });
+		expect(preset.tokens.colors).toMatchObject({ 'color-1': '#FAFAFA' });
 		expect(preset.handoffMarkdown).toContain('## Component rules');
 		expect(preset.handoff.componentRules).toContain('Buttons use the accent token with a visible focus state.');
 		expect(preset.handoff.responsiveRules).toContain('Collapse the secondary navigation below tablet width.');
 		expect(preset.guidelines.rules).toContain('Keep content within a readable max-width and stable gutters.');
-		expect(preset.warnings[0]).toContain('CSS Token');
+		expect(preset.scene?.schemaVersion).toBe(2);
 	});
 
 	it('reports directories that miss required files or use an invalid schema', () => {
@@ -77,13 +72,13 @@ describe('Design preset catalog', () => {
 				'./presets/invalid-schema/DESIGN-HANDOFF.md': handoff,
 				'./presets/missing-manifest/DESIGN-HANDOFF.md': handoff,
 			},
-			entries: { './presets/missing-manifest/index.html': entryHtml, './presets/invalid-schema/index.html': entryHtml },
 		});
-		expect(catalog.presets).toEqual([]);
+		// 缺少旧 HTML entry 不再是错误；原生预设只要求 manifest + handoff。
+		expect(catalog.presets).toHaveLength(1);
+		expect(catalog.presets[0].id).toBe('missing-entry');
 		expect(catalog.issues).toEqual(expect.arrayContaining([
-			expect.objectContaining({ presetId: 'missing-entry', message: expect.stringContaining('index.html') }),
 			expect.objectContaining({ presetId: 'missing-manifest', message: expect.stringContaining('DESIGN-MANIFEST') }),
-			expect.objectContaining({ presetId: 'invalid-schema', message: expect.stringContaining('schema') }),
+		expect.objectContaining({ presetId: 'invalid-schema', message: expect.stringContaining('schema') }),
 		]));
 	});
 
@@ -93,12 +88,14 @@ describe('Design preset catalog', () => {
 		expect(filterDesignPresets(presets, 'not-found')).toEqual([]);
 	});
 
-	it('removes Open Design bridge code, external resources and executable preview scripts', () => {
-		const sanitized = sanitizePresetPreviewHtml(`<html><head><script data-od-preview-redirect-guard>window.parent.postMessage('od', '*')</script><script>window.parent.postMessage('unsafe', '*')</script><link rel="stylesheet" href="https://cdn.example.com/app.css"><style>@import "https://cdn.example.com/theme.css";.hero{background:url(https://cdn.example.com/image.png)}</style></head><body onload="window.open('https://example.com')"><img src=https://cdn.example.com/image.png srcset="https://cdn.example.com/image@2x.png 2x" onerror="alert(1)"><a href="https://example.com">link</a></body></html>`);
-		expect(sanitized).not.toMatch(/<script\b/i);
-		expect(sanitized).not.toContain('postMessage');
-		expect(sanitized).not.toContain('https://cdn.example.com');
-		expect(sanitized).not.toContain('onload=');
-		expect(sanitized).not.toContain('onerror=');
+	it('does not copy legacy HTML/CSS snippets from handoff into native guidelines', () => {
+		const fence = String.fromCharCode(96).repeat(3);
+		const preset = createDesignPresetCatalog({
+			manifests: { './presets/native-safe/DESIGN-MANIFEST.json': manifest },
+			handoffs: { './presets/native-safe/DESIGN-HANDOFF.md': handoff + '\n\n## Layout rules\n' + fence + 'html\n<html lang="zh-CN"><style>body { color: red; }</style>\n' + fence + '\n- Use CSS tokens for visual intent, not executable source.\n- Ignore `<html lang="en">` examples from legacy references.' },
+		}).presets[0];
+		expect(preset.guidelines.rules).not.toEqual(expect.arrayContaining([expect.stringContaining('<html')]));
+		expect(preset.guidelines.rules).toContain('Use CSS tokens for visual intent, not executable source.');
 	});
+
 });

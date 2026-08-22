@@ -5,16 +5,16 @@
 .row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 12px; background: none; border: none; border-bottom: 1px solid var(--gp-border); color: var(--gp-text); font-size: var(--text-xs); font-family: var(--font-mono); text-align: left; cursor: default; }
 .row:hover { background: var(--gp-surface-hover); }
 .rowEditable { cursor: pointer; }
-.status { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: var(--radius-sm); font-size: calc(11px * var(--desktop-font-scale)); font-weight: 600; flex-shrink: 0; }
+.status { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: var(--radius-sm); font-size: var(--text-xs); font-weight: 400; flex-shrink: 0; }
 .statusModified { background: color-mix(in srgb, var(--gp-status-warning) 18%, transparent); color: var(--gp-status-warning); }
 .statusAdded { background: var(--gp-code-diff-add); color: var(--gp-status-success); }
 .statusDeleted { background: var(--gp-code-diff-del); color: var(--gp-status-error); }
 .path { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.stats { font-size: calc(11px * var(--desktop-font-scale)); color: var(--gp-text-muted); flex-shrink: 0; white-space: nowrap; }
+.stats { font-size: var(--text-xs); color: var(--gp-text-muted); flex-shrink: 0; white-space: nowrap; }
 .statsAdd { color: var(--gp-status-success); }
 .statsDel { color: var(--gp-status-error); }
 .toggle { color: var(--gp-text-muted); flex-shrink: 0; }
-.noDiff { color: var(--gp-text-muted); font-size: calc(9px * var(--desktop-font-scale)); flex-shrink: 0; white-space: nowrap; }
+.noDiff { color: var(--gp-text-muted); font-size: var(--text-xs); flex-shrink: 0; white-space: nowrap; }
 .diffWrap { border-top: 1px solid var(--gp-border); max-height: 320px; overflow: auto; }
 .more { display: flex; align-items: center; gap: 4px; width: 100%; justify-content: flex-start; padding: 7px 12px; color: var(--gp-text-muted); font-size: var(--text-xs); }
 .more:hover { color: var(--gp-action-hover); background: var(--gp-surface-hover); }

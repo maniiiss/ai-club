@@ -1,10 +1,14 @@
-import { readdirSync, statSync } from "node:fs";
+import { readdirSync, readFileSync, statSync } from "node:fs";
 import { basename, join, relative, resolve } from "node:path";
 import type { CodeProjectFileEntry, CodeProjectFileList } from "./rpc-types.ts";
 
 /**
  * Code 文件树的默认边界：只展示源码工作区的轻量元数据，不把依赖目录和运行时目录
  * 递归推送到 Desktop，避免一次刷新阻塞 sidecar 或把内部状态暴露给渲染层。
+ *
+ * 除固定名单外同时遵循工作区各级 .gitignore：运行时工件（如 .scan-workspace）常被
+ * gitignore 覆盖却不在固定名单里，不读 .gitignore 时大仓库会被条目上限过早截断，
+ * 文件树与 @ 提及都会"显示不全"。
  */
 const IGNORED_DIRECTORY_NAMES = new Set([
 	".git",
@@ -16,11 +20,121 @@ const IGNORED_DIRECTORY_NAMES = new Set([
 	".venv",
 	"__pycache__",
 ]);
-const MAX_ENTRIES = 10_000;
-const MAX_DEPTH = 12;
+const MAX_ENTRIES = 20_000;
+const MAX_DEPTH = 16;
 
 function compareNames(left: string, right: string): number {
 	return left.localeCompare(right, undefined, { numeric: true, sensitivity: "base" });
+}
+
+// ============================================================================
+// .gitignore 子集解析（覆盖常见语法：注释、取反、目录后缀、锚定、* ? ** 与字符类）
+// ============================================================================
+
+/** 单条 .gitignore 规则；base 为规则所属目录相对工作区根的路径（"" 表示根）。 */
+interface IgnoreRule {
+	base: string;
+	negated: boolean;
+	/** 仅匹配目录（模式以斜杠结尾）。 */
+	dirOnly: boolean;
+	/** 对相对 base 的路径做全匹配；非锚定模式的正则已内置任意层级前缀。 */
+	regex: RegExp;
+}
+
+/**
+ * 把 glob 风格模式翻译为正则片段。内部先以罕见占位符替换三种双星形态再逐字符翻译，
+ * 避免在转义过程中把星号、问号与字符类一并转义。
+ * anyDepth 为 true 时（双星前缀或非锚定模式）由调用方补任意层级前缀。
+ */
+function translateGlob(pattern: string): { body: string; anyDepth: boolean } {
+	const PREFIX = "\u0001";
+	const TAIL = "\u0002";
+	const MID = "\u0003";
+	let rest = pattern
+		.replace(/^\*\*\//, `${PREFIX}/`)
+		.replace(/\/\*\*$/, `/${TAIL}`)
+		.replace(/\/\*\*\//, `/${MID}`);
+	let anyDepth = false;
+	if (rest.startsWith(`${PREFIX}/`)) {
+		anyDepth = true;
+		rest = rest.slice(PREFIX.length + 1);
+	}
+	let out = "";
+	for (let i = 0; i < rest.length; i += 1) {
+		const ch = rest[i]!;
+		if (ch === TAIL) {
+			out += ".+";
+			continue;
+		}
+		if (ch === MID) {
+			out += "(?:.*/)?";
+			continue;
+		}
+		if (ch === "*") {
+			out += "[^/]*";
+			continue;
+		}
+		if (ch === "?") {
+			out += "[^/]";
+			continue;
+		}
+		if (ch === "[") {
+			// 字符类按正则语法透传（gitignore 类语法与正则子集兼容）；未闭合时按字面量处理。
+			const end = rest.indexOf("]", i + 1);
+			if (end > i + 1) {
+				out += rest.slice(i, end + 1);
+				i = end;
+				continue;
+			}
+			out += "\\[";
+			continue;
+		}
+		if ("\\^$.+(){}|".includes(ch)) {
+			out += `\\${ch}`;
+			continue;
+		}
+		out += ch;
+	}
+	return { body: out, anyDepth };
+}
+
+/** 解析单个 .gitignore 文本为规则列表；base 为该 .gitignore 所在目录的相对路径。 */
+export function parseGitignoreRules(content: string, base: string): IgnoreRule[] {
+	const rules: IgnoreRule[] = [];
+	for (const rawLine of content.split(/\r?\n/)) {
+		if (!rawLine || rawLine.startsWith("#")) continue;
+		let pattern = rawLine.replace(/(?<!\\)\s+$/, "");
+		const negated = pattern.startsWith("!");
+		if (negated) pattern = pattern.slice(1);
+		if (!pattern || pattern === "/" || pattern === "\\") continue;
+		const dirOnly = pattern.endsWith("/");
+		if (dirOnly) pattern = pattern.slice(0, -1);
+		if (!pattern) continue;
+		const anchored = pattern.includes("/");
+		pattern = pattern.replace(/^\//, "");
+		const { body, anyDepth } = translateGlob(pattern);
+		// 锚定模式相对 base 全路径匹配；**/ 前缀与非锚定模式可命中任意层级。
+		const anyLevel = anyDepth || !anchored;
+		const regex = new RegExp(`^${anyLevel ? "(?:.*/)?" : ""}${body}$`);
+		rules.push({ base, negated, dirOnly, regex });
+	}
+	return rules;
+}
+
+/**
+ * 判断条目是否被忽略：按 gitignore 语义，后命中的规则覆盖先命中的规则（取反可恢复）。
+ * 固定忽略名单不参与取反，始终生效。
+ */
+function isEntryIgnored(relPath: string, isDirectory: boolean, rules: readonly IgnoreRule[]): boolean {
+	if (isDirectory && IGNORED_DIRECTORY_NAMES.has(relPath.slice(relPath.lastIndexOf("/") + 1))) return true;
+	let ignored = false;
+	for (const rule of rules) {
+		if (rule.dirOnly && !isDirectory) continue;
+		const relToBase = rule.base === "" ? relPath : relPath.startsWith(`${rule.base}/`) ? relPath.slice(rule.base.length + 1) : null;
+		if (relToBase === null) continue;
+		if (rule.regex.test(relToBase)) ignored = !rule.negated;
+	}
+	return ignored;
 }
 
 /**
@@ -37,7 +151,7 @@ export function listCodeProjectFiles(workspacePath: string): CodeProjectFileList
 	const entries: CodeProjectFileEntry[] = [];
 	let truncated = false;
 
-	const visit = (directory: string, depth: number): void => {
+	const visit = (directory: string, relBase: string, depth: number, parentRules: readonly IgnoreRule[]): void => {
 		if (depth > MAX_DEPTH || entries.length >= MAX_ENTRIES) {
 			truncated = true;
 			return;
@@ -54,6 +168,17 @@ export function listCodeProjectFiles(workspacePath: string): CodeProjectFileList
 			return;
 		}
 
+		// 嵌套 .gitignore 只作用于其所在目录之内；父目录规则继续生效，同层级后声明者覆盖先声明者。
+		const rules = children.some((child) => child.isFile() && child.name === ".gitignore")
+			? (() => {
+				try {
+					return [...parentRules, ...parseGitignoreRules(readFileSync(join(directory, ".gitignore"), "utf-8"), relBase)];
+				} catch {
+					return parentRules;
+				}
+			})()
+			: parentRules;
+
 		for (const child of children) {
 			if (entries.length >= MAX_ENTRIES) {
 				truncated = true;
@@ -64,11 +189,11 @@ export function listCodeProjectFiles(workspacePath: string): CodeProjectFileList
 			if (child.isSymbolicLink()) continue;
 			if (child.isDirectory() && IGNORED_DIRECTORY_NAMES.has(child.name)) continue;
 
-			const path = relative(rootPath, target).replaceAll("\\", "/");
-			if (!path) continue;
+			const path = `${relBase}${relBase ? "/" : ""}${child.name}`;
+			if (isEntryIgnored(path, child.isDirectory(), rules)) continue;
 			if (child.isDirectory()) {
 				entries.push({ path, name: child.name, kind: "directory" });
-				visit(target, depth + 1);
+				visit(target, path, depth + 1, rules);
 				continue;
 			}
 			if (!child.isFile()) continue;
@@ -81,6 +206,6 @@ export function listCodeProjectFiles(workspacePath: string): CodeProjectFileList
 		}
 	};
 
-	visit(rootPath, 0);
+	visit(rootPath, "", 0, []);
 	return { rootPath, entries, truncated };
 }

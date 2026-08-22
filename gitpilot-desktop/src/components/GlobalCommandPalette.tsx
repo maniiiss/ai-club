@@ -1,6 +1,6 @@
 /** 面向整个工作台的命令面板；slash 命令仍保留在输入框附近。 */
 import { useMemo } from 'react';
-import { CornerDownLeft, Cpu, Plus, Square, Type } from 'lucide-react';
+import { ArrowBendDownLeft as CornerDownLeft, Cpu, Plus, Square, TextAa as Type } from '@phosphor-icons/react';
 import { useSessionStore } from '@/src/store/session';
 import { useWorkbenchStore, type WorkbenchCommand } from '@/src/store/workbench';
 import { isHostActionCommand } from './host-actions';
@@ -43,7 +43,7 @@ export function GlobalCommandPalette({ onNewSession, onAbort }: GlobalCommandPal
 					<CommandEmpty>没有匹配的工作台命令</CommandEmpty>
 					{all.map((item) => <CommandItem key={item.id} value={`${item.label} ${item.description}`} onSelect={() => { close(); item.execute(); }}>
 						<span className={styles.itemIcon}>{iconFor(item.id)}</span>
-						<span className={styles.itemCopy}><b>{item.label}</b><small>{item.description}</small></span>
+						<span className={styles.itemCopy}><span className={styles.itemLabel}>{item.label}</span><small>{item.description}</small></span>
 						{item.shortcut && <kbd>{item.shortcut}</kbd>}
 					</CommandItem>)}
 				</CommandList>

@@ -7,7 +7,7 @@
  */
 import { useSessionStore } from '@/src/store/session';
 import { Button } from '@/src/components/ui/button';
-import { Activity, BarChart3, FileKey2, RotateCcw, ShieldCheck } from 'lucide-react';
+import { ArrowClockwise as RotateCcw, ChartBar as BarChart3, Key as FileKey2, Pulse as Activity, ShieldCheck } from '@phosphor-icons/react';
 
 /** RTK 分区操作；实际配置仍由 sidecar 扩展持久化。 */
 export const RTK_ACTIONS = [
@@ -25,7 +25,7 @@ export function RtkSettingsPanel() {
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
-			<div className="min-h-0 flex-1 overflow-y-auto px-5 py-5"><div className="grid gap-2 sm:grid-cols-2">{RTK_ACTIONS.map(({ command, label, icon: Icon }) => <Button key={command} type="button" variant="outline" className="h-auto min-h-12 justify-start px-3 py-2.5 text-left" onClick={() => run(command)}><Icon className="text-[var(--primary)]" /><span className="min-w-0"><b className="block text-xs text-[var(--foreground)]">{label}</b></span></Button>)}</div></div>
+			<div className="min-h-0 flex-1 overflow-y-auto px-5 py-5"><div className="grid gap-2 sm:grid-cols-2">{RTK_ACTIONS.map(({ command, label, icon: Icon }) => <Button key={command} type="button" variant="outline" className="h-auto min-h-12 justify-start px-3 py-2.5 text-left" onClick={() => run(command)}><Icon className="text-[var(--primary)]" /><span className="min-w-0"><span className="block text-[length:var(--text-[length:var(--text-xs)])] text-[var(--foreground)]">{label}</span></span></Button>)}</div></div>
 		</div>
 	);
 }

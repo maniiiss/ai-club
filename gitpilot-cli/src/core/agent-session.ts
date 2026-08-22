@@ -14,6 +14,7 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import * as crypto from "node:crypto";
 import { basename, dirname } from "node:path";
 import type {
 	Agent,
@@ -120,10 +121,21 @@ import type { SettingsManager } from "./settings-manager.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
-import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
+import { DEFAULT_BASH_TIMEOUT_SECONDS, MAX_BASH_TIMEOUT_SECONDS, type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
 import { createAllToolDefinitions } from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
 import { addUsageToTotals, createUsageTotals } from "./usage-totals.ts";
+import { evaluateToolRisk } from "./security/command-policy.ts";
+import {
+	cloneSecurityPolicy,
+	type ApprovalDecision,
+	type ApprovalRisk,
+	type SecurityApprovalHandler,
+	type SecurityPolicy,
+	type SecurityApprovalRequest,
+	type SessionApprovalMode,
+	normalizeSecurityPolicy,
+} from "./security/security-policy.ts";
 
 // ============================================================================
 // Skill Block Parsing
@@ -240,6 +252,12 @@ export interface AgentSessionConfig {
 	extensionRunnerRef?: { current?: ExtensionRunner };
 	/** Session start event metadata emitted when extensions bind to this runtime. */
 	sessionStartEvent?: SessionStartEvent;
+	/** Desktop Code 会话的任务级安全策略；未配置时保持 CLI 原有交互行为。 */
+	securityPolicy?: SecurityPolicy;
+	/** Desktop 宿主审批回调；未配置时需要审批的工具会被阻断。 */
+	securityApprovalHandler?: SecurityApprovalHandler;
+	/** 沙箱初始化状态探针；未就绪时所有 Code 工具调用都必须阻断。 */
+	securityExecutionReady?: () => boolean;
 }
 
 export interface ExtensionBindings {
@@ -403,6 +421,13 @@ export class AgentSession {
 	private _extensionErrorListener?: ExtensionErrorListener;
 	private _extensionToolExecutionAdapter?: ExtensionToolExecutionAdapter;
 	private _extensionErrorUnsubscriber?: () => void;
+	/** 当前任务启动时快照的安全策略，不在任务执行中静默改变。 */
+	private _securityPolicy: SecurityPolicy | undefined;
+	private _securityApprovalHandler: SecurityApprovalHandler | undefined;
+	private _securityExecutionReady: (() => boolean) | undefined;
+	private readonly _sessionApprovals = new Set<string>();
+	/** 会话级访问权限模式：full_access 下需审批工具直接放行。独立于逐任务审批缓存，页面刷新重推安全策略时不得重置。 */
+	private _sessionApprovalMode: SessionApprovalMode = "per_request";
 
 	private _modelRuntime: ModelRuntime;
 	/** 当前模式的压缩提示配置；不改变 Pi 默认摘要结构。 */
@@ -418,6 +443,80 @@ export class AgentSession {
 	private _baseSystemPrompt = "";
 	private _baseSystemPromptOptions!: BuildSystemPromptOptions;
 	private _systemPromptOverride?: string;
+
+	/** 将桌面端审批回调绑定到当前任务；切换任务时清空逐任务审批缓存。会话访问权限模式跟随 AgentSession 实例，不在此重置，避免页面刷新重推策略时丢失“完全访问”。 */
+	configureSecurityPolicy(policy: SecurityPolicy | undefined, handler?: SecurityApprovalHandler, ready?: () => boolean): void {
+		this._securityPolicy = policy ? normalizeSecurityPolicy(policy) : undefined;
+		this._securityApprovalHandler = handler;
+		this._securityExecutionReady = ready;
+		this._sessionApprovals.clear();
+	}
+
+	/** 返回当前任务的安全策略快照，供 RPC 状态和桌面设置页展示。 */
+	get securityPolicy(): SecurityPolicy | undefined {
+		return this._securityPolicy ? cloneSecurityPolicy(this._securityPolicy) : undefined;
+	}
+
+	/** 设置会话级访问权限；可在任务运行中切换，仅影响当前会话且不落盘。 */
+	setSessionApprovalMode(mode: SessionApprovalMode): void {
+		this._sessionApprovalMode = mode;
+	}
+
+	/** 返回当前会话的访问权限模式。 */
+	get sessionApprovalMode(): SessionApprovalMode {
+		return this._sessionApprovalMode;
+	}
+
+	/** 在内置工具真正执行前等待 Desktop 决策；审批结果只影响当前会话。 */
+	private async _requestSecurityApproval(
+		toolName: string,
+		params: unknown,
+		risk: ApprovalRisk,
+		reason: string | undefined,
+		signal?: AbortSignal,
+	): Promise<ApprovalDecision> {
+		const values = params && typeof params === "object" ? params as Record<string, unknown> : {};
+		const paths = ["path", "filePath", "file_path", "target"].flatMap((key) => {
+			const value = values[key];
+			return typeof value === "string" && value.trim() ? [value.trim()] : [];
+		});
+		const command = typeof values.command === "string" ? values.command : undefined;
+		const title = risk === "network" ? "需要批准网络命令" : risk === "outside_workspace" ? "需要批准工作区外访问" : toolName === "bash" ? "需要批准 Bash 命令" : "需要批准文件修改";
+		const summary = reason ?? `工具 ${toolName} 需要桌面审批`;
+		const request: SecurityApprovalRequest = {
+			approvalId: `approval-${crypto.randomUUID()}`,
+			sessionId: this.sessionId,
+			toolName,
+			risk,
+			title,
+			summary,
+			command,
+			paths: paths.length > 0 ? paths : undefined,
+			cwd: this.sessionManager.getCwd(),
+			expiresAt: Date.now() + 10 * 60 * 1000,
+		};
+		if (!this._securityApprovalHandler) return "deny";
+		try {
+			return await this._securityApprovalHandler(request, signal);
+		} catch {
+			return "deny";
+		}
+	}
+
+	/** 供 RPC 直接执行 Bash 等宿主命令复用同一套审批逻辑。 */
+	async authorizeToolExecution(toolName: string, params: unknown): Promise<boolean> {
+		if (!this._securityPolicy) return true;
+		if (this._securityExecutionReady && !this._securityExecutionReady()) throw new Error("安全沙箱尚未初始化，已阻断工具执行");
+		const result = evaluateToolRisk(toolName, params, this.sessionManager.getCwd());
+		if (!result.allowed) throw new Error(result.reason ?? "安全策略拒绝执行");
+		if (!result.needsApproval) return true;
+		if (this._sessionApprovalMode === "full_access") return true;
+		const key = `${this.sessionId}:${this.sessionManager.getCwd()}:${toolName}:${result.risk ?? "command"}`;
+		if (this._sessionApprovals.has(key)) return true;
+		const decision = await this._requestSecurityApproval(toolName, params, result.risk ?? "dangerous", result.reason);
+		if (decision === "approve_session") this._sessionApprovals.add(key);
+		return decision === "approve_once" || decision === "approve_session";
+	}
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
@@ -440,6 +539,9 @@ export class AgentSession {
 		this._excludedToolNames = config.excludedToolNames ? new Set(config.excludedToolNames) : undefined;
 		this._baseToolsOverride = config.baseToolsOverride;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
+		this._securityPolicy = config.securityPolicy ? cloneSecurityPolicy(config.securityPolicy) : undefined;
+		this._securityApprovalHandler = config.securityApprovalHandler;
+		this._securityExecutionReady = config.securityExecutionReady;
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
@@ -520,6 +622,13 @@ export class AgentSession {
 	 */
 	private _installAgentToolHooks(): void {
 		this.agent.beforeToolCall = async ({ toolCall, args }) => {
+			if (this._securityPolicy) {
+				try {
+					if (!(await this.authorizeToolExecution(toolCall.name, args))) return { block: true, reason: "用户拒绝了桌面安全审批" };
+				} catch (error) {
+					return { block: true, reason: error instanceof Error ? error.message : String(error) };
+				}
+			}
 			const runner = this._extensionRunner;
 			if (!runner.hasHandlers("tool_call")) {
 				return undefined;
@@ -3023,8 +3132,12 @@ export class AgentSession {
 	async executeBash(
 		command: string,
 		onChunk?: (chunk: string) => void,
-		options?: { excludeFromContext?: boolean; operations?: BashOperations },
+		options?: { excludeFromContext?: boolean; operations?: BashOperations; timeoutSeconds?: number },
 	): Promise<BashResult> {
+		const timeoutSeconds = options?.timeoutSeconds ?? DEFAULT_BASH_TIMEOUT_SECONDS;
+		if (!Number.isFinite(timeoutSeconds) || timeoutSeconds <= 0 || timeoutSeconds > MAX_BASH_TIMEOUT_SECONDS) {
+			throw new Error(`Bash timeout 必须在 1-${MAX_BASH_TIMEOUT_SECONDS} 秒之间`);
+		}
 		this._bashAbortController = new AbortController();
 
 		// Apply command prefix if configured (e.g., "shopt -s expand_aliases" for alias support)
@@ -3040,6 +3153,7 @@ export class AgentSession {
 				{
 					onChunk,
 					signal: this._bashAbortController.signal,
+					timeoutSeconds,
 				},
 			);
 

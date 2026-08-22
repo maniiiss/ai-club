@@ -7,7 +7,7 @@
  * - 思维级别切换
  */
 import { useEffect, useState } from 'react';
-import { ChevronDown, Cpu, Brain, LogIn } from 'lucide-react';
+import { Brain, CaretDown, Cpu, SignIn } from '@phosphor-icons/react';
 import { useSessionStore } from '@/src/store/session';
 import { useWorkbenchStore } from '@/src/store/workbench';
 import type { ModelInfo, ThinkingLevel } from '@/src/rpc/types';
@@ -43,7 +43,7 @@ export function getThinkingLevelLabel(level: ThinkingLevel, levels: readonly Thi
 	return isBinaryThinkingMode(levels) && level !== 'off' ? 'on' : level;
 }
 
-/** 平台模型能力已映射到 PI Model.input，只有明确包含 image 时才展示多模态标签。 */
+/** 平台模型能力已映射到 PI Model.input；判断模型是否支持图片输入（当前 UI 不再展示多模态标签）。 */
 export function isMultimodalModel(model: Pick<ModelInfo, 'input'>): boolean {
 	return model.input?.includes('image') ?? false;
 }
@@ -85,7 +85,7 @@ export function ModelPicker({ showThinkingLevel = true }: { showThinkingLevel?: 
 				size="sm"
 				onClick={() => prompt('/login')}
 			>
-				<LogIn size={13} /> 登录平台
+				<SignIn weight="regular" size={14} /> 登录平台
 			</Button>
 		);
 	}
@@ -99,17 +99,17 @@ export function ModelPicker({ showThinkingLevel = true }: { showThinkingLevel?: 
 		<div className={styles.picker}>
 			{/* 模型选择 */}
 			<Popover open={openModel} onOpenChange={(value) => { setOpenModel(value); if (value) setOpenThinking(false); }}>
-				<PopoverTrigger asChild><Button type="button" variant="outline" size="sm" className={`${styles.modelTrigger} focus-visible:outline-none focus-visible:ring-0`}><Cpu /><span className={styles.modelName}>{currentModel?.name ?? '未选择'}</span><ChevronDown /></Button></PopoverTrigger>
+				<PopoverTrigger asChild><Button type="button" variant="ghost" size="sm" className={`${styles.modelTrigger} focus-visible:outline-none focus-visible:ring-0`}><Cpu weight="regular" /><span className={styles.modelName}>{currentModel?.name ?? '未选择'}</span><CaretDown weight="bold" /></Button></PopoverTrigger>
 				<PopoverContent side="top" align="start" className={styles.modelPopover}>
 					<CommandRoot>
 					<CommandInput placeholder="搜索模型…" containerClassName={styles.search} className={styles.searchInput} style={{ outline: 'none', border: 'none', boxShadow: 'none' }} />
-						<CommandList className={styles.modelList}><CommandEmpty>{models.length === 0 ? '加载中…' : '没有匹配的模型'}</CommandEmpty>{models.map((m) => <CommandItem key={`${m.provider}:${m.id}`} value={`${m.name} ${m.provider}`} onSelect={() => { setModel(m.provider, m.id); setOpenModel(false); }} className={`${styles.modelItem} ${m.id === currentModel?.id ? styles.selected : ''}`}><span className={styles.modelCopy}><span className={styles.modelTitle}><span className={styles.modelTitleText}>{m.name}</span><span className={styles.modelBadges}>{isMultimodalModel(m) && <span className={styles.multimodalBadge}>多模态</span>}<span className={styles.billingBadge}>{getModelBillingLabel(m)}</span></span></span><small>{m.provider}</small></span></CommandItem>)}</CommandList>
+						<CommandList className={styles.modelList}><CommandEmpty>{models.length === 0 ? '加载中…' : '没有匹配的模型'}</CommandEmpty>{models.map((m) => <CommandItem key={`${m.provider}:${m.id}`} value={`${m.name} ${m.provider}`} onSelect={() => { setModel(m.provider, m.id); setOpenModel(false); }} className={`${styles.modelItem} ${m.id === currentModel?.id ? styles.selected : ''}`}><span className={styles.modelCopy}><span className={styles.modelTitle}><span className={styles.modelTitleText}>{m.name}</span><span className={styles.modelBadges}><span className={styles.billingBadge}>{getModelBillingLabel(m)}</span></span></span><small>{m.provider}</small></span></CommandItem>)}</CommandList>
 					</CommandRoot>
 				</PopoverContent>
 			</Popover>
 
 			{showThinkingLevel && <DropdownMenu open={openThinking} onOpenChange={(value) => { setOpenThinking(value); if (value) setOpenModel(false); }}>
-				<Hint content={thinkingSupported ? undefined : '当前模型不支持思考'}><DropdownMenuTrigger asChild><Button type="button" variant="outline" size="sm" className="focus-visible:outline-none focus-visible:ring-0" disabled={!thinkingSupported}><Brain /><span>{getThinkingLevelLabel(currentThinkingLevel, thinkingLevels)}</span>{thinkingSupported && <ChevronDown />}</Button></DropdownMenuTrigger></Hint>
+				<Hint content={thinkingSupported ? undefined : '当前模型不支持思考'}><DropdownMenuTrigger asChild><Button type="button" variant="ghost" size="sm" className={`${styles.thinkingTrigger} focus-visible:outline-none focus-visible:ring-0`} disabled={!thinkingSupported}><Brain weight="regular" /><span>{getThinkingLevelLabel(currentThinkingLevel, thinkingLevels)}</span>{thinkingSupported && <CaretDown weight="bold" />}</Button></DropdownMenuTrigger></Hint>
 				<DropdownMenuContent side="top" align="end" className="w-32">
 					<DropdownMenuLabel>思维级别</DropdownMenuLabel>
 					<DropdownMenuSeparator />

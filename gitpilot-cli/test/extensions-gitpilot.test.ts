@@ -103,14 +103,14 @@ describe("uploadDesignVersion", () => {
 			revisionId: "rev-3",
 			name: "登录页设计",
 			summary: "调整登录流程",
-			snapshot: { files: [{ path: "pages/login/index.html", content: "<main />" }] },
-			previewHtml: "<main>登录</main>",
+			scene: { schemaVersion: 2, pages: [], nodes: {}, assets: {} },
+			previewPng: "data:image/png;base64,aGVsbG8=",
 		});
 
 		const [url, options] = mockFetch.mock.calls[0] as [string, RequestInit];
 		expect(url).toBe(`${PLATFORM_URL}/api/cli/projects/9/design-versions`);
 		expect(options).toEqual(expect.objectContaining({ method: "POST", headers: expect.objectContaining({ authorization: "Bearer gpt_test", "content-type": "application/json" }) }));
-		expect(JSON.parse(String(options.body))).toMatchObject({ designId: "design-1", revisionId: "rev-3", previewHtml: "<main>登录</main>" });
+		expect(JSON.parse(String(options.body))).toMatchObject({ designId: "design-1", revisionId: "rev-3", previewPng: "data:image/png;base64,aGVsbG8=", scene: { schemaVersion: 2 } });
 		expect(result).toMatchObject({ versionId: 42, versionNumber: 3, status: "DRAFT", revisionId: "rev-3" });
 	});
 });

@@ -5,7 +5,7 @@
  * 流式时保留底部跟随；用户上滚查看历史时不强制跟随。
  */
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, Sparkles } from 'lucide-react';
+import { CaretDown, Sparkle } from '@phosphor-icons/react';
 import { useSessionStore, type UIMessage } from '@/src/store/session';
 import { useWorkbenchStore, type ExecutionStep } from '@/src/store/workbench';
 import { useReviewStore } from '@/src/store/review';
@@ -478,7 +478,7 @@ export function ChatView() {
 					) : conversationMessages.length === 0 ? (
 						<div className={styles.empty}>
 							<div className={styles.emptyIcon}>
-								<Sparkles size={26} />
+								<Sparkle weight="regular" size={26} />
 							</div>
 							<div>
 								<h2>GitPilot 桌面版</h2>
@@ -520,7 +520,7 @@ export function ChatView() {
 			{showScrollToBottom && (
 				<div className={styles.scrollBottomBar}>
 					<Button type="button" variant="unstyled" size="icon" className={styles.scrollBottomBtn} onClick={scrollToBottom} aria-label="回到底部">
-						<ChevronDown size={18} />
+						<CaretDown weight="bold" size={18} />
 					</Button>
 				</div>
 			)}

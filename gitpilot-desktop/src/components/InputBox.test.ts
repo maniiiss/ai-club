@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { attachmentInputKey, buildCommandPrompt, canSubmitPrompt, dedupeAttachmentInputs, formatCommandLabel, getCommandIconKey, INPUT_COMPOSER_POINTER_POLICY, isExtensionQueueCommand } from './InputBox';
+import { attachmentInputKey, buildCommandPrompt, canSubmitPrompt, createLongTextAttachment, dedupeAttachmentInputs, formatCommandLabel, getCommandIconKey, INPUT_COMPOSER_POINTER_POLICY, isExtensionQueueCommand, LONG_TEXT_ATTACHMENT_THRESHOLD } from './InputBox';
+import { ACCESS_OPTIONS, getSessionApprovalLabel } from './security/SecurityAccessMenu';
 import type { AttachmentInput } from '@/src/rpc/types';
 
 describe('输入器命中区与提交状态', () => {
@@ -30,6 +31,19 @@ describe('输入器命中区与提交状态', () => {
 		expect(isExtensionQueueCommand('说明当前变更', commands)).toBe(false);
 	});
 
+	it('超长粘贴文本转为文本附件：chip 只保留前缀预览，完整文本随附件发送', () => {
+		const longText = '修复方案\n' + 'x'.repeat(LONG_TEXT_ATTACHMENT_THRESHOLD);
+		const attachment = createLongTextAttachment(longText);
+		expect(attachment).not.toBeNull();
+		expect(attachment!.kind).toBe('text');
+		expect(attachment!.text).toBe(longText);
+		expect(attachment!.name.startsWith('文本：')).toBe(true);
+		expect(attachment!.name.endsWith('…')).toBe(true);
+		expect(attachment!.name.length).toBeLessThan(40);
+		// 低于阈值不转附件，保持原有编辑器粘贴行为。
+		expect(createLongTextAttachment('x'.repeat(LONG_TEXT_ATTACHMENT_THRESHOLD - 1))).toBeNull();
+	});
+
 	it('选中命令后只把参数存入输入框，发送时还原 slash prompt', () => {
 		expect(buildCommandPrompt('goal', '修复输入框')).toBe('/goal 修复输入框');
 		expect(buildCommandPrompt('goal', '   ')).toBe('/goal');
@@ -47,5 +61,13 @@ describe('输入器命中区与提交状态', () => {
 		expect(getCommandIconKey('skill:frontend', 'skill')).toBe('skill');
 		expect(getCommandIconKey('custom', 'prompt')).toBe('prompt');
 		expect(getCommandIconKey('custom', 'extension')).toBe('extension');
+	});
+
+	it('审批入口只展示两种真实权限，并为触发器提供短名称', () => {
+		expect(ACCESS_OPTIONS.map((option) => option.value)).toEqual(['per_request', 'full_access']);
+		expect(ACCESS_OPTIONS.map((option) => option.label)).toEqual(['请求批准', '完全访问权限']);
+		expect(ACCESS_OPTIONS.every((option) => option.description.length > 0)).toBe(true);
+		expect(getSessionApprovalLabel('per_request')).toBe('请求批准');
+		expect(getSessionApprovalLabel('full_access')).toBe('完全访问');
 	});
 });

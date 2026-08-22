@@ -1,7 +1,7 @@
 /** 目标标题栏账户入口：沿用平台账户 action，独立收口头像与菜单视觉。 */
 import { useEffect, useState } from 'react';
 import { invoke } from '@tauri-apps/api/core';
-import { ChevronDown, Coins, ExternalLink, LogOut, RefreshCw, Settings2, UserRound } from 'lucide-react';
+import { ArrowClockwise, ArrowSquareOut, CaretDown, Coins, SignOut, SlidersHorizontal, UserCircle } from '@phosphor-icons/react';
 import { useSessionStore } from '@/src/store/session';
 import { DEPLOYMENT } from '@/src/lib/config';
 import { Button } from '@/src/components/ui/button';
@@ -28,12 +28,12 @@ export function TargetUserMenu() {
 	useEffect(() => setAvatarFailed(false), [account?.platformUrl, account?.user.avatarUrl]);
 	const avatar = (large = false) => <span className={`${styles.avatar} ${large ? styles.large : ''}`}>{avatarUrl ? <img src={avatarUrl} alt={`${name}的头像`} onError={() => setAvatarFailed(true)} /> : initials(name)}</span>;
 	const openWeb = async () => { if (DEPLOYMENT.webBaseUrl) await invoke('open_platform_web', { platformUrl: DEPLOYMENT.webBaseUrl }); };
-	return <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className={`${styles.trigger} focus-visible:outline-none focus-visible:ring-0`} aria-label={`账户菜单，平台${connectionLabel}`}><span className={styles.avatarWithStatus}>{account ? avatar() : <span className={styles.avatar}><UserRound size={14} /></span>}<Hint content={`平台 · ${connectionLabel}`}><span className={`${styles.statusDot} ${isConnected ? styles.statusReady : styles.statusOffline}`} aria-label={`平台${connectionLabel}`} /></Hint></span><ChevronDown size={12} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className={styles.content}>
-		<div className={styles.identityHeader}><div className={styles.identity}>{avatar(true)}<span><b>{name}</b><small>{account?.user.username ?? '正在读取账户信息…'}</small></span></div><Hint content="刷新：同步平台模型配置与账户状态"><Button variant="ghost" size="icon-sm" className={styles.refreshButton} onClick={() => void manualRefresh()} disabled={platformConnection === 'checking'} aria-label="刷新模型配置与账户状态"><RefreshCw className={platformConnection === 'checking' ? 'animate-spin' : undefined} /></Button></Hint></div>
-		<div className={styles.credits}><Coins size={14} /><span>积分</span><b>{account?.creditBalance ?? '—'}</b></div>
+	return <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className={`${styles.trigger} focus-visible:outline-none focus-visible:ring-0`} aria-label={`账户菜单，平台${connectionLabel}`}><span className={styles.avatarWithStatus}>{account ? avatar() : <span className={styles.avatar}><UserCircle weight="regular" size={15} /></span>}<Hint content={`平台 · ${connectionLabel}`}><span className={`${styles.statusDot} ${isConnected ? styles.statusReady : styles.statusOffline}`} aria-label={`平台${connectionLabel}`} /></Hint></span><CaretDown weight="bold" size={13} /></Button></DropdownMenuTrigger><DropdownMenuContent align="end" className={styles.content}>
+		<div className={styles.identityHeader}><div className={styles.identity}>{avatar(true)}<span><span className={styles.identityName}>{name}</span><small>{account?.user.username ?? '正在读取账户信息…'}</small></span></div><Hint content="刷新：同步平台模型配置与账户状态"><Button variant="ghost" size="icon-sm" className={styles.refreshButton} onClick={() => void manualRefresh()} disabled={platformConnection === 'checking'} aria-label="刷新模型配置与账户状态"><ArrowClockwise weight="regular" className={platformConnection === 'checking' ? 'animate-spin' : undefined} /></Button></Hint></div>
+		<div className={styles.credits}><Coins weight="regular" size={15} /><span>积分</span><span className={styles.creditsValue}>{account?.creditBalance ?? '—'}</span></div>
 		<DropdownMenuSeparator />
-		<DropdownMenuItem onSelect={() => useSettingsDialogStore.getState().show('basic')}><Settings2 />设置</DropdownMenuItem>
+		<DropdownMenuItem onSelect={() => useSettingsDialogStore.getState().show('basic')}><SlidersHorizontal weight="regular" />设置</DropdownMenuItem>
 		<DropdownMenuSeparator />
-		<DropdownMenuItem onSelect={() => void openWeb()} disabled={!DEPLOYMENT.webBaseUrl}><ExternalLink />前往 GitPilot Web</DropdownMenuItem><DropdownMenuItem onSelect={() => void logout()}><LogOut />退出登录</DropdownMenuItem>
+		<DropdownMenuItem onSelect={() => void openWeb()} disabled={!DEPLOYMENT.webBaseUrl}><ArrowSquareOut weight="regular" />前往 GitPilot Web</DropdownMenuItem><DropdownMenuItem onSelect={() => void logout()}><SignOut weight="regular" />退出登录</DropdownMenuItem>
 	</DropdownMenuContent></DropdownMenu>;
 }

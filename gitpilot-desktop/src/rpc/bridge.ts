@@ -10,6 +10,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { createDemoSnapshot } from '@/src/design/design-types';
+import type { CanvasDesignDocument } from '@/src/design/canvas-types';
 import type {
 	AgentSessionEvent,
 	AttachmentInput,
@@ -23,11 +24,16 @@ import type {
 	DesignRpcSnapshot,
 	DesignStreamLine,
 	CodeProjectFileEntry,
+	RpcGitEvent,
+	GitRepositoryState,
 	RpcSessionState,
 	RpcStreamLine,
 	ThinkingLevel,
 	ManagedMcpServer,
 	McpServerDefinition,
+	ApprovalDecision,
+	SecurityPolicy,
+	SessionApprovalMode,
 } from './types';
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -41,12 +47,14 @@ const DEFAULT_TIMEOUT_MS = 30_000;
 
 type EventCb = (e: AgentSessionEvent) => void;
 type DesignEventCb = (e: DesignStreamLine) => void;
+type GitEventCb = (e: RpcGitEvent) => void;
 type ExtensionUICb = (req: RpcExtensionUIRequest) => void;
 type ErrorCb = (msg: string) => void;
 type LifecycleCb = () => void;
 
 const eventCbs = new Set<EventCb>();
 const designEventCbs = new Set<DesignEventCb>();
+const gitEventCbs = new Set<GitEventCb>();
 const extUICbs = new Set<ExtensionUICb>();
 const errorCbs = new Set<ErrorCb>();
 const readyCbs = new Set<LifecycleCb>();
@@ -111,6 +119,11 @@ function dispatchLine(line: RpcStreamLine): void {
 	// 将 Design 的 message/tool/settled 误认为当前 Code 会话的执行事件。
 	if (line.type.startsWith('design_')) {
 		designEventCbs.forEach((cb) => cb(line as unknown as DesignStreamLine));
+		return;
+	}
+	// Git 面板事件同样独立分流，不进入 Code 会话 reducer（与 design_ 前缀同模式）。
+	if (line.type.startsWith('git_')) {
+		gitEventCbs.forEach((cb) => cb(line as unknown as RpcGitEvent));
 		return;
 	}
 	// agent 事件流
@@ -192,6 +205,22 @@ export const rpc = {
 	abort: (clearQueue = false) => send({ type: 'abort', clearQueue }),
 	prepareAttachments: (items: AttachmentInput[]) => send({ type: 'prepare_attachments', items }),
 	codeFileList: () => send({ type: 'code_file_list' }),
+	// Git 面板：只读命令默认超时；远程同步（fetch/pull/push）放宽到 150s。
+	gitGetState: () => send({ type: 'git_get_state' }),
+	gitGetDiff: (scope: 'worktree' | 'staged', path: string) => send({ type: 'git_get_diff', scope, path }),
+	gitListBranches: () => send({ type: 'git_list_branches' }),
+	gitStagePaths: (paths: string[]) => send({ type: 'git_stage_paths', paths }),
+	gitUnstagePaths: (paths: string[]) => send({ type: 'git_unstage_paths', paths }),
+	gitUntrackPaths: (paths: string[]) => send({ type: 'git_untrack_paths', paths }),
+	gitCommit: (message: string, expectedVersion?: number) => send({ type: 'git_commit', message, expectedVersion }),
+	// 提交信息生成走一次性模型会话，给本地模型冷启动留足时间。
+	gitSuggestCommitMessage: () => send({ type: 'git_suggest_commit_message' }, 120_000),
+	gitCreateBranch: (name: string, switchTo = false) => send({ type: 'git_create_branch', name, switchTo }),
+	gitSwitchBranch: (name: string, expectedVersion?: number) => send({ type: 'git_switch_branch', name, expectedVersion }),
+	gitFetch: () => send({ type: 'git_fetch' }, 150_000),
+	gitPullFfOnly: (expectedVersion?: number) => send({ type: 'git_pull_ff_only', expectedVersion }, 150_000),
+	gitPush: (payload: { expectedVersion?: number; setUpstream?: boolean }) => send({ type: 'git_push', ...payload }, 150_000),
+	gitCancelOperation: (operationId: string) => send({ type: 'git_cancel_operation', operationId }),
 	newWorkSession: (taskId: string, workspacePath?: string) => send({ type: 'new_work_session', taskId, workspacePath }),
 	// work_prompt 为受理式协议：sidecar 立即返回 requestId，最终文本通过
 	// work_complete / work_error 事件流推送，响应本身只需默认超时。
@@ -209,7 +238,7 @@ export const rpc = {
 	workItemDetail: (workItemId: number) => send({ type: 'work_item_detail', workItemId }),
 	designOpen: (projectPath: string) => send({ type: 'design_open', projectPath }),
 	designSyncMessages: (projectPath: string, designId: string, messages: DesignRpcMessage[]) => send({ type: 'design_sync_messages', projectPath, designId, messages }),
-	designSaveGuidelines: (projectPath: string, designId: string, guidelines: DesignProjectGuidelines) => send({ type: 'design_save_guidelines', projectPath, designId, guidelines }),
+	designSaveGuidelines: (projectPath: string, designId: string, guidelines: DesignProjectGuidelines, canvas?: CanvasDesignDocument) => send({ type: 'design_save_guidelines', projectPath, designId, guidelines, ...(canvas ? { canvas } : {}) }),
 	designRenamePage: (payload: { projectPath: string; designId: string; pageId: string; name: string; baseRevisionId: string }) => send({ type: 'design_rename_page', ...payload }),
 	designCreate: (projectPath: string, name?: string) => send({ type: 'design_create', projectPath, name }),
 	designGetSnapshot: (projectPath: string, designId: string) => send({ type: 'design_get_snapshot', projectPath, designId }),
@@ -218,6 +247,7 @@ export const rpc = {
 	designClarificationResponse: (payload: { projectPath: string; designId: string; clarificationId: string; answer: string }) => send({ type: 'design_clarification_response', ...payload }),
 	designFollowUp: (projectPath: string, designId: string, message: string) => send({ type: 'design_follow_up', projectPath, designId, message }),
 	designAbort: (projectPath: string, designId: string) => send({ type: 'design_abort', projectPath, designId }),
+	designRecoverDraft: (payload: { projectPath: string; designId: string; runId: string; action: 'keep' | 'discard' }) => send({ type: 'design_recover_draft', ...payload }),
 	designApplyPatch: (payload: { projectPath: string; designId: string; pageId: string; baseRevisionId: string; patch: Record<string, unknown> }) => send({ type: 'design_apply_patch', ...payload }),
 	designApprovalResponse: (projectPath: string, designId: string, approvalId: string, approved: boolean) => send({ type: 'design_approval_response', projectPath, designId, approvalId, approved }),
 	// Design 生成需要等待模型返回完整的三文件结构化结果，给本地模型和首次冷启动留出足够时间。
@@ -225,7 +255,7 @@ export const rpc = {
 	designPreview: (projectPath: string, designId: string, pageId: string, revisionId?: string) => send({ type: 'design_preview', projectPath, designId, pageId, revisionId }),
 	designCheck: (projectPath: string, designId: string, pageId: string, revisionId?: string) => send({ type: 'design_check', projectPath, designId, pageId, revisionId }),
 	designRevert: (projectPath: string, designId: string, revisionId: string) => send({ type: 'design_revert', projectPath, designId, revisionId }),
-	designUpload: (payload: { projectPath: string; designId: string; revisionId: string; platformProjectId: number; title?: string; summary?: string }) => send({ type: 'design_upload', ...payload }, 90_000),
+	designUpload: (payload: { projectPath: string; designId: string; revisionId: string; platformProjectId: number; title?: string; summary?: string; previewPng?: string }) => send({ type: 'design_upload', ...payload }, 90_000),
 	designExport: (projectPath: string, designId: string, outputPath?: string) => send({ type: 'design_export', projectPath, designId, outputPath }),
 	mcpList: () => send({ type: 'mcp_list' }),
 	mcpSaveServer: (name: string, definition: McpServerDefinition, modes: Array<'code' | 'work' | 'design'>, previousName?: string) => send({ type: 'mcp_save_server', name, definition, modes, previousName }),
@@ -265,6 +295,10 @@ export const rpc = {
 	/** 查询当前账号负责的工作项，供输入框“工作项”页签展示。 */
 	getPlatformWorkItems: () => send({ type: 'get_platform_work_items' }),
 	logout: () => send({ type: 'logout' }),
+	approvalResponse: (approvalId: string, decision: ApprovalDecision) => send({ type: 'approval_response', approvalId, decision }),
+	getSecurityPolicy: () => send({ type: 'get_security_policy' }),
+	setSecurityPolicy: (policy: Partial<SecurityPolicy>) => send({ type: 'set_security_policy', policy }),
+	setSessionApprovalMode: (mode: SessionApprovalMode) => send({ type: 'set_session_approval_mode', mode }),
 	respondValue: (id: string, value: string) => send({ type: 'extension_ui_response', id, value }),
 	respondConfirmed: (id: string, confirmed: boolean) => send({ type: 'extension_ui_response', id, confirmed }),
 	respondCancelled: (id: string) => send({ type: 'extension_ui_response', id, cancelled: true }),
@@ -281,6 +315,10 @@ export function onEvent(cb: EventCb): () => void {
 export function onDesignEvent(cb: DesignEventCb): () => void {
 	designEventCbs.add(cb);
 	return () => designEventCbs.delete(cb);
+}
+export function onGitEvent(cb: GitEventCb): () => void {
+	gitEventCbs.add(cb);
+	return () => gitEventCbs.delete(cb);
 }
 export function onExtensionUI(cb: ExtensionUICb): () => void {
 	extUICbs.add(cb);
@@ -533,6 +571,45 @@ function mockResponseFor(cmd: RpcCommand & { id: string }): RpcResponse {
 			];
 			return { id, type: 'response', command: 'code_file_list', success: true, data: { rootPath: 'mock-project', entries, truncated: false } };
 		}
+		case 'git_get_state': {
+			// 浏览器预览的 Git 面板夹具：一个带未暂存/已暂存/未跟踪文件的 mock 仓库。
+			const state: GitRepositoryState = {
+				repositoryId: 'mock-repo',
+				repositoryVersion: 1,
+				branch: 'main',
+				detached: false,
+				upstream: 'origin/main',
+				ahead: 1,
+				behind: 0,
+				files: [
+					{ path: 'src/App.tsx', staged: null, worktree: 'M', untracked: false, conflicted: false, stagedCounts: null, worktreeCounts: { added: 12, removed: 4 } },
+					{ path: 'src/feature.ts', staged: 'A', worktree: null, untracked: false, conflicted: false, stagedCounts: { added: 36, removed: 0 }, worktreeCounts: null },
+					{ path: 'notes.md', staged: null, worktree: null, untracked: true, conflicted: false, stagedCounts: null, worktreeCounts: null },
+				],
+			};
+			return { id, type: 'response', command: 'git_get_state', success: true, data: state };
+		}
+		case 'git_get_diff':
+			return { id, type: 'response', command: 'git_get_diff', success: true, data: { path: cmd.path, scope: cmd.scope, diff: '@@ -1,2 +1,2 @@\n line1\n-old\n+new\n', truncated: false, binary: false } };
+		case 'git_suggest_commit_message':
+			return { id, type: 'response', command: 'git_suggest_commit_message', success: true, data: { message: 'feat(mock): 新增导出接口' } };
+		case 'git_list_branches':
+			return { id, type: 'response', command: 'git_list_branches', success: true, data: { branches: [
+				{ name: 'main', kind: 'local', current: true, upstream: 'origin/main' },
+				{ name: 'feature/mock', kind: 'local', current: false, upstream: null },
+				{ name: 'origin/main', kind: 'remote', current: false, upstream: null },
+			] } };
+		case 'git_stage_paths':
+		case 'git_unstage_paths':
+		case 'git_create_branch':
+		case 'git_switch_branch':
+		case 'git_fetch':
+		case 'git_pull_ff_only':
+		case 'git_push':
+			// 写操作在预览模式下返回未变化的 mock 状态，仅保证界面可联调。
+			return { id, type: 'response', command: cmd.type, success: true, data: { repositoryVersion: 1, state: {
+				repositoryId: 'mock-repo', repositoryVersion: 1, branch: 'main', detached: false, upstream: 'origin/main', ahead: 1, behind: 0, files: [],
+			} } };
 		case 'work_prompt': {
 			// 受理式协议的 mock：立即返回 requestId，再通过事件流模拟一次完整回合，
 			// 保持浏览器预览下 Work 对话可用（delta 流式 + complete 收尾）。

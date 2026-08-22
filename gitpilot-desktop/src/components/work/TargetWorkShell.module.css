@@ -2,24 +2,24 @@
 .shell { display: flex; flex-direction: column; overflow: hidden; }
 .loading { display: flex; align-items: center; justify-content: center; gap: 8px; }
 .createTask { display: flex; gap: 6px; margin: 4px 2px 8px; padding: 6px; border: 1px solid var(--gp-border); border-radius: 8px; background: var(--gp-surface-raised); }
-.createTask input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--gp-text); font: calc(12px * var(--desktop-font-scale)) var(--font-sans); }
+.createTask input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--gp-text); font: var(--text-xs) var(--font-sans); }
 .conversation { position: relative; display: flex; min-width: 0; min-height: 0; height: 100%; flex-direction: column; overflow: hidden; background: radial-gradient(circle at 50% -18%, var(--gp-accent-soft), transparent 42%), var(--gp-panel-deep); background-size: auto; }
 .message { max-width: 100%; }
 .streaming { display: flex; align-items: flex-start; gap: 8px; color: var(--gp-text-secondary); }
 .sources { display: grid; gap: 6px; margin-top: 12px; }
 .sources a { display: flex; flex-direction: column; gap: 3px; border: 1px solid var(--gp-border); border-left: 2px solid var(--gp-accent); border-radius: 6px; background: var(--gp-overlay); padding: 8px 9px; color: var(--gp-text-secondary); text-decoration: none; }
 .sources a:hover { border-color: var(--gp-accent); background: var(--gp-accent-soft); }
-.sources strong { color: var(--gp-accent); font-size: calc(11px * var(--desktop-font-scale)); }
-.sources span { color: var(--gp-text-muted); font-size: calc(11px * var(--desktop-font-scale)); line-height: 1.45; }
+.sourceTitle { color: var(--gp-accent); font-size: var(--text-xs); }
+.sources span { color: var(--gp-text-muted); font-size: var(--text-xs); line-height: 1.45; }
 .artifactActions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 8px; }
-.artifactActions button { height: 25px; color: var(--gp-text-muted); font-size: calc(11px * var(--desktop-font-scale)); }
+.artifactActions button { height: 25px; color: var(--gp-text-muted); font-size: var(--text-xs); }
 .artifactActions button:hover { color: var(--gp-accent); }
 /* Work 使用原生 textarea，但聚焦反馈应由外层 composer 统一承载，避免出现第二层内框。 */
 .workEditor { resize: none; }
 .workEditor:focus, .workEditor:focus-visible { border: 0; outline: none; box-shadow: none; background: transparent; }
 .artifactTabs { display: flex; min-height: 0; flex: 1; flex-direction: column; padding: 10px 9px 12px; }
 .artifactTabs > div:first-child { width: 100%; }
-.artifactTabs button { flex: 1; font-size: calc(11px * var(--desktop-font-scale)); }
+.artifactTabs button { flex: 1; font-size: var(--text-xs); }
 .artifactContent { min-height: 0; flex: 1; margin-top: 10px; }
 .artifactContent textarea { box-sizing: border-box; width: 100%; height: 100%; min-height: 220px; resize: none; border: 1px solid var(--gp-border); border-radius: 7px; outline: 0; background: var(--gp-code-surface); padding: 10px; color: var(--gp-text); font: calc(12px * var(--desktop-font-scale))/1.65 var(--font-sans); }
 
@@ -34,7 +34,7 @@
 .fileTabScroller:hover::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--gp-border-strong) 68%, transparent); }
 .fileTabScroller:hover::-webkit-scrollbar-thumb:hover { background: var(--gp-text-muted); }
 .fileTabActions { display: flex; flex: 0 0 37px; align-items: end; justify-content: flex-end; border-left: 1px solid var(--gp-border); background: var(--gp-panel-deep); padding: 0 5px 0 4px; }
-.fileTab { display: inline-flex; min-width: max-content; height: 28px; flex: 0 0 auto; align-items: center; gap: 5px; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; background: transparent; padding: 0 6px 0 8px; color: var(--gp-text-muted); font: calc(10px * var(--desktop-font-scale)) var(--font-sans); white-space: nowrap; cursor: pointer; }
+.fileTab { display: inline-flex; min-width: max-content; height: 28px; flex: 0 0 auto; align-items: center; gap: 5px; border: 1px solid transparent; border-bottom: 0; border-radius: 6px 6px 0 0; background: transparent; padding: 0 6px 0 8px; color: var(--gp-text-muted); font: var(--text-xs) var(--font-sans); white-space: nowrap; cursor: pointer; }
 .fileTab > svg { width: 13px; height: 13px; flex: 0 0 auto; color: var(--gp-accent); }
 .fileTab > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .fileTab:hover { background: var(--gp-surface-hover); color: var(--gp-text-secondary); }
@@ -60,8 +60,8 @@
 .fileIcon_png, .fileIcon_jpg, .fileIcon_jpeg, .fileIcon_gif, .fileIcon_svg, .fileIcon_webp, .fileIcon_ico { border-color: color-mix(in srgb, #db2777 35%, var(--gp-border)); background: color-mix(in srgb, #ec4899 12%, var(--gp-surface)); color: #db2777; }
 .fileIcon_zip, .fileIcon_tar, .fileIcon_gz, .fileIcon_7z, .fileIcon_rar { border-color: color-mix(in srgb, #7c3aed 35%, var(--gp-border)); background: color-mix(in srgb, #8b5cf6 12%, var(--gp-surface)); color: #7c3aed; }
 .fileBody { display: grid; min-width: 0; gap: 3px; }
-.fileName { overflow: hidden; color: var(--gp-text); font-size: calc(11px * var(--desktop-font-scale)); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.fileMeta { display: flex; min-width: 0; align-items: center; gap: 6px; overflow: hidden; color: var(--gp-text-muted); font-family: var(--font-sans); font-size: calc(9px * var(--desktop-font-scale)); white-space: nowrap; }
+.fileName { overflow: hidden; color: var(--gp-text); font-size: var(--text-xs); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.fileMeta { display: flex; min-width: 0; align-items: center; gap: 6px; overflow: hidden; color: var(--gp-text-muted); font-family: var(--font-sans); font-size: var(--text-xs); white-space: nowrap; }
 .fileMeta > span { overflow: hidden; text-overflow: ellipsis; }
 .fileMeta > span + span::before { margin-right: 6px; color: var(--gp-border-strong); content: '•'; }
 .fileStatus { color: var(--gp-status-success); }
@@ -72,71 +72,95 @@
 .deleteFileButton:hover { color: var(--gp-danger) !important; }
 .fileEmpty { display: flex; min-height: 150px; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px 16px; color: var(--gp-text-muted); text-align: center; }
 .fileEmpty svg { color: var(--gp-accent); }
-.fileEmpty span { color: var(--gp-text-secondary); font-size: calc(11px * var(--desktop-font-scale)); font-weight: 600; }
-.fileEmpty small { max-width: 220px; color: var(--gp-text-muted); font-size: calc(10px * var(--desktop-font-scale)); line-height: 1.5; }
+.fileEmpty span { color: var(--gp-text-secondary); font-size: var(--text-xs); font-weight: 400; }
+.fileEmpty small { max-width: 220px; color: var(--gp-text-muted); font-size: var(--text-xs); line-height: 1.5; }
 
 /* ======================== 工作项协同浏览面板 ======================== */
 /* 布局骨架：面板整体为纵向 flex，滚动区独立，列表行紧凑双行结构适配窄侧栏。 */
-.collabRoot { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; }
+.collabRoot { display: flex; min-width: 0; min-height: 0; flex: 1; flex-direction: column; overflow: hidden; font-family: var(--font-sans); }
 .collabScroll { min-height: 0; flex: 1; padding: 7px 7px 12px; }
 .collabToolbar { display: flex; min-width: 0; flex: 0 0 auto; align-items: center; gap: 5px; padding: 8px 8px 5px; }
-.collabProjectTrigger { max-width: 116px; min-width: 0; overflow: hidden; justify-content: flex-start; text-overflow: ellipsis; white-space: nowrap; font-size: calc(10px * var(--desktop-font-scale)); }
+.collabProjectTrigger { max-width: 116px; min-width: 0; overflow: hidden; justify-content: flex-start; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-xs); }
 .collabSearch { display: flex; min-width: 0; flex: 1; height: 29px; align-items: center; gap: 6px; border: 1px solid var(--gp-border); border-radius: 7px; background: var(--gp-panel-deep); padding: 0 7px; color: var(--gp-text-muted); }
-.collabSearch input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--gp-text); font: calc(11px * var(--desktop-font-scale))/1.4 var(--font-sans); }
+.collabSearch input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--gp-text); font: var(--text-xs)/1.4 var(--font-sans); }
 .collabSearch input::placeholder { color: var(--gp-text-dim); }
 .collabSearchClear { display: inline-grid; width: 16px; height: 16px; place-items: center; border: 0; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; }
 .collabSearchClear:hover { color: var(--gp-danger); }
-.collabChips { display: flex; min-width: 0; flex: 0 0 auto; flex-wrap: wrap; gap: 3px; padding: 2px 8px; }
-.collabChip { display: inline-flex; height: 20px; min-width: max-content; align-items: center; gap: 3px; border: 1px solid var(--gp-border); border-radius: 999px; background: transparent; padding: 0 8px; color: var(--gp-text-muted); font: calc(9px * var(--desktop-font-scale)) var(--font-sans); cursor: pointer; }
-.collabChip:hover { border-color: var(--gp-border-strong); color: var(--gp-text-secondary); }
-.collabChipActive, .collabChipActive:hover { border-color: color-mix(in srgb, var(--gp-accent) 42%, var(--gp-border)); background: var(--gp-accent-soft); color: var(--gp-accent); }
-.collabChip svg { width: 10px; height: 10px; }
-.collabListHeader { display: flex; min-width: 0; flex: 0 0 auto; align-items: center; gap: 5px; padding: 5px 9px; color: var(--gp-text-muted); font: calc(9px * var(--desktop-font-scale)) var(--font-sans); }
-.collabError { margin: 4px 9px; border: 1px solid color-mix(in srgb, var(--gp-danger) 40%, var(--gp-border)); border-radius: 6px; background: color-mix(in srgb, var(--gp-danger) 8%, var(--gp-surface)); padding: 6px 8px; color: var(--gp-danger); font: calc(10px * var(--desktop-font-scale))/1.5 var(--font-sans); }
+/* 筛选 chips 去边框：默认纯文字弱化色，悬停给软底，选中用主题色软底胶囊表达。 */
+.collabChips { display: flex; min-width: 0; flex: 0 0 auto; flex-wrap: wrap; gap: 2px; padding: 1px 8px; }
+.collabChip { display: inline-flex; height: 22px; min-width: max-content; align-items: center; gap: 4px; border: 0; border-radius: 6px; background: transparent; padding: 0 8px; color: var(--gp-text-muted); font: var(--text-xs) var(--font-sans); cursor: pointer; transition: background-color 120ms ease, color 120ms ease; }
+.collabChip:hover { background: var(--gp-surface-hover); color: var(--gp-text-secondary); }
+.collabChipActive, .collabChipActive:hover { background: var(--gp-accent-soft); color: var(--gp-accent); }
+.collabChip svg { width: 11px; height: 11px; }
+.collabListHeader { display: flex; min-width: 0; flex: 0 0 auto; align-items: center; gap: 5px; padding: 5px 9px; color: var(--gp-text-muted); font: var(--text-xs) var(--font-sans); }
+.collabError { margin: 4px 9px; border: 1px solid color-mix(in srgb, var(--gp-danger) 40%, var(--gp-border)); border-radius: 6px; background: color-mix(in srgb, var(--gp-danger) 8%, var(--gp-surface)); padding: 6px 8px; color: var(--gp-danger); font: var(--text-xs)/1.5 var(--font-sans); }
 .collabList { display: grid; min-width: 0; gap: 3px; }
 .collabItem { display: grid; width: 100%; min-width: 0; gap: 3px; border: 1px solid transparent; border-left: 2px solid transparent; border-radius: 7px; background: transparent; padding: 5px 6px 5px 4px; color: inherit; text-align: left; cursor: pointer; }
 .collabItem:hover { border-color: var(--gp-border); background: var(--gp-surface-hover); }
 .collabItem:focus-visible { border-color: var(--gp-border-strong); border-left-color: var(--gp-accent); outline: none; }
 .collabItemTitle { display: flex; min-width: 0; align-items: center; gap: 5px; }
-.collabItemCode { flex: 0 0 auto; color: var(--gp-text-muted); font: calc(9px * var(--desktop-font-scale)) var(--font-mono); }
-.collabItemType { display: inline-flex; height: 15px; flex: 0 0 auto; align-items: center; border: 1px solid color-mix(in srgb, var(--gp-accent) 28%, var(--gp-border)); border-radius: 4px; background: color-mix(in srgb, var(--gp-accent-soft) 72%, var(--gp-surface)); color: var(--gp-accent); font-size: calc(9px * var(--desktop-font-scale)); padding: 0 4px; }
-.collabItemName { min-width: 0; overflow: hidden; color: var(--gp-text); font-size: calc(11px * var(--desktop-font-scale)); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.collabItemMeta { display: flex; min-width: 0; align-items: center; gap: 6px; overflow: hidden; color: var(--gp-text-muted); font-size: calc(9px * var(--desktop-font-scale)); white-space: nowrap; }
+.collabItemCode { flex: 0 0 auto; color: var(--gp-text-muted); font: var(--text-xs) var(--font-sans); }
+/* 类型标签退化为纯文字：去掉边框与底色，仅用主题色区分需求/任务/缺陷。 */
+.collabItemType { display: inline-flex; flex: 0 0 auto; align-items: center; color: var(--gp-accent); font-size: var(--text-xs); }
+.collabItemName { min-width: 0; overflow: hidden; color: var(--gp-text); font-size: var(--text-xs); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
+.collabItemMeta { display: flex; min-width: 0; align-items: center; gap: 6px; overflow: hidden; color: var(--gp-text-muted); font-size: var(--text-xs); white-space: nowrap; }
 .collabItemMeta > span:not(.collabBadge) { overflow: hidden; text-overflow: ellipsis; }
 .collabItemMeta > span:not(.collabBadge) + span:not(.collabBadge)::before { margin-right: 6px; color: var(--gp-border-strong); content: '•'; }
-.collabBadge { display: inline-flex; height: 16px; flex: 0 0 auto; align-items: center; border-radius: 999px; padding: 0 6px; font-size: calc(9px * var(--desktop-font-scale)); }
+.collabBadge { display: inline-flex; height: 16px; flex: 0 0 auto; align-items: center; border-radius: 999px; padding: 0 6px; font-size: var(--text-xs); }
 .collabBadgeTodo { background: color-mix(in srgb, var(--gp-text-muted) 14%, transparent); color: var(--gp-text-secondary); }
 .collabBadgeDoing { background: color-mix(in srgb, #2563eb 14%, transparent); color: #2563eb; }
 .collabBadgeDone { background: color-mix(in srgb, var(--gp-status-success) 16%, transparent); color: var(--gp-status-success); }
 .collabEmpty { display: flex; min-height: 150px; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 24px 16px; color: var(--gp-text-muted); text-align: center; }
 .collabEmpty svg { color: var(--gp-accent); }
-.collabEmpty span { color: var(--gp-text-secondary); font-size: calc(11px * var(--desktop-font-scale)); font-weight: 600; }
-.collabEmpty small { max-width: 220px; color: var(--gp-text-muted); font-size: calc(10px * var(--desktop-font-scale)); line-height: 1.5; }
-.collabPagination { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 8px; color: var(--gp-text-muted); font-size: calc(10px * var(--desktop-font-scale)); }
+.collabEmpty span { color: var(--gp-text-secondary); font-size: var(--text-xs); font-weight: 400; }
+.collabEmpty small { max-width: 220px; color: var(--gp-text-muted); font-size: var(--text-xs); line-height: 1.5; }
+.collabPagination { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 8px; color: var(--gp-text-muted); font-size: var(--text-xs); }
 /* 覆盖式详情视图 */
 .collabDetail { display: flex; min-width: 0; flex-direction: column; gap: 10px; padding: 4px 3px 8px; }
 .collabDetailToolbar { display: flex; min-width: 0; align-items: center; gap: 7px; }
-.collabDetailCode { min-width: 0; flex: 1; overflow: hidden; color: var(--gp-text-muted); font: calc(10px * var(--desktop-font-scale)) var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
-.collabDetailSend { flex: 0 0 auto; gap: 4px; font-size: calc(10px * var(--desktop-font-scale)); }
-.collabDetailTitle { margin: 0; color: var(--gp-text); font: 600 calc(13px * var(--desktop-font-scale))/1.5 var(--font-sans); }
+.collabDetailCode { min-width: 0; flex: 1; overflow: hidden; color: var(--gp-text-muted); font: var(--text-xs) var(--font-sans); text-overflow: ellipsis; white-space: nowrap; }
+.collabDetailSend { flex: 0 0 auto; gap: 4px; font-size: var(--text-xs); }
+.collabDetailTitle { margin: 0; color: var(--gp-text); font: 400 var(--text-xs)/1.5 var(--font-sans); }
 .collabDetailFields { display: grid; min-width: 0; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px 10px; margin: 0; }
 .collabDetailField { display: flex; min-width: 0; align-items: baseline; gap: 6px; }
-.collabDetailField dt { flex: 0 0 auto; color: var(--gp-text-muted); font-size: calc(9px * var(--desktop-font-scale)); white-space: nowrap; }
-.collabDetailField dd { min-width: 0; overflow: hidden; color: var(--gp-text-secondary); font-size: calc(10px * var(--desktop-font-scale)); text-overflow: ellipsis; white-space: nowrap; }
+.collabDetailField dt { flex: 0 0 auto; color: var(--gp-text-muted); font-size: var(--text-xs); white-space: nowrap; }
+.collabDetailField dd { min-width: 0; overflow: hidden; color: var(--gp-text-secondary); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
 .collabDetailSection { min-width: 0; }
-.collabDetailSection h4 { margin: 0 0 5px; color: var(--gp-text-secondary); font: 600 calc(10px * var(--desktop-font-scale)) var(--font-sans); }
+.collabDetailSection h4 { margin: 0 0 5px; color: var(--gp-text-secondary); font: 400 var(--text-xs) var(--font-sans); }
 .collabMarkdown { min-width: 0; border: 1px solid var(--gp-border); border-radius: 7px; background: var(--gp-overlay); padding: 8px 10px; }
 .collabMarkdown > :first-child { margin-top: 0; }
 .collabMarkdown > :last-child { margin-bottom: 0; }
-.collabMarkdown h1, .collabMarkdown h2, .collabMarkdown h3, .collabMarkdown h4 { margin: 10px 0 6px; color: var(--gp-text); font-size: calc(11px * var(--desktop-font-scale)); }
-.collabMarkdown p { margin: 0 0 6px; color: var(--gp-text-secondary); font-size: calc(10px * var(--desktop-font-scale)); line-height: 1.6; }
-.collabMarkdown li { color: var(--gp-text-secondary); font-size: calc(10px * var(--desktop-font-scale)); line-height: 1.6; }
+.collabMarkdown h1, .collabMarkdown h2, .collabMarkdown h3, .collabMarkdown h4 { margin: 10px 0 6px; color: var(--gp-text); font-size: var(--text-xs); }
+.collabMarkdown p { margin: 0 0 6px; color: var(--gp-text-secondary); font-size: var(--text-xs); line-height: 1.6; }
+.collabMarkdown li { color: var(--gp-text-secondary); font-size: var(--text-xs); line-height: 1.6; }
 .collabMarkdown table { width: 100%; border-collapse: collapse; }
-.collabMarkdown th, .collabMarkdown td { border: 1px solid var(--gp-border); padding: 3px 6px; font-size: calc(10px * var(--desktop-font-scale)); }
+.collabMarkdown th, .collabMarkdown td { border: 1px solid var(--gp-border); padding: 3px 6px; font-size: var(--text-xs); }
 .collabMarkdown pre { overflow-x: auto; border: 1px solid var(--gp-border); border-radius: 6px; background: var(--gp-code-surface); padding: 8px; }
-.collabMarkdown code { font-size: calc(10px * var(--desktop-font-scale)); }
+.collabMarkdown code { font-size: var(--text-xs); }
 /* 输入框的待发送工作项标签 */
-.collabPendingChip { display: flex; min-width: 0; align-items: center; gap: 6px; border: 1px solid color-mix(in srgb, var(--gp-accent) 32%, var(--gp-border)); border-radius: 6px; background: var(--gp-accent-soft); padding: 4px 6px 4px 9px; color: var(--gp-text-secondary); font-size: calc(10px * var(--desktop-font-scale)); }
-.collabPendingChip strong { min-width: 0; overflow: hidden; color: var(--gp-accent); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.collabPendingChip { display: flex; min-width: 0; align-items: center; gap: 6px; border: 1px solid color-mix(in srgb, var(--gp-accent) 32%, var(--gp-border)); border-radius: 6px; background: var(--gp-accent-soft); padding: 4px 6px 4px 9px; color: var(--gp-text-secondary); font-size: var(--text-xs); }
+.collabPendingName { min-width: 0; overflow: hidden; color: var(--gp-accent); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .collabPendingChip button { display: inline-grid; width: 17px; height: 17px; flex: 0 0 17px; place-items: center; border: 0; border-radius: 4px; background: transparent; color: inherit; cursor: pointer; }
 .collabPendingChip button:hover { background: var(--gp-danger); color: var(--primary-foreground); }
+
+/* Work 沿用 Code 的轻量工作台层次：外部留白负责分栏，面板本身用圆角表面承载内容。 */
+:global([data-ui-version='work']) .conversation { border-radius: 16px; background: var(--gp-surface); }
+:global([data-ui-version='work']) .fileTabs { border-bottom: 0; background: var(--gp-surface); }
+:global([data-ui-version='work']) .fileTabActions { border-left: 0; background: transparent; }
+/* 功能页签用选中背景和文字色区分，不再用描边或顶部色带制造分界。 */
+:global([data-ui-version='work']) .fileTab,
+:global([data-ui-version='work']) .fileTab:hover,
+:global([data-ui-version='work']) .fileTab:focus-visible,
+:global([data-ui-version='work']) .fileTabActive,
+:global([data-ui-version='work']) .fileTabActive:hover { border-color: transparent; }
+:global([data-ui-version='work']) .fileTab { height: 30px; gap: 7px; border: 0; border-radius: 7px; padding-right: 9px; padding-left: 9px; font-family: var(--font-sans); }
+:global([data-ui-version='work']) .fileTabActive,
+:global([data-ui-version='work']) .fileTabActive:hover,
+:global([data-ui-version='work']) .fileTabActive:focus-visible { background: var(--gp-selection); color: var(--gp-text); box-shadow: none; }
+/* 文件列表保留 hover/active 的可见反馈，但去除连续横线式外框。 */
+:global([data-ui-version='work']) .fileRow:hover,
+:global([data-ui-version='work']) .fileRow:focus-within { border-color: transparent; box-shadow: none; }
+:global([data-ui-version='work']) .fileRowActive,
+:global([data-ui-version='work']) .fileRowActive:hover,
+:global([data-ui-version='work']) .fileRowActive:focus-within { border-color: transparent; border-left-color: var(--gp-accent); box-shadow: none; }
+:global([data-ui-version='work']) .statusbar { border-top-color: transparent; background: var(--gp-background); }

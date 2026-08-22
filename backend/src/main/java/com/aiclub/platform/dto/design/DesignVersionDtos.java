@@ -14,8 +14,8 @@ public final class DesignVersionDtos {
             String revisionId,
             String name,
             String summary,
-            JsonNode snapshot,
-            String previewHtml
+            JsonNode scene,
+            String previewPng
     ) { }
 
     public record DesignVersionSummary(
@@ -27,10 +27,14 @@ public final class DesignVersionDtos {
             String title,
             String summary,
             String status,
-            int fileCount,
-            long snapshotBytes,
+            int pageCount,
+            int nodeCount,
+            int assetCount,
+            long sceneBytes,
             Long creatorUserId,
-            LocalDateTime createdAt
+            LocalDateTime createdAt,
+            boolean canvasCompatible,
+            String compatibilityMessage
     ) { }
 
     public record DesignVersionDetail(
@@ -42,10 +46,12 @@ public final class DesignVersionDtos {
             String title,
             String summary,
             String status,
-            JsonNode snapshot,
-            String previewHtml,
+            JsonNode scene,
+            String previewImage,
             Long creatorUserId,
-            LocalDateTime createdAt
+            LocalDateTime createdAt,
+            boolean canvasCompatible,
+            String compatibilityMessage
     ) { }
 
     public record DesignVersionList(List<DesignVersionSummary> versions) { }

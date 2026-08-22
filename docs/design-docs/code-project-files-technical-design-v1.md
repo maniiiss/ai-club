@@ -27,8 +27,8 @@ Desktop project-files store
 InputBox ── prepare_attachments ──► PreparedAttachment
 ```
 
-- CLI 扫描当前 `runtimeHost.cwd`，默认忽略 `.git`、`.gitpilot`、`node_modules`、构建产物、虚拟环境和 Python 缓存目录。
-- 扫描跳过符号链接，限制最大深度 12、最大条目 10,000；超过限制通过 `truncated` 提示 Desktop。
+- CLI 扫描当前 `runtimeHost.cwd`，默认忽略 `.git`、`.gitpilot`、`node_modules`、构建产物、虚拟环境和 Python 缓存目录；同时遵循工作区各级 `.gitignore`（支持注释、取反、目录后缀、锚定、`*`/`?`/`**` 与字符类），避免被 gitignore 覆盖的运行时工件（如 `.scan-workspace`）挤占条目上限导致文件树"显示不全"。固定忽略名单不参与 gitignore 取反。
+- 扫描跳过符号链接，限制最大深度 16、最大条目 20,000；超过限制通过 `truncated` 提示 Desktop，文件树页签与 @ 提及面板均展示截断说明。
 - RPC 只传元数据。文件内容只在用户明确添加后由 sidecar 的既有附件预处理链路读取。
 - Desktop 以 `sessionPath` 和 `workspacePath` 双重匹配待处理请求，避免切换任务或项目时串入附件。
 

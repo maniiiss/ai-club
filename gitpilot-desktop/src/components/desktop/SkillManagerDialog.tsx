@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { AlertTriangle, Check, CirclePower, RefreshCw, Search, Sparkles } from 'lucide-react';
+import { ArrowClockwise as RefreshCw, Check, MagnifyingGlass as Search, Power as CirclePower, Sparkle as Sparkles, Warning as AlertTriangle } from '@phosphor-icons/react';
 import { rpc } from '@/src/rpc/bridge';
 import type { ManagedSkill, SkillMode } from '@/src/rpc/types';
 import { Button } from '@/src/components/ui/button';
@@ -48,7 +48,7 @@ function SkillRow({
 			<div className={styles.skillIdentity}>
 				<div className={styles.skillGlyph} aria-hidden="true"><Sparkles size={14} /></div>
 				<div className={styles.skillCopy}>
-					<div className={styles.skillTitleLine}><strong>{skill.name}</strong><span className={`${styles.sourceBadge} ${skill.source === 'builtin' ? styles.sourceBadgeBuiltin : ''}`}>{sourceLabel(skill.source)}</span></div>
+					<div className={styles.skillTitleLine}><span className={styles.skillName}>{skill.name}</span><span className={`${styles.sourceBadge} ${skill.source === 'builtin' ? styles.sourceBadgeBuiltin : ''}`}>{sourceLabel(skill.source)}</span></div>
 					<p>{skill.description}</p>
 					<code title={skill.filePath}>{skill.filePath}</code>
 				</div>

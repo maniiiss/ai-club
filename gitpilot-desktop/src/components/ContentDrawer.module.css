@@ -38,7 +38,7 @@
 	margin: 0 0 4px;
 	color: var(--gp-warm);
 	font-family: var(--font-mono);
-	font-size: calc(10px * var(--desktop-font-scale));
+	font-size: var(--text-xs);
 	letter-spacing: .12em;
 	text-transform: uppercase;
 }
@@ -47,15 +47,15 @@
 	margin: 0;
 	overflow-wrap: anywhere;
 	color: var(--gp-text);
-	font-size: calc(16px * var(--desktop-font-scale));
-	font-weight: 650;
+	font-size: var(--text-xs);
+	font-weight: 400;
 	line-height: 1.35;
 }
 
 .description {
 	margin: 5px 0 0;
 	color: var(--gp-text-muted);
-	font-size: calc(11px * var(--desktop-font-scale));
+	font-size: var(--text-xs);
 	line-height: 1.45;
 }
 
@@ -73,7 +73,7 @@
 
 .markdown {
 	color: var(--gp-text-secondary);
-	font-size: calc(13px * var(--desktop-font-scale));
+	font-size: var(--text-xs);
 	line-height: 1.7;
 }
 

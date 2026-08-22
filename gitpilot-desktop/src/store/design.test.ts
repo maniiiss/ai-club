@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { applyCanvasOperations } from '@/src/design/canvas-document';
 import { createDefaultProjectGuidelines, createDemoSnapshot, DESIGN_TARGETS, DESIGN_VIEWPORT_PRESETS, type DesignPreset } from '@/src/design/design-types';
+import type { CanvasNode } from '@/src/design/canvas-types';
 import { rpc } from '@/src/rpc/bridge';
 import type { DesignAgentEvent, DesignStreamLine } from '@/src/rpc/types';
 import { listDesignProjectHistory, useDesignStore } from './design';
@@ -21,12 +23,12 @@ const requestId = 'request-test';
 function presetFixture(): DesignPreset {
 	const guidelines = createDefaultProjectGuidelines();
 	return {
-		id: 'neutral-modern', title: 'Neutral Modern', description: '测试预设', entryFile: 'index.html', viewports: [{ id: 'desktop', label: 'Desktop', width: 1440, height: 900 }],
+		id: 'neutral-modern', title: 'Neutral Modern', description: '测试预设', viewports: [{ id: 'desktop', label: 'Desktop', width: 1440, height: 900 }],
 		tokens: { colors: { bg: '#ffffff', accent: '#2f6feb' }, typography: { body: 'system-ui' }, spacing: {}, radius: {}, shadows: {} },
 		handoff: { brandDescription: '克制、清晰', componentRules: ['按钮保留焦点状态'], layoutRules: ['保留内容边界'], responsiveRules: ['小屏折叠导航'], agentPromptGuide: ['优先遵循 Token'] },
 		handoffMarkdown: '## 组件规则\n\n- 按钮保留焦点状态',
 		guidelines: { ...guidelines, brand: { name: 'Neutral Modern', tone: '克制、清晰' }, tokens: { ...guidelines.tokens, colors: { bg: '#ffffff', accent: '#2f6feb' }, typography: { body: 'system-ui' } }, components: { button: '按钮保留焦点状态' }, rules: ['保留内容边界', '小屏折叠导航'], updatedAt: new Date().toISOString() },
-		previewHtml: '<main>Neutral Modern</main>', license: 'unknown', warnings: [],
+		license: 'unknown', warnings: [],
 	};
 }
 
@@ -39,11 +41,29 @@ function workspaceSnapshot(path: string, id = `design-${path}`) {
 	return { ...base, document: { ...base.document, id }, context: { projectId: path, projectPath: path, designId: id } };
 }
 
+/** 事务测试使用的非默认场景夹具；产品新建工作区仍然必须保持空白。 */
+function transactionFixtureSnapshot() {
+	const base = createDemoSnapshot();
+	const makeNode = (input: Pick<CanvasNode, 'id' | 'type' | 'name' | 'transform'> & Partial<CanvasNode>): CanvasNode => ({
+		parentId: null, childIds: [], visible: true, locked: false, opacity: 1,
+		layout: { mode: 'absolute', width: input.transform.width, height: input.transform.height, padding: { top: 0, right: 0, bottom: 0, left: 0 }, gap: 0, direction: 'column', align: 'start', justify: 'start' },
+		...input,
+	});
+	const nodes: CanvasNode[] = [
+		makeNode({ id: 'brand', type: 'text', name: '品牌测试层', transform: { x: 32, y: 32, width: 180, height: 40, rotation: 0, scaleX: 1, scaleY: 1 }, text: { text: '测试品牌', fontFamily: 'Inter', fontSize: 20, fontWeight: 500, lineHeight: 28, letterSpacing: 0, color: '#ffffff', align: 'left', verticalAlign: 'top', wrap: 'nowrap' } }),
+		makeNode({ id: 'headline', type: 'text', name: '标题测试层', transform: { x: 80, y: 160, width: 640, height: 120, rotation: 0, scaleX: 1, scaleY: 1 }, text: { text: '默认测试标题', fontFamily: 'Inter', fontSize: 48, fontWeight: 700, lineHeight: 56, letterSpacing: 0, color: '#ffffff', align: 'left', verticalAlign: 'top', wrap: 'wrap' } }),
+		makeNode({ id: 'subline', type: 'text', name: '副标题测试层', transform: { x: 80, y: 300, width: 420, height: 60, rotation: 0, scaleX: 1, scaleY: 1 }, text: { text: '测试说明', fontFamily: 'Inter', fontSize: 18, fontWeight: 400, lineHeight: 28, letterSpacing: 0, color: '#b8c4c4', align: 'left', verticalAlign: 'top', wrap: 'wrap' } }),
+		makeNode({ id: 'decorative-path', type: 'path', name: '路径测试层', transform: { x: 760, y: 120, width: 160, height: 160, rotation: 0, scaleX: 1, scaleY: 1 }, path: { fillRule: 'nonZero', commands: [{ op: 'moveTo', x: 0, y: 0 }, { op: 'lineTo', x: 160, y: 160 }] } }),
+	];
+	const canvas = applyCanvasOperations(base.document.canvas!, nodes.map((node) => ({ op: 'create_node' as const, node, parentId: 'canvas-root' })));
+	return { ...base, document: { ...base.document, version: canvas.revision, canvas } };
+}
+
 function writeWorkspace(path: string, options: { activeFile?: string; activeTab?: 'preview' | 'code'; messages?: unknown[]; queuedPrompts?: Array<{ id: string; text: string }>; isProjectStarted?: boolean; hasWorkspace?: boolean } = {}): void {
 	const snapshot = workspaceSnapshot(path);
 	localStorage.setItem(bucketKey(path), JSON.stringify({
 		activePageId: snapshot.document.entryPageId,
-		activeFile: options.activeFile ?? snapshot.files[0].path,
+		activeFile: options.activeFile ?? '',
 		activeTab: options.activeTab ?? 'preview',
 		target: 'desktop',
 		viewport: { width: 1440, height: 900 },
@@ -55,15 +75,22 @@ function writeWorkspace(path: string, options: { activeFile?: string; activeTab?
 }
 
 function resetStore(): void {
-	const snapshot = { ...createDemoSnapshot(), document: { ...createDemoSnapshot().document, id: designId } };
+	const fixture = transactionFixtureSnapshot();
+	const snapshot = { ...fixture, document: { ...fixture.document, id: designId } };
 	useDesignStore.setState({
 		snapshot,
+		committedScene: structuredClone(snapshot.document.canvas!),
+		draft: null,
+		draftMetadata: null,
+		transient: null,
+		manualQueue: [],
+		isResynchronizing: false,
 		projects: [{ name: 'Design project', path: 'project-test' }],
 		projectPath: 'project-test',
 		activeProjectKey: 'project-test',
 		backgroundRuns: {},
-		activePageId: 'home',
-		activeFile: snapshot.files[0].path,
+		activePageId: snapshot.document.entryPageId,
+		activeFile: '',
 		activeTab: 'preview',
 		target: 'desktop',
 		viewport: { width: DESIGN_TARGETS.desktop.width, height: DESIGN_TARGETS.desktop.height },
@@ -102,12 +129,13 @@ describe('Design Mode snapshot', () => {
 		resetStore();
 		vi.restoreAllMocks();
 	});
-	it('provides a runnable multi-file GitPilot prototype', () => {
+	it('provides a runnable CanvasKit native prototype', () => {
 		const snapshot = createDemoSnapshot();
-		expect(snapshot.document.entryPageId).toBe('home');
-		expect(snapshot.files.map((file) => file.path)).toEqual(['pages/home/index.html', 'pages/home/styles.css', 'pages/home/main.js']);
-		expect(snapshot.files[0].content).toContain('GitPilot');
-		expect(snapshot.files[1].content).toContain('@media');
+		expect(snapshot.document.entryPageId).toBe('canvas');
+		expect(snapshot.files).toEqual([]);
+		expect(snapshot.document.canvas?.pages[0]).toMatchObject({ id: 'canvas', name: '无限画板', isInfinite: true });
+		expect(snapshot.document.canvas?.nodes['canvas-root']).toMatchObject({ type: 'page', childIds: [] });
+		expect(Object.keys(snapshot.document.canvas?.nodes ?? {})).toEqual(['canvas-root']);
 	});
 
 	it('keeps the three target profiles deterministic', () => {
@@ -140,14 +168,36 @@ describe('Design Mode snapshot', () => {
 
 	it('通过 sidecar 修订保存页面重命名并同步当前 bucket', async () => {
 		const current = useDesignStore.getState().snapshot;
-		const nextSnapshot = { ...current, document: { ...current.document, version: current.document.version + 1, pages: current.document.pages.map((page) => page.id === 'home' ? { ...page, name: '登录页' } : page) } };
+		const renamedCanvas = structuredClone(current.document.canvas!);
+		renamedCanvas.pages[0].name = '登录页';
+		const nextSnapshot = { ...current, document: { ...current.document, version: current.document.version + 1, pages: current.document.pages.map((page) => page.id === 'canvas' ? { ...page, name: '登录页' } : page), canvas: renamedCanvas } };
 		const rename = vi.spyOn(rpc, 'designRenamePage').mockResolvedValue({ id: 'rename-page', type: 'response', command: 'design_rename_page', success: true, data: { designId, snapshot: nextSnapshot as never } } as never);
 
-		await useDesignStore.getState().renamePage('home', ' 登录页 ');
+		await useDesignStore.getState().renamePage('canvas', ' 登录页 ');
 
-		expect(rename).toHaveBeenCalledWith({ projectPath: 'project-test', designId, pageId: 'home', name: '登录页', baseRevisionId: current.document.revisions.at(-1)?.id ?? '' });
+		expect(rename).toHaveBeenCalledWith({ projectPath: 'project-test', designId, pageId: 'canvas', name: '登录页', baseRevisionId: current.document.revisions.at(-1)?.id ?? '' });
 		expect(useDesignStore.getState().snapshot.document.pages[0].name).toBe('登录页');
 		expect(JSON.parse(localStorage.getItem(bucketKey('project-test')) ?? '{}')).not.toHaveProperty('snapshot');
+	});
+
+	it('Canvas 本地事务把基准修订写入 patch 正文', async () => {
+		const current = useDesignStore.getState().snapshot;
+		const baseRevisionId = current.document.revisions.at(-1)?.id ?? '';
+		const applyPatch = vi.spyOn(rpc, 'designApplyPatch').mockResolvedValue({
+			id: 'apply-canvas', type: 'response', command: 'design_apply_patch', success: true,
+			data: { snapshot: current as never },
+		} as never);
+
+		await useDesignStore.getState().applyCanvasTransaction({
+			transactionId: 'desktop-update-brand', baseRevision: current.document.canvas!.revision, source: 'user',
+			operations: [{ op: 'update_node', nodeId: 'brand', changes: { visible: false } }],
+			summary: '隐藏品牌层', createdAt: new Date().toISOString(),
+		});
+
+		expect(applyPatch).toHaveBeenCalledWith(expect.objectContaining({
+			baseRevisionId,
+			patch: expect.objectContaining({ baseRevisionId }),
+		}));
 	});
 
 	it('只把已有 Design Workspace 的项目派生为历史，并按最近打开时间排序', () => {
@@ -271,6 +321,18 @@ describe('Design Mode snapshot', () => {
 		expect(bucket).not.toHaveProperty('messages');
 	});
 
+	it('重新进入工作区不恢复上次 Canvas 节点选中态', async () => {
+		useDesignStore.setState({ selectedElementId: 'brand', selectedElementIds: ['brand'] });
+		vi.spyOn(rpc, 'designOpen').mockResolvedValue({
+			id: 'open', type: 'response', command: 'design_open', success: true,
+			data: { designId, snapshot: workspaceSnapshot('project-test'), messages: [] },
+		} as never);
+
+		await useDesignStore.getState().hydrateSnapshot();
+
+		expect(useDesignStore.getState()).toMatchObject({ selectedElementId: null, selectedElementIds: [] });
+	});
+
 	it('重新打开工作区时恢复 sidecar 的审批暂停态，且不把完整 patch 带回前端', async () => {
 		const open = vi.spyOn(rpc, 'designOpen').mockResolvedValue({
 			id: 'open', type: 'response', command: 'design_open', success: true,
@@ -294,6 +356,22 @@ describe('Design Mode snapshot', () => {
 			execution: { status: 'awaiting_approval', phase: 'awaiting_approval', requestId, runId, sequence: 7 },
 		});
 		expect(useDesignStore.getState().pendingApproval?.patch).toBeUndefined();
+	});
+
+	it('重连 active draft 时使用 draftSnapshot 渲染，但 committedScene 仍保持 canonical', async () => {
+		const canonical = workspaceSnapshot('project-test');
+		const draftCanvas = applyCanvasOperations(structuredClone(canonical.document.canvas!), [{ op: 'update_node', nodeId: 'canvas-root', changes: { opacity: 0.8 } }]);
+		const draftSnapshot = { ...canonical, document: { ...canonical.document, version: draftCanvas.revision, canvas: draftCanvas } };
+		vi.spyOn(rpc, 'designOpen').mockResolvedValue({
+			id: 'open-draft', type: 'response', command: 'design_open', success: true,
+			data: { designId, snapshot: canonical, draft: { status: 'active', runId, requestId, baseRevisionId: 'rev-1', draftRevisionId: `draft-${runId}`, operationCount: 1, lastSequence: 4 }, draftSnapshot, execution: { status: 'running', phase: 'applying_patch', requestId, runId, sequence: 4 } },
+		} as never);
+
+		await useDesignStore.getState().hydrateSnapshot();
+
+		expect(useDesignStore.getState().committedScene.nodes['canvas-root'].opacity).toBe(1);
+		expect(useDesignStore.getState().draft?.scene.nodes['canvas-root'].opacity).toBe(0.8);
+		expect(useDesignStore.getState().getRenderScene().nodes['canvas-root'].opacity).toBe(0.8);
 	});
 
 	it('审批或澄清等待期间输入不会创建新的 Design 请求', async () => {
@@ -335,10 +413,9 @@ describe('Design Mode snapshot', () => {
 		expect(useDesignStore.getState().messages.at(-1)).toMatchObject({ kind: 'user', text: '设计一个登录页', status: 'sent' });
 		expect(prompt).toHaveBeenCalledWith(expect.objectContaining({ prompt: '设计一个登录页' }));
 
-		const changedFiles = [useDesignStore.getState().snapshot.files[0]].map((file) => ({ path: file.path, language: file.language, content: file.content ?? '' }));
 		useDesignStore.getState().applyStreamEvent({ type: 'design_plan_updated', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), steps: [{ id: 'design-step-1', text: '搭建页面骨架', state: 'active' }, { id: 'design-step-2', text: '验证响应式布局', state: 'pending' }] });
 		expect(useDesignStore.getState().todos).toEqual([{ id: 'design-step-1', text: '搭建页面骨架', state: 'active' }, { id: 'design-step-2', text: '验证响应式布局', state: 'pending' }]);
-		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 2, emittedAt: Date.now(), operationId: 'plan-patch', revisionId: 'rev-plan', pageId: 'home', summary: '完成页面骨架', changedFiles, removedPaths: [] });
+		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 2, emittedAt: Date.now(), operationId: 'plan-patch', revisionId: 'rev-plan', pageId: 'page-home', summary: '完成页面骨架', transaction: { transactionId: 'plan-patch', baseRevision: useDesignStore.getState().snapshot.document.canvas!.revision, source: 'ai', operations: [], summary: '完成页面骨架', createdAt: new Date().toISOString() }, affectedNodeIds: [] });
 		expect(useDesignStore.getState().todos[0]).toMatchObject({ state: 'active' });
 		const persisted = JSON.parse(localStorage.getItem(bucketKey('project-test')) ?? '{}');
 		expect(persisted).not.toHaveProperty('pendingClarification');
@@ -391,6 +468,15 @@ describe('Design Mode snapshot', () => {
 		expect(useDesignStore.getState()).toMatchObject({ selectedPresetId: 'neutral-modern', pendingPreset: null, snapshot: { guidelines: { brand: { name: 'Neutral Modern' } } } });
 	});
 
+	it('UI bucket 不持久化待应用预设的完整 Canvas scene', async () => {
+		const preset = { ...presetFixture(), scene: transactionFixtureSnapshot().document.canvas };
+		await useDesignStore.getState().applyPreset(preset);
+
+		const bucket = JSON.parse(localStorage.getItem(bucketKey('project-test')) ?? '{}') as { pendingPreset?: Record<string, unknown> };
+		expect(bucket.pendingPreset).toMatchObject({ id: preset.id });
+		expect(bucket.pendingPreset).not.toHaveProperty('scene');
+	});
+
 	it('已有工作区选择预设会立即保存规范并写回项目 bucket', async () => {
 		const current = useDesignStore.getState().snapshot;
 		const preset = presetFixture();
@@ -399,7 +485,7 @@ describe('Design Mode snapshot', () => {
 
 		await useDesignStore.getState().applyPreset(preset);
 
-		expect(rpc.designSaveGuidelines).toHaveBeenCalledWith('project-test', designId, expect.objectContaining({ brand: expect.objectContaining({ name: 'Neutral Modern' }) }));
+		expect(rpc.designSaveGuidelines).toHaveBeenCalledWith('project-test', designId, expect.objectContaining({ brand: expect.objectContaining({ name: 'Neutral Modern' }) }), expect.objectContaining({ schemaVersion: 2 }));
 		expect(useDesignStore.getState()).toMatchObject({ selectedPresetId: 'neutral-modern', pendingPreset: null, snapshot: { guidelines: { tokens: { colors: { accent: '#2f6feb' } } } } });
 		expect(JSON.parse(localStorage.getItem(bucketKey('project-test')) ?? '{}')).toMatchObject({ selectedPresetId: 'neutral-modern' });
 		expect(JSON.parse(localStorage.getItem(bucketKey('project-test')) ?? '{}')).not.toHaveProperty('snapshot');
@@ -497,24 +583,23 @@ describe('Design Mode snapshot', () => {
 		expect(step).not.toHaveProperty('result');
 	});
 
-	it('patch 事件立即更新 snapshot，旧 request 不会重复修改', () => {
+	it('Canvas transaction 事件立即更新场景，重复序号不会重复归约', () => {
 		const current = useDesignStore.getState().snapshot;
-		const files = current.files.map((file) => file.path.endsWith('/styles.css') ? { ...file, content: `${file.content}\n.patch{color:red}` } : file);
-		const changedFiles = files.filter((file) => file.path.endsWith('/styles.css')).map((file) => ({ path: file.path, language: file.language, content: file.content ?? '' }));
-		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), operationId: 'op-1', revisionId: 'rev-2', pageId: 'home', summary: '增加强调色', changedFiles, removedPaths: [] });
-		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 2, emittedAt: Date.now(), operationId: 'op-1-retry', revisionId: 'rev-2', pageId: 'home', summary: '重复修改', changedFiles: [], removedPaths: [] });
-		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId: 'old-request', runId, sequence: 3, emittedAt: Date.now(), operationId: 'op-old', revisionId: 'rev-old', pageId: 'home', summary: '旧任务', changedFiles: [], removedPaths: [] });
+		const canvas = current.document.canvas!;
+		const operation = { op: 'update_node' as const, nodeId: 'subline', changes: { opacity: 0.6 } };
+		const transaction = { transactionId: 'op-1', baseRevision: canvas.revision, source: 'ai' as const, operations: [operation], summary: '增加强调色', createdAt: new Date().toISOString() };
+		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), operationId: 'op-1', revisionId: 'draft-2', pageId: 'page-home', summary: '增加强调色', transaction, affectedNodeIds: ['subline'], isDraft: true });
+		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), operationId: 'op-1', revisionId: 'draft-2', pageId: 'page-home', summary: '重复修改', transaction, affectedNodeIds: ['subline'], isDraft: true });
 		const state = useDesignStore.getState();
-		expect(state.snapshot.files.find((file) => file.path.endsWith('/styles.css'))?.content).toContain('.patch{color:red}');
-		expect(state.snapshot.files.find((file) => file.path.endsWith('/index.html'))?.content).toBe(current.files.find((file) => file.path.endsWith('/index.html'))?.content);
-		expect(state.snapshot.document.version).toBe(current.document.version + 1);
+		expect(state.snapshot.document.canvas?.nodes.subline.opacity).toBe(0.6);
+		expect(state.snapshot.document.canvas?.revision).toBe(canvas.revision + 1);
 	});
 
-	it('Design run 的 draft patch 不新增 revision，收口快照才新增一次 revision', () => {
+	it('Design run 的 draft Canvas transaction 不新增 revision，收口快照才新增一次 revision', () => {
 		const current = useDesignStore.getState().snapshot;
 		const formalRevisionCount = current.document.revisions.length;
-		const changedFiles = [{ ...current.files[0], content: `${current.files[0].content}\n.draft{color:red}` }].map((file) => ({ path: file.path, language: file.language, content: file.content }));
-		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), operationId: 'op-draft', revisionId: 'draft-run-test', pageId: 'home', summary: '实时修改', changedFiles, removedPaths: [], isDraft: true });
+		const transaction = { transactionId: 'op-draft', baseRevision: current.document.canvas!.revision, source: 'ai' as const, operations: [{ op: 'update_node' as const, nodeId: 'subline', changes: { opacity: 0.7 } }], summary: '实时修改', createdAt: new Date().toISOString() };
+		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), operationId: 'op-draft', revisionId: 'draft-run-test', pageId: 'page-home', summary: '实时修改', transaction, affectedNodeIds: ['subline'], isDraft: true });
 		expect(useDesignStore.getState().snapshot.document.revisions).toHaveLength(formalRevisionCount);
 
 		const draft = useDesignStore.getState().snapshot;
@@ -524,37 +609,96 @@ describe('Design Mode snapshot', () => {
 		expect(useDesignStore.getState().snapshot.document.revisions.at(-1)?.id).toBe('rev-run-test');
 	});
 
-	it('patch 事件返回多个页面文件时同步更新右侧页面树', () => {
-		const changedFiles = [
-			{ id: 'qcc-login-index', path: 'pages/qcc-login/index.html', language: 'html' as const, content: '<main />' },
-			{ id: 'qcc-login-css', path: 'pages/qcc-login/styles.css', language: 'css' as const, content: '.login{}' },
-		];
-		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), operationId: 'op-pages', revisionId: 'rev-pages', pageId: 'home', summary: '创建登录页', changedFiles, removedPaths: [] });
-
-		const page = useDesignStore.getState().snapshot.document.pages.find((item) => item.id === 'qcc-login');
-		expect(page).toMatchObject({ name: 'qcc-login', route: '/qcc-login', entryFileId: 'qcc-login-index', fileIds: ['qcc-login-index', 'qcc-login-css'] });
+	it('interrupted settled 保留已接受 draft 并清理 draft 状态', () => {
+		const current = useDesignStore.getState().snapshot;
+		const canvas = current.document.canvas!;
+		const transaction = { transactionId: 'op-interrupted', baseRevision: canvas.revision, source: 'ai' as const, operations: [{ op: 'update_node' as const, nodeId: 'subline', changes: { opacity: 0.5 } }], summary: '停止前已接受的修改', createdAt: new Date().toISOString() };
+		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), operationId: 'op-interrupted', revisionId: 'draft-interrupted', draftRevisionId: 'draft-interrupted', pageId: 'page-home', summary: transaction.summary, transaction, affectedNodeIds: ['subline'], isDraft: true });
+		const draft = useDesignStore.getState().snapshot;
+		const settled = { ...draft, document: { ...draft.document, revisions: [...draft.document.revisions, { id: 'rev-interrupted', prompt: '停止', summary: '停止前已接受的修改', createdAt: new Date().toISOString(), kind: 'interrupted' as const }] } };
+		useDesignStore.getState().applyStreamEvent({ type: 'design_run_settled', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 2, emittedAt: Date.now(), snapshot: settled, reason: 'interrupted' });
+		expect(useDesignStore.getState()).toMatchObject({ draft: null, isGenerating: false, execution: { status: 'stopped' }, snapshot: { document: { revisions: expect.arrayContaining([expect.objectContaining({ id: 'rev-interrupted', kind: 'interrupted' })]) } } });
 	});
 
-	it('patch 增量会移除已删除或已重命名的旧文件路径', () => {
+	it('AI 运行期间结构性手工事务进入队列，并在 settled 后按 FIFO 提交', async () => {
 		const current = useDesignStore.getState().snapshot;
-		const removedPath = current.files.find((file) => file.path.endsWith('/main.js'))?.path;
-		expect(removedPath).toBeTruthy();
-		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), operationId: 'op-remove', revisionId: 'rev-remove', pageId: 'home', summary: '移除旧脚本', changedFiles: [], removedPaths: [removedPath!] });
+		const canvas = current.document.canvas!;
+		useDesignStore.setState({ isGenerating: true, execution: { status: 'running', phase: 'tool', runId, requestId, sequence: 0, thinking: '', steps: [] } });
+		await useDesignStore.getState().applyCanvasTransaction({ transactionId: 'manual-queued', baseRevision: canvas.revision, source: 'user', operations: [{ op: 'update_node', nodeId: 'subline', changes: { opacity: 0.4 } }], summary: '排队手工修改', createdAt: new Date().toISOString() });
+		expect(useDesignStore.getState().manualQueue).toHaveLength(1);
+		expect(useDesignStore.getState().getRenderScene().nodes.subline.opacity).not.toBe(0.4);
+		const settled = { ...current, document: { ...current.document, revisions: [...current.document.revisions, { id: 'rev-settled-queue', prompt: '完成', summary: '完成', createdAt: new Date().toISOString(), kind: 'patch' as const }] } };
+		vi.spyOn(rpc, 'designApplyPatch').mockResolvedValue({ id: 'manual-response', type: 'response', command: 'design_apply_patch', success: true, data: { snapshot: settled } } as never);
+		useDesignStore.getState().applyStreamEvent({ type: 'design_run_settled', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), snapshot: settled, reason: 'completed' });
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(useDesignStore.getState().manualQueue).toHaveLength(0);
+		expect(rpc.designApplyPatch).toHaveBeenCalledWith(expect.objectContaining({ patch: expect.objectContaining({ operationId: 'manual-queued' }) }));
+	});
 
-		expect(useDesignStore.getState().snapshot.files.some((file) => file.path === removedPath)).toBe(false);
-		expect(useDesignStore.getState().snapshot.files.some((file) => file.path.endsWith('/index.html'))).toBe(true);
+	it('interrupted settled 后仍按 FIFO 提交结构性手工事务', async () => {
+		const current = useDesignStore.getState().snapshot;
+		const canvas = current.document.canvas!;
+		useDesignStore.setState({ isGenerating: true, execution: { status: 'running', phase: 'tool', runId, requestId, sequence: 0, thinking: '', steps: [] } });
+		await useDesignStore.getState().applyCanvasTransaction({ transactionId: 'manual-after-interrupt', baseRevision: canvas.revision, source: 'user', operations: [{ op: 'update_node', nodeId: 'subline', changes: { opacity: 0.35 } }], summary: '中断后排队修改', createdAt: new Date().toISOString() });
+		const settled = { ...current, document: { ...current.document, revisions: [...current.document.revisions, { id: 'rev-interrupted-queue', prompt: '停止', summary: '停止', createdAt: new Date().toISOString(), kind: 'interrupted' as const }] } };
+		const applyPatch = vi.spyOn(rpc, 'designApplyPatch').mockResolvedValue({ id: 'manual-interrupted-response', type: 'response', command: 'design_apply_patch', success: true, data: { snapshot: settled } } as never);
+		useDesignStore.getState().applyStreamEvent({ type: 'design_run_settled', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), snapshot: settled, reason: 'interrupted' });
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		expect(applyPatch).toHaveBeenCalledWith(expect.objectContaining({ patch: expect.objectContaining({ operationId: 'manual-after-interrupt' }) }));
+		expect(useDesignStore.getState().manualQueue).toHaveLength(0);
+	});
+
+	it('连续 draft patch 按 operationIndex/sequence 归约，旧 run 与重复 operationId 被丢弃', () => {
+		const current = useDesignStore.getState().snapshot;
+		const firstNode = current.document.canvas!.nodes.subline;
+		useDesignStore.setState({ execution: { status: 'running', phase: 'tool', runId: 'run-live', requestId: 'request-live', sequence: 0, thinking: '', steps: [] }, isGenerating: true });
+		for (let index = 1; index <= 20; index += 1) {
+			const scene = useDesignStore.getState().getRenderScene();
+			const transaction = { transactionId: `burst-${index}`, baseRevision: scene.revision, source: 'ai' as const, operations: [{ op: 'update_node' as const, nodeId: 'subline', changes: { opacity: index / 20 } }], summary: `批次 ${index}`, createdAt: new Date().toISOString() };
+			useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId: 'request-live', runId: 'run-live', sequence: index, emittedAt: Date.now(), operationId: transaction.transactionId, revisionId: 'draft-run-live', draftRevisionId: 'draft-run-live', operationIndex: index, pageId: 'canvas', summary: transaction.summary, transaction, affectedNodeIds: ['subline'], isDraft: true });
+		}
+		const beforeDuplicate = useDesignStore.getState().getRenderScene().revision;
+		const duplicate = { transactionId: 'burst-20', baseRevision: beforeDuplicate, source: 'ai' as const, operations: [{ op: 'update_node' as const, nodeId: 'subline', changes: { opacity: 0.01 } }], summary: '重复批次', createdAt: new Date().toISOString() };
+		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId: 'request-live', runId: 'run-live', sequence: 21, emittedAt: Date.now(), operationId: 'burst-20', revisionId: 'draft-run-live', draftRevisionId: 'draft-run-live', operationIndex: 21, pageId: 'canvas', summary: duplicate.summary, transaction: duplicate, affectedNodeIds: ['subline'], isDraft: true });
+		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId: 'old-request', runId: 'old-run', sequence: 22, emittedAt: Date.now(), operationId: 'old-op', revisionId: 'draft-old', draftRevisionId: 'draft-old', operationIndex: 22, pageId: 'canvas', summary: '旧任务', transaction: { ...duplicate, transactionId: 'old-op', baseRevision: beforeDuplicate }, affectedNodeIds: ['subline'], isDraft: true });
+		const state = useDesignStore.getState();
+		expect(state.getRenderScene().nodes.subline).toMatchObject({ opacity: 1 });
+		expect(state.getRenderScene().revision).toBe(firstNode ? current.document.canvas!.revision + 20 : beforeDuplicate);
+		expect(state.execution.sequence).toBe(20);
+	});
+
+	it('Canvas transaction 事件只更新受影响节点，不再通过文件清单派生页面', () => {
+		const current = useDesignStore.getState().snapshot;
+		const transaction = { transactionId: 'op-pages', baseRevision: current.document.canvas!.revision, source: 'ai' as const, operations: [{ op: 'update_node' as const, nodeId: 'headline', changes: { name: '登录页标题' } }], summary: '更新登录页标题', createdAt: new Date().toISOString() };
+		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), operationId: 'op-pages', revisionId: 'draft-pages', pageId: 'page-home', summary: '更新登录页标题', transaction, affectedNodeIds: ['headline'], isDraft: true });
+
+		const node = useDesignStore.getState().snapshot.document.canvas?.nodes.headline;
+		expect(node?.name).toBe('登录页标题');
+		expect(useDesignStore.getState().snapshot.files).toEqual([]);
+	});
+
+	it('Canvas delete transaction 会删除节点子树，不操作文件路径', () => {
+		const current = useDesignStore.getState().snapshot;
+		const transaction = { transactionId: 'op-remove', baseRevision: current.document.canvas!.revision, source: 'ai' as const, operations: [{ op: 'delete_node' as const, nodeId: 'decorative-path' }], summary: '移除装饰路径', createdAt: new Date().toISOString() };
+		useDesignStore.getState().applyStreamEvent({ type: 'design_patch_applied', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), operationId: 'op-remove', revisionId: 'draft-remove', pageId: 'page-home', summary: '移除装饰路径', transaction, affectedNodeIds: ['decorative-path'], isDraft: true });
+
+		expect(useDesignStore.getState().snapshot.document.canvas?.nodes['decorative-path']).toBeUndefined();
+		expect(useDesignStore.getState().snapshot.files).toEqual([]);
 	});
 
 	it('查看历史修订不改变当前快照，回滚后写入新的当前修订', async () => {
 		const current = useDesignStore.getState().snapshot;
+		const historicalCanvas = structuredClone(current.document.canvas!);
+		historicalCanvas.nodes.headline.text = { ...historicalCanvas.nodes.headline.text!, text: '历史页面' };
 		const historical = {
 			...current,
-			files: current.files.map((file, index) => index === 0 ? { ...file, content: '<main>历史页面</main>' } : file),
 			document: {
 				...current.document,
 				version: Math.max(1, current.document.version - 1),
+				canvas: historicalCanvas,
 				revisions: [...current.document.revisions, { id: 'rev-history', prompt: '历史需求', summary: '历史版本', createdAt: '2026-08-16T12:00:00.000Z', kind: 'patch' as const }],
 			},
+		files: [],
 		};
 		const reverted = {
 			...historical,
@@ -569,16 +713,16 @@ describe('Design Mode snapshot', () => {
 		};
 		vi.spyOn(rpc, 'designGetRevision').mockResolvedValue({
 			id: 'history', type: 'response', command: 'design_get_revision', success: true,
-			data: { designId, revisionId: 'rev-history', snapshot: { document: historical.document as unknown as Record<string, unknown>, files: historical.files, context: historical.context } },
+			data: { designId, revisionId: 'rev-history', snapshot: { document: historical.document as unknown as Record<string, unknown>, files: [], context: historical.context } },
 		} as never);
 		vi.spyOn(rpc, 'designRevert').mockResolvedValue({
 			id: 'revert', type: 'response', command: 'design_revert', success: true,
-			data: { designId, revisionId: 'rev-rollback', snapshot: { document: reverted.document as unknown as Record<string, unknown>, files: reverted.files, context: reverted.context } },
+			data: { designId, revisionId: 'rev-rollback', snapshot: { document: reverted.document as unknown as Record<string, unknown>, files: [], context: reverted.context } },
 		} as never);
 
 		const inspected = await useDesignStore.getState().getRevision('rev-history');
-		expect(inspected.files[0].content).toBe('<main>历史页面</main>');
-		expect(useDesignStore.getState().snapshot.files[0].content).toBe(current.files[0].content);
+		expect(inspected.document.canvas?.nodes.headline.text?.text).toBe('历史页面');
+		expect(useDesignStore.getState().snapshot.document.canvas?.nodes.headline.text?.text).toContain('默认测试标题');
 		expect(rpc.designGetRevision).toHaveBeenCalledWith('project-test', designId, 'rev-history');
 
 		await useDesignStore.getState().revertToRevision('rev-history');
@@ -598,10 +742,10 @@ describe('Design Mode snapshot', () => {
 				data: { upload: { projectId: 9, designId, revisionId: 'rev-history', versionId: 42, versionNumber: 3, status: 'DRAFT', createdAt: '2026-08-16T12:00:00.000Z' } },
 			} as never);
 
-		await useDesignStore.getState().uploadRevision({ revisionId: 'rev-history', platformProjectId: 9, title: '登录页', summary: '首次上传' });
-		await useDesignStore.getState().uploadRevision({ revisionId: 'rev-history', platformProjectId: 9, title: '登录页', summary: '网络重试' });
+		await useDesignStore.getState().uploadRevision({ revisionId: 'rev-history', platformProjectId: 9, title: '登录页', summary: '首次上传', previewPng: 'data:image/png;base64,aGVsbG8=' });
+		await useDesignStore.getState().uploadRevision({ revisionId: 'rev-history', platformProjectId: 9, title: '登录页', summary: '网络重试', previewPng: 'data:image/png;base64,aGVsbG8=' });
 
-		expect(upload).toHaveBeenNthCalledWith(1, { projectPath: 'project-test', designId, revisionId: 'rev-history', platformProjectId: 9, title: '登录页', summary: '首次上传' });
+		expect(upload).toHaveBeenNthCalledWith(1, { projectPath: 'project-test', designId, revisionId: 'rev-history', platformProjectId: 9, title: '登录页', summary: '首次上传', previewPng: 'data:image/png;base64,aGVsbG8=' });
 		expect(useDesignStore.getState().uploadRecords).toEqual([{ projectId: 9, revisionId: 'rev-history', versionId: 42, versionNumber: 3, status: 'DRAFT', uploadedAt: '2026-08-16T12:00:00.000Z' }]);
 	});
 
@@ -642,7 +786,7 @@ describe('Design 审批与澄清事件防丢失', () => {
 		useDesignStore.getState().applyStreamEvent({ type: 'design_run_settled', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), snapshot: { document: useDesignStore.getState().snapshot.document as unknown as Record<string, unknown>, files: currentRpcFiles } });
 		expect(useDesignStore.getState().execution.status).toBe('completed');
 		// 此时再发审批事件——修复前会被 design.ts 终态守卫丢弃，导致用户永远看不到审批卡片、后端 Promise 永久挂起。
-		useDesignStore.getState().applyStreamEvent({ type: 'design_approval_required', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 2, emittedAt: Date.now(), approvalId: 'approval-1', pageId: 'home', patch: { baseRevisionId: 'rev-1', operations: [{ op: 'replace_file', path: 'pages/home/index.html', content: '<main/>' }] }, reason: '高风险整页替换' });
+		useDesignStore.getState().applyStreamEvent({ type: 'design_approval_required', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 2, emittedAt: Date.now(), approvalId: 'approval-1', pageId: 'home', patch: { baseRevisionId: 'rev-1', operations: [{ op: 'update_node', nodeId: 'frame-home', changes: { name: '新版首页' } }] }, reason: '高风险整页替换' });
 		// 修复后：审批事件被放行，pendingApproval 被写入，status 从 completed 回到 awaiting_approval。
 		expect(useDesignStore.getState()).toMatchObject({ pendingApproval: { approvalId: 'approval-1', reason: '高风险整页替换' }, execution: { status: 'awaiting_approval', phase: 'awaiting_approval' } });
 		// 用户点击“继续”后，审批响应应被发出且状态恢复 running。
@@ -667,7 +811,7 @@ describe('Design 审批与澄清事件防丢失', () => {
 	it('approve 在 RPC 响应失败时保留 pendingApproval 以供重试', async () => {
 		vi.spyOn(rpc, 'designPrompt').mockResolvedValue({ id: 'prompt', type: 'response', command: 'design_prompt', success: true, data: { requestId, runId } } as never);
 		await useDesignStore.getState().sendPrompt('替换首页配色');
-		useDesignStore.getState().applyStreamEvent({ type: 'design_approval_required', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), approvalId: 'approval-2', pageId: 'home', patch: { baseRevisionId: 'rev-1', operations: [{ op: 'replace_file', path: 'pages/home/index.html', content: '<main/>' }] }, reason: '高风险修改' });
+		useDesignStore.getState().applyStreamEvent({ type: 'design_approval_required', projectId: 'project-test', projectPath: 'project-test', designId, requestId, runId, sequence: 1, emittedAt: Date.now(), approvalId: 'approval-2', pageId: 'home', patch: { baseRevisionId: 'rev-1', operations: [{ op: 'update_node', nodeId: 'frame-home', changes: { name: '新版首页' } }] }, reason: '高风险修改' });
 		expect(useDesignStore.getState().pendingApproval).not.toBeNull();
 		// 模拟 sidecar 返回失败（例如 approval 已超时被清理）
 		vi.spyOn(rpc, 'designApprovalResponse').mockResolvedValue({ id: 'resp', type: 'response', command: 'design_approval_response', success: false, error: 'Design 审批请求已过期' } as never);

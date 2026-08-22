@@ -2,13 +2,14 @@
 .root::after { position: absolute; top: 0; right: 0; bottom: 0; width: 1px; background: linear-gradient(180deg, var(--gp-accent), transparent 34%, transparent 72%, var(--gp-warm)); content: ''; opacity: .4; pointer-events: none; }
 .header { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 1px solid var(--gp-border); padding: 7px 10px 8px; }
 .headerCopy { min-width: 0; }
-.headerCopy > span, .sectionHeader > span { display: block; overflow: hidden; color: var(--gp-accent); font-family: var(--font-sans); font-size: calc(10px * var(--desktop-font-scale)); font-weight: 700; letter-spacing: .14em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
+.headerCopy > span, .sectionHeader > span { display: block; overflow: hidden; color: var(--gp-accent); font-family: inherit; font-size: var(--text-xs); font-weight: 400; letter-spacing: .14em; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
 .headerActions { display: inline-flex; align-items: center; gap: 4px; }
 .primaryNav { display: grid; gap: 2px; border-bottom: 1px solid var(--gp-border); background: linear-gradient(180deg, var(--gp-panel-deep), var(--gp-surface)); padding: 8px 9px 9px; }
-.primaryNavItem { display: flex; width: 100%; height: 36px; align-items: center; justify-content: flex-start; gap: 12px; padding: 0 12px; color: var(--gp-text-secondary); font-size: var(--text-xs); font-weight: 600; text-align: left; }
+.primaryNavItem { display: flex; width: 100%; height: 36px; align-items: center; justify-content: flex-start; gap: 12px; padding: 0 12px; color: var(--gp-text-secondary); font-size: var(--text-xs); font-weight: 400; text-align: left; }
 .primaryNavItem:hover, .primaryNavItem:focus-visible { background: var(--gp-surface-hover); color: var(--gp-text); }
 .primaryNavItem > svg { width: 17px; height: 17px; color: var(--gp-accent); }
-.headerAction { width: 28px; padding-inline: 0; }
+.headerAction { width: 28px; background: transparent; padding-inline: 0; color: var(--gp-text-muted); }
+.headerAction:hover, .headerAction:focus-visible { background: transparent; color: var(--gp-text); }
 .scroll { min-height: 0; flex: 1; }
 .content { box-sizing: border-box; width: 100%; min-width: 0; max-width: 100%; padding: 8px 8px 12px; }
 .projectBlock { min-width: 0; overflow: hidden; }
@@ -18,7 +19,7 @@
 .folderTrigger { width: 18px; height: 24px; padding: 0; }
 .folderTrigger:hover { background: transparent; }
 .typeIcon { width: 15px; height: 15px; flex: 0 0 auto; color: var(--gp-accent); }
-.projectLabel { min-width: 0; justify-content: flex-start; overflow: hidden; padding: 0 3px; color: var(--gp-text); font-size: calc(12px * var(--desktop-font-scale)); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.projectLabel { min-width: 0; justify-content: flex-start; overflow: hidden; padding: 0 3px; color: var(--gp-text); font-size: var(--text-xs); font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
 .projectLabel:hover { background: transparent; }
 .action { color: var(--gp-text-muted); opacity: 0; transition: opacity 120ms ease, color 120ms ease, background-color 120ms ease; }
 .projectBlock:hover .action, .projectRow:focus-within .action, .actionVisible { opacity: 1; }
@@ -27,17 +28,38 @@
 .projectContent { overflow: hidden; }
 .projectContent[data-state='open'] { animation: projectExpand 150ms ease-out; }
 .projectContent[data-state='closed'] { animation: projectCollapse 120ms ease-in; }
-.emptyProject, .emptyTask { overflow: hidden; padding-top: 4px; padding-bottom: 4px; color: var(--gp-text-muted); font-size: calc(11px * var(--desktop-font-scale)); text-overflow: ellipsis; white-space: nowrap; }
+.emptyProject, .emptyTask { overflow: hidden; padding-top: 4px; padding-bottom: 4px; color: var(--gp-text-muted); font-size: var(--text-xs); text-overflow: ellipsis; white-space: nowrap; }
 .taskList { min-width: 0; }
-.taskRow { box-sizing: border-box; display: flex; width: 100%; min-width: 0; max-width: 100%; height: 32px; align-items: center; justify-content: flex-start; overflow: hidden; border-left: 2px solid transparent; border-radius: 5px; padding-top: 0; padding-right: 8px; padding-bottom: 0; color: var(--gp-text-muted); text-align: left; font-size: calc(12px * var(--desktop-font-scale)); font-weight: 400; transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease; }
+.taskRow { box-sizing: border-box; display: flex; width: 100%; min-width: 0; max-width: 100%; height: 32px; align-items: center; justify-content: flex-start; overflow: hidden; border-left: 2px solid transparent; border-radius: 5px; padding-top: 0; padding-right: 8px; padding-bottom: 0; color: var(--gp-text-muted); text-align: left; font-size: var(--text-xs); font-weight: 400; transition: background-color 140ms ease, color 140ms ease, border-color 140ms ease; }
 .taskRow:hover { background: var(--gp-surface-hover); color: var(--gp-text); }
-.taskActive { border-left-color: var(--gp-accent); background: linear-gradient(90deg, var(--gp-accent-soft), transparent); color: var(--gp-text); box-shadow: inset 0 0 0 1px var(--gp-accent-soft); }
+/* 选中态与悬停共用同一底色，仅保持文字提亮，避免两套高亮色。 */
+.taskActive { background: var(--gp-surface-hover); color: var(--gp-text); }
 .label { min-width: 0; overflow: hidden; flex: 1; text-overflow: ellipsis; white-space: nowrap; }
 .taskLoading { width: 13px; height: 13px; flex: 0 0 auto; margin-left: 6px; color: var(--gp-accent); animation: taskLoadingSpin 900ms linear infinite; }
+/* 任务悬停提示（右侧弹出）：名称亮色一行 + 相对编辑时间弱化一行。 */
+.taskHint { display: block; max-width: 240px; }
+.taskHintTitle { display: block; color: var(--gp-text); }
+.taskHintMeta { display: block; margin-top: 1px; color: var(--gp-text-muted); }
 .separator { margin: 10px 4px 8px; }
 .sectionHeader { display: flex; min-width: 0; align-items: center; justify-content: space-between; padding: 5px 7px; }
 .standaloneList { min-width: 0; padding: 0 2px; }
-.emptyState { margin: 5px 2px; border: 1px dashed var(--gp-border-strong); border-radius: 7px; background: var(--gp-accent-soft); padding: 16px 11px; color: var(--gp-text-muted); font-size: calc(11px * var(--desktop-font-scale)); }
+.emptyState { margin: 5px 2px; border: 1px dashed var(--gp-border-strong); border-radius: 7px; background: var(--gp-accent-soft); padding: 16px 11px; color: var(--gp-text-muted); font-size: var(--text-xs); }
+
+/* CODE/WORK 的侧栏与中间卡片之间改用布局留白，保留内部内容层次但移除外侧装饰线。 */
+:global([data-ui-version='target']) .root::after,
+:global([data-ui-version='work']) .root::after { display: none; }
+:global([data-ui-version='target']) .header,
+:global([data-ui-version='target']) .sectionHeader,
+:global([data-ui-version='work']) .header,
+:global([data-ui-version='work']) .sectionHeader { box-sizing: border-box; min-height: 43px; background: var(--gp-surface); }
+:global([data-ui-version='target']) .header,
+:global([data-ui-version='work']) .header { position: sticky; top: 0; z-index: 5; border-bottom-color: transparent; }
+:global([data-ui-version='target']) .sectionHeader,
+:global([data-ui-version='work']) .sectionHeader { position: sticky; top: 0; z-index: 6; margin-right: -8px; margin-left: -8px; padding: 7px 15px 8px; }
+:global([data-ui-version='target']) .primaryNav,
+:global([data-ui-version='work']) .primaryNav { border-bottom-color: transparent; }
+:global([data-ui-version='target']) .separator,
+:global([data-ui-version='work']) .separator { height: 12px; background: transparent; }
 
 @media (prefers-reduced-motion: reduce) {
 	.projectRow, .action, .projectContent { transition: none; animation: none; }

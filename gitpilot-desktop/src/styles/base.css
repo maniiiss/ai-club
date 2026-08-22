@@ -40,11 +40,10 @@ code,
 	--desktop-font-scale: 1;
 }
 
-button:focus-visible,
-[role='button']:focus-visible,
-[role='menuitem']:focus-visible {
-	outline: 2px solid var(--ring);
-	outline-offset: 2px;
+/* 全局禁用粗边框焦点态：交互反馈由悬停底色/选中底色承载，不再绘制 2px 描边光环。
+ * !important 用于压过各业务组件零散的 :focus-visible 描边，统一收口在这条规则。 */
+:focus-visible {
+	outline: none !important;
 }
 
 /* 表单控件（input/textarea/select）不绘制聚焦边框：发起会话的输入框由容器级 :focus-within 样式承载反馈。 */

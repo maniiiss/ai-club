@@ -1,9 +1,8 @@
 /** 聊天流内的 Agent 执行摘要，所有信息均来自已归并的 sidecar 真实事件。 */
 import { useEffect, useState } from 'react';
-import { Brain, CheckCircle2, ChevronRight, FilePen, FileText, ListChecks, Terminal, Wrench } from 'lucide-react';
+import { Brain, CaretRight, CheckCircle, FileMagnifyingGlass, ListChecks, NotePencil, TerminalWindow, Wrench, type Icon } from '@phosphor-icons/react';
 import { formatDuration, getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionRun, type ExecutionStep } from '@/src/store/workbench';
 import { Button } from '@/src/components/ui/button';
-import { Hint } from '@/src/components/ui/tooltip';
 import styles from './ExecutionActivity.module.css';
 
 export function getExecutionActivityLabel(execution: ExecutionRun, isStreaming: boolean): string | null {
@@ -14,10 +13,8 @@ export function getExecutionActivityLabel(execution: ExecutionRun, isStreaming: 
 	// 仅显示当前仍在执行的真实工具；没有活跃工具时按模型增量阶段判断。
 	const activeTool = [...execution.steps].reverse().find((step) => step.status === 'running' || step.status === 'waiting');
 	if (activeTool) return describeExecutionActivity(activeTool);
-	const hasUnreportedTrace = Boolean(execution.thinking?.trim()) || getUnreportedExecutionSteps(execution).length > 0;
-	// 正文已经开始输出时仍保留尚未归档的思考/工具痕迹，避免工具刚结束就从界面消失。
-	// 纯正文回答没有执行痕迹时继续隐藏，避免每个普通回答都显示冗余状态。
-	if (execution.lastDeltaKind === 'text') return hasUnreportedTrace ? '执行过程' : null;
+	// 正文开始输出即进入回答阶段：不再显示“执行过程”等占位状态，未归档痕迹等批次归档后进入时间线。
+	if (execution.lastDeltaKind === 'text') return null;
 	// thinking 文本是本次任务的历史记录；只有最近事件仍是 thinking_delta 时才表示模型正在思考。
 	// 工具已结束但正文尚未到达时，模型正在根据工具结果组织下一轮请求；显式说明该等待，不能回退成旧思考或无文字的转圈。
 	if (execution.lastDeltaKind === 'tool') return '正在整理工具结果…';
@@ -72,13 +69,13 @@ export function describeExecutionBatch(steps: ExecutionStep[]): string {
 	return labels.length > 0 ? labels.join('、') : `调用了${steps.length}个工具`;
 }
 
-/** 按步骤类型匹配功能图标（lucide-react，shadcn-ui 推荐图标库）。 */
+/** 按步骤类型匹配功能图标，使用统一的 Phosphor 扁平化图标风格。 */
 function ExecutionStepIcon({ kind }: { kind: ExecutionStep['kind'] }) {
-	const map: Partial<Record<ExecutionStep['kind'], typeof FileText>> = {
-		read: FileText, edit: FilePen, command: Terminal, verify: CheckCircle2, plan: ListChecks, other: Wrench,
+	const map: Partial<Record<ExecutionStep['kind'], Icon>> = {
+		read: FileMagnifyingGlass, edit: NotePencil, command: TerminalWindow, verify: CheckCircle, plan: ListChecks, other: Wrench,
 	};
 	const Icon = map[kind] ?? Wrench;
-	return <Icon size={13} aria-hidden="true" className={styles.traceStepIcon} />;
+	return <Icon weight="regular" size={13} aria-hidden="true" className={styles.traceStepIcon} />;
 }
 
 /** 思考块：默认只显示标题，点击展开思考内容（执行过程详情默认收起）。 */
@@ -87,7 +84,7 @@ function ThinkingBlock({ thinking }: { thinking: string }) {
 	return (
 		<div className={styles.traceStep}>
 			<span className={styles.traceStepTitle} role="button" tabIndex={0} onClick={() => setExpanded((v) => !v)} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setExpanded((v) => !v); } }}>
-				<Brain size={13} aria-hidden="true" className={styles.traceStepIcon} />
+				<Brain weight="regular" size={13} aria-hidden="true" className={styles.traceStepIcon} />
 					<span className={styles.traceStepText}>思考过程</span>
 			</span>
 			{expanded && <pre className={styles.traceStepOutput}>{thinking}</pre>}
@@ -158,7 +155,7 @@ export function ExecutionBatch({ steps, thinking }: {
 	return (
 		<section className={styles.root} aria-label="已完成的 Agent 执行批次">
 			<Button type="button" variant="unstyled" size="sm" className={styles.summary} onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
-				<ChevronRight size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
+				<CaretRight weight="bold" size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
 				<span className={styles.label}>{summaryLabel}</span>
 			</Button>
 			{expanded && <ExecutionTrace items={items} />}
@@ -200,7 +197,7 @@ export function ExecutionTimer({ isRunning, startedAt, durationMs, items = [], i
 		<section className={`${styles.root} ${isCollapsing ? styles.settling : ''}`} aria-label={isRunning ? 'Agent 运行计时' : 'Agent 总耗时'}>
 			{canExpand ? (
 				<Button type="button" variant="unstyled" size="sm" className={styles.summary} onClick={() => setExpanded((value) => !value)} aria-expanded={expanded}>
-					<ChevronRight size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
+					<CaretRight weight="bold" size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
 					{statusLabel}
 				</Button>
 			) : (
@@ -238,15 +235,16 @@ export function ExecutionActivity({ isStreaming, execution: executionOverride }:
 	if (!label) return null;
 
 	const isPending = label === '正在整理工具结果…' || label === '正在准备…';
+	// 正文执行状态本身就是可见文字，不再包悬停提示，避免 hover 弹出与正文重复的 hint。
 	const activityLabel = (
-		<Hint content={label}><span className={`${styles.label} ${styles.running}`} role={isPending ? 'status' : undefined}>{label}</span></Hint>
+		<span className={`${styles.label} ${styles.running}`} role={isPending ? 'status' : undefined}>{label}</span>
 	);
 
 	return (
 		<section className={styles.root} aria-label="Agent 执行过程">
 			{canExpand ? (
 				<Button type="button" variant="unstyled" size="sm" className={styles.summary} onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}>
-					<ChevronRight size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
+					<CaretRight weight="bold" size={13} aria-hidden="true" className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} />
 					{activityLabel}
 				</Button>
 			) : <span className={`${styles.summary} ${styles.static}`} aria-live="polite">{activityLabel}</span>}

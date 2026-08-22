@@ -1,4 +1,4 @@
-import { Check, Clock3, Loader2 } from 'lucide-react';
+import { Check, CircleNotch as Loader2, Clock as Clock3 } from '@phosphor-icons/react';
 import { memo, useState } from 'react';
 import { useDesignStore } from '@/src/store/design';
 import type { DesignTodoItem } from '@/src/design/design-types';

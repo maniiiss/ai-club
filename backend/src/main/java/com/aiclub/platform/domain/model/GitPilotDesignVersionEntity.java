@@ -42,11 +42,11 @@ public class GitPilotDesignVersionEntity {
     @Column(nullable = false, length = 20)
     private String status = "DRAFT";
 
-    @Column(name = "snapshot_json", nullable = false, columnDefinition = "TEXT")
-    private String snapshotJson;
+    @Column(name = "scene_json", nullable = false, columnDefinition = "TEXT")
+    private String sceneJson;
 
-    @Column(name = "preview_html", nullable = false, columnDefinition = "TEXT")
-    private String previewHtml;
+    @Column(name = "preview_image", nullable = false, columnDefinition = "TEXT")
+    private String previewImage;
 
     @Column(name = "creator_user_id")
     private Long creatorUserId;
@@ -73,10 +73,10 @@ public class GitPilotDesignVersionEntity {
     public void setSummary(String summary) { this.summary = summary; }
     public String getStatus() { return status; }
     public void setStatus(String status) { this.status = status; }
-    public String getSnapshotJson() { return snapshotJson; }
-    public void setSnapshotJson(String snapshotJson) { this.snapshotJson = snapshotJson; }
-    public String getPreviewHtml() { return previewHtml; }
-    public void setPreviewHtml(String previewHtml) { this.previewHtml = previewHtml; }
+    public String getSceneJson() { return sceneJson; }
+    public void setSceneJson(String sceneJson) { this.sceneJson = sceneJson; }
+    public String getPreviewImage() { return previewImage; }
+    public void setPreviewImage(String previewImage) { this.previewImage = previewImage; }
     public Long getCreatorUserId() { return creatorUserId; }
     public void setCreatorUserId(Long creatorUserId) { this.creatorUserId = creatorUserId; }
     public LocalDateTime getCreatedAt() { return createdAt; }

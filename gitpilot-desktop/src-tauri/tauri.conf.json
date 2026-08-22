@@ -55,8 +55,7 @@
 			"resources/plannotator.json",
 			"resources/theme/*",
 			"resources/export-html/**/*",
-			"resources/skills/**/*",
-			"resources/bin/*"
+			"resources/skills/**/*"
 		]
 	}
 }
