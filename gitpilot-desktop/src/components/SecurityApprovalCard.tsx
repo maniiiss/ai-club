@@ -23,7 +23,7 @@ export function SecurityApprovalCard() {
 	if (!approval) return null;
 	return (
 		<section className={styles.card} role="alert" aria-label="安全审批">
-			<div className={styles.heading}><ShieldWarning weight="regular" size={16} /><strong>{approval.title}</strong><span>{riskLabels[approval.risk] ?? approval.risk}</span></div>
+			<div className={styles.heading}><ShieldWarning weight="regular" size={16} /><span className={styles.headingTitle}>{approval.title}</span><span>{riskLabels[approval.risk] ?? approval.risk}</span></div>
 			<p>{approval.summary}</p>
 			{approval.command && <pre className={styles.command}>{approval.command}</pre>}
 			<div className={styles.details}>

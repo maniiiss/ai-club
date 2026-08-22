@@ -43,7 +43,7 @@ export function GlobalCommandPalette({ onNewSession, onAbort }: GlobalCommandPal
 					<CommandEmpty>没有匹配的工作台命令</CommandEmpty>
 					{all.map((item) => <CommandItem key={item.id} value={`${item.label} ${item.description}`} onSelect={() => { close(); item.execute(); }}>
 						<span className={styles.itemIcon}>{iconFor(item.id)}</span>
-						<span className={styles.itemCopy}><b>{item.label}</b><small>{item.description}</small></span>
+						<span className={styles.itemCopy}><span className={styles.itemLabel}>{item.label}</span><small>{item.description}</small></span>
 						{item.shortcut && <kbd>{item.shortcut}</kbd>}
 					</CommandItem>)}
 				</CommandList>

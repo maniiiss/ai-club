@@ -156,7 +156,7 @@ export function TargetContextMenu({ children }: { children: ReactNode }) {
 						<DialogTitle>{deleteState?.kind === 'project' || deleteState?.kind === 'work-project' ? '删除工作目录' : deleteState?.kind === 'design-project' ? '从列表删除设计工作空间' : deleteState?.kind === 'work-task' ? '从列表删除 Work 任务' : '从列表删除任务'}</DialogTitle>
 						<DialogDescription id="sidebar-delete-description">仅从 GitPilot 侧栏列表移除，不会删除磁盘上的文件。</DialogDescription>
 					</DialogHeader>
-					<div className="px-5 py-4 text-xs text-[var(--muted-foreground)]">确认要移除“{deleteState?.path ?? ''}”吗？</div>
+					<div className="px-5 py-4 text-[length:var(--text-[length:var(--text-xs)])] text-[var(--muted-foreground)]">确认要移除“{deleteState?.path ?? ''}”吗？</div>
 					<DialogFooter>
 						<Button variant="ghost" onClick={() => setDeleteState(null)}>取消</Button>
 						<Button variant="destructive" onClick={confirmDelete}>确认删除</Button>

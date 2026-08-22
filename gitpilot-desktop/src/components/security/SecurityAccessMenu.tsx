@@ -45,6 +45,8 @@ export function SecurityAccessMenu() {
 	const currentMode = sandbox?.mode ?? 'windows-native';
 	const currentApprovalLabel = getSessionApprovalLabel(approvalMode);
 	const positionLabel = `${currentMode === 'gondolin' ? '增强隔离' : '原生防护'} · ${currentApprovalLabel}`;
+	// 触发按钮复用当前模式的选项图标，保证菜单里选中的图标（如完全访问的带感叹号盾牌）收起后仍可见。
+	const CurrentIcon = ACCESS_OPTIONS.find((option) => option.value === approvalMode)?.Icon ?? Shield;
 
 	const changeMode = async (mode: SessionApprovalMode) => {
 		if (mode === approvalMode) return;
@@ -63,7 +65,7 @@ export function SecurityAccessMenu() {
 						className={`${styles.trigger} ${approvalMode === 'full_access' ? styles.triggerFullAccess : ''}`}
 						aria-label={`审批权限：${currentApprovalLabel}`}
 					>
-						<Shield weight="regular" size={15} aria-hidden="true" />
+						<CurrentIcon weight="regular" size={15} aria-hidden="true" />
 						<span>{currentApprovalLabel}</span>
 					</Button>
 				</PopoverTrigger>

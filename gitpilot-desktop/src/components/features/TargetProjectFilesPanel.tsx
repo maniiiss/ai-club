@@ -4,6 +4,7 @@ import { Button } from '@/src/components/ui/button';
 import { Hint } from '@/src/components/ui/tooltip';
 import { ScrollArea } from '@/src/components/ui/scroll-area';
 import { useSessionStore } from '@/src/store/session';
+import { useGitStore } from '@/src/store/git';
 import { useWorkbenchStore, type ProjectFileAttachmentRequest } from '@/src/store/workbench';
 import { buildProjectFileTree, filterProjectFileTree, PROJECT_FILE_DRAG_MIME, useProjectFilesStore, type ProjectFileTreeNode } from '@/src/store/project-files';
 import styles from './TargetProjectFilesPanel.module.css';
@@ -37,18 +38,21 @@ interface FileTreeProps {
 	depth: number;
 	expanded: Set<string>;
 	selected: Set<string>;
+	/** 仓库相对路径 -> Git 状态字母；无仓库或未变更返回 null。 */
+	statusOf: (path: string) => string | null;
 	onToggle: (node: ProjectFileTreeNode) => void;
 	onSelect: (node: ProjectFileTreeNode, event: React.MouseEvent) => void;
 	onAdd: (node: ProjectFileTreeNode) => void;
 	onDragStart: (node: ProjectFileTreeNode, event: DragEvent<HTMLDivElement>) => void;
 }
 
-function FileTree({ nodes, depth, expanded, selected, onToggle, onSelect, onAdd, onDragStart }: FileTreeProps) {
+function FileTree({ nodes, depth, expanded, selected, statusOf, onToggle, onSelect, onAdd, onDragStart }: FileTreeProps) {
 	return <>
 		{nodes.map((node) => {
 			const isDirectory = node.kind === 'directory';
 			const isExpanded = expanded.has(node.path);
 			const isSelected = selected.has(node.path);
+			const gitStatus = isDirectory ? null : statusOf(node.path);
 			return <div key={node.path} className={styles.treeBranch} role="treeitem" aria-expanded={isDirectory ? isExpanded : undefined} aria-selected={!isDirectory ? isSelected : undefined}>
 				<div
 					className={`${styles.treeRow} ${isSelected ? styles.treeRowSelected : ''}`}
@@ -60,13 +64,24 @@ function FileTree({ nodes, depth, expanded, selected, onToggle, onSelect, onAdd,
 						<span className={styles.treeDisclosure}>{isDirectory ? <CaretRight weight="bold" size={14} className={isExpanded ? styles.treeDisclosureExpanded : ''} /> : null}</span>
 						<span className={`${styles.treeIcon} ${isDirectory ? styles.treeFolderIcon : ''}`}><FileTypeIcon node={node} /></span>
 						<span className={styles.treeName}>{node.name}</span>
+						{gitStatus && <span className={`${styles.gitBadge} ${gitStatusClass(gitStatus)}`}>{gitStatus}</span>}
 					</Button>
 					{!isDirectory && <Hint content="添加到对话框"><Button type="button" variant="ghost" size="icon-sm" className={styles.treeAction} onClick={(event) => { event.stopPropagation(); onAdd(node); }} aria-label={`添加 ${node.path} 到对话框`}><Paperclip weight="regular" size={13} /></Button></Hint>}
 				</div>
-				{isDirectory && isExpanded && node.children.length > 0 && <FileTree nodes={node.children} depth={depth + 1} expanded={expanded} selected={selected} onToggle={onToggle} onSelect={onSelect} onAdd={onAdd} onDragStart={onDragStart} />}
+				{isDirectory && isExpanded && node.children.length > 0 && <FileTree nodes={node.children} depth={depth + 1} expanded={expanded} selected={selected} statusOf={statusOf} onToggle={onToggle} onSelect={onSelect} onAdd={onAdd} onDragStart={onDragStart} />}
 			</div>;
 		})}
 	</>;
+}
+
+/** Git 状态字母 -> 徽章样式类；M=修改 A=新增 D=删除 R=重命名 C=冲突 U=未跟踪。 */
+function gitStatusClass(letter: string): string {
+	if (letter === 'A') return styles.gitBadgeAdded;
+	if (letter === 'D') return styles.gitBadgeDeleted;
+	if (letter === 'R') return styles.gitBadgeRenamed;
+	if (letter === 'C') return styles.gitBadgeConflict;
+	if (letter === 'U') return styles.gitBadgeUntracked;
+	return styles.gitBadgeModified;
 }
 
 /** Code 右侧项目文件树：只操作文件路径元数据，不打开或读取代码内容。 */
@@ -76,8 +91,11 @@ export function TargetProjectFilesPanel() {
 	const entries = useProjectFilesStore((state) => state.entries);
 	const loading = useProjectFilesStore((state) => state.loading);
 	const error = useProjectFilesStore((state) => state.error);
+	// 扫描达到条目/深度上限时告知列表不完整，避免用户误以为文件缺失。
+	const truncated = useProjectFilesStore((state) => state.truncated);
 	const refresh = useProjectFilesStore((state) => state.refresh);
 	const queueProjectFileAttachments = useWorkbenchStore((state) => state.queueProjectFileAttachments);
+	const gitFiles = useGitStore((state) => state.state?.files);
 	const [query, setQuery] = useState('');
 	const [expanded, setExpanded] = useState<Set<string>>(new Set());
 	const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -93,6 +111,18 @@ export function TargetProjectFilesPanel() {
 
 	const tree = useMemo(() => buildProjectFileTree(entries), [entries]);
 	const filteredTree = useMemo(() => filterProjectFileTree(tree, query), [query, tree]);
+	// 文件树 Git 标记与 Git 面板同源（store/git.ts），暂存字母优先于工作区字母。
+	const gitStatusMap = useMemo(() => {
+		const map = new Map<string, string>();
+		for (const file of gitFiles ?? []) {
+			if (file.conflicted) map.set(file.path, 'C');
+			else if (file.staged) map.set(file.path, file.staged);
+			else if (file.worktree) map.set(file.path, file.worktree);
+			else if (file.untracked) map.set(file.path, 'U');
+		}
+		return map;
+	}, [gitFiles]);
+	const statusOf = (path: string): string | null => gitStatusMap.get(path) ?? null;
 	useEffect(() => {
 		setExpanded((previous) => {
 			const next = new Set([...previous].filter((path) => entries.some((entry) => entry.path === path && entry.kind === 'directory')));
@@ -183,6 +213,7 @@ export function TargetProjectFilesPanel() {
 	</div>
 		{selectedFiles.length > 0 && <div className={styles.selectionBar}><span>已选 {selectedFiles.length} 个文件</span><div><Button type="button" size="sm" variant="secondary" onClick={addSelected}>添加到对话框</Button><Hint content="复制相对路径"><Button type="button" size="icon-sm" variant="ghost" onClick={() => void copySelectedPath()} aria-label="复制相对路径">{copied ? <Check weight="bold" size={14} /> : <Copy weight="regular" size={14} />}</Button></Hint></div></div>}
 		{notice && <div className={styles.notice} role="status">{notice}</div>}
-	{!workspacePath ? <div className={styles.empty}><FolderOpen weight="regular" size={21} /><strong>尚未选择工作空间</strong><span>选择 Code 工作空间后，这里会显示只读文件树。</span></div> : loading && entries.length === 0 ? <div className={styles.empty}><CircleNotch weight="bold" size={20} className={styles.spin} /><span>正在扫描工作空间文件…</span></div> : error ? <div className={styles.empty}><WarningCircle weight="regular" size={21} /><strong>工作空间文件加载失败</strong><span>{error}</span><Button type="button" size="sm" variant="secondary" onClick={() => void refresh(workspacePath)}>重试</Button></div> : entries.length === 0 ? <div className={styles.empty}><File weight="regular" size={21} /><strong>工作空间中暂无可展示文件</strong><span>忽略目录、空目录和符号链接不会出现在列表中。</span></div> : filteredTree.length === 0 ? <div className={styles.empty}><MagnifyingGlass weight="regular" size={21} /><strong>没有匹配文件</strong><span>尝试搜索文件名或相对路径。</span></div> : <ScrollArea className={styles.treeScroll} fitContent><div className={styles.tree} role="tree" aria-label="工作空间文件树"><FileTree nodes={filteredTree} depth={0} expanded={expanded} selected={selected} onToggle={onToggle} onSelect={selectNode} onAdd={(node) => enqueueFiles([node])} onDragStart={onDragStart} /></div></ScrollArea>}
+		{truncated && !loading && entries.length > 0 && <div className={styles.truncatedHint} role="status">文件较多，已达扫描上限，列表可能不完整</div>}
+	{!workspacePath ? <div className={styles.empty}><FolderOpen weight="regular" size={21} /><span className={styles.emptyTitle}>尚未选择工作空间</span><span>选择 Code 工作空间后，这里会显示只读文件树。</span></div> : loading && entries.length === 0 ? <div className={styles.empty}><CircleNotch weight="bold" size={20} className={styles.spin} /><span>正在扫描工作空间文件…</span></div> : error ? <div className={styles.empty}><WarningCircle weight="regular" size={21} /><span className={styles.emptyTitle}>工作空间文件加载失败</span><span>{error}</span><Button type="button" size="sm" variant="secondary" onClick={() => void refresh(workspacePath)}>重试</Button></div> : entries.length === 0 ? <div className={styles.empty}><File weight="regular" size={21} /><span className={styles.emptyTitle}>工作空间中暂无可展示文件</span><span>忽略目录、空目录和符号链接不会出现在列表中。</span></div> : filteredTree.length === 0 ? <div className={styles.empty}><MagnifyingGlass weight="regular" size={21} /><span className={styles.emptyTitle}>没有匹配文件</span><span>尝试搜索文件名或相对路径。</span></div> : <ScrollArea className={styles.treeScroll} fitContent><div className={styles.tree} role="tree" aria-label="工作空间文件树"><FileTree nodes={filteredTree} depth={0} expanded={expanded} selected={selected} statusOf={statusOf} onToggle={onToggle} onSelect={selectNode} onAdd={(node) => enqueueFiles([node])} onDragStart={onDragStart} /></div></ScrollArea>}
 	</section>;
 }

@@ -128,7 +128,7 @@ export function ExtensionUIModal() {
 							value={value}
 							onChange={(e) => setValue(e.target.value)}
 							rows={12}
-							className="min-h-48 resize-y bg-[var(--gp-code-surface)] font-mono text-xs"
+							className="min-h-48 resize-y bg-[var(--gp-code-surface)] font-mono text-[length:var(--text-[length:var(--text-xs)])]"
 						/>
 					)}
 				</div>
@@ -171,7 +171,7 @@ export function ExtensionUIConfirmCard() {
 		<div className={styles.confirmCard} role="alertdialog" aria-modal="false" aria-labelledby="extension-confirm-title" aria-describedby="extension-confirm-message">
 			<div className={styles.confirmHeader}>
 				<CircleAlert size={15} aria-hidden="true" />
-				<strong id="extension-confirm-title">{display.title}</strong>
+				<span id="extension-confirm-title">{display.title}</span>
 			</div>
 			<p id="extension-confirm-message" className={styles.confirmMessage}>{display.message}</p>
 			<div className={styles.confirmActions}>

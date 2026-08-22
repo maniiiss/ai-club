@@ -13,7 +13,7 @@
 	flex: 1;
 }
 
-.itemCopy b,
+.itemLabel,
 .itemCopy small {
 	display: block;
 	overflow: hidden;
@@ -21,16 +21,16 @@
 	white-space: nowrap;
 }
 
-.itemCopy b {
+.itemLabel {
 	color: var(--foreground);
-	font-size: calc(12px * var(--desktop-font-scale));
-	font-weight: 600;
+	font-size: var(--text-xs);
+	font-weight: 400;
 }
 
 .itemCopy small {
 	margin-top: 2px;
 	color: var(--muted-foreground);
-	font-size: calc(10px * var(--desktop-font-scale));
+	font-size: var(--text-xs);
 }
 
 .footer {
@@ -40,7 +40,7 @@
 	border-top: 1px solid var(--border);
 	padding: 7px 12px;
 	color: var(--muted-foreground);
-	font-size: calc(10px * var(--desktop-font-scale));
+	font-size: var(--text-xs);
 }
 
 .footer svg {

@@ -1,11 +1,13 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Warning as AlertTriangle, Check, Eye, MagnifyingGlass as Search, Palette } from '@phosphor-icons/react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { designPresetCatalog, filterDesignPresets } from '@/src/design/design-presets';
+import { createDefaultCanvasDocument } from '@/src/design/canvas-document';
 import type { DesignPreset } from '@/src/design/design-types';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/src/components/ui/dialog';
 import styles from './DesignPresetPicker.module.css';
+import { DesignCanvasKitBoard } from './DesignCanvasKitBoard';
 
 interface DesignPresetPickerProps {
 	selectedPresetId: string | null;
@@ -41,22 +43,13 @@ function handoffMarkdown(markdown: string): string {
 }
 
 function PreviewDialog({ preset, open, onOpenChange }: { preset: DesignPreset | null; open: boolean; onOpenChange: (open: boolean) => void }) {
-	const [isFrameMounted, setIsFrameMounted] = useState(false);
-
-	useEffect(() => {
-		setIsFrameMounted(false);
-		if (!open || !preset) return undefined;
-		// 先完成 Dialog 的首帧和过渡，再解析预设里可能很重的完整组件 HTML。
-		const timer = window.setTimeout(() => setIsFrameMounted(true), 180);
-		return () => window.clearTimeout(timer);
-	}, [open, preset?.id]);
-
 	if (!preset) return null;
+	const scene = preset.scene ?? createDefaultCanvasDocument(`preset-${preset.id}`, preset.title);
 	return <Dialog open={open} onOpenChange={onOpenChange}><DialogContent className={styles.previewDialog} style={{ width: 'min(1120px, calc(100vw - 32px))', maxWidth: '1120px', maxHeight: 'calc(100dvh - 48px)' }} aria-describedby={undefined}>
 		<DialogHeader className={styles.previewHeader}>
 			<DialogTitle>{preset.title}</DialogTitle>
 		</DialogHeader>
-		<div className={styles.previewFrame} aria-busy={!isFrameMounted}>{isFrameMounted ? <iframe title={`${preset.title} 预览`} sandbox="" scrolling="auto" srcDoc={preset.previewHtml} /> : <div className={styles.previewLoading} role="status"><span /></div>}</div>
+		<div className={styles.previewFrame}><DesignCanvasKitBoard document={scene} activePageId={scene.entryPageId} selectedElementId={null} zoomPercent={70} canvasTool="select" onSelectElement={() => undefined} onZoomChange={() => undefined} /></div>
 	</DialogContent></Dialog>;
 }
 

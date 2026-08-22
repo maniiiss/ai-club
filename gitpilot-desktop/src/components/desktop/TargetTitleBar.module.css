@@ -50,14 +50,14 @@
 	.brand {
 	color: var(--gp-text);
 	font-family: var(--font-sans);
-	font-size: calc(11px * var(--desktop-font-scale));
-	font-weight: 700;
+	font-size: var(--text-xs);
+	font-weight: 400;
 	letter-spacing: 0.14em;
 }
 
 .modeSwitcher { display: flex; height: 100%; align-items: center; gap: 2px; border-left: 0; padding-left: 7px; }
 .mode,
-.modeActive { display: inline-flex; height: 24px; align-items: center; gap: 4px; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; padding: 0 7px; color: var(--gp-text-muted); font-family: var(--font-sans); font-size: calc(9px * var(--desktop-font-scale)); letter-spacing: .12em; cursor: pointer; transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, transform 160ms ease; }
+.modeActive { display: inline-flex; height: 24px; align-items: center; gap: 4px; border: 1px solid transparent; border-radius: var(--radius-sm); background: transparent; padding: 0 7px; color: var(--gp-text-muted); font-family: var(--font-sans); font-size: var(--text-xs); letter-spacing: .12em; cursor: pointer; transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease, transform 160ms ease; }
 .mode:hover { color: var(--gp-text); background: var(--gp-accent-soft); }
 .modeActive { border-color: var(--gp-border-strong); background: var(--gp-accent-soft); color: var(--gp-accent); animation: mode-pill-in 200ms cubic-bezier(.22, .8, .25, 1); }
 .modeIcon { width: 11px; height: 11px; flex: 0 0 auto; }
@@ -79,7 +79,7 @@
 @media (max-width: 760px) {
 	.identity { padding-left: 10px; }
 	.mode,
-	.modeActive { padding: 0 5px; font-size: calc(8px * var(--desktop-font-scale)); }
+	.modeActive { padding: 0 5px; font-size: var(--text-xs); }
 }
 
 @media (prefers-reduced-motion: reduce) {

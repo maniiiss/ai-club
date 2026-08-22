@@ -6,7 +6,7 @@
 .background > canvas { width: 100%; height: 100%; opacity: .86; }
 .hero { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 12px; }
 .heroIcon { display: inline-flex; width: 64px; height: 64px; align-items: center; justify-content: center; border: 1px solid var(--gp-border); border-radius: 20px; background: var(--gp-accent-soft); color: var(--gp-accent); }
-.title { margin: 0; color: var(--gp-text); font-size: calc(22px * var(--desktop-font-scale)); font-weight: 650; letter-spacing: .2px; }
+.title { margin: 0; color: var(--gp-text); /* 欢迎页主标题保留大字号层级，仍跟随设置字号缩放 */ font-size: calc(22px * var(--desktop-font-scale)); font-weight: 400; letter-spacing: .2px; }
 .composer { position: relative; z-index: 1; width: min(720px, 100%); }
 .chips { position: relative; z-index: 1; display: flex; align-items: center; gap: 8px; }
 

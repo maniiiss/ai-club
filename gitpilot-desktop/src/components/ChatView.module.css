@@ -8,9 +8,9 @@
 .content { grid-column: 2; width: 100%; min-width: 0; max-width: 860px; margin: 0 auto; /* 输入框为悬浮层，底部留白随其真实高度变化，并保留一段安全间距抬高最底部状态条。 */ padding: 28px 24px calc(var(--gp-composer-bottom-space, 190px) + 16px); }
 .empty { display: flex; margin-top: 96px; flex-direction: column; align-items: center; gap: 16px; color: var(--gp-text); text-align: center; }
 .emptyIcon { display: flex; width: 56px; height: 56px; align-items: center; justify-content: center; border-radius: 16px; background: var(--gp-selection); color: var(--gp-action); }
-.empty h2 { margin: 0; color: var(--gp-text); font-size: calc(18px * var(--desktop-font-scale)); font-weight: 500; }
+.empty h2 { margin: 0; color: var(--gp-text); font-size: calc(18px * var(--desktop-font-scale)); font-weight: 400; }
 .empty p { margin: 4px 0 0; color: var(--gp-text-muted); font-size: calc(13px * var(--desktop-font-scale)); }
-.loadingState { display: flex; min-height: 260px; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--gp-text-muted); font-size: calc(12px * var(--desktop-font-scale)); }
+.loadingState { display: flex; min-height: 260px; flex-direction: column; align-items: center; justify-content: center; gap: 10px; color: var(--gp-text-muted); font-size: var(--text-xs); }
 .logoLoader { position: relative; display: grid; width: 46px; height: 46px; place-items: center; }
 .loadingLogo { position: relative; z-index: 1; width: 28px; height: 28px; border: 1px solid var(--gp-border-strong); border-radius: 50%; box-shadow: 0 5px 18px var(--gp-shadow-color); object-fit: cover; }
 .loadingHalo { position: absolute; inset: 2px; border: 1px solid color-mix(in srgb, var(--gp-action) 28%, transparent); border-top-color: var(--gp-action); border-right-color: var(--gp-accent); border-radius: 50%; animation: chatHaloSpin 1.15s linear infinite; }

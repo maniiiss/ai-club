@@ -12,12 +12,15 @@
  */
 
 import * as crypto from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
 import JSZip from "jszip";
 import type { AgentSessionEvent } from "../../core/agent-session.ts";
 import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import { prepareAttachment } from "../../core/attachments/prepare-attachment.ts";
+import { GitServiceError, isGitServiceError } from "../../core/git/git-types.ts";
+import { RepositoryService } from "../../core/git/repository-service.ts";
+import { buildCommitMessagePrompt, COMMIT_MESSAGE_SYSTEM_PROMPT, extractCommitMessage } from "./git-commit-message.ts";
 import { SessionManager } from "../../core/session-manager.ts";
 import { getAgentDir } from "../../config.ts";
 import { createAgentSessionFromServices, createAgentSessionServices } from "../../core/agent-session-services.ts";
@@ -58,11 +61,11 @@ import { isDesktopCommandVisible } from "../../extensions/gitpilot/desktop-comma
 import { copyManagedMcpServer, deleteManagedMcpServer, listManagedMcpServers, saveManagedMcpServer, setManagedMcpEnabled, setManagedMcpModes, type GitPilotAgentMode, type McpServerDefinition } from "../../extensions/gitpilot/mcp-manager.ts";
 import { listManagedSkills, setManagedSkillEnabled, setManagedSkillModes, type SkillMode } from "../../extensions/gitpilot/skill-manager.ts";
 import type { Context } from "@earendil-works/pi-ai/compat";
-import type { DesignClarificationRequiredEvent, DesignPatch, DesignPatchAppliedEvent, DesignPlanStep, DesignPlanUpdatedEvent, DesignPreviewHandle, DesignProjectGuidelines, DesignRpcFile, DesignRpcMessage, DesignRpcSnapshot, DesignRunRecoveryState, DesignStreamMetadata, WorkFileSnapshot, WorkResearchSource } from "./rpc-types.ts";
-import { buildDesignCompactionInstructions, collectDesignPatchDelta, projectDesignAgentEvent } from "./design-events.ts";
+import type { CanvasDesignDocument, CanvasDesignOperation, DesignClarificationRequiredEvent, DesignDraftMetadata, DesignOpenData, DesignPatch, DesignPatchAppliedEvent, DesignPlanStep, DesignPlanUpdatedEvent, DesignPreviewHandle, DesignProjectGuidelines, DesignRpcMessage, DesignRpcSnapshot, DesignRunRecoveryState, DesignStreamMetadata, WorkFileSnapshot, WorkResearchSource } from "./rpc-types.ts";
+import { buildDesignCompactionInstructions, collectCanvasPatchDelta, projectDesignAgentEvent } from "./design-events.ts";
 import { createDesignToolDefinitions, isDesignPatchOperation, type DesignPatchResult } from "./design-tools.ts";
+import { isCanonicalCanvasNode, normalizeCanvasOperations, normalizeNativeCanvasDocument } from "./canvas-normalize.ts";
 import { defaultProjectGuidelines, normalizeProjectGuidelines } from "./design-guidelines.ts";
-import { designPageIdFromEntryPath, synchronizeDesignPages } from "./design-pages.ts";
 import { listCodeProjectFiles } from "./project-files.ts";
 import {
 	cloneSecurityPolicy,
@@ -93,18 +96,12 @@ const WORK_SYSTEM_PROMPT = `你是 GitPilot Work 模式的工作协同助手。
  */
 const DESIGN_SYSTEM_PROMPT = `你是 GitPilot Design 模式的界面设计助手。
 只使用 Design 白名单工具修改当前 snapshot；可以按需使用只读 Web/MCP 工具，但不能使用 Shell、Git 或任意本地文件工具。
-每轮开始先根据真实需求调用 skip_plan 或 update_plan 完成执行方式决策；在决策完成前不要调用 design_apply_patch。只有会改变设计方向或交付边界的关键歧义才调用 design_request_clarification。
-小改动使用文本 patch，大范围修改使用整文件替换；不要为了形式上的分块增加工具调用。
-
-页面文件协议：
-- 用户要求新增页面时，必须使用 create_file 创建入口 pages/<pageId>/index.html；pageId 只能包含字母、数字、- 和 _。
-- 新页面通常还要在同一个 patch 中创建 pages/<pageId>/styles.css 和 pages/<pageId>/main.js（按实际需要创建），不要只创建一个无法识别的 about/index.html。
-- 一个 patch 可以一次创建多个页面文件；页面树会根据 pages/<pageId>/index.html 自动出现，不需要另调用页面注册工具。
-- 修改已有页面时沿用当前文件的完整 canonical 路径；shared/ 和 assets/ 用于跨页面资源。
-- 引用共享资源时使用绝对规范路径 /shared/... 或 /assets/...，不要使用 ../../shared/... 这类旧相对路径。
-- 当 shared/ 目录已存在时，你可以按页面需要将共享数据或函数内联到当前页面的 main.js 中；这不是强制要求，也可以继续通过 /shared/... 引用共享文件。
-
-每次 patch 后用一句中文说明结果，不要复述内部协议、工具 schema 或文件全文。`;
+ 每轮开始先根据真实需求调用 skip_plan 或 update_plan 完成执行方式决策；在决策完成前不要调用 design_apply_patch。只有会改变设计方向或交付边界的关键歧义才调用 design_request_clarification。
+只提交 Canvas 节点、布局、文字、路径和资源操作；禁止输出或生成 HTML、CSS、JavaScript、CanvasKit API 调用和本地路径。create_node 必须提供 id、type、name、parentId、childIds、visible、locked、opacity、transform 和 layout；原生矩形类型是 rect（不是 rectangle），颜色放在 paint.fill，圆角放在 paint.cornerRadius，文本必须使用 text 对象。
+页面通过 CanvasDesignDocument.pages 管理；节点必须使用现有父节点和资源引用，复杂效果拆成明确的原生节点。
+ 用户未指定页面底色时默认使用白色或近白色，不要自行使用墨绿色或深色大面积背景；只有用户或项目规范明确要求时才使用深色背景。
+每次 patch 后用一句中文说明结果，不要复述内部协议、工具 schema 或场景全文。
+为了让 Desktop 能够边绘制边渲染，请按视觉区域多次提交小批次 patch：每批优先包含 1～12 个相关操作，完成页面骨架、导航、主要容器、控件和细节后分别提交；不要等待整页所有节点都完成才调用工具。`;
 
 // Re-export types for consumers
 export type {
@@ -137,6 +134,68 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 	const output = (obj: RpcResponse | RpcExtensionUIRequest | object) => {
 		writeRawStdout(serializeJsonLine(obj));
+	};
+
+	/** Code 模式右侧栏 Git 面板的受限 Git 服务；事件直接透传给 Desktop。 */
+	const gitService = new RepositoryService();
+	gitService.onEvent((event) => output(event));
+
+	/** git_* 命令薄转发：GitServiceError 转稳定 "CODE: message" 错误文本，业务留在 core/git。 */
+	const runGitCommand = async (id: string | undefined, command: RpcCommand["type"], action: () => Promise<object>): Promise<RpcResponse> => {
+		try {
+			return success(id, command, await action());
+		} catch (e) {
+			if (isGitServiceError(e)) return error(id, command, `${e.code}: ${e.message}`);
+			return error(id, command, e instanceof Error ? e.message : String(e));
+		}
+	};
+
+	/** 生成中的提交建议；同一时间只允许一次，避免并发模型调用与状态目录竞争。 */
+	let commitSuggestionInFlight = false;
+	/**
+	 * 空提交信息时的一次性模型会话：无扩展、无内置工具、思考关闭，用后即弃。
+	 * 会话目录固定在 agentDir 下且每次生成前清空，不产生累积文件。
+	 */
+	const suggestCommitMessage = async (): Promise<{ message: string }> => {
+		if (commitSuggestionInFlight) throw new GitServiceError("OPERATION_IN_PROGRESS", "正在生成提交信息，请稍候");
+		commitSuggestionInFlight = true;
+		try {
+			const summary = await gitService.getStagedDiffSummary(runtimeHost.cwd);
+			const workspacePath = join(getAgentDir(), "git-suggest");
+			const sessionDir = join(workspacePath, ".session");
+			rmSync(sessionDir, { recursive: true, force: true });
+			mkdirSync(sessionDir, { recursive: true });
+			const services = await createAgentSessionServices({
+				cwd: workspacePath,
+				agentDir: getAgentDir(),
+				modelRuntime: runtimeHost.services.modelRuntime,
+				// 提交信息生成不需要任何扩展工具：显式空 extensionFactories 保持会话纯净。
+				resourceLoaderOptions: { extensionFactories: [], systemPrompt: COMMIT_MESSAGE_SYSTEM_PROMPT },
+			});
+			const sessionManager = SessionManager.create(workspacePath, sessionDir, { id: "git-suggest" });
+			const created = await createAgentSessionFromServices({
+				services,
+				sessionManager,
+				model: session.model,
+				thinkingLevel: "off",
+				noTools: "builtin",
+			});
+			try {
+				await created.session.prompt(buildCommitMessagePrompt(summary), { source: "rpc" });
+				const lastAssistant = [...created.session.messages].reverse().find((message) => (message as { role?: string }).role === "assistant");
+				const text = ((lastAssistant as { content?: Array<{ type?: string; text?: string }> } | undefined)?.content ?? [])
+					.filter((part) => part.type === "text")
+					.map((part) => part.text ?? "")
+					.join("");
+				const message = extractCommitMessage(text);
+				if (!message) throw new GitServiceError("GIT_FAILED", "AI 未能生成有效的提交信息，请手动填写");
+				return { message };
+			} finally {
+				created.session.dispose();
+			}
+		} finally {
+			commitSuggestionInFlight = false;
+		}
 	};
 
 	/** 发起 Code 工具审批并等待 Desktop 决策；断连、abort 和超时均默认拒绝。 */
@@ -429,6 +488,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	const designSessions = new Map<string, import("../../core/agent-session.ts").AgentSession>();
 	const designSessionManagers = new Map<string, SessionManager>();
 	type DesignRun = {
+		designId: string;
 		requestId: string;
 		runId: string;
 		pageId: string;
@@ -437,6 +497,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		active: boolean;
 		baseRevisionId: string;
 		workingRevisionId: string;
+		/** 当前 run 的内存 draft；canonical design.json 只在 settle 时更新。 */
+		draftScene: CanvasDesignDocument;
+		operationCount: number;
 		hasChanges: boolean;
 		lastSummary?: string;
 		/** 当前 Agent 所处阶段，供项目切换或 Desktop 重连后恢复执行面板。 */
@@ -463,7 +526,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	 * 业务意图：每个 patch 的完整快照都包含全部文件；若长期缓存，会让连续 patch
 	 * 在 sidecar 内叠加多份项目正文，成为 OOM 的独立来源。
 	 */
-	type AppliedDesignOperation = Pick<DesignPatchResult, "operationId" | "revisionId" | "summary" | "removedPaths"> & { changedPaths: string[] };
+	type AppliedDesignOperation = Pick<DesignPatchResult, "operationId" | "revisionId" | "summary"> & { changedPaths: string[] };
 	const appliedDesignOperations = new Map<string, AppliedDesignOperation>();
 	const MAX_APPLIED_DESIGN_OPERATIONS = 256;
 	const normalizeDesignProjectPath = (projectPath?: string): string => {
@@ -479,48 +542,18 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	 * 业务意图：预览、Desktop 文件树、文件管理器和最终交付都读取同一份 canonical 文件。
 	 */
 	const designRoot = (projectPath: string): string => join(normalizeDesignProjectPath(projectPath), ".gitpilot");
+	/** 原生 Canvas 工作区的隔离目录；旧 HTML 工作区不在这里做迁移或覆盖。 */
+	const nativeDesignRoot = (projectPath: string, designId: string): string => join(designRoot(projectPath), "design", designId);
+	const nativeDesignManifestPath = (projectPath: string, designId: string): string => join(nativeDesignRoot(projectPath, designId), "manifest.json");
+	const nativeDesignDocumentPath = (projectPath: string, designId: string): string => join(nativeDesignRoot(projectPath, designId), "design.json");
 	const legacyDesignRoot = (projectPath: string): string => join(designRoot(projectPath), "design");
 	const designMetadataPath = (projectPath: string): string => join(designRoot(projectPath), "design.json");
 	const projectGuidelinesPath = (projectPath: string): string => join(designRoot(projectPath), "project-guidelines.json");
-	const designSessionPath = (designId: string, projectPath: string): string => join(designRoot(projectPath), "sessions", designId);
+	const designSessionPath = (designId: string, projectPath: string): string => join(nativeDesignRoot(projectPath, designId), ".session");
 	const DESIGN_UI_MESSAGE_ENTRY = "gitpilot.design-ui-message.v1";
 	const designConversationPath = (designId: string, projectPath: string): string => join(designSessionPath(designId, projectPath), "conversation.jsonl");
-	/**
-	 * 旧版 Design 每次运行都会在 .session 下生成一个时间戳会话文件。
-	 * 首次打开固定会话时把这些文件按时间顺序接成一条上下文链，避免升级后丢失已有 Agent 历史。
-	 */
-	const migrateDesignConversation = (designId: string, projectPath: string): void => {
-		const target = designConversationPath(designId, projectPath);
-		if (existsSync(target)) return;
-		// 旧版会话实际位于 .gitpilot/design/<designId>/.session；同时兼容
-		// 已经采用新 sessions 目录但仍保留 .session 子目录的中间版本。
-		const legacyDirs = [
-			join(legacyDesignRoot(projectPath), designId, ".session"),
-			join(designSessionPath(designId, projectPath), ".session"),
-		].filter((directory, index, all) => all.indexOf(directory) === index && existsSync(directory) && statSync(directory).isDirectory());
-		const legacyFiles = legacyDirs.flatMap((directory) => readdirSync(directory).filter((name) => name.endsWith(".jsonl")).map((name) => join(directory, name))).sort();
-		if (legacyFiles.length === 0) return;
-		const merged: Array<Record<string, unknown>> = [];
-		for (const file of legacyFiles) {
-			const entries = readFileSync(file, "utf8").split(/\r?\n/).filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>);
-			let fileHasEntry = false;
-			for (const entry of entries) {
-				if (entry.type === "session") {
-					if (merged.length === 0) merged.push(entry);
-					continue;
-				}
-				if (!fileHasEntry && merged.length > 1) {
-					const previous = merged.at(-1);
-					if (previous && typeof previous.id === "string") entry.parentId = previous.id;
-				}
-				fileHasEntry = true;
-				merged.push(entry);
-			}
-		}
-		if (merged.length === 0) return;
-		mkdirSync(dirname(target), { recursive: true });
-		atomicWrite(target, `${merged.map((entry) => JSON.stringify(entry)).join("\n")}\n`);
-	};
+	/** 原生 Canvas 会话只写入 <designId>/.session，不读取或迁移旧 HTML 会话。 */
+	const migrateDesignConversation = (_designId: string, _projectPath: string): void => { /* 保留调用点，原生布局无需迁移。 */ };
 	const openDesignSessionManager = (designId: string, projectPath: string): SessionManager => {
 		const normalizedProjectPath = normalizeDesignProjectPath(projectPath);
 		const sessionDir = designSessionPath(designId, normalizedProjectPath);
@@ -555,45 +588,25 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		if (!designSessions.has(cacheKey)) designSessionManagers.delete(cacheKey);
 	};
 	const loadProjectGuidelines = (projectPath: string): DesignProjectGuidelines => {
-		try { return normalizeProjectGuidelines(JSON.parse(readFileSync(projectGuidelinesPath(projectPath), "utf8"))); } catch {
-			try { return normalizeProjectGuidelines(JSON.parse(readFileSync(join(legacyDesignRoot(projectPath), "project-guidelines.json"), "utf8"))); } catch { return defaultProjectGuidelines(); }
-		}
+		try { return normalizeProjectGuidelines(JSON.parse(readFileSync(projectGuidelinesPath(projectPath), "utf8"))); } catch { return defaultProjectGuidelines(); }
 	};
-	const designFile = (path: string, content: string, language?: DesignRpcFile["language"], scope?: DesignRpcFile["scope"], id?: string): DesignRpcFile => ({ id: id ?? `file-${crypto.createHash("sha1").update(path).digest("hex").slice(0, 12)}`, path, content, hash: crypto.createHash("sha256").update(content).digest("hex"), scope: scope ?? (path.startsWith("shared/") ? "shared" : path.startsWith("assets/") ? "asset" : "page"), language: language ?? (path.endsWith(".html") ? "html" : path.endsWith(".css") ? "css" : path.endsWith(".js") ? "javascript" : path.endsWith(".json") ? "json" : "unknown") });
-	/**
-	 * 向 Design Agent 提供当前 canonical 文件正文；Agent 可以直接选择整文件替换，
-	 * 不再因为分块策略被迫额外读取、定位和提交多个 patch。
-	 */
-	const describeDesignSnapshot = (snapshot: DesignRpcSnapshot): string => {
-		const pages = Array.isArray(snapshot.document.pages)
-			? (snapshot.document.pages as Array<Record<string, unknown>>).map((page) => ({ id: page.id, name: page.name, route: page.route, entryFileId: page.entryFileId, fileIds: page.fileIds }))
-			: [];
-		const files = snapshot.files.map((file) => `--- ${file.path} (${file.language}, ${file.scope ?? "page"}) ---\n${file.content}`).join("\n\n");
-		return `页面关系：\n${JSON.stringify(pages, null, 2)}\n\n文件正文：\n${files}`;
-	};
+	/** 新建工作区直接进入无限画板；旧 HTML 模板只保留在历史代码中且不会被 Design 路径调用。 */
 	const demoDesignSnapshot = (designId: string, name = "GitPilot Design"): DesignRpcSnapshot => {
-		const pageId = "home";
-		const files: DesignRpcFile[] = [
-			designFile("pages/home/index.html", "<!doctype html><html lang=\"en\"><head><meta charset=\"UTF-8\"><meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><title>GitPilot</title></head><body><header class=\"nav\"><strong>◉ GitPilot</strong><nav><a href=\"#work\">Work</a><a href=\"#process\">Process</a><button data-design-id=\"nav-cta\">Start a project ↗</button></nav></header><main class=\"hero\"><span class=\"eyebrow\">NEW · AI-powered web design</span><h1>The website your brand deserves.</h1><p>Stunning design. Blazing performance. Built by AI, refined by experts.</p><button data-design-id=\"hero-cta\" class=\"primary\">Start your project ↗</button></main><footer>Stripe · Vercel · Linear · Notion · Figma</footer></body></html>", "html", "page", "home-index"),
-			designFile("pages/home/styles.css", ":root{font-family:Inter,system-ui,sans-serif;color:#f5f4ed;background:#071111}*{box-sizing:border-box}body{min-height:100vh;margin:0;padding:32px 5vw;background:radial-gradient(circle at 50% 10%,#31534e,#071111 68%);text-align:center}.nav{display:flex;justify-content:space-between;align-items:center}.nav nav{display:flex;gap:24px;align-items:center}.nav a{color:#b8c8c0;text-decoration:none;font-size:12px}.nav button,.primary{border:0;border-radius:999px;background:#edf0dd;color:#111b17;padding:11px 18px;font-weight:700}.eyebrow{display:inline-block;margin-top:23vh;border:1px solid #6f9084;border-radius:99px;padding:7px 12px;color:#d5e4da;font-size:10px}.hero h1{max-width:900px;margin:24px auto 14px;font:italic 400 clamp(48px,8vw,110px)/.95 Georgia,serif;letter-spacing:-.06em}.hero p{color:#a7b8ad}.primary{margin-top:20px}footer{margin-top:15vh;color:#c9d4c9;font:italic 20px Georgia,serif;word-spacing:28px}@media(max-width:700px){body{padding:20px 18px}.nav nav a{display:none}.hero h1{font-size:clamp(45px,15vw,76px)}footer{font-size:15px;word-spacing:5px;line-height:2}}", "css", "page", "home-styles"),
-			designFile("pages/home/main.js", "document.querySelectorAll('[data-design-id]').forEach((element)=>element.addEventListener('click',(event)=>{event.preventDefault();window.parent.postMessage({type:'design:select',id:element.dataset.designId},'*')}));", "javascript", "page", "home-main"),
-		];
-		const page = { id: pageId, name: "Home", route: "/", entryFileId: "home-index", fileIds: files.map((file) => file.id) };
-		return { document: { id: designId, name, version: 1, entryPageId: pageId, pages: [page], files: files.map(({ content: _content, ...file }) => file), revisions: [{ id: "rev-1", prompt: "Create a cinematic AI design landing page", summary: "Initial GitPilot design landing page", createdAt: new Date().toISOString(), kind: "initial" }] }, files };
+		const canvasSize = 100000;
+		const rootId = "canvas-root";
+		const page = { id: "canvas", name: "无限画板", route: "", rootNodeId: rootId, width: canvasSize, height: canvasSize, background: { kind: "solid", color: "#ffffff" }, isInfinite: true };
+		const layout = { mode: "absolute", width: canvasSize, height: canvasSize, padding: { top: 0, right: 0, bottom: 0, left: 0 }, gap: 0, direction: "column", align: "start", justify: "start" };
+		const root: Record<string, unknown> = { id: rootId, type: "page", name: "无限画板", parentId: null, childIds: [], visible: true, locked: false, opacity: 1, layout, transform: { x: 0, y: 0, width: canvasSize, height: canvasSize, rotation: 0, scaleX: 1, scaleY: 1 } };
+		const canvas: CanvasDesignDocument = { schemaVersion: 2, id: designId, name, revision: 1, updatedAt: new Date().toISOString(), entryPageId: page.id, pages: [page], nodes: { [rootId]: root }, assets: {} };
+		return { document: { id: designId, name, version: 1, schemaVersion: 2, entryPageId: page.id, pages: [{ id: page.id, name: page.name, route: page.route, rootNodeId: page.rootNodeId, entryFileId: "", fileIds: [] }], files: [], revisions: [{ id: "rev-1", prompt: "创建原生 Canvas 设计工作区", summary: "已创建 CanvasKit 原生设计初稿", createdAt: canvas.updatedAt, kind: "initial" }], canvas }, files: [] };
 	};
 	/** Design 正式文件的根目录就是项目根目录；designId 只用于校验和元数据关联。 */
-	const designPath = (designId: string, projectPath?: string) => { if (!/^[a-zA-Z0-9_-]+$/.test(designId)) throw new Error("非法 Design 标识"); return normalizeDesignProjectPath(projectPath || designProjects.get(designId) || runtimeHost.cwd); };
+	const designPath = (designId: string, projectPath?: string) => { if (!/^[a-zA-Z0-9_-]+$/.test(designId)) throw new Error("非法 Design 标识"); return nativeDesignRoot(normalizeDesignProjectPath(projectPath || designProjects.get(designId) || runtimeHost.cwd), designId); };
 	const revisionPath = (designId: string, revisionId: string, projectPath?: string): string => {
 		if (!/^[a-zA-Z0-9_-]+$/.test(revisionId)) throw new Error("非法 Design 修订标识");
 		return join(designRoot(projectPath || designProjects.get(designId) || runtimeHost.cwd), "revisions", revisionId);
 	};
 	const designCacheKey = (designId: string, projectPath?: string): string => designKey(normalizeDesignProjectPath(projectPath || designProjects.get(designId)), designId);
-	const safeDesignFilePath = (root: string, path: string): string => {
-		if (!path || path.includes("..") || path.includes("\\") || path.startsWith("/") || path.length > 240 || path === ".gitpilot" || path.startsWith(".gitpilot/")) throw new Error("Design 文件路径非法");
-		const target = resolve(root, path);
-		if (relative(root, target).startsWith("..")) throw new Error("Design 文件路径越界");
-		return target;
-	};
 	/** Design snapshot 与导出包都使用临时文件替换，避免 Desktop 读到半写入结果。 */
 	const atomicWrite = (target: string, content: string | Uint8Array): void => {
 		const temporary = `${target}.${crypto.randomUUID()}.tmp`;
@@ -606,6 +619,228 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			throw error;
 		}
 	};
+	const safeDraftRunId = (runId: string): string => {
+		if (!/^design-run-[a-zA-Z0-9_-]+$/.test(runId)) throw new Error("非法 Design draft runId");
+		return runId;
+	};
+	const draftRoot = (projectPath: string, designId: string, runId: string): string => join(nativeDesignRoot(projectPath, designId), "drafts", safeDraftRunId(runId));
+	const draftBasePath = (projectPath: string, designId: string, runId: string): string => join(draftRoot(projectPath, designId, runId), "base.json");
+	const draftOperationsPath = (projectPath: string, designId: string, runId: string): string => join(draftRoot(projectPath, designId, runId), "operations.jsonl");
+	const draftCheckpointPath = (projectPath: string, designId: string, runId: string): string => join(draftRoot(projectPath, designId, runId), "checkpoint.json");
+	type DraftJournalRecord = { operationId: string; sequence: number; operationIndex: number; pageId: string; summary: string; transaction: { transactionId: string; baseRevision: number; source: "ai" | "system"; operations: CanvasDesignOperation[]; summary: string; createdAt: string } };
+	const createDraftJournal = (run: DesignRun): void => {
+		const root = draftRoot(run.projectPath, run.designId ?? "", run.runId);
+		mkdirSync(root, { recursive: true });
+		atomicWrite(draftBasePath(run.projectPath, run.designId ?? "", run.runId), JSON.stringify({ designId: run.designId, runId: run.runId, requestId: run.requestId, baseRevisionId: run.baseRevisionId, draftRevisionId: run.workingRevisionId, canvas: run.draftScene }, null, 2));
+		atomicWrite(draftOperationsPath(run.projectPath, run.designId ?? "", run.runId), "");
+	};
+	const appendDraftJournal = (run: DesignRun, record: DraftJournalRecord): void => {
+		const path = draftOperationsPath(run.projectPath, run.designId ?? "", run.runId);
+		if (!existsSync(path)) createDraftJournal(run);
+		appendFileSync(path, `${JSON.stringify(record)}\n`, "utf8");
+	};
+	/** checkpoint 必须在内存 draft 更新后写入，确保 checkpoint 的 operationCount 与 scene 一致。 */
+	const writeDraftCheckpoint = (run: DesignRun, record: DraftJournalRecord): void => {
+		if (record.operationIndex % 8 !== 0) return;
+		atomicWrite(draftCheckpointPath(run.projectPath, run.designId ?? "", run.runId), JSON.stringify({ runId: run.runId, operationCount: record.operationIndex, lastSequence: record.sequence, canvas: run.draftScene }, null, 2));
+	};
+	const removeDraftJournal = (projectPath: string, designId: string, runId: string): void => {
+		rmSync(draftRoot(projectPath, designId, runId), { recursive: true, force: true });
+	};
+	const readDraftRecords = (projectPath: string, designId: string, runId: string): DraftJournalRecord[] => {
+		const path = draftOperationsPath(projectPath, designId, runId);
+		if (!existsSync(path)) return [];
+		const records: DraftJournalRecord[] = [];
+		let lastSequence = 0;
+		for (const line of readFileSync(path, "utf8").split(/\r?\n/).filter(Boolean)) {
+			const record = JSON.parse(line) as DraftJournalRecord;
+			if (!record || typeof record.operationId !== "string" || typeof record.sequence !== "number" || !Number.isInteger(record.sequence) || record.sequence <= lastSequence || typeof record.operationIndex !== "number" || record.operationIndex !== records.length + 1 || typeof record.pageId !== "string" || !record.transaction || record.transaction.transactionId !== record.operationId || !Array.isArray(record.transaction.operations) || !record.transaction.operations.every(isDesignPatchOperation)) throw new Error("Design 草稿 journal 记录无效或顺序断裂");
+			lastSequence = record.sequence;
+			records.push(record);
+		}
+		return records;
+	};
+	const readDraftMetadata = (projectPath: string, designId: string, runId: string, status: "active" | "orphaned"): DesignDraftMetadata | null => {
+		try {
+			const base = JSON.parse(readFileSync(draftBasePath(projectPath, designId, runId), "utf8")) as Record<string, unknown>;
+			const operations = readDraftRecords(projectPath, designId, runId);
+			const last = operations.at(-1);
+			if (typeof base.requestId !== "string" || typeof base.baseRevisionId !== "string" || typeof base.draftRevisionId !== "string") return null;
+			return { status, runId, requestId: base.requestId, baseRevisionId: base.baseRevisionId, draftRevisionId: base.draftRevisionId, operationCount: operations.length, lastSequence: last?.sequence ?? 0, ...(typeof last?.summary === "string" ? { lastSummary: last.summary } : {}) };
+		} catch { return null; }
+	};
+	const listDraftMetadata = (projectPath: string, designId: string): DesignDraftMetadata | undefined => {
+		const root = join(nativeDesignRoot(projectPath, designId), "drafts");
+		if (!existsSync(root)) return undefined;
+		const candidates = readdirSync(root, { withFileTypes: true }).filter((entry) => entry.isDirectory() && /^design-run-[a-zA-Z0-9_-]+$/.test(entry.name)).map((entry) => {
+			const active = designRuns.get(designKey(projectPath, designId));
+			return readDraftMetadata(projectPath, designId, entry.name, active?.runId === entry.name && active.active ? "active" : "orphaned");
+		}).filter((item): item is DesignDraftMetadata => Boolean(item));
+		return candidates.at(-1);
+	};
+	const nativeCanvasFromSnapshot = (snapshot: DesignRpcSnapshot): CanvasDesignDocument => {
+		const canvas = snapshot.document.canvas;
+		if (!canvas || typeof canvas !== "object" || Array.isArray(canvas)) throw new Error("旧 HTML/CSS/JS Design 工作区不兼容；请新建原生 Canvas 工作区");
+		return normalizeNativeCanvasDocument(canvas);
+	};
+	const validateNativeCanvasDocument = (canvas: CanvasDesignDocument): void => {
+		if (canvas.schemaVersion !== 2 || typeof canvas.id !== "string" || !Array.isArray(canvas.pages) || !canvas.nodes || typeof canvas.nodes !== "object" || !canvas.assets || typeof canvas.assets !== "object") throw new Error("Canvas Design schema 无效");
+		// 只拒绝真正的源码/预览注入，不禁止设计稿正文出现“HTML/CSS/JavaScript”等普通词语。
+		// 业务意图：节点名称、按钮文案和规范说明都是用户可见文本，不能因为关键词误伤整个场景。
+		const forbiddenKey = /^(?:html|css|javascript|srcDoc|innerHTML|postMessage)$/i;
+		const forbiddenMarkup = /<\/?(?:html|script|style|iframe|object|embed|base)\b|(?:javascript|data:text\/html)\s*:/i;
+		const forbiddenDomApi = /\b(?:document|window)\.(?:createElement|querySelector|querySelectorAll|body|documentElement|innerHTML|postMessage)\b/i;
+		const scan = (value: unknown, key = ""): void => {
+			if (typeof value === "string") {
+				if (forbiddenKey.test(key) || forbiddenMarkup.test(value) || forbiddenDomApi.test(value)) throw new Error("Canvas 场景禁止包含 HTML、CSS、JavaScript 或 DOM 预览内容");
+				return;
+			}
+			if (Array.isArray(value)) value.forEach((item) => scan(item, key));
+			else if (value && typeof value === "object") Object.entries(value).forEach(([childKey, childValue]) => scan(childValue, childKey));
+		};
+		// guidelines 是预设/项目的设计说明，不是 Canvas 渲染载荷；其中允许出现
+		// HTML、CSS 等对设计师有意义的术语或历史参考示例，不能据此拒绝整个场景。
+		// 真正的节点、资源和渲染字段仍继续执行上述源码/DOM 注入检查。
+		const renderDocument = { ...canvas };
+		delete renderDocument.guidelines;
+		scan(renderDocument);
+		const pageIds = new Set<string>();
+		const rootIds = new Set<string>();
+		if (typeof canvas.entryPageId !== "string") throw new Error("Canvas entryPageId 无效");
+		for (const page of canvas.pages) {
+			if (!page || typeof page !== "object" || typeof page.id !== "string" || !page.id || typeof page.rootNodeId !== "string" || !canvas.nodes[page.rootNodeId]) throw new Error("Canvas 页面根节点引用无效");
+			if (!pageIds.add(page.id)) throw new Error(`Canvas 页面标识重复：${page.id}`);
+			if (!rootIds.add(page.rootNodeId)) throw new Error(`Canvas 页面根节点重复：${page.rootNodeId}`);
+			if (canvas.nodes[page.rootNodeId].parentId !== null) throw new Error(`Canvas 页面根节点必须是顶层节点：${page.rootNodeId}`);
+		}
+		if (!pageIds.has(canvas.entryPageId)) throw new Error("Canvas entryPageId 不存在");
+		const checkFontReference = (value: unknown, nodeId: string): void => {
+			if (!value || typeof value !== "object" || Array.isArray(value)) return;
+			const fontAssetId = (value as Record<string, unknown>).fontAssetId;
+			if (fontAssetId === undefined || fontAssetId === null) return;
+			if (typeof fontAssetId !== "string" || !canvas.assets[fontAssetId] || !String((canvas.assets[fontAssetId] as Record<string, unknown>).mimeType ?? "").startsWith("font/")) throw new Error(`Canvas 字体资源引用无效：${nodeId}`);
+		};
+		for (const [nodeId, node] of Object.entries(canvas.nodes)) {
+			if (node.id !== nodeId || typeof node.type !== "string" || !Array.isArray(node.childIds)) throw new Error(`Canvas 节点无效：${nodeId}`);
+			if (!isCanonicalCanvasNode(node)) throw new Error(`Canvas 节点 ${nodeId} 缺少可渲染的 visible、transform 或 layout 字段`);
+			const childIds = node.childIds as unknown[];
+			const uniqueChildren = new Set<string>();
+			for (const childId of childIds) {
+				if (typeof childId !== "string" || !uniqueChildren.add(childId) || !canvas.nodes[childId] || canvas.nodes[childId].parentId !== nodeId) throw new Error(`Canvas 子节点引用无效或重复：${nodeId} -> ${String(childId)}`);
+			}
+			if (node.parentId !== null && (typeof node.parentId !== "string" || !canvas.nodes[node.parentId])) throw new Error(`Canvas 父节点引用无效：${nodeId}`);
+			if (node.parentId === null && !rootIds.has(nodeId)) throw new Error(`Canvas 存在未挂载的顶层节点：${nodeId}`);
+			if (typeof node.parentId === "string") {
+				const parentChildren = Array.isArray(canvas.nodes[node.parentId].childIds) ? canvas.nodes[node.parentId].childIds as unknown[] : [];
+				if (parentChildren.filter((childId) => childId === nodeId).length !== 1) throw new Error(`Canvas 父子引用不一致：${nodeId}`);
+			}
+			if (node.type === "image") {
+				const image = node.image;
+				const assetId = image && typeof image === "object" && !Array.isArray(image) ? (image as Record<string, unknown>).assetId : undefined;
+				const asset = typeof assetId === "string" ? canvas.assets[assetId] as Record<string, unknown> | undefined : undefined;
+				if (!asset || !String(asset.mimeType ?? "").startsWith("image/")) throw new Error(`Canvas 图片资源引用无效：${nodeId}`);
+			}
+			if (node.type === "text" && (!node.text || typeof node.text !== "object" || Array.isArray(node.text))) throw new Error(`Canvas 文本节点缺少规范 text 对象：${nodeId}`);
+			const text = node.text;
+			checkFontReference(text, nodeId);
+			if (text && typeof text === "object" && !Array.isArray(text)) for (const run of ((text as Record<string, unknown>).runs as unknown[] ?? [])) checkFontReference(run, nodeId);
+			const prototype = node.prototype;
+			if (prototype && typeof prototype === "object" && !Array.isArray(prototype) && typeof (prototype as Record<string, unknown>).targetId === "string" && !canvas.nodes[(prototype as Record<string, unknown>).targetId as string]) throw new Error(`Canvas 原型目标节点不存在：${nodeId}`);
+		}
+		for (const [assetId, asset] of Object.entries(canvas.assets)) {
+			if (!asset || typeof asset !== "object" || Array.isArray(asset) || (asset as Record<string, unknown>).id !== assetId || typeof (asset as Record<string, unknown>).mimeType !== "string") throw new Error(`Canvas 资源定义无效：${assetId}`);
+			if (String((asset as Record<string, unknown>).mimeType).startsWith("font/") && typeof (asset as Record<string, unknown>).fontFamily !== "string") throw new Error(`Canvas 字体资源缺少 fontFamily：${assetId}`);
+		}
+		for (const nodeId of Object.keys(canvas.nodes)) {
+			const seen = new Set<string>();
+			let current: string | null = nodeId;
+			while (current) {
+				if (seen.has(current)) throw new Error("Canvas 节点树不能包含循环引用");
+				seen.add(current);
+				current = (canvas.nodes[current]?.parentId as string | null | undefined) ?? null;
+			}
+		}
+	};
+	const applyNativeCanvasOperations = (source: CanvasDesignDocument, operations: CanvasDesignOperation[]): CanvasDesignDocument => {
+		const normalizedSource = normalizeNativeCanvasDocument(source);
+		const next = structuredClone(normalizedSource) as CanvasDesignDocument;
+		const normalizedOperations = normalizeCanvasOperations(operations, normalizedSource);
+		const parentFor = (parentId: string): Record<string, unknown> => {
+			const parent = next.nodes[parentId];
+			if (!parent || !["page", "frame", "group", "rect", "instance"].includes(String(parent.type))) throw new Error(`Canvas 父节点不可包含子节点：${parentId}`);
+			return parent;
+		};
+		const assertNoCycle = (nodeId: string, parentId: string): void => {
+			let current: string | null = parentId;
+			while (current) { if (current === nodeId) throw new Error("Canvas 节点不能移动到自身或子孙节点下"); current = (next.nodes[current]?.parentId as string | null | undefined) ?? null; }
+		};
+		const remove = (nodeId: string): void => { const node = next.nodes[nodeId]; if (!node) return; for (const childId of node.childIds as string[]) remove(childId); delete next.nodes[nodeId]; };
+		for (const operation of normalizedOperations) {
+			switch (operation.op) {
+				case "create_node": {
+					if (next.nodes[operation.node.id as string]) throw new Error(`Canvas 节点已存在：${String(operation.node.id)}`);
+					const parent = parentFor(operation.parentId);
+					assertNoCycle(String(operation.node.id), operation.parentId);
+					const node = structuredClone(operation.node);
+					node.parentId = operation.parentId;
+					node.childIds = Array.isArray(node.childIds) ? node.childIds : [];
+					next.nodes[String(node.id)] = node;
+					const children = parent.childIds as string[];
+					children.splice(Math.max(0, Math.min(operation.index ?? children.length, children.length)), 0, String(node.id));
+					break;
+				}
+				case "update_node": {
+					const target = next.nodes[operation.nodeId];
+					if (!target) throw new Error(`Canvas 节点不存在：${operation.nodeId}`);
+					if ("id" in operation.changes || "parentId" in operation.changes || "childIds" in operation.changes) throw new Error("Canvas update_node 不能直接改写图层关系");
+					next.nodes[operation.nodeId] = { ...target, ...structuredClone(operation.changes), id: target.id, parentId: target.parentId, childIds: target.childIds };
+					break;
+				}
+				case "delete_node": {
+					const target = next.nodes[operation.nodeId];
+					if (!target || !target.parentId) throw new Error("Canvas 页面根节点不能删除");
+					const parentId = typeof target.parentId === "string" ? target.parentId : null;
+					const parent = parentId ? next.nodes[parentId] : undefined;
+					if (parent) parent.childIds = (parent.childIds as string[]).filter((id) => id !== operation.nodeId);
+					remove(operation.nodeId);
+					break;
+				}
+				case "move_node": {
+					const target = next.nodes[operation.nodeId];
+					if (!target) throw new Error(`Canvas 节点不存在：${operation.nodeId}`);
+					const parent = parentFor(operation.parentId);
+					assertNoCycle(operation.nodeId, operation.parentId);
+					const previousParentId = typeof target.parentId === "string" ? target.parentId : null;
+					if (previousParentId && next.nodes[previousParentId]) next.nodes[previousParentId].childIds = (next.nodes[previousParentId].childIds as string[]).filter((id) => id !== operation.nodeId);
+					target.parentId = operation.parentId;
+					(parent.childIds as string[]).splice(Math.max(0, Math.min(operation.index, (parent.childIds as string[]).length)), 0, operation.nodeId);
+					break;
+				}
+				case "update_text": {
+					const target = next.nodes[operation.nodeId];
+					if (!target || target.type !== "text") throw new Error(`Canvas 文本节点不存在：${operation.nodeId}`);
+					target.text = structuredClone(operation.text);
+					break;
+				}
+				case "update_path": {
+					const target = next.nodes[operation.nodeId];
+					if (!target || target.type !== "path") throw new Error(`Canvas 路径节点不存在：${operation.nodeId}`);
+					target.path = structuredClone(operation.path);
+					break;
+				}
+				case "attach_asset": {
+					const target = next.nodes[operation.nodeId];
+					if (!target || target.type !== "image" || !next.assets[operation.assetId]) throw new Error(`Canvas 图片资源不存在：${operation.assetId}`);
+					target.image = { ...((target.image as Record<string, unknown> | undefined) ?? { fit: "contain" }), assetId: operation.assetId };
+					break;
+				}
+			}
+		}
+		next.revision += 1;
+		next.updatedAt = new Date().toISOString();
+		validateNativeCanvasDocument(next);
+		return next;
+	};
 	const persistProjectGuidelines = (projectPath: string, guidelines: DesignProjectGuidelines): DesignProjectGuidelines => {
 		const normalized = normalizeProjectGuidelines(guidelines);
 		const serialized = JSON.stringify(normalized, null, 2);
@@ -615,250 +850,131 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		return normalized;
 	};
 	/**
-	 * 将旧版 .gitpilot/design/<designId> 迁移到新布局，只在目标不存在或内容完全相同时写入。
-	 * 业务意图：升级不能悄悄覆盖用户已经放在项目根目录的正式文件；冲突必须让用户明确处理。
-	 */
-	const migrateLegacyDesignWorkspace = (designId: string, projectPath: string): boolean => {
-		const metadataPath = designMetadataPath(projectPath);
-		if (existsSync(metadataPath)) return false;
-		const legacyRoot = join(legacyDesignRoot(projectPath), designId);
-		const legacyDocumentPath = join(legacyRoot, "design.json");
-		if (!existsSync(legacyDocumentPath)) return false;
-		const legacyDocument = JSON.parse(readFileSync(legacyDocumentPath, "utf8")) as Record<string, unknown>;
-		const legacyFiles = Array.isArray(legacyDocument.files) ? legacyDocument.files as Array<Record<string, unknown>> : [];
-		const copyListedFiles = (sourceRoot: string, targetRoot: string, metadata: Array<Record<string, unknown>>): void => {
-			for (const file of metadata) {
-				const path = typeof file.path === "string" ? file.path : "";
-				if (!path || !existsSync(safeDesignFilePath(sourceRoot, path))) continue;
-				const source = safeDesignFilePath(sourceRoot, path);
-				const target = safeDesignFilePath(targetRoot, path);
-				const content = readFileSync(source);
-				if (existsSync(target)) {
-					if (!readFileSync(target).equals(content)) throw new Error(`旧版 Design 文件迁移冲突：${path}`);
-					continue;
-				}
-				mkdirSync(dirname(target), { recursive: true });
-				atomicWrite(target, content);
-			}
-		};
-		const projectRoot = normalizeDesignProjectPath(projectPath);
-		copyListedFiles(legacyRoot, projectRoot, legacyFiles);
-		const legacyGuidelinesPath = join(legacyDesignRoot(projectPath), "project-guidelines.json");
-		if (!existsSync(projectGuidelinesPath(projectPath)) && existsSync(legacyGuidelinesPath)) {
-			mkdirSync(designRoot(projectPath), { recursive: true });
-			atomicWrite(projectGuidelinesPath(projectPath), readFileSync(legacyGuidelinesPath));
-		}
-		const legacyRevisionsRoot = join(legacyRoot, "revisions");
-		if (existsSync(legacyRevisionsRoot)) {
-			for (const entry of readdirSync(legacyRevisionsRoot, { withFileTypes: true })) {
-				if (!entry.isDirectory() || !/^[a-zA-Z0-9_-]+$/.test(entry.name)) continue;
-				const sourceRevisionRoot = join(legacyRevisionsRoot, entry.name);
-				const targetRevisionRoot = revisionPath(designId, entry.name, projectPath);
-				if (existsSync(join(targetRevisionRoot, "design.json"))) continue;
-				mkdirSync(targetRevisionRoot, { recursive: true });
-				for (const metadataName of ["design.json", "snapshot.json"]) {
-					const source = join(sourceRevisionRoot, metadataName);
-					if (existsSync(source)) atomicWrite(join(targetRevisionRoot, metadataName), readFileSync(source));
-				}
-				const revisionDocumentPath = join(sourceRevisionRoot, "design.json");
-				if (existsSync(revisionDocumentPath)) {
-					const revisionDocument = JSON.parse(readFileSync(revisionDocumentPath, "utf8")) as Record<string, unknown>;
-					const revisionFiles = Array.isArray(revisionDocument.files) ? revisionDocument.files as Array<Record<string, unknown>> : [];
-					copyListedFiles(sourceRevisionRoot, join(targetRevisionRoot, "files"), revisionFiles);
-				}
-			}
-		}
-		mkdirSync(designRoot(projectPath), { recursive: true });
-		atomicWrite(metadataPath, JSON.stringify(legacyDocument, null, 2));
-		return true;
-	};
-	/**
 	 * 将 Design 快照落盘；changedPaths 只用于实时 patch 热路径。
 	 * 业务意图：manifest 仍然原子更新，但未改动的大文件不应在每个 patch 中重复写入。
 	 */
-	const persistDesign = (snapshot: DesignRpcSnapshot, projectPath?: string, changedPaths?: ReadonlySet<string>): void => {
+	const persistDesign = (snapshot: DesignRpcSnapshot, projectPath?: string): void => {
 		const normalizedProjectPath = normalizeDesignProjectPath(projectPath || snapshot.context?.projectPath);
-		const root = designPath(String(snapshot.document.id), normalizedProjectPath);
-		mkdirSync(designRoot(normalizedProjectPath), { recursive: true });
-		persistProjectGuidelines(normalizedProjectPath, snapshot.guidelines ?? defaultProjectGuidelines());
-		const files = Array.isArray(snapshot.files) ? snapshot.files : [];
-		const previousPaths = (() => {
-			try {
-				const previous = JSON.parse(readFileSync(designMetadataPath(normalizedProjectPath), "utf8")) as { files?: Array<{ path?: unknown }> };
-				return Array.isArray(previous.files) ? previous.files.flatMap((file) => typeof file.path === "string" ? [file.path] : []) : [];
-			} catch { return []; }
-		})();
-		for (const file of files) {
-			safeDesignFilePath(root, file.path);
-			if (file.content.length > 2_000_000) throw new Error(`Design 文件过大：${file.path}`);
+		if (snapshot.document.canvas) {
+			const canvas = nativeCanvasFromSnapshot(snapshot);
+			validateNativeCanvasDocument(canvas);
+			const root = nativeDesignRoot(normalizedProjectPath, String(snapshot.document.id));
+			mkdirSync(join(root, "assets"), { recursive: true });
+			mkdirSync(join(root, "fonts"), { recursive: true });
+			mkdirSync(join(root, "revisions"), { recursive: true });
+			mkdirSync(join(root, ".session"), { recursive: true });
+			const revisions = Array.isArray(snapshot.document.revisions) ? snapshot.document.revisions as Array<Record<string, unknown>> : [];
+			const manifest = { schemaVersion: 2, designId: canvas.id, name: canvas.name, revision: canvas.revision, pageCount: canvas.pages.length, updatedAt: canvas.updatedAt, revisions };
+			atomicWrite(nativeDesignManifestPath(normalizedProjectPath, String(snapshot.document.id)), JSON.stringify(manifest, null, 2));
+			atomicWrite(nativeDesignDocumentPath(normalizedProjectPath, String(snapshot.document.id)), JSON.stringify(canvas, null, 2));
+			const currentRevisionId = typeof revisions.at(-1)?.id === "string" ? String(revisions.at(-1)?.id) : `rev-${canvas.revision}`;
+			const revisionRoot = join(root, "revisions", currentRevisionId);
+			if (!existsSync(join(revisionRoot, "design.json"))) {
+				mkdirSync(revisionRoot, { recursive: true });
+				atomicWrite(join(revisionRoot, "design.json"), JSON.stringify(canvas, null, 2));
+				atomicWrite(join(revisionRoot, "snapshot.json"), JSON.stringify({ schemaVersion: 2, revisionId: currentRevisionId, document: snapshot.document }, null, 2));
+			}
+			designProjects.set(String(snapshot.document.id), normalizedProjectPath);
+			return;
 		}
-		const nextPaths = new Set(files.map((file) => file.path));
-		for (const oldPath of previousPaths) if (!nextPaths.has(oldPath)) {
-			const oldTarget = safeDesignFilePath(root, oldPath);
-			if (existsSync(oldTarget)) unlinkSync(oldTarget);
-		}
-		const document = { ...snapshot.document, files: files.map(({ content: _content, ...file }) => file) };
-		atomicWrite(designMetadataPath(normalizedProjectPath), JSON.stringify(document, null, 2));
-		for (const file of files) {
-			if (changedPaths && !changedPaths.has(file.path)) continue;
-			const target = safeDesignFilePath(root, file.path);
-			mkdirSync(dirname(target), { recursive: true });
-			atomicWrite(target, file.content ?? "");
-		}
-		const revisions = Array.isArray(snapshot.document.revisions) ? snapshot.document.revisions as Array<Record<string, unknown>> : [];
-		const currentRevisionId = typeof revisions.at(-1)?.id === "string" ? String(revisions.at(-1)?.id) : "";
-		if (currentRevisionId) persistRevisionSnapshot(snapshot, currentRevisionId, normalizedProjectPath);
-		designProjects.set(String(snapshot.document.id), normalizedProjectPath);
-		// 规范和页面文件共用项目级原子落盘，但不进入 canonical file manifest，避免 Desktop 出现第二个编辑入口。
-	};
-	/**
-	 * 修订目录是不可变事实源：只在首次生成该 revision 时写入，后续编辑和规范保存均不得改写。
-	 * 这样历史查看、回滚和上传始终对应同一套完整文件内容，而不是当前文件的摘要推断。
-	 */
-	const persistRevisionSnapshot = (snapshot: DesignRpcSnapshot, revisionId: string, projectPath: string): void => {
-		const root = revisionPath(String(snapshot.document.id), revisionId, projectPath);
-		if (existsSync(join(root, "design.json"))) return;
-		mkdirSync(root, { recursive: true });
-		const filesRoot = join(root, "files");
-		const files = Array.isArray(snapshot.files) ? snapshot.files : [];
-		const document = { ...snapshot.document, files: files.map(({ content: _content, ...file }) => file) };
-		atomicWrite(join(root, "design.json"), JSON.stringify(document, null, 2));
-		atomicWrite(join(root, "snapshot.json"), JSON.stringify({ schemaVersion: 1, revisionId, guidelines: snapshot.guidelines ?? defaultProjectGuidelines() }, null, 2));
-		for (const file of files) {
-			const target = safeDesignFilePath(filesRoot, file.path);
-			mkdirSync(dirname(target), { recursive: true });
-			atomicWrite(target, file.content ?? "");
-		}
+		throw new Error("Canvas Design 快照无效：旧 HTML/CSS/JS 工作区不支持继续写入，请新建原生 Canvas 工作区");
 	};
 	const loadDesignSnapshot = (designId: string, projectPath?: string): DesignRpcSnapshot | undefined => {
 		const normalizedProjectPath = normalizeDesignProjectPath(projectPath);
-		// 迁移在读取失败之前完成，避免把冲突降级成空白 demo。
-		migrateLegacyDesignWorkspace(designId, normalizedProjectPath);
-		try {
-			const root = designPath(designId, normalizedProjectPath);
-			const document = JSON.parse(readFileSync(designMetadataPath(normalizedProjectPath), "utf8")) as Record<string, unknown>;
-			const metadata = Array.isArray(document.files) ? document.files as Array<Record<string, unknown>> : [];
-			let files = metadata.map((file) => {
-				const path = typeof file.path === "string" ? file.path : "";
-				return designFile(path, readFileSync(safeDesignFilePath(root, path), "utf8"), typeof file.language === "string" ? file.language as DesignRpcFile["language"] : undefined, typeof file.scope === "string" ? file.scope as DesignRpcFile["scope"] : undefined, typeof file.id === "string" ? file.id : undefined);
-			});
-			if (!files.length) {
-				const pages = Array.isArray(document.pages) ? document.pages as Array<Record<string, unknown>> : [];
-				files = pages.flatMap((page) => Array.isArray(page.files) ? (page.files as Array<Record<string, unknown>>).map((file) => {
-					const legacyPath = typeof file.path === "string" ? file.path : "";
-					const pageId = typeof page.id === "string" ? page.id : "home";
-					const path = `pages/${pageId}/${basename(legacyPath)}`;
-					return designFile(path, readFileSync(safeDesignFilePath(root, path), "utf8"), typeof file.language === "string" ? file.language as DesignRpcFile["language"] : undefined, "page", `${pageId}:${basename(legacyPath)}`);
-				}) : []);
-			}
-			const pageRecords = Array.isArray(document.pages) ? document.pages as Array<Record<string, unknown>> : [];
-			document.pages = synchronizeDesignPages(pageRecords, files);
-			const context = { projectId: designProjectId(normalizedProjectPath), projectPath: normalizedProjectPath, designId };
-			return { document, files, context, guidelines: loadProjectGuidelines(normalizedProjectPath) };
-		} catch {
-			return undefined;
+		const nativeRoot = nativeDesignRoot(normalizedProjectPath, designId);
+		const nativeDocumentPath = nativeDesignDocumentPath(normalizedProjectPath, designId);
+		if (existsSync(nativeRoot) || existsSync(nativeDocumentPath)) {
+			if (!existsSync(nativeDocumentPath)) throw new Error("Canvas Design 工作区缺少 design.json");
+			const canvas = normalizeNativeCanvasDocument(JSON.parse(readFileSync(nativeDocumentPath, "utf8")));
+			validateNativeCanvasDocument(canvas);
+			let manifest: { revisions?: unknown } = {};
+			try { manifest = JSON.parse(readFileSync(nativeDesignManifestPath(normalizedProjectPath, designId), "utf8")) as { revisions?: unknown }; } catch { /* 旧原生目录没有 manifest 修订列表时使用初始修订。 */ }
+			const revisions = Array.isArray(manifest.revisions) ? manifest.revisions : [{ id: `rev-${canvas.revision}`, prompt: "Canvas Design", summary: "Canvas 原生设计版本", createdAt: canvas.updatedAt, kind: "initial" }];
+			const pages = canvas.pages.map((page) => ({ id: page.id, name: page.name, route: page.route, rootNodeId: page.rootNodeId, entryFileId: "", fileIds: [] }));
+			const document = { id: canvas.id, name: canvas.name, version: canvas.revision, schemaVersion: 2, entryPageId: canvas.entryPageId, pages, files: [], revisions, canvas };
+			return { document, files: [], context: { projectId: designProjectId(normalizedProjectPath), projectPath: normalizedProjectPath, designId }, guidelines: canvas.guidelines ?? loadProjectGuidelines(normalizedProjectPath) };
 		}
+		if (existsSync(designMetadataPath(normalizedProjectPath)) || existsSync(join(legacyDesignRoot(normalizedProjectPath), designId, "design.json"))) throw new Error("检测到旧 HTML/CSS/JS Design 工作区；该版本不支持迁移，请新建原生 Canvas 工作区");
+		return undefined;
 	};
-	/** 读取项目级 Design 索引；旧版 manifest 只作为迁移前的兼容入口。 */
+	/** 读取项目级 Design 索引；旧布局只用于返回明确的不兼容错误。 */
 	const loadDesignId = (projectPath: string): string | undefined => {
 		try {
-			const document = JSON.parse(readFileSync(designMetadataPath(projectPath), "utf8")) as { id?: unknown };
-			return typeof document.id === "string" ? document.id : undefined;
-		} catch {
-			try {
-				const manifest = JSON.parse(readFileSync(join(legacyDesignRoot(projectPath), "manifest.json"), "utf8")) as { designId?: unknown };
-				return typeof manifest.designId === "string" ? manifest.designId : undefined;
-			} catch { return undefined; }
-		}
+			const designDirectory = join(designRoot(projectPath), "design");
+			if (existsSync(designDirectory)) {
+				const native = readdirSync(designDirectory, { withFileTypes: true }).find((entry) => entry.isDirectory() && /^[a-zA-Z0-9_-]+$/.test(entry.name) && existsSync(join(designDirectory, entry.name, "manifest.json")));
+				if (native) return native.name;
+			}
+		} catch { /* 继续检查旧布局并返回明确不兼容错误。 */ }
+		const legacyDirectory = legacyDesignRoot(projectPath);
+		if (existsSync(designMetadataPath(projectPath)) || (existsSync(legacyDirectory) && readdirSync(legacyDirectory, { withFileTypes: true }).some((entry) => entry.isDirectory() && existsSync(join(legacyDirectory, entry.name, "design.json")) && !existsSync(join(legacyDirectory, entry.name, "manifest.json"))))) throw new Error("检测到旧 HTML/CSS/JS Design 工作区；该版本不支持迁移，请新建原生 Canvas 工作区");
+		return undefined;
 	};
 	/** 读取历史目录中的只读快照，绝不写回 current workspace。 */
 	const loadDesignRevision = (designId: string, revisionId: string, projectPath?: string): DesignRpcSnapshot => {
 		const normalizedProjectPath = normalizeDesignProjectPath(projectPath);
-		migrateLegacyDesignWorkspace(designId, normalizedProjectPath);
-		const root = revisionPath(designId, revisionId, normalizedProjectPath);
-		if (!existsSync(join(root, "design.json"))) throw new Error(`Design 历史修订不存在或尚未保存完整快照：${revisionId}`);
-		try {
-			const document = JSON.parse(readFileSync(join(root, "design.json"), "utf8")) as Record<string, unknown>;
-			const metadata = Array.isArray(document.files) ? document.files as Array<Record<string, unknown>> : [];
-			const filesRoot = existsSync(join(root, "files")) ? join(root, "files") : root;
-			const files = metadata.map((file) => {
-				const path = typeof file.path === "string" ? file.path : "";
-				return designFile(path, readFileSync(safeDesignFilePath(filesRoot, path), "utf8"), typeof file.language === "string" ? file.language as DesignRpcFile["language"] : undefined, typeof file.scope === "string" ? file.scope as DesignRpcFile["scope"] : undefined, typeof file.id === "string" ? file.id : undefined);
-			});
-			if (!files.length) throw new Error("历史修订没有可读取的文件");
-			const revisions = Array.isArray(document.revisions) ? document.revisions as Array<Record<string, unknown>> : [];
-			if (!revisions.some((revision) => revision.id === revisionId)) throw new Error("历史修订元数据不匹配");
-			document.pages = synchronizeDesignPages(Array.isArray(document.pages) ? document.pages as Array<Record<string, unknown>> : [], files);
-			let guidelines = loadProjectGuidelines(normalizedProjectPath);
-			try {
-				const metadataSnapshot = JSON.parse(readFileSync(join(root, "snapshot.json"), "utf8")) as { guidelines?: DesignProjectGuidelines };
-				guidelines = metadataSnapshot.guidelines ? normalizeProjectGuidelines(metadataSnapshot.guidelines) : guidelines;
-			} catch { /* 兼容早期目录缺少 revision 元数据的情况。 */ }
-			return { document, files, context: { projectId: designProjectId(normalizedProjectPath), projectPath: normalizedProjectPath, designId }, guidelines };
-		} catch (cause) {
-			throw new Error(`读取 Design 历史修订失败：${cause instanceof Error ? cause.message : String(cause)}`);
+		const nativeRevisionRoot = join(nativeDesignRoot(normalizedProjectPath, designId), "revisions", revisionId);
+		if (existsSync(join(nativeRevisionRoot, "design.json"))) {
+			const canvas = normalizeNativeCanvasDocument(JSON.parse(readFileSync(join(nativeRevisionRoot, "design.json"), "utf8")));
+			validateNativeCanvasDocument(canvas);
+			let document: Record<string, unknown>;
+			try { document = (JSON.parse(readFileSync(join(nativeRevisionRoot, "snapshot.json"), "utf8")) as { document?: Record<string, unknown> }).document ?? {}; } catch { document = {}; }
+			const revisions = Array.isArray(document.revisions) ? document.revisions : [{ id: revisionId, prompt: "Canvas Design", summary: "Canvas 原生设计版本", createdAt: canvas.updatedAt, kind: "patch" }];
+			return { document: { ...document, id: designId, name: canvas.name, version: canvas.revision, schemaVersion: 2, entryPageId: canvas.entryPageId, pages: canvas.pages.map((page) => ({ id: page.id, name: page.name, route: page.route, rootNodeId: page.rootNodeId, entryFileId: "", fileIds: [] })), files: [], revisions, canvas }, files: [], context: { projectId: designProjectId(normalizedProjectPath), projectPath: normalizedProjectPath, designId }, guidelines: canvas.guidelines ?? loadProjectGuidelines(normalizedProjectPath) };
 		}
-	};
-	/** 仅迁移旧默认模板的品牌字面量，避免已存在的用户设计继续显示 StudioAI。 */
-	const migrateLegacyDesignBrand = (snapshot: DesignRpcSnapshot): DesignRpcSnapshot => {
-		let changed = false;
-		const files = snapshot.files.map((file) => {
-			const content = file.content
-				.replaceAll("<title>StudioAI</title>", "<title>GitPilot</title>")
-				.replaceAll("<strong>◉ StudioAI</strong>", "<strong>◉ GitPilot</strong>");
-			if (content === file.content) return file;
-			changed = true;
-			return designFile(file.path, content);
-		});
-		if (!changed) return snapshot;
-		const entryPageId = typeof snapshot.document.entryPageId === "string" ? snapshot.document.entryPageId : "home";
-		return { ...snapshot, document: { ...snapshot.document, files: files.map(({ content: _content, ...item }) => item) }, files };
+		if (existsSync(designMetadataPath(normalizedProjectPath)) || existsSync(join(legacyDesignRoot(normalizedProjectPath), designId, "revisions"))) throw new Error("检测到旧 HTML/CSS/JS Design 历史；该版本不支持迁移，请新建原生 Canvas 工作区");
+		throw new Error(`Design Canvas 历史修订不存在：${revisionId}`);
 	};
 	const getDesignSnapshot = (designId: string, projectPath?: string): DesignRpcSnapshot => {
 		const normalizedProjectPath = normalizeDesignProjectPath(projectPath || designProjects.get(designId));
 		const cacheKey = designKey(normalizedProjectPath, designId);
 		const cached = designSnapshots.get(cacheKey);
 		if (cached) {
-			// 缓存快照可能来自页面索引尚未补齐的旧版本；每次返回前以 canonical 文件清单重建页面，
-			// 保证 Desktop 页面树和 sidecar 预览使用同一份页面入口数据。
-			const currentPages = Array.isArray(cached.document.pages) ? cached.document.pages as Array<Record<string, unknown>> : [];
-			const normalizedPages = synchronizeDesignPages(currentPages, cached.files);
-			if (JSON.stringify(currentPages) === JSON.stringify(normalizedPages)) return cached;
-			const normalized = { ...cached, document: { ...cached.document, pages: normalizedPages } };
-			designSnapshots.set(cacheKey, normalized);
-			persistDesign(normalized, normalizedProjectPath);
-			return normalized;
+			if (!cached.document.canvas) throw new Error("检测到旧 HTML/CSS/JS Design 工作区；该版本不支持迁移，请新建原生 Canvas 工作区");
+			return cached;
 		}
 		const loaded = loadDesignSnapshot(designId, normalizedProjectPath);
-		const base = migrateLegacyDesignBrand(loaded ?? demoDesignSnapshot(designId));
+		const base = loaded ?? demoDesignSnapshot(designId);
 		const snapshot = { ...base, context: base.context?.projectPath === normalizedProjectPath ? base.context : { projectId: designProjectId(normalizedProjectPath), projectPath: normalizedProjectPath, designId }, guidelines: base.guidelines ?? loadProjectGuidelines(normalizedProjectPath) };
 		if (loaded && snapshot !== loaded) persistDesign(snapshot, normalizedProjectPath);
 		else designProjects.set(designId, normalizedProjectPath);
 		designSnapshots.set(cacheKey, snapshot);
 		return snapshot;
 	};
+	/** 给兼容性 generate 接口提供受限场景摘要；模型不接收文件正文或本地路径。 */
+	const describeCanvasSnapshot = (snapshot: DesignRpcSnapshot): string => {
+		const canvas = nativeCanvasFromSnapshot(snapshot);
+		const nodeSummary = Object.values(canvas.nodes).map((node) => {
+			const text = node.text && typeof node.text === "object" ? node.text as Record<string, unknown> : undefined;
+			const image = node.image && typeof node.image === "object" ? node.image as Record<string, unknown> : undefined;
+			return { id: node.id, type: node.type, name: node.name, parentId: node.parentId, childIds: node.childIds, transform: node.transform, text: text ? { text: String(text.text ?? "").slice(0, 160), fontFamily: text.fontFamily, fontSize: text.fontSize } : undefined, assetId: image?.assetId };
+		}).slice(0, 500);
+		return JSON.stringify({ pages: canvas.pages, nodes: nodeSummary, assets: Object.values(canvas.assets).map((asset) => ({ id: asset.id, mimeType: asset.mimeType, width: asset.width, height: asset.height, fontFamily: asset.fontFamily })), guidelines: snapshot.guidelines }, null, 2);
+	};
 	/** 页面名称属于工作区元数据；独立生成修订并落盘，避免 UI 本地改名在重启后被 canonical snapshot 覆盖。 */
 	const renameDesignPage = (designId: string, projectPath: string, pageId: string, name: string, baseRevisionId: string): DesignRpcSnapshot => {
 		const current = getDesignSnapshot(designId, projectPath);
 		const nextName = name.trim();
 		if (!nextName) throw new Error("Design 页面名称不能为空");
-		const currentPages = Array.isArray(current.document.pages) ? current.document.pages as Array<Record<string, unknown>> : [];
-		if (!currentPages.some((page) => page.id === pageId)) throw new Error(`Design 页面不存在：${pageId}`);
-		const revisions = Array.isArray(current.document.revisions) ? current.document.revisions as Array<Record<string, unknown>> : [];
-		const currentRevisionId = typeof revisions.at(-1)?.id === "string" ? String(revisions.at(-1)?.id) : "";
-		if (baseRevisionId !== currentRevisionId) throw new Error(`Design revision 冲突：当前为 ${currentRevisionId || "unknown"}，请求基于 ${baseRevisionId || "unknown"}`);
-		const revisionId = `rev-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
-		const summary = `已将页面重命名为 ${nextName}。`;
-		const document = {
-			...current.document,
-			version: Number(current.document.version ?? 1) + 1,
-			pages: currentPages.map((page) => page.id === pageId ? { ...page, name: nextName } : page),
-			revisions: [...revisions, { id: revisionId, prompt: `重命名页面 ${nextName}`, summary, createdAt: new Date().toISOString(), parentRevisionId: currentRevisionId || undefined, kind: "patch" }],
-		};
-		const next = { document, files: current.files, context: current.context, guidelines: current.guidelines } as DesignRpcSnapshot;
-		designSnapshots.set(designKey(projectPath, designId), next);
-		persistDesign(next, projectPath);
-		return next;
+		if (current.document.canvas) {
+			const canvas = structuredClone(nativeCanvasFromSnapshot(current)) as CanvasDesignDocument;
+			const page = canvas.pages.find((candidate) => candidate.id === pageId);
+			if (!page) throw new Error(`Canvas 页面不存在：${pageId}`);
+			const revisions = Array.isArray(current.document.revisions) ? current.document.revisions as Array<Record<string, unknown>> : [];
+			const currentRevisionId = String(revisions.at(-1)?.id ?? "");
+			if (baseRevisionId !== currentRevisionId) throw new Error(`Design revision 冲突：当前为 ${currentRevisionId || "unknown"}，请求基于 ${baseRevisionId || "unknown"}`);
+			page.name = nextName;
+			canvas.revision += 1;
+			canvas.updatedAt = new Date().toISOString();
+			const revisionId = `rev-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+			const summary = `已将页面重命名为 ${nextName}。`;
+			const document = { ...current.document, version: canvas.revision, pages: canvas.pages.map((item) => ({ id: item.id, name: item.name, route: item.route, rootNodeId: item.rootNodeId, entryFileId: "", fileIds: [] })), revisions: [...revisions, { id: revisionId, prompt: `重命名页面 ${nextName}`, summary, createdAt: canvas.updatedAt, parentRevisionId: currentRevisionId || undefined, kind: "patch" }], canvas };
+			const next = { document, files: [], context: current.context, guidelines: current.guidelines } as DesignRpcSnapshot;
+			designSnapshots.set(designKey(projectPath, designId), next);
+			persistDesign(next, projectPath);
+			return next;
+		}
+		throw new Error("旧 HTML/CSS/JS Design 工作区不兼容；请新建原生 Canvas 工作区");
 	};
 	const designMetadata = (designId: string): DesignStreamMetadata => {
 		const projectPath = designProjects.get(designId);
@@ -887,61 +1003,20 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		designSessionManagers.set(cacheKey, manager);
 		return manager;
 	};
-	/**
-	 * 从 canonical file manifest 构建 sandbox 预览，不把项目源码路径交给 iframe。
-	 * 业务意图：页面是入口，CSS/JS 依赖由 sidecar 在当前 revision 内解析并内联，
-	 * 因而相对路径、shared 依赖和 patch 热刷新都只依赖设计工作区快照。
-	 */
+	/** 返回场景检查与渲染配置；预览不会生成页面源码或启动第二套内容容器。 */
 	const buildDesignPreview = (projectPath: string, designId: string, pageId: string, revisionId?: string, requestedSnapshot?: DesignRpcSnapshot): { snapshot: DesignRpcSnapshot; previewHandle: DesignPreviewHandle; checks: Array<{ level: "error" | "warning" | "info"; message: string }> } => {
 		const snapshot = requestedSnapshot ?? getDesignSnapshot(designId, projectPath);
-		const page = (snapshot.document.pages as Array<Record<string, unknown>> | undefined)?.find((candidate) => candidate.id === pageId);
-		if (!page) throw new Error(`Design 页面不存在：${pageId}`);
+		const canvas = nativeCanvasFromSnapshot(snapshot);
+		validateNativeCanvasDocument(canvas);
+		if (!canvas.pages.some((page) => page.id === pageId)) throw new Error(`Canvas 页面不存在：${pageId}`);
 		const revisions = Array.isArray(snapshot.document.revisions) ? snapshot.document.revisions as Array<Record<string, unknown>> : [];
-		const currentRevisionId = String(revisions.at(-1)?.id ?? "");
-		if (revisionId && revisionId !== currentRevisionId) throw new Error(`Design preview revision 冲突：快照为 ${currentRevisionId || "unknown"}，请求为 ${revisionId}`);
-		const files = snapshot.files;
-		const fileByPath = new Map(files.map((file) => [file.path, file]));
-		const entryFileId = typeof page.entryFileId === "string" ? page.entryFileId : "";
-		const entry = files.find((file) => file.id === entryFileId) ?? files.find((file) => file.path === `pages/${pageId}/index.html`);
-		if (!entry || entry.language !== "html") throw new Error(`Design 页面缺少 HTML 入口文件：${pageId}`);
-		const checks: Array<{ level: "error" | "warning" | "info"; message: string }> = [];
-		const resolveDependency = (fromPath: string, request: string): string | undefined => {
-			if (/^(https?:|data:|blob:|javascript:)/i.test(request)) return undefined;
-			const clean = request.split("#")[0].split("?")[0].replaceAll("\\", "/");
-			const sharedMatch = clean.match(/(?:^|\/)shared\/(.+)$/);
-			if (sharedMatch) return `shared/${sharedMatch[1]}`;
-			const assetMatch = clean.match(/(?:^|\/)assets\/(.+)$/);
-			if (assetMatch) return `assets/${assetMatch[1]}`;
-			const base = fromPath.split("/").slice(0, -1).concat(clean.split("/"));
-			const parts: string[] = [];
-			for (const part of base) { if (!part || part === ".") continue; if (part === "..") parts.pop(); else parts.push(part); }
-			return parts.join("/");
-		};
-		const inline = (fromPath: string, request: string): string => {
-			const resolved = resolveDependency(fromPath, request);
-			if (!resolved) { checks.push({ level: "warning", message: `已阻止外部预览依赖：${request}` }); return ""; }
-			const file = fileByPath.get(resolved);
-			if (!file) { checks.push({ level: "error", message: `预览依赖不存在：${resolved}` }); return ""; }
-			return file.content ?? "";
-		};
-		let html = entry.content ?? "";
-		html = html.replace(/<link\b[^>]*\bhref=["']([^"']+)["'][^>]*>/gi, (tag, request: string) => {
-			if (!/stylesheet/i.test(tag)) return tag;
-			return `<style data-design-path="${request}">${inline(entry.path, request)}</style>`;
-		});
-		html = html.replace(/<script\b[^>]*\bsrc=["']([^"']+)["'][^>]*>\s*<\/script>/gi, (_tag, request: string) => `<script data-design-path="${request}">${inline(entry.path, request)}</script>`);
-		const pageFiles = files.filter((file) => (page.fileIds as string[] | undefined)?.includes(file.id ?? "") || file.path.startsWith(`pages/${pageId}/`));
-		const css = pageFiles.filter((file) => file.language === "css" && !html.includes(file.path.split("/").pop() ?? "")).map((file) => file.content).join("\n");
-		const sharedCss = files.filter((file) => file.scope === "shared" && file.language === "css").map((file) => file.content).join("\n");
-		const js = pageFiles.filter((file) => file.language === "javascript" && !html.includes(file.path.split("/").pop() ?? "")).map((file) => file.content).join("\n");
-		// 共享 JS 需要像共享 CSS 一样被所有页面自动加载，否则页面 main.js 依赖的公共库/数据不会生效。
-		const sharedJs = files.filter((file) => file.scope === "shared" && file.language === "javascript" && !html.includes(file.path.split("/").pop() ?? "")).map((file) => file.content).join("\n");
-		if (css || sharedCss) html = html.includes("</head>") ? html.replace("</head>", `<style data-design-bundle="css">${sharedCss}\n${css}</style></head>`) : `<style>${sharedCss}\n${css}</style>${html}`;
-		const bridge = `document.querySelectorAll('[data-design-id]').forEach((element)=>element.addEventListener('click',(event)=>{event.preventDefault();window.parent.postMessage({type:'design:select',id:element.dataset.designId},'*')}));`;
-		const bundledJs = [sharedJs, js, bridge].filter(Boolean).join("\n");
-		if (html.includes("</body>")) html = html.replace("</body>", `<script data-design-bundle="js">${bundledJs}</script></body>`); else html += `<script>${bundledJs}</script>`;
-		checks.push({ level: "info", message: `已构建 ${page.name ?? pageId} 的多文件预览。` });
-		const previewHandle: DesignPreviewHandle = { id: `preview-${crypto.randomUUID()}`, projectId: designProjectId(projectPath), designId, pageId, revisionId: currentRevisionId, html, expiresAt: Date.now() + 5 * 60_000 };
+		const currentRevisionId = String(revisions.at(-1)?.id ?? `rev-${canvas.revision}`);
+		if (revisionId && revisionId !== currentRevisionId) throw new Error(`Design scene revision 冲突：快照为 ${currentRevisionId}，请求为 ${revisionId}`);
+		const checks = [
+			{ level: "info" as const, message: `Canvas 场景包含 ${Object.keys(canvas.nodes).length} 个节点和 ${Object.keys(canvas.assets).length} 个资源。` },
+			{ level: "info" as const, message: `渲染配置：页面 ${pageId}，DPR 由 Desktop CanvasKit 运行时决定。` },
+		];
+		const previewHandle: DesignPreviewHandle = { id: `scene-${crypto.randomUUID()}`, projectId: designProjectId(projectPath), designId, pageId, revisionId: currentRevisionId, scene: canvas, checks, expiresAt: Date.now() + 5 * 60_000 };
 		return { snapshot, previewHandle, checks };
 	};
 	/**
@@ -955,14 +1030,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		const snapshot = getDesignSnapshot(designId, projectPath);
 		persistDesign(snapshot, projectPath);
 		const archive = new JSZip();
-		const files = Array.isArray(snapshot.files) ? snapshot.files : [];
-		const document = { ...snapshot.document, files: files.map(({ content: _content, ...file }) => file) };
-		archive.file("design.json", JSON.stringify(document, null, 2));
-		for (const file of files) {
-			const archivePath = file.path.replaceAll("\\", "/");
-			if (!archivePath || archivePath.includes("..") || archivePath.startsWith("/")) throw new Error(`Design 导出文件路径非法：${file.path}`);
-			archive.file(archivePath, file.content ?? "");
-		}
+		const canvas = nativeCanvasFromSnapshot(snapshot);
+		archive.file("design.json", JSON.stringify(canvas, null, 2));
+		archive.file("manifest.json", JSON.stringify({ schemaVersion: 2, designId, revision: canvas.revision, name: canvas.name }, null, 2));
 		const buffer = await archive.generateAsync({ type: "nodebuffer", compression: "DEFLATE" });
 		mkdirSync(dirname(target), { recursive: true });
 		atomicWrite(target, buffer);
@@ -1006,18 +1076,17 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			const previous = operationKey ? appliedDesignOperations.get(operationKey) : undefined;
 			if (previous) {
 				const snapshot = getDesignSnapshot(designId, projectPath);
-				const changedPathSet = new Set(previous.changedPaths);
 				return {
 					operationId: previous.operationId,
 					revisionId: previous.revisionId,
 					summary: previous.summary,
-					changedFiles: snapshot.files.filter((file) => changedPathSet.has(file.path)),
-					removedPaths: previous.removedPaths,
+					affectedNodeIds: previous.changedPaths,
 					snapshot,
 				};
 			}
 		}
 		const current = getDesignSnapshot(designId, projectPath);
+		if (!current.document.canvas) throw new Error("旧 HTML/CSS/JS Design 工作区不兼容；请新建原生 Canvas 工作区");
 		const run = designRuns.get(designCacheKey(designId, projectPath));
 		const isDraft = Boolean(run?.active);
 		const revisions = Array.isArray(current.document.revisions) ? current.document.revisions as Array<Record<string, unknown>> : [];
@@ -1025,128 +1094,77 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		if (patch.baseRevisionId !== currentRevisionId) throw new Error(`Design revision 冲突：当前为 ${currentRevisionId || "unknown"}，请求基于 ${patch.baseRevisionId}`);
 		if (!Array.isArray(patch.operations) || patch.operations.length === 0 || patch.operations.length > 20) throw new Error("Design patch 操作数量必须在 1 到 20 之间");
 		if (!patch.operations.every(isDesignPatchOperation)) throw new Error("Design patch 包含不允许的文件或操作");
-		const affected = new Set(patch.affectedPaths ?? []);
-		for (const operation of patch.operations) {
-			if (affected.size > 0 && !affected.has(operation.path)) throw new Error(`Design patch affectedPaths 缺少：${operation.path}`);
-			if (operation.op === "rename_file" && affected.size > 0 && !affected.has(operation.newPath)) throw new Error(`Design patch affectedPaths 缺少：${operation.newPath}`);
-			if ("content" in operation && operation.content.length > 2_000_000) throw new Error(`Design 文件过大：${operation.path}`);
-		}
-		if (!/^[a-zA-Z0-9_-]+$/.test(pageId)) throw new Error("Design 页面标识非法");
-		const files = current.files.map((file) => ({ ...file }));
-		const currentPages = Array.isArray(current.document.pages) ? current.document.pages as Array<Record<string, unknown>> : [];
-		const currentPageIds = new Set(currentPages.flatMap((page) => typeof page.id === "string" ? [page.id] : []));
-		const createdPageIds = new Set(patch.operations.flatMap((operation) => {
-			if (operation.op !== "create_file") return [];
-			const createdPageId = designPageIdFromEntryPath(operation.path);
-			return createdPageId ? [createdPageId] : [];
-		}));
-		// 页面入口路径是新增页面的事实来源；active pageId 只代表本轮上下文，
-		// 不能拿它限制 patch 中同时创建的其它页面。
-		if (!currentPageIds.has(pageId) && !createdPageIds.has(pageId)) throw new Error(`Design 页面不存在：${pageId}`);
-		for (const operation of patch.operations) {
-			const operationPageMatch = operation.path.match(/^pages\/([a-zA-Z0-9_-]+)\//);
-			const operationPageId = operationPageMatch?.[1];
-			if (operationPageId && !currentPageIds.has(operationPageId) && !createdPageIds.has(operationPageId)) {
-				throw new Error(`Design 新页面缺少入口文件：pages/${operationPageId}/index.html`);
+		{
+			const canvas = isDraft && run ? run.draftScene : nativeCanvasFromSnapshot(current);
+			if (!canvas.pages.some((page) => page.id === pageId)) throw new Error(`Canvas 页面不存在：${pageId}`);
+			const nativeOperations = normalizeCanvasOperations(patch.operations as CanvasDesignOperation[], canvas);
+			if (!nativeOperations.every((operation) => ["create_node", "update_node", "delete_node", "move_node", "update_text", "update_path", "attach_asset"].includes(operation.op))) throw new Error("Canvas patch 只能包含场景操作，不能包含文件操作");
+			const nextCanvas = applyNativeCanvasOperations(canvas, nativeOperations);
+			const revisionId = isDraft ? run!.workingRevisionId : `rev-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
+			const summary = patch.summary?.trim() || "已应用一组 Canvas 场景修改。";
+			const nextRevisions = isDraft ? revisions : [...revisions, { id: revisionId, prompt: summary, summary, createdAt: new Date().toISOString(), parentRevisionId: currentRevisionId || undefined, kind: "patch" }];
+			const pages = nextCanvas.pages.map((page) => ({ id: page.id, name: page.name, route: page.route, rootNodeId: page.rootNodeId, entryFileId: "", fileIds: [] }));
+			const next = { document: { ...current.document, version: nextCanvas.revision, entryPageId: nextCanvas.entryPageId, pages, files: [], revisions: nextRevisions, canvas: nextCanvas }, files: [], context: current.context, guidelines: current.guidelines } as DesignRpcSnapshot;
+			const operationId = patch.operationId ?? `design-op-${crypto.randomUUID()}`;
+			const affectedNodeIds = collectCanvasPatchDelta(nativeOperations);
+			const transaction = { transactionId: operationId, baseRevision: canvas.revision, source: isDraft ? "ai" as const : "system" as const, operations: nativeOperations, summary, createdAt: new Date().toISOString() };
+			if (run && isDraft) {
+				const operationIndex = run.operationCount + 1;
+				const sequence = run.sequence + 1;
+				appendDraftJournal(run, { operationId, sequence, operationIndex, pageId, summary, transaction });
+				run.draftScene = nextCanvas;
+				run.operationCount = operationIndex;
+				run.hasChanges = true;
+				run.lastSummary = summary;
+				run.phase = "applying_patch";
+				writeDraftCheckpoint(run, { operationId, sequence, operationIndex, pageId, summary, transaction });
+				designSnapshots.set(designKey(projectPath, designId), next);
+				const metadata = designMetadata(designId);
+				output({ type: "design_patch_applied", ...metadata, operationId, revisionId, pageId, summary, transaction, affectedNodeIds, draftRevisionId: run.workingRevisionId, operationIndex, dirtyRects: [], isDraft: true } satisfies DesignPatchAppliedEvent);
+			} else {
+				designSnapshots.set(designKey(projectPath, designId), next);
+				persistDesign(next, projectPath);
 			}
-		}
-		for (const operation of patch.operations) {
-			const index = files.findIndex((file) => file.path === operation.path);
-			if (operation.op === "create_file") {
-				safeDesignFilePath(designPath(designId, projectPath), operation.path);
-				if (index >= 0) throw new Error(`Design 文件已存在：${operation.path}`);
-				files.push(designFile(operation.path, operation.content, operation.language));
-				continue;
-			}
-			if (index < 0) throw new Error(`Design 文件不存在：${operation.path}`);
-			const file = files[index];
-			if (operation.op === "replace_file") files[index] = { ...file, content: operation.content };
-			else if (operation.op === "replace_text") {
-				const position = file.content.indexOf(operation.search);
-				if (position < 0) throw new Error(`Design patch 未找到文本：${operation.path}`);
-				files[index] = { ...file, content: `${file.content.slice(0, position)}${operation.replacement}${file.content.slice(position + operation.search.length)}` };
-			} else if (operation.op === "insert_text") {
-				const occurrence = operation.occurrence ?? 1;
-				let position = -1;
-				let searchFrom = 0;
-				for (let match = 0; match < occurrence; match += 1) {
-					position = file.content.indexOf(operation.anchor, searchFrom);
-					if (position < 0) break;
-					searchFrom = position + operation.anchor.length;
+			const result = { operationId, revisionId, summary, affectedNodeIds, snapshot: next };
+			if (operationKey) {
+				if (appliedDesignOperations.size >= MAX_APPLIED_DESIGN_OPERATIONS) {
+					const oldestKey = appliedDesignOperations.keys().next().value;
+					if (typeof oldestKey === "string") appliedDesignOperations.delete(oldestKey);
 				}
-				if (position < 0) throw new Error(`Design patch 未找到插入锚点：${operation.path}`);
-				const offset = operation.position === "after" ? position + operation.anchor.length : position;
-				files[index] = { ...file, content: `${file.content.slice(0, offset)}${operation.text}${file.content.slice(offset)}` };
-			} else if (operation.op === "rename_file") {
-				if (files.some((candidate) => candidate.path === operation.newPath)) throw new Error(`Design 文件已存在：${operation.newPath}`);
-				safeDesignFilePath(designPath(designId, projectPath), operation.newPath);
-				files[index] = { ...file, path: operation.newPath };
-			} else if (operation.op === "delete_file") {
-				const pages = Array.isArray(current.document.pages) ? current.document.pages as Array<Record<string, unknown>> : [];
-				if (pages.some((page) => page.entryFileId === file.id)) throw new Error("不能删除页面入口文件");
-				files.splice(index, 1);
+				appliedDesignOperations.set(operationKey, { operationId, revisionId, summary, changedPaths: affectedNodeIds });
 			}
+			return result;
 		}
-		// 一次 Design run 的多个 patch 共用一个 draft 标识，正式 revision 在 agent_settled 时一次生成。
-		const revisionId = isDraft ? run!.workingRevisionId : `rev-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
-		const summary = patch.summary?.trim() || "已应用一组设计修改。";
-		const pages = synchronizeDesignPages(currentPages, files);
-		const document = {
-			...current.document,
-			version: Number(current.document.version ?? 1) + 1,
-			pages,
-			files: files.map(({ content: _content, ...file }) => file),
-			revisions: isDraft ? revisions : [...revisions, { id: revisionId, prompt: summary, summary, createdAt: new Date().toISOString(), parentRevisionId: currentRevisionId || undefined, kind: "patch" }],
-		};
-		const next = { document, files, context: current.context, guidelines: current.guidelines } as DesignRpcSnapshot;
-		// Design 实时事件只同步本次改动；完整快照在 run settled 或显式查询时按需传输，避免长任务重复搬运整项目代码。
-		const { changedFiles, removedPaths } = collectDesignPatchDelta(patch.operations, files);
-		designSnapshots.set(designKey(projectPath, designId), next);
-		persistDesign(next, projectPath, new Set([...changedFiles.map((file) => file.path), ...removedPaths]));
-		if (run && isDraft) {
-			run.hasChanges = true;
-			run.lastSummary = summary;
-			run.phase = "applying_patch";
-		}
-		const operationId = patch.operationId ?? `design-op-${crypto.randomUUID()}`;
-		if (isDraft) output({ type: "design_patch_applied", ...designMetadata(designId), operationId, revisionId, pageId, summary, changedFiles, removedPaths: [...removedPaths], isDraft: true } satisfies DesignPatchAppliedEvent);
-		const result = { operationId, revisionId, summary, changedFiles, removedPaths: [...removedPaths], snapshot: next };
-		if (operationKey) {
-			if (appliedDesignOperations.size >= MAX_APPLIED_DESIGN_OPERATIONS) {
-				const oldestKey = appliedDesignOperations.keys().next().value;
-				if (typeof oldestKey === "string") appliedDesignOperations.delete(oldestKey);
-			}
-			appliedDesignOperations.set(operationKey, {
-				operationId: result.operationId,
-				revisionId: result.revisionId,
-				summary: result.summary,
-				changedPaths: result.changedFiles.map((file) => file.path),
-				removedPaths: result.removedPaths,
-			});
-		}
-		return result;
 	};
 	/**
 	 * Design run 收口时把实时写入的项目文件固化为一个不可变 revision。
 	 * 业务意图：patch 是编辑过程，run settled 才是用户版本时间线中的一次提交。
 	 */
-	const settleDesignRun = (designId: string, cacheKey: string): DesignRpcSnapshot => {
+	const settleDesignRun = (designId: string, cacheKey: string, reason: "completed" | "interrupted" = "completed"): DesignRpcSnapshot => {
 		const run = designRuns.get(cacheKey);
-		if (!run?.hasChanges) return getDesignSnapshot(designId, run?.projectPath);
+		if (!run) throw new Error("Design run 不存在，无法收口");
+		if (!run.hasChanges) {
+			removeDraftJournal(run.projectPath, designId, run.runId);
+			return getDesignSnapshot(designId, run.projectPath);
+		}
 		const current = getDesignSnapshot(designId, run.projectPath);
+		const canvas = run.draftScene;
 		const revisions = Array.isArray(current.document.revisions) ? current.document.revisions as Array<Record<string, unknown>> : [];
 		const parentRevisionId = typeof revisions.at(-1)?.id === "string" ? String(revisions.at(-1)?.id) : "";
 		const revisionId = `rev-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
-		const summary = run.lastSummary || "已完成一次 Design 任务。";
+		const summary = run.lastSummary || (reason === "interrupted" ? "Design 任务已停止，保留已接受的绘制内容。" : "已完成一次 Design 任务。");
 		const document = {
 			...current.document,
-			version: Number(current.document.version ?? 1) + 1,
-			revisions: [...revisions, { id: revisionId, prompt: summary, summary, createdAt: new Date().toISOString(), parentRevisionId: parentRevisionId || undefined, kind: "patch" }],
+			version: canvas.revision,
+			pages: canvas.pages.map((page) => ({ id: page.id, name: page.name, route: page.route, rootNodeId: page.rootNodeId, entryFileId: "", fileIds: [] })),
+			revisions: [...revisions, { id: revisionId, prompt: summary, summary, createdAt: new Date().toISOString(), parentRevisionId: parentRevisionId || undefined, kind: reason === "interrupted" ? "interrupted" : "patch" }],
 			files: current.files.map(({ content: _content, ...file }) => file),
+			canvas,
 		};
 		const settled = { document, files: current.files, context: current.context, guidelines: current.guidelines } as DesignRpcSnapshot;
 		designSnapshots.set(cacheKey, settled);
 		persistDesign(settled, run.projectPath);
+		removeDraftJournal(run.projectPath, designId, run.runId);
 		return settled;
 	};
 	const requestDesignApproval = async (designId: string, patch: DesignPatch, reason: string): Promise<boolean> => {
@@ -1296,7 +1314,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					const settledSnapshot = settleDesignRun(designId, cacheKey);
 					const settledMetadata = designMetadata(designId);
 					run.active = false;
-					output({ type: "design_run_settled", ...settledMetadata, snapshot: settledSnapshot });
+					output({ type: "design_run_settled", ...settledMetadata, snapshot: settledSnapshot, reason: "completed" });
 				}
 				// 释放本轮内存对象，但保留固定 JSONL；下一轮 createDesignSession 会重新打开并恢复上下文。
 				// abort 后 run 已提前标记 inactive，也必须走这里，否则停止任务会泄漏 AgentSession。
@@ -1329,46 +1347,30 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			await designSession.setModel(session.model);
 		}
 		if (!designSession.model) throw new Error("Design 尚未选择可用模型");
-		const existingFiles = current.files.map((file) => `--- ${file.path} ---\n${file.content}`).join("\n\n");
-		// 兼容接口仍要求完整 JSON；临时关闭 Design custom tools，避免旧调用被新的 patch 协议打断。
+		const sceneSummary = describeCanvasSnapshot(current);
+		// 兼容接口仍要求完整 JSON；临时关闭工具，确保 generate 只返回可校验的原生事务。
 		const activeDesignTools = designSession.getActiveToolNames();
 		designSession.setActiveToolsByName([]);
 		try {
-			await designSession.prompt(`用户需求：\n${command.prompt}\n\n交付格式：\n- 不要调用工具，只返回 JSON：{"summary": string, "files": [{"path": string, "content": string, "language": "html|css|javascript|json|unknown"}]}。\n- path 可以是当前页面文件名、pages/ 页面文件或 shared/ 共享文件；不要使用远程资源。\n\n当前文件：\n${existingFiles}`, { source: "rpc", persistUserMessageBeforeRun: true });
+			await designSession.prompt(`用户需求：\n${command.prompt}\n\n交付格式：\n- 不要调用工具，只返回 JSON：{"summary": string, "operations": CanvasDesignOperation[]}。\n- operations 只能使用 create_node、update_node、delete_node、move_node、update_text、update_path、attach_asset；不得返回源码、渲染引擎 API 或本地路径。\n\n当前场景摘要：\n${sceneSummary}`, { source: "rpc", persistUserMessageBeforeRun: true });
 			await designSession.waitForIdle();
 		} finally {
 			designSession.setActiveToolsByName(activeDesignTools);
 		}
 		const modelText = designSession.getLastAssistantText() ?? "";
 		if (modelText) output({ type: "design_delta", requestId, designId: command.designId, delta: modelText });
-		let generatedFiles: DesignRpcFile[] | undefined;
+		let generatedOperations: CanvasDesignOperation[] | undefined;
 		let generatedSummary = "";
 		try {
-			const parsed = JSON.parse(modelText.replace(/^```json\s*/i, "").replace(/\s*```$/, "")) as { summary?: unknown; files?: unknown };
+			const parsed = JSON.parse(modelText.replace(/^```json\s*/i, "").replace(/\s*```$/, "")) as { summary?: unknown; operations?: unknown };
 			if (typeof parsed.summary === "string") generatedSummary = parsed.summary;
-			if (Array.isArray(parsed.files)) {
-				const valid = parsed.files.filter((file): file is { path: string; content: string; language?: DesignRpcFile["language"] } => Boolean(file && typeof file === "object" && typeof (file as { path?: unknown }).path === "string" && typeof (file as { content?: unknown }).content === "string"));
-				if (valid.length > 0) generatedFiles = valid.map((file) => {
-					const path = file.path.startsWith("pages/") || file.path.startsWith("shared/") || file.path.startsWith("assets/") ? file.path : `pages/${command.pageId}/${file.path}`;
-					return designFile(path, file.content, file.language);
-				});
-			}
+			if (Array.isArray(parsed.operations) && parsed.operations.length > 0 && parsed.operations.length <= 20 && parsed.operations.every(isDesignPatchOperation)) generatedOperations = parsed.operations as CanvasDesignOperation[];
 		} catch { /* 非结构化响应会在下方转为明确错误，禁止本地 mock 回退。 */ }
-		if (!generatedFiles || !generatedFiles.some((file) => file.path === `pages/${command.pageId}/index.html`)) throw new Error("Design Agent 未返回当前页面的 HTML 入口文件");
-		const pagePrefix = `pages/${command.pageId}/`;
-		const files = [...current.files.filter((file) => !file.path.startsWith(pagePrefix)), ...generatedFiles];
-		const revisionId = `rev-${Date.now()}`;
+		if (!generatedOperations) throw new Error("Design Agent 未返回合法的 Canvas 场景事务");
 		const summary = generatedSummary || "已应用 Design Agent 的结构化生成结果。";
-		const document = {
-			...current.document,
-			version: Number(current.document.version ?? 1) + 1,
-			revisions: [...revisions, { id: revisionId, prompt: command.prompt, summary, createdAt: new Date().toISOString(), parentRevisionId: currentRevisionId || undefined, kind: "patch" }],
-			pages: synchronizeDesignPages(current.document.pages as Array<Record<string, unknown>>, files),
-			files: files.map(({ content: _content, ...file }) => file),
-		};
-		const next = { document, files, context: current.context, guidelines: current.guidelines } as DesignRpcSnapshot;
-		designSnapshots.set(designKey(projectPath, command.designId), next); persistDesign(next, projectPath); output({ type: "design_preview_ready", designId: command.designId, pageId: command.pageId, revisionId, snapshot: next });
-		return { requestId, snapshot: next, summary };
+		const result = await applyDesignPatch(command.designId, command.pageId, { baseRevisionId: currentRevisionId, operations: generatedOperations, summary, operationId: `design-generate-${requestId}` });
+		output({ type: "design_preview_ready", designId: command.designId, pageId: command.pageId, revisionId: result.revisionId, snapshot: result.snapshot });
+		return { requestId, snapshot: result.snapshot, summary };
 	};
 
 	const designPrompt = async (command: Extract<RpcCommand, { type: "design_prompt" }>, responseId?: string) => {
@@ -1396,6 +1398,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		if (command.baseRevisionId && command.baseRevisionId !== currentRevisionId) throw new Error(`Design revision 冲突：当前为 ${currentRevisionId || "unknown"}，请求基于 ${command.baseRevisionId}`);
 		if (!Array.isArray(current.document.pages) || !(current.document.pages as Array<Record<string, unknown>>).some((page) => page.id === command.pageId)) throw new Error(`Design 页面不存在：${command.pageId}`);
 		designRuns.set(cacheKey, {
+			designId: command.designId,
 			requestId,
 			runId,
 			pageId: command.pageId,
@@ -1405,23 +1408,32 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			// 运行内 patch 使用稳定 draft revision；任务收口时再写入正式 revision。
 			baseRevisionId: currentRevisionId,
 			workingRevisionId: `draft-${runId}`,
+			draftScene: structuredClone(nativeCanvasFromSnapshot(current)),
+			operationCount: 0,
 			hasChanges: false,
 			phase: "thinking",
 			planDecisionPending: true,
 		});
+		createDraftJournal(designRuns.get(cacheKey)!);
 		getDesignSessionManager(command.designId, projectPath);
 		appendDesignUiMessage(cacheKey, { id: command.uiMessageId ?? `design-user-${requestId}`, kind: "user", text: command.prompt, status: "sent" });
 		try {
 			const designSession = await createDesignSession(command.designId, projectPath);
 			if (session.model && (!designSession.model || designSession.model.provider !== session.model.provider || designSession.model.id !== session.model.id)) await designSession.setModel(session.model);
 			if (!designSession.model) throw new Error("Design 尚未选择可用模型");
-			const fileManifest = describeDesignSnapshot(current);
-			const prompt = `用户需求：\n${command.prompt}\n\n交付格式：\n- 直接修改当前 Design snapshot，产出可运行、可预览的设计结果。\n- 遵循用户指定的技术栈、页面范围、交互要求和文件格式。\n- 如果用户要求新增页面，必须用 create_file 创建 pages/<pageId>/index.html；同一 patch 可同时创建该页面的 styles.css 和 main.js。\n- 完成后通过 Design 工具提交实际文件修改。\n\n当前文件：\n${fileManifest}`;
+			const sceneSummary = describeCanvasSnapshot(current);
+			const prompt = `用户需求：\n${command.prompt}\n\n交付格式：\n- 直接修改当前 CanvasDesignDocument，产出可编辑的原生设计结果。\n- 遵循用户指定的页面范围、交互要求、布局和视觉规范。\n- 只通过 Design 工具提交 Canvas 节点、布局、文字、路径和资源操作。\n- 禁止输出源码、渲染引擎 API 和本地路径。\n\n当前场景摘要：\n${sceneSummary}`;
 			void designSession.prompt(prompt, { source: "rpc", persistUserMessageBeforeRun: true }).catch((error: unknown) => {
 				const run = designRuns.get(cacheKey);
 				if (!run?.active) return;
+				// Agent 异常也是一次可恢复的中断边界：先把已接受 patch 固化为
+				// interrupted revision，再清理 active，避免 journal 永久停留在悬挂状态。
+				const interruptedSnapshot = settleDesignRun(command.designId, cacheKey, "interrupted");
 				run.active = false;
-				output({ type: "design_error", ...designMetadata(command.designId), error: error instanceof Error ? error.message : String(error) });
+				const metadata = designMetadata(command.designId);
+				output({ type: "design_error", ...metadata, error: error instanceof Error ? error.message : String(error) });
+				run.sequence += 1;
+				output({ type: "design_run_settled", ...metadata, sequence: run.sequence, emittedAt: Date.now(), snapshot: interruptedSnapshot, reason: "interrupted" });
 				void flushSkillReload("design");
 			});
 			return { requestId, runId };
@@ -2004,6 +2016,60 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 
 			// =================================================================
+			// Desktop Code 模式右侧栏 Git 面板（受限 sidecar Git，薄转发到 core/git）
+			// =================================================================
+
+			case "git_get_state":
+				return await runGitCommand(id, "git_get_state", () => gitService.getState(runtimeHost.cwd));
+
+			case "git_get_diff": {
+				const scope = command.scope === "staged" ? "staged" : "worktree";
+				return await runGitCommand(id, "git_get_diff", () => gitService.getDiff(runtimeHost.cwd, scope, command.path));
+			}
+
+			case "git_list_branches":
+				return await runGitCommand(id, "git_list_branches", async () => ({ branches: await gitService.listBranches(runtimeHost.cwd) }));
+
+			case "git_stage_paths": {
+				const paths = Array.isArray(command.paths) ? command.paths.filter((path): path is string => typeof path === "string") : [];
+				return await runGitCommand(id, "git_stage_paths", () => gitService.stagePaths(runtimeHost.cwd, paths));
+			}
+
+			case "git_unstage_paths": {
+				const paths = Array.isArray(command.paths) ? command.paths.filter((path): path is string => typeof path === "string") : [];
+				return await runGitCommand(id, "git_unstage_paths", () => gitService.unstagePaths(runtimeHost.cwd, paths));
+			}
+
+			case "git_untrack_paths": {
+				const paths = Array.isArray(command.paths) ? command.paths.filter((path): path is string => typeof path === "string") : [];
+				return await runGitCommand(id, "git_untrack_paths", () => gitService.untrackPaths(runtimeHost.cwd, paths));
+			}
+
+			case "git_commit":
+				return await runGitCommand(id, "git_commit", () => gitService.commit(runtimeHost.cwd, command.message, command.expectedVersion));
+
+			case "git_suggest_commit_message":
+				return await runGitCommand(id, "git_suggest_commit_message", suggestCommitMessage);
+
+			case "git_create_branch":
+				return await runGitCommand(id, "git_create_branch", () => gitService.createBranch(runtimeHost.cwd, command.name, command.switchTo === true));
+
+			case "git_switch_branch":
+				return await runGitCommand(id, "git_switch_branch", () => gitService.switchBranch(runtimeHost.cwd, command.name, command.expectedVersion));
+
+			case "git_fetch":
+				return await runGitCommand(id, "git_fetch", () => gitService.fetch(runtimeHost.cwd, command.remote));
+
+			case "git_pull_ff_only":
+				return await runGitCommand(id, "git_pull_ff_only", () => gitService.pullFfOnly(runtimeHost.cwd, command.expectedVersion));
+
+			case "git_push":
+				return await runGitCommand(id, "git_push", () => gitService.push(runtimeHost.cwd, command.expectedVersion, command.setUpstream === true));
+
+			case "git_cancel_operation":
+				return await runGitCommand(id, "git_cancel_operation", async () => ({ cancelled: gitService.cancelOperation(command.operationId) }));
+
+			// =================================================================
 			// GitPilot Work（独立无状态工作对话）
 			// =================================================================
 
@@ -2016,11 +2082,18 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				const projectPath = normalizeDesignProjectPath(command.projectPath);
 				const designId = loadDesignId(projectPath);
 				if (!designId) throw new Error("当前工作空间还没有设计工作区");
-				const snapshot = getDesignSnapshot(designId, projectPath);
 				const cacheKey = designKey(projectPath, designId);
+				const draft = listDraftMetadata(projectPath, designId);
+				// applyDesignPatch 为了让 Agent 继续读取最新场景会暂存 draft snapshot；
+				// design_open 的 canonical 字段必须重新从磁盘读取，避免 Desktop 重连后把草稿误当正式场景。
+				const snapshot = draft ? (loadDesignSnapshot(designId, projectPath) ?? getDesignSnapshot(designId, projectPath)) : getDesignSnapshot(designId, projectPath);
 				const messages = getDesignUiMessages(getDesignSessionManager(designId, projectPath));
+				const activeRun = designRuns.get(cacheKey);
+				const draftSnapshot = draft?.status === "active" && activeRun?.active
+					? { ...snapshot, document: { ...snapshot.document, version: activeRun.draftScene.revision, pages: activeRun.draftScene.pages.map((page) => ({ id: page.id, name: page.name, route: page.route, rootNodeId: page.rootNodeId, entryFileId: "", fileIds: [] })), canvas: activeRun.draftScene } }
+					: undefined;
 				releaseIdleDesignSessionManager(cacheKey);
-				return success(id, "design_open", { designId, snapshot, messages, execution: getDesignRunRecovery(designId, projectPath) });
+				return success(id, "design_open", { designId, snapshot, messages, execution: getDesignRunRecovery(designId, projectPath), ...(draft ? { draft } : {}), ...(draftSnapshot ? { draftSnapshot } : {}) } satisfies DesignOpenData);
 			}
 
 			case "design_sync_messages": {
@@ -2045,7 +2118,15 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				if (loadDesignId(projectPath) !== command.designId) throw new Error("当前工作空间还没有可保存规范的设计工作区");
 				const snapshot = getDesignSnapshot(command.designId, projectPath);
 				if (String(snapshot.document.id) !== command.designId) throw new Error("Design 规范保存目标不匹配当前工作区");
-				const next = { ...snapshot, guidelines: persistProjectGuidelines(projectPath, command.guidelines) };
+				const guidelines = persistProjectGuidelines(projectPath, command.guidelines);
+				let canvas = snapshot.document.canvas ? structuredClone(nativeCanvasFromSnapshot(snapshot)) as CanvasDesignDocument : undefined;
+				if (command.canvas) {
+					validateNativeCanvasDocument(command.canvas);
+					canvas = { ...structuredClone(command.canvas), id: command.designId, name: typeof snapshot.document.name === "string" ? snapshot.document.name : command.designId, revision: Math.max(snapshot.document.canvas ? nativeCanvasFromSnapshot(snapshot).revision : 1, command.canvas.revision), updatedAt: new Date().toISOString() };
+				}
+				const next = canvas
+					? { ...snapshot, guidelines, document: { ...snapshot.document, canvas: { ...canvas, guidelines: canvas.guidelines ?? guidelines }, pages: canvas.pages.map((page) => ({ id: page.id, name: page.name, route: page.route, rootNodeId: page.rootNodeId, entryFileId: "", fileIds: [] })) } }
+					: { ...snapshot, guidelines };
 				designSnapshots.set(designKey(projectPath, command.designId), next);
 				// 规范更新也写回 .gitpilot/design.json，确保 Desktop 重连时一次拿到一致快照。
 				persistDesign(next, projectPath);
@@ -2063,7 +2144,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				const projectPath = normalizeDesignProjectPath(command.projectPath);
 				const designId = loadDesignId(projectPath) || `design-${crypto.randomUUID()}`;
 				const snapshot = getDesignSnapshot(designId, projectPath);
-				if (command.name && snapshot.document.name !== command.name) snapshot.document.name = command.name;
+				if (command.name && snapshot.document.name !== command.name) {
+					snapshot.document.name = command.name;
+					if (snapshot.document.canvas) snapshot.document.canvas = { ...nativeCanvasFromSnapshot(snapshot), name: command.name, updatedAt: new Date().toISOString() };
+				}
 				designSnapshots.set(designKey(projectPath, designId), snapshot); persistDesign(snapshot, projectPath);
 				const cacheKey = designKey(projectPath, designId);
 				const manager = getDesignSessionManager(designId, projectPath);
@@ -2116,6 +2200,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				const cacheKey = designKey(projectPath, command.designId);
 				const run = designRuns.get(cacheKey);
 				if (run?.active) {
+					const interruptedSnapshot = settleDesignRun(command.designId, cacheKey, "interrupted");
 					run.active = false;
 					for (const [clarificationId, clarification] of designClarifications) {
 						if (clarification.designId === cacheKey) {
@@ -2129,11 +2214,43 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 							designApprovals.delete(approvalId);
 						}
 					}
-					output({ type: "design_error", ...designMetadata(command.designId), error: "Design 任务已停止" });
+					const sequence = run.sequence + 1;
+					run.sequence = sequence;
+					output({ type: "design_error", projectId: designProjectId(run.projectPath), projectPath: run.projectPath, designId: command.designId, requestId: run.requestId, runId: run.runId, sequence, emittedAt: Date.now(), error: "Design 任务已停止" });
+					output({ type: "design_run_settled", projectId: designProjectId(run.projectPath), projectPath: run.projectPath, designId: command.designId, requestId: run.requestId, runId: run.runId, sequence: sequence + 1, emittedAt: Date.now(), snapshot: interruptedSnapshot, reason: "interrupted" });
 				}
 				const designSession = designSessions.get(cacheKey);
 				if (designSession) await designSession.abort();
 				return success(id, "design_abort");
+			}
+
+			case "design_recover_draft": {
+				const projectPath = normalizeDesignProjectPath(command.projectPath);
+				const cacheKey = designKey(projectPath, command.designId);
+				const active = designRuns.get(cacheKey);
+				if (active?.active) throw new Error("Design 草稿仍在运行中，请先停止当前任务");
+				const metadata = readDraftMetadata(projectPath, command.designId, command.runId, "orphaned");
+				if (!metadata) throw new Error("Design 草稿不存在或已被收口");
+				if (command.action === "discard") {
+					removeDraftJournal(projectPath, command.designId, command.runId);
+					const canonical = loadDesignSnapshot(command.designId, projectPath) ?? getDesignSnapshot(command.designId, projectPath);
+					designSnapshots.set(cacheKey, canonical);
+					return success(id, "design_recover_draft", { designId: command.designId, action: "discard", snapshot: canonical, reason: "discarded" });
+				}
+				const current = loadDesignSnapshot(command.designId, projectPath) ?? getDesignSnapshot(command.designId, projectPath);
+				const currentRevisionId = String((current.document.revisions as Array<Record<string, unknown>>).at(-1)?.id ?? "");
+				if (currentRevisionId !== metadata.baseRevisionId) throw new Error(`Design 草稿基准 revision 已变化：当前为 ${currentRevisionId || "unknown"}`);
+				const base = JSON.parse(readFileSync(draftBasePath(projectPath, command.designId, command.runId), "utf8")) as { canvas?: CanvasDesignDocument };
+				if (!base.canvas) throw new Error("Design 草稿缺少 base 场景");
+				let draftScene = base.canvas;
+				const records = readDraftRecords(projectPath, command.designId, command.runId);
+				for (const record of records) draftScene = applyNativeCanvasOperations(draftScene, record.transaction.operations);
+				const recoveredRun: DesignRun = { designId: command.designId, requestId: metadata.requestId, runId: command.runId, pageId: draftScene.entryPageId, projectPath, sequence: metadata.lastSequence, active: false, baseRevisionId: metadata.baseRevisionId, workingRevisionId: metadata.draftRevisionId, draftScene, operationCount: records.length, hasChanges: records.length > 0, lastSummary: metadata.lastSummary, phase: "idle", planDecisionPending: false };
+			designRuns.set(cacheKey, recoveredRun);
+			designSnapshots.set(cacheKey, { ...current, document: { ...current.document, version: draftScene.revision, pages: draftScene.pages.map((page) => ({ id: page.id, name: page.name, route: page.route, rootNodeId: page.rootNodeId, entryFileId: "", fileIds: [] })), canvas: draftScene } });
+			const snapshot = settleDesignRun(command.designId, cacheKey, "interrupted");
+			designRuns.delete(cacheKey);
+			return success(id, "design_recover_draft", { designId: command.designId, action: "keep", snapshot, reason: "interrupted" });
 			}
 
 			case "design_approval_response": {
@@ -2180,22 +2297,24 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				const projectPath = normalizeDesignProjectPath(command.projectPath);
 				const current = getDesignSnapshot(command.designId, projectPath);
 				const source = loadDesignRevision(command.designId, command.revisionId, projectPath);
+				const sourceCanvas = nativeCanvasFromSnapshot(source);
 				const revisions = Array.isArray(current.document.revisions) ? current.document.revisions as Array<Record<string, unknown>> : [];
 				const currentRevisionId = typeof revisions.at(-1)?.id === "string" ? String(revisions.at(-1)?.id) : "";
 				const revisionId = `rev-${Date.now()}-${crypto.randomUUID().slice(0, 8)}`;
 				const summary = `已从历史修订 ${command.revisionId} 创建当前版本。`;
-				// 回滚是一次新的可审计提交：沿用源修订的文件和页面，但保留当前完整时间线。
-				const files = source.files.map((file) => ({ ...file }));
+				// 回滚是一次新的可审计提交：沿用源修订的场景，但保留当前完整时间线。
+				const canvas = { ...structuredClone(sourceCanvas), id: command.designId, name: String(current.document.name ?? sourceCanvas.name), revision: Number(nativeCanvasFromSnapshot(current).revision) + 1, updatedAt: new Date().toISOString() } as CanvasDesignDocument;
 				const document = {
-					...source.document,
+					...current.document,
 					id: command.designId,
-					name: current.document.name ?? source.document.name,
+					name: canvas.name,
 					version: Number(current.document.version ?? 1) + 1,
-					pages: synchronizeDesignPages(Array.isArray(source.document.pages) ? source.document.pages as Array<Record<string, unknown>> : [], files),
-					files: files.map(({ content: _content, ...file }) => file),
+					pages: canvas.pages.map((page) => ({ id: page.id, name: page.name, route: page.route, rootNodeId: page.rootNodeId, entryFileId: "", fileIds: [] })),
+					files: [],
 					revisions: [...revisions, { id: revisionId, prompt: summary, summary, createdAt: new Date().toISOString(), parentRevisionId: currentRevisionId || undefined, sourceRevisionId: command.revisionId, kind: "rollback" }],
+					canvas,
 				};
-				const snapshot = { document, files, context: current.context, guidelines: source.guidelines ?? current.guidelines } as DesignRpcSnapshot;
+				const snapshot = { document, files: [], context: current.context, guidelines: source.guidelines ?? current.guidelines } as DesignRpcSnapshot;
 				designProjects.set(command.designId, projectPath);
 				designSnapshots.set(designKey(projectPath, command.designId), snapshot);
 				persistDesign(snapshot, projectPath);
@@ -2210,11 +2329,14 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				const token = await loadCliToken(platformUrl);
 				if (!token) throw new Error("当前 CLI Token 不可用，请重新进行设备授权后上传设计版本");
 				const snapshot = loadDesignRevision(command.designId, command.revisionId, projectPath);
-				const totalSize = Buffer.byteLength(JSON.stringify({ document: snapshot.document, files: snapshot.files, guidelines: snapshot.guidelines }), "utf8");
+				const canvasScene = snapshot.document.canvas;
+				if (!canvasScene) throw new Error("当前修订不是 Canvas 原生场景，旧 HTML 工作区不支持上传");
+				const totalSize = Buffer.byteLength(JSON.stringify(canvasScene), "utf8");
 				if (totalSize > 10 * 1024 * 1024) throw new Error("Design 快照超过 10MB，无法上传到 Web 项目");
 				const entryPageId = typeof snapshot.document.entryPageId === "string" ? snapshot.document.entryPageId : "";
 				if (!entryPageId) throw new Error("Design 修订缺少入口页面，无法生成上传预览");
 				const preview = buildDesignPreview(projectPath, command.designId, entryPageId, command.revisionId, snapshot);
+				if (!command.previewPng?.startsWith("data:image/png;base64,")) throw new Error("上传前必须从 CanvasKit 导出 PNG 预览");
 				const title = command.title?.trim() || String(snapshot.document.name || "GitPilot Design").trim() || "GitPilot Design";
 				const summary = command.summary?.trim() || (Array.isArray(snapshot.document.revisions) ? String((snapshot.document.revisions as Array<Record<string, unknown>>).at(-1)?.summary ?? "") : "") || "从 GitPilot Desktop 上传的设计修订。";
 				const upload = await uploadDesignVersion(platformUrl.replace(/\/$/, ""), token, {
@@ -2223,8 +2345,8 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					revisionId: command.revisionId,
 					name: title,
 					summary,
-					snapshot: { document: snapshot.document, files: snapshot.files, guidelines: snapshot.guidelines },
-					previewHtml: preview.previewHandle.html,
+					scene: preview.previewHandle.scene,
+					previewPng: command.previewPng,
 				});
 				// 上传元数据不是设计内容，单独附在 current document，且不会改写 immutable revision 目录。
 				const current = getDesignSnapshot(command.designId, projectPath);

@@ -85,6 +85,7 @@
 	--font-mono: 'Cascadia Code', 'JetBrains Mono', Consolas, monospace;
 
 	/* 字号与行高 */
+	/* 固定界面文字统一使用 --text-xs（跟随设置中的字号缩放），不单独加粗；AI 消息等 Markdown 内容字号另计 */
 	--desktop-font-scale: 1;
 	--text-xs: 12px;
 	--text-sm: 13px;

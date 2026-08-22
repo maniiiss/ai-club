@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { THEME_OPTIONS } from '@/src/store/theme';
-import { LANDING_MOTION_THEMES, LANDING_PARTICLE_THEMES } from './DesignLandingBackground';
+import { LANDING_MOTION_THEMES, LANDING_PARTICLE_THEMES, rescaleAccentMarks } from './DesignLandingBackground';
 import styles from './DesignShell.module.css';
 
 describe('Design landing motion themes', () => {
@@ -43,5 +43,41 @@ describe('Design landing motion themes', () => {
 		expect(LANDING_MOTION_THEMES['glass-dark'].baseCount).toBeLessThan(30);
 		expect(LANDING_MOTION_THEMES['black-white'].baseCount).toBeLessThan(30);
 		expect(LANDING_MOTION_THEMES['mono-dark'].baseCount).toBeLessThanOrEqual(80);
+	});
+});
+
+describe('Design landing canvas resize', () => {
+	const theme = 'mono-dark';
+	const motionTheme = LANDING_MOTION_THEMES[theme];
+
+	it('初始粒子场由主题种子决定，同一主题重复生成结果一致', () => {
+		const first = rescaleAccentMarks([], 0, 0, 1200, 800, theme, motionTheme);
+		const second = rescaleAccentMarks([], 0, 0, 1200, 800, theme, motionTheme);
+		expect(first.length).toBe(second.length);
+		expect(first[0].x).toBe(second[0].x);
+		expect(first[0].y).toBe(second[0].y);
+	});
+
+	it('画布尺寸变化时按比例换算既有标记，不重新随机洗牌', () => {
+		const initial = rescaleAccentMarks([], 0, 0, 1200, 800, theme, motionTheme);
+		const narrowed = rescaleAccentMarks(initial, 1200, 800, 900, 800, theme, motionTheme);
+		expect(narrowed.length).toBe(initial.length);
+		expect(narrowed[0].x).toBeCloseTo(initial[0].x * (900 / 1200), 5);
+		expect(narrowed[0].y).toBeCloseTo(initial[0].y, 5);
+		// 尺寸变化不打断闪烁节奏：相位与透明度保持连续。
+		expect(narrowed[0].phase).toBe(initial[0].phase);
+		expect(narrowed[0].alpha).toBe(initial[0].alpha);
+	});
+
+	it('面积变大时用确定性随机流补充标记，缩小时截断到目标数量', () => {
+		const initial = rescaleAccentMarks([], 0, 0, 900, 800, theme, motionTheme);
+		const grown = rescaleAccentMarks(initial, 900, 800, 2000, 900, theme, motionTheme);
+		expect(grown.length).toBe(initial.length + 1);
+		expect(grown[0].x).toBeCloseTo(initial[0].x * (2000 / 900), 5);
+		const grownAgain = rescaleAccentMarks(initial, 900, 800, 2000, 900, theme, motionTheme);
+		expect(grown.at(-1)?.x).toBe(grownAgain.at(-1)?.x);
+		const shrunk = rescaleAccentMarks(grown, 2000, 900, 900, 800, theme, motionTheme);
+		expect(shrunk.length).toBe(initial.length);
+		expect(shrunk[0].x).toBeCloseTo(grown[0].x * (900 / 2000), 5);
 	});
 });

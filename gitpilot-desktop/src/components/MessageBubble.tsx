@@ -7,7 +7,7 @@
  * - system/error：居中提示
  */
 import { Fragment, memo, useState, type ReactNode } from 'react';
-import { Bug, Check, ClipboardText, Copy, FileText, Image as ImageIcon, PencilSimple } from '@phosphor-icons/react';
+import { Bug, CaretDown, Check, ClipboardText, Copy, FileText, Image as ImageIcon, PencilSimple } from '@phosphor-icons/react';
 import { CodeCard } from './CodeCard';
 import { ExecutionBatch } from './ExecutionActivity';
 import { ChangedFilesCard } from './ChangedFilesCard';
@@ -89,7 +89,18 @@ function UserMessageActions({ text }: { text: string }) {
 	);
 }
 
+/** 用户消息超过该字符数时默认折叠，避免超长粘贴撑爆对话流。 */
+export const USER_TEXT_COLLAPSE_THRESHOLD = 800;
+
+/** 判断用户消息是否需要折叠展示（导出供测试）。 */
+export function shouldCollapseUserText(text: string): boolean {
+	return text.length > USER_TEXT_COLLAPSE_THRESHOLD;
+}
+
 export const MessageBubble = memo(function MessageBubble({ message }: { message: UIMessage }) {
+	// 超长用户消息的展开状态：默认折叠，点击按钮在全文/摘要间切换。
+	const [userTextExpanded, setUserTextExpanded] = useState(false);
+	const collapsible = message.role === 'user' && shouldCollapseUserText(message.text);
 	if (message.kind === 'changed_files' && message.changedFiles && message.changedFiles.length > 0) {
 		return <ChangedFilesCard files={message.changedFiles} />;
 	}
@@ -154,12 +165,15 @@ export const MessageBubble = memo(function MessageBubble({ message }: { message:
 					</div>
 				)}
 				{isUser ? (
-					<span className={styles.userText}>{renderHighlightedUserText(message.text)}</span>
+					<span className={cn(styles.userText, collapsible && !userTextExpanded ? styles.userTextCollapsed : '')}>{renderHighlightedUserText(message.text)}</span>
 				) : (
 					<CodeCard message={message} />
 				)}
-				{/* 没有可见正文时由执行状态展示“正在思考”，不单独留下孤立光标。 */}
-				{message.streaming && message.text.trim() && <span className={styles.streaming} />}
+				{collapsible && (
+					<Button type="button" variant="unstyled" size="sm" className={styles.userTextToggle} onClick={() => setUserTextExpanded((value) => !value)} aria-expanded={userTextExpanded}>
+						<CaretDown weight="bold" size={12} aria-hidden="true" className={userTextExpanded ? styles.userTextToggleUp : ''} />{userTextExpanded ? '收起' : '展开全文'}
+					</Button>
+				)}
 		</div>
 	);
 	return (

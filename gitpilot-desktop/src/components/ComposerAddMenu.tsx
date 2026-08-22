@@ -98,7 +98,7 @@ function WorkItemSection({
 	return (
 		<section className={styles.section}>
 			<button type="button" className={styles.sectionHeader} onClick={onToggle} aria-expanded={expanded}>
-				<span className={styles.sectionTitle}><Icon size={14} aria-hidden="true" /><strong>{title}</strong><span className={styles.count}>{items.length}</span></span>
+				<span className={styles.sectionTitle}><Icon size={14} aria-hidden="true" /><span>{title}</span><span className={styles.count}>{items.length}</span></span>
 				<CaretDown weight="bold" size={15} className={`${styles.chevron} ${expanded ? styles.chevronExpanded : ''}`} aria-hidden="true" />
 			</button>
 			{expanded && <div className={styles.itemList}>
@@ -106,7 +106,7 @@ function WorkItemSection({
 					<button type="button" key={item.id} className={styles.item} onClick={() => onSelect(item)} title="带入当前输入框">
 						<span className={`${styles.itemBadge} ${isDefect ? styles.itemBadgeDefect : ''}`}>{item.workItemType === '任务' ? '任务' : item.workItemType || '工作项'}</span>
 						<span className={styles.itemMain}>
-							<strong className={styles.itemName}>{item.name}</strong>
+							<span className={styles.itemName}>{item.name}</span>
 							<span className={styles.itemMeta}><span>{item.workItemCode}</span>{item.projectName && <span>{item.projectName}</span>}<span>{item.status || '未设置状态'}</span></span>
 						</span>
 						<span className={styles.itemPriority}>{item.priority || '-'}</span>
@@ -195,7 +195,7 @@ export function ComposerAddMenu({ open, tab, onTabChange, onPickFiles, onSelectW
 	return (
 		<div ref={panelRef} className={styles.panel} role="dialog" aria-label="添加上下文">
 			<div className={styles.panelHeader}>
-				<div><strong>添加上下文</strong></div>
+				<div><span className={styles.panelTitle}>添加上下文</span></div>
 				<Hint content="关闭"><Button type="button" variant="ghost" size="icon-sm" onClick={onDismiss} aria-label="关闭添加上下文"><X weight="bold" size={15} /></Button></Hint>
 			</div>
 			<div className={styles.tabs} role="tablist" aria-label="添加类型">
@@ -205,7 +205,7 @@ export function ComposerAddMenu({ open, tab, onTabChange, onPickFiles, onSelectW
 			{tab === 'attachments' ? (
 				<div className={styles.attachmentBody}>
 					<FilePlus weight="regular" size={22} aria-hidden="true" />
-					<strong>附加本地文件</strong>
+					<span className={styles.attachmentTitle}>附加本地文件</span>
 					<span>支持文档、图片和代码文件，作为当前对话上下文。</span>
 					<Button type="button" size="sm" onClick={onPickFiles}><Paperclip weight="regular" size={14} />选择文件</Button>
 				</div>

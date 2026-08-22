@@ -9,8 +9,8 @@
 	padding: 6px 10px;
 	color: var(--popover-foreground);
 	font-family: var(--font-sans);
-	font-size: calc(11px * var(--desktop-font-scale));
-	font-weight: 500;
+	font-size: var(--text-xs);
+	font-weight: 400;
 	line-height: 1.45;
 	letter-spacing: .01em;
 	white-space: pre-line;

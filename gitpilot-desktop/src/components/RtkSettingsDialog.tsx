@@ -25,7 +25,7 @@ export function RtkSettingsPanel() {
 
 	return (
 		<div className="flex min-h-0 flex-1 flex-col">
-			<div className="min-h-0 flex-1 overflow-y-auto px-5 py-5"><div className="grid gap-2 sm:grid-cols-2">{RTK_ACTIONS.map(({ command, label, icon: Icon }) => <Button key={command} type="button" variant="outline" className="h-auto min-h-12 justify-start px-3 py-2.5 text-left" onClick={() => run(command)}><Icon className="text-[var(--primary)]" /><span className="min-w-0"><b className="block text-xs text-[var(--foreground)]">{label}</b></span></Button>)}</div></div>
+			<div className="min-h-0 flex-1 overflow-y-auto px-5 py-5"><div className="grid gap-2 sm:grid-cols-2">{RTK_ACTIONS.map(({ command, label, icon: Icon }) => <Button key={command} type="button" variant="outline" className="h-auto min-h-12 justify-start px-3 py-2.5 text-left" onClick={() => run(command)}><Icon className="text-[var(--primary)]" /><span className="min-w-0"><span className="block text-[length:var(--text-[length:var(--text-xs)])] text-[var(--foreground)]">{label}</span></span></Button>)}</div></div>
 		</div>
 	);
 }

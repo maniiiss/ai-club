@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useParams } from 'react-router-dom'
-import { CheckCircle2, Clock3, FileCode2, History, Layers3, Plus, RefreshCw, RotateCcw } from 'lucide-react'
+import { CheckCircle2, Clock3, History, Layers3, Plus, RefreshCw, Shapes } from 'lucide-react'
 import { activateDesignVersion, getDesignVersion, listDesignVersions, restoreDesignVersion } from '@/src/api/design-versions'
 import { Button } from '@/src/components/common/Button'
 import { ConfirmDialog } from '@/src/components/common/ConfirmDialog'
@@ -21,7 +21,7 @@ const statusClass: Record<DesignVersionStatus, string> = {
 
 const formatBytes = (value: number) => value < 1024 * 1024 ? `${Math.max(1, Math.round(value / 1024))} KB` : `${(value / (1024 * 1024)).toFixed(2)} MB`
 
-/** 项目内的远端 Design 修订工作台，预览只使用受限 srcDoc iframe。 */
+/** 项目内的远端 CanvasKit Design 修订工作台，只展示 PNG 预览和结构化场景摘要。 */
 export const DesignVersionsPage = () => {
   const { projectId } = useParams<{ projectId: string }>()
   const pid = Number(projectId)
@@ -65,7 +65,7 @@ export const DesignVersionsPage = () => {
   }, [pid, selectedId])
 
   const selected = useMemo(() => versions.find((version) => version.id === selectedId) ?? null, [selectedId, versions])
-  const files = detail?.snapshot.files ?? []
+  const scene = detail?.scene
   const executeAction = async () => {
     if (!detail || !pendingAction) return
     setWorking(true)
@@ -98,16 +98,16 @@ export const DesignVersionsPage = () => {
         <div className="flex items-center justify-between border-b border-[var(--color-border)] px-4 py-3"><span className="text-[12px] font-semibold text-[var(--color-text-secondary)]">版本时间线</span><span className="font-mono text-[11px] text-[var(--color-text-tertiary)]">{versions.length}</span></div>
         <div className="p-2">{versions.map((version) => <button type="button" key={version.id} onClick={() => setSelectedId(version.id)} className={cn('mb-1 block w-full border px-3 py-3 text-left transition-colors', selectedId === version.id ? 'border-[var(--color-primary)] bg-[var(--color-primary-light)]' : 'border-transparent hover:border-[var(--color-border)] hover:bg-[var(--color-bg-hover)]')}>
           <div className="flex items-center justify-between gap-2"><strong className="min-w-0 truncate text-[12px] font-semibold text-[var(--color-text-primary)]">v{version.versionNumber} · {version.title}</strong><span className={cn('shrink-0 rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset', statusClass[version.status])}>{statusLabel[version.status]}</span></div>
-          <p className="mt-1 truncate text-[11px] text-[var(--color-text-tertiary)]">{version.summary || '未填写更新说明'}</p><div className="mt-2 flex items-center gap-2 text-[10px] text-[var(--color-text-tertiary)]"><Clock3 className="h-3 w-3" />{formatDate(version.createdAt)}<span>{version.fileCount} 个文件</span></div>
+          <p className="mt-1 truncate text-[11px] text-[var(--color-text-tertiary)]">{version.summary || '未填写更新说明'}</p><div className="mt-2 flex items-center gap-2 text-[10px] text-[var(--color-text-tertiary)]"><Clock3 className="h-3 w-3" />{formatDate(version.createdAt)}<span>{version.pageCount} 页面 · {version.nodeCount} 节点</span></div>
         </button>)}</div>
       </aside>
 
       <section className="min-w-0 border border-[var(--color-border)] bg-[var(--color-bg-card)]">
         {detailLoading || !detail ? <LoadingSpinner text="加载版本快照…" /> : <div className="flex min-h-[620px] flex-col">
-          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--color-border)] px-4 py-4 lg:px-5"><div className="min-w-0"><div className="flex items-center gap-2"><h2 className="truncate text-[17px] font-semibold text-[var(--color-text-primary)]">{detail.title}</h2><span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset', statusClass[detail.status])}>{statusLabel[detail.status]}</span></div><p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">{detail.summary || '未填写更新说明'} · 本地修订 {detail.revisionId}</p></div><div className="flex gap-2">{detail.status !== 'CURRENT' && <Button type="button" size="sm" variant="secondary" icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => setPendingAction('activate')}>激活版本</Button>}<Button type="button" size="sm" variant="secondary" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setPendingAction('restore')}>创建草稿</Button></div></div>
-          <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_260px]">
-            <div className="min-h-[400px] bg-slate-100 p-3"><iframe title={`${detail.title} HTML 预览`} sandbox="allow-scripts" srcDoc={detail.previewHtml} className="h-full min-h-[400px] w-full border border-[var(--color-border-strong)] bg-white shadow-sm" /></div>
-            <aside className="min-h-0 border-t border-[var(--color-border)] xl:border-l xl:border-t-0"><div className="border-b border-[var(--color-border)] px-4 py-3"><div className="flex items-center gap-2 text-[12px] font-semibold text-[var(--color-text-secondary)]"><FileCode2 className="h-4 w-4" />文件清单</div><p className="mt-1 text-[10px] text-[var(--color-text-tertiary)]">{files.length} 个文件 · {formatBytes(selected?.snapshotBytes ?? 0)}</p></div><div className="max-h-[320px] overflow-y-auto p-2">{files.map((file) => <div key={file.path} className="mb-1 rounded-md px-2 py-2 font-mono text-[10px] text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-hover)]"><div className="truncate" title={file.path}>{file.path}</div><div className="mt-0.5 text-[9px] uppercase text-[var(--color-text-tertiary)]">{file.language || 'text'}</div></div>)}</div></aside>
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--color-border)] px-4 py-4 lg:px-5"><div className="min-w-0"><div className="flex items-center gap-2"><h2 className="truncate text-[17px] font-semibold text-[var(--color-text-primary)]">{detail.title}</h2><span className={cn('rounded-full px-2 py-0.5 text-[10px] font-medium ring-1 ring-inset', statusClass[detail.status])}>{statusLabel[detail.status]}</span></div><p className="mt-1 text-[12px] text-[var(--color-text-tertiary)]">{detail.summary || '未填写更新说明'} · 本地修订 {detail.revisionId}</p></div><div className="flex gap-2">{detail.canvasCompatible && detail.status !== 'CURRENT' && <Button type="button" size="sm" variant="secondary" icon={<CheckCircle2 className="h-3.5 w-3.5" />} onClick={() => setPendingAction('activate')}>激活版本</Button>}{detail.canvasCompatible && <Button type="button" size="sm" variant="secondary" icon={<Plus className="h-3.5 w-3.5" />} onClick={() => setPendingAction('restore')}>创建草稿</Button>}</div></div>
+          <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_280px]">
+            <div className="flex min-h-[400px] items-center justify-center bg-slate-100 p-3">{detail.canvasCompatible && detail.previewImage ? <img src={detail.previewImage} alt={`${detail.title} Canvas 设计预览`} className="max-h-[min(680px,calc(100vh-220px))] max-w-full border border-[var(--color-border-strong)] bg-white object-contain shadow-sm" /> : <div className="max-w-md rounded-lg border border-amber-200 bg-amber-50 px-5 py-4 text-center text-[12px] leading-5 text-amber-800"><strong className="block text-[13px]">无法预览此设计版本</strong><span>{detail.compatibilityMessage || '该版本不是 CanvasKit 原生场景，请新建原生 Canvas 工作区。'}</span></div>}</div>
+            <aside className="min-h-0 border-t border-[var(--color-border)] xl:border-l xl:border-t-0"><div className="border-b border-[var(--color-border)] px-4 py-3"><div className="flex items-center gap-2 text-[12px] font-semibold text-[var(--color-text-secondary)]"><Shapes className="h-4 w-4" />场景信息</div><p className="mt-1 text-[10px] text-[var(--color-text-tertiary)]">{detail.canvasCompatible ? `Canvas schema v${scene?.schemaVersion ?? 2} · ${formatBytes(selected?.sceneBytes ?? 0)}` : '旧版本不兼容 CanvasKit 场景'}</p></div><div className="space-y-3 p-4 text-[11px] text-[var(--color-text-tertiary)]"><div className="grid grid-cols-3 gap-2 text-center"><div className="rounded-md bg-[var(--color-bg-hover)] px-2 py-2"><strong className="block text-[15px] text-[var(--color-text-primary)]">{scene?.pages.length ?? 0}</strong>页面</div><div className="rounded-md bg-[var(--color-bg-hover)] px-2 py-2"><strong className="block text-[15px] text-[var(--color-text-primary)]">{Object.keys(scene?.nodes ?? {}).length}</strong>节点</div><div className="rounded-md bg-[var(--color-bg-hover)] px-2 py-2"><strong className="block text-[15px] text-[var(--color-text-primary)]">{Object.keys(scene?.assets ?? {}).length}</strong>资源</div></div><div><strong className="text-[var(--color-text-secondary)]">页面树</strong><div className="mt-2 space-y-1">{scene?.pages.map((page) => <div key={page.id} className="rounded border border-[var(--color-border)] px-2 py-1.5"><span className="text-[var(--color-text-primary)]">{page.name || page.id}</span><span className="ml-2 font-mono text-[10px]">{page.route || '/'}</span></div>)}</div></div></div></aside>
           </div>
         </div>}
       </section>

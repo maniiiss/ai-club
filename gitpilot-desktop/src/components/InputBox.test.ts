@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { attachmentInputKey, buildCommandPrompt, canSubmitPrompt, dedupeAttachmentInputs, formatCommandLabel, getCommandIconKey, INPUT_COMPOSER_POINTER_POLICY, isExtensionQueueCommand } from './InputBox';
+import { attachmentInputKey, buildCommandPrompt, canSubmitPrompt, createLongTextAttachment, dedupeAttachmentInputs, formatCommandLabel, getCommandIconKey, INPUT_COMPOSER_POINTER_POLICY, isExtensionQueueCommand, LONG_TEXT_ATTACHMENT_THRESHOLD } from './InputBox';
 import { ACCESS_OPTIONS, getSessionApprovalLabel } from './security/SecurityAccessMenu';
 import type { AttachmentInput } from '@/src/rpc/types';
 
@@ -29,6 +29,19 @@ describe('输入器命中区与提交状态', () => {
 		expect(isExtensionQueueCommand('/login now', commands)).toBe(true);
 		expect(isExtensionQueueCommand('/review now', commands)).toBe(false);
 		expect(isExtensionQueueCommand('说明当前变更', commands)).toBe(false);
+	});
+
+	it('超长粘贴文本转为文本附件：chip 只保留前缀预览，完整文本随附件发送', () => {
+		const longText = '修复方案\n' + 'x'.repeat(LONG_TEXT_ATTACHMENT_THRESHOLD);
+		const attachment = createLongTextAttachment(longText);
+		expect(attachment).not.toBeNull();
+		expect(attachment!.kind).toBe('text');
+		expect(attachment!.text).toBe(longText);
+		expect(attachment!.name.startsWith('文本：')).toBe(true);
+		expect(attachment!.name.endsWith('…')).toBe(true);
+		expect(attachment!.name.length).toBeLessThan(40);
+		// 低于阈值不转附件，保持原有编辑器粘贴行为。
+		expect(createLongTextAttachment('x'.repeat(LONG_TEXT_ATTACHMENT_THRESHOLD - 1))).toBeNull();
 	});
 
 	it('选中命令后只把参数存入输入框，发送时还原 slash prompt', () => {

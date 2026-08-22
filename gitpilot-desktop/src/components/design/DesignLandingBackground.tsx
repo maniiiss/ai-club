@@ -70,9 +70,10 @@ function seededRandom(seed: number): () => number {
 	};
 }
 
-function sceneSeed(theme: ThemeMode, width: number, height: number): number {
+/** 种子只依赖主题：画布尺寸变化（侧栏折叠动画、窗口拖拽）不能改变粒子场身份，否则整场装饰标记会重新洗牌。 */
+function sceneSeed(theme: ThemeMode): number {
 	let hash = 2166136261;
-	for (const char of `${theme}:${Math.round(width)}:${Math.round(height)}`) {
+	for (const char of theme) {
 		hash ^= char.charCodeAt(0);
 		hash = Math.imul(hash, 16777619);
 	}
@@ -530,6 +531,37 @@ function updateAccentMarks(marks: AccentMark[], theme: LandingMotionTheme, delta
 	}
 }
 
+/**
+ * 画布尺寸变化时复用既有装饰标记：位置按新旧尺寸等比换算，数量不足用确定性随机流补齐，多余截断。
+ * Code/Work 欢迎页嵌在可折叠面板里，列宽过渡动画期间每帧都会触发 resize，
+ * 若每次都按新尺寸重新随机，星空会逐帧洗牌，表现为背景抖动；等比换算让粒子只跟随面板平滑伸缩。
+ */
+export function rescaleAccentMarks(
+	marks: AccentMark[],
+	previousWidth: number,
+	previousHeight: number,
+	width: number,
+	height: number,
+	theme: ThemeMode,
+	motionTheme: LandingMotionTheme,
+): AccentMark[] {
+	const targetCount = getAccentCount(width, height, motionTheme);
+	if (marks.length === 0 || previousWidth <= 0 || previousHeight <= 0) {
+		const random = seededRandom(sceneSeed(theme));
+		return Array.from({ length: targetCount }, () => createAccentMark(width, height, motionTheme, random));
+	}
+	const scaleX = width / previousWidth;
+	const scaleY = height / previousHeight;
+	const rescaled = marks.map((mark) => ({ ...mark, x: mark.x * scaleX, y: mark.y * scaleY }));
+	if (rescaled.length < targetCount) {
+		// 追加种子带上"主题 + 数量"：动画期间目标数量来回变化时，补充的标记保持稳定不闪变。
+		const random = seededRandom((sceneSeed(theme) + rescaled.length * 0x9e3779b9) >>> 0);
+		while (rescaled.length < targetCount) rescaled.push(createAccentMark(width, height, motionTheme, random));
+	}
+	rescaled.length = Math.min(rescaled.length, targetCount);
+	return rescaled;
+}
+
 export function DesignLandingBackground({ theme }: { theme: ThemeMode }) {
 	const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -586,13 +618,13 @@ export function DesignLandingBackground({ theme }: { theme: ThemeMode }) {
 				window.cancelAnimationFrame(animationFrame);
 				animationFrame = 0;
 			}
+			// 装饰标记等比换算复用（见 rescaleAccentMarks），列宽动画期间星空不重新随机。
+			marks = rescaleAccentMarks(marks, width, height, nextWidth, nextHeight, theme, motionTheme);
 			width = nextWidth;
 			height = nextHeight;
 			canvas.width = Math.round(width * pixelRatio);
 			canvas.height = Math.round(height * pixelRatio);
 			context.setTransform(pixelRatio, 0, 0, pixelRatio, 0, 0);
-			const random = seededRandom(sceneSeed(theme, width, height));
-			marks = Array.from({ length: getAccentCount(width, height, motionTheme) }, () => createAccentMark(width, height, motionTheme, random));
 			draw(performance.now(), true);
 		};
 

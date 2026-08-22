@@ -1,15 +1,13 @@
 import { Type } from "typebox";
 import type { ToolDefinition } from "../../core/extensions/types.ts";
-import type { DesignPatch, DesignPatchOperation, DesignPlanStep, DesignRpcFile, DesignRpcSnapshot } from "./rpc-types.ts";
+import type { CanvasDesignOperation, DesignPatch, DesignPlanStep, DesignRpcSnapshot } from "./rpc-types.ts";
 
 export interface DesignPatchResult {
 	operationId: string;
 	revisionId: string;
 	summary: string;
-	/** 本次 patch 后实际发生变化的文件，不携带未改动的项目文件。 */
-	changedFiles: DesignRpcFile[];
-	/** 删除或重命名旧路径时供 Desktop 从当前快照移除的文件路径。 */
-	removedPaths: string[];
+	/** 本次事务实际影响的 Canvas 节点，不携带场景全文。 */
+	affectedNodeIds: string[];
 	snapshot: DesignRpcSnapshot;
 }
 
@@ -38,35 +36,32 @@ export interface DesignToolOptions {
 	includeSkipPlanTool?: boolean;
 }
 
-const designFilePath = Type.String({ minLength: 1, maxLength: 240, description: "Design canonical 相对路径；页面入口必须是 pages/<pageId>/index.html。" });
-const fileLanguage = Type.Union([Type.Literal("html"), Type.Literal("css"), Type.Literal("javascript"), Type.Literal("json"), Type.Literal("image"), Type.Literal("unknown")]);
-/** Design Agent 可以按修改规模选择增量 patch 或整文件替换；Sidecar 仍执行文件路径和 2MB 文件上限校验。 */
-const createFile = Type.Object({ op: Type.Literal("create_file"), path: designFilePath, content: Type.String(), language: fileLanguage });
-const replaceFile = Type.Object({ op: Type.Literal("replace_file"), path: designFilePath, content: Type.String() });
-const replaceText = Type.Object({ op: Type.Literal("replace_text"), path: designFilePath, search: Type.String({ minLength: 1 }), replacement: Type.String() });
-const insertText = Type.Object({
-	op: Type.Literal("insert_text"),
-	path: designFilePath,
-	anchor: Type.String({ minLength: 1, description: "用于定位插入点的文本锚点。" }),
-	text: Type.String({ description: "要插入的文本。" }),
-	position: Type.Union([Type.Literal("before"), Type.Literal("after")]),
-	occurrence: Type.Optional(Type.Integer({ minimum: 1, maximum: 20, description: "锚点重复时使用第几个匹配，从 1 开始。" })),
-});
-const renameFile = Type.Object({ op: Type.Literal("rename_file"), path: designFilePath, newPath: designFilePath });
-const deleteFile = Type.Object({ op: Type.Literal("delete_file"), path: designFilePath });
+const canvasNode = Type.Object({
+	id: Type.String({ minLength: 1 }),
+	type: Type.Union([Type.Literal("page"), Type.Literal("frame"), Type.Literal("group"), Type.Literal("rect"), Type.Literal("ellipse"), Type.Literal("line"), Type.Literal("path"), Type.Literal("text"), Type.Literal("image"), Type.Literal("instance")]),
+	name: Type.String({ minLength: 1 }),
+	parentId: Type.Union([Type.String(), Type.Null()]),
+	childIds: Type.Array(Type.String()),
+	visible: Type.Boolean(),
+	locked: Type.Boolean(),
+	opacity: Type.Number({ minimum: 0, maximum: 1 }),
+	transform: Type.Object({ x: Type.Number(), y: Type.Number(), width: Type.Number({ minimum: 0 }), height: Type.Number({ minimum: 0 }), rotation: Type.Number(), scaleX: Type.Number(), scaleY: Type.Number() }),
+	layout: Type.Object({ mode: Type.Union([Type.Literal("absolute"), Type.Literal("stack"), Type.Literal("grid")]), width: Type.Union([Type.Number({ minimum: 0 }), Type.Literal("hug"), Type.Literal("fill")]), height: Type.Union([Type.Number({ minimum: 0 }), Type.Literal("hug"), Type.Literal("fill")]), padding: Type.Object({ top: Type.Number(), right: Type.Number(), bottom: Type.Number(), left: Type.Number() }), gap: Type.Number(), direction: Type.Union([Type.Literal("row"), Type.Literal("column")]), align: Type.Union([Type.Literal("start"), Type.Literal("center"), Type.Literal("end"), Type.Literal("stretch")]), justify: Type.Union([Type.Literal("start"), Type.Literal("center"), Type.Literal("end"), Type.Literal("space-between")]) }),
+}, { additionalProperties: true });
+const canvasPaint = Type.Record(Type.String(), Type.Unknown());
+/** 设计 Agent 只提交场景语义操作，服务端会再次校验节点引用、父子关系和资源。 */
+const createNode = Type.Object({ op: Type.Literal("create_node"), node: canvasNode, parentId: Type.String({ minLength: 1 }), index: Type.Optional(Type.Integer({ minimum: 0 })) });
+const updateNode = Type.Object({ op: Type.Literal("update_node"), nodeId: Type.String({ minLength: 1 }), changes: Type.Record(Type.String(), Type.Unknown()) });
+const deleteNode = Type.Object({ op: Type.Literal("delete_node"), nodeId: Type.String({ minLength: 1 }) });
+const moveNode = Type.Object({ op: Type.Literal("move_node"), nodeId: Type.String({ minLength: 1 }), parentId: Type.String({ minLength: 1 }), index: Type.Integer({ minimum: 0 }) });
+const updateText = Type.Object({ op: Type.Literal("update_text"), nodeId: Type.String({ minLength: 1 }), text: canvasPaint });
+const updatePath = Type.Object({ op: Type.Literal("update_path"), nodeId: Type.String({ minLength: 1 }), path: canvasPaint });
+const attachAsset = Type.Object({ op: Type.Literal("attach_asset"), nodeId: Type.String({ minLength: 1 }), assetId: Type.String({ minLength: 1 }) });
 const designPatchParams = Type.Object({
-	operations: Type.Array(Type.Union([createFile, replaceFile, replaceText, insertText, renameFile, deleteFile])),
-	affectedPaths: Type.Optional(Type.Array(designFilePath)),
+	operations: Type.Array(Type.Union([createNode, updateNode, deleteNode, moveNode, updateText, updatePath, attachAsset])),
 	summary: Type.Optional(Type.String()),
 	risk: Type.Optional(Type.Union([Type.Literal("safe"), Type.Literal("high")])),
 	operationId: Type.Optional(Type.String()),
-});
-const designReadFileParams = Type.Object({
-	path: designFilePath,
-	startLine: Type.Optional(Type.Integer({ minimum: 1, maximum: 100_000 })),
-	endLine: Type.Optional(Type.Integer({ minimum: 1, maximum: 100_000 })),
-	startChar: Type.Optional(Type.Integer({ minimum: 0, maximum: 2_000_000, description: "按字符偏移读取，从 0 开始；与 startLine 二选一。" })),
-	maxChars: Type.Optional(Type.Integer({ minimum: 1, maximum: 2_000_000 })),
 });
 const clarificationParams = Type.Object({
 	question: Type.String({ minLength: 1, maxLength: 1000, description: "需要用户决定的关键问题，只问会影响设计方向或实现边界的问题。" }),
@@ -117,9 +112,9 @@ export function createDesignToolDefinitions(context: DesignToolContext, options:
 	const tools: ToolDefinition[] = [
 		{
 			name: "design_apply_patch",
-			label: "应用设计补丁",
-			description: "将设计修改作为结构化 patch 应用到当前工作区。修改已有文件时按规模选择文本 patch 或整文件替换；新增页面必须用 create_file 创建 pages/<pageId>/index.html，并可在同一 patch 中创建该页面的 CSS/JS 文件。",
-			promptSnippet: "应用 HTML/CSS/JS 设计 patch 或创建页面",
+			label: "应用设计事务",
+			description: "将设计修改作为 Canvas 场景事务应用到当前工作区，只提交节点、布局、文字、路径和资源引用。禁止 HTML、CSS、JavaScript、CanvasKit API 和本地路径。",
+			promptSnippet: "应用 Canvas 场景节点设计 patch",
 			parameters: designPatchParams,
 			async execute(_toolCallId, params) {
 				// baseRevisionId 不暴露给模型；由服务端根据当前 run 注入，避免模型维护版本游标。
@@ -130,47 +125,29 @@ export function createDesignToolDefinitions(context: DesignToolContext, options:
 					if (!approved) throw new Error("用户拒绝了高风险设计修改");
 				}
 				const result = await context.applyPatch(patch);
-				return toolResult({ operationId: result.operationId, pageId: context.getPageId(), summary: result.summary, files: result.changedFiles.map((file) => file.path) });
+				return toolResult({ operationId: result.operationId, pageId: context.getPageId(), summary: result.summary, affectedNodeIds: result.affectedNodeIds });
 			},
 		},
 		{
-			name: "design_read_file",
-			label: "读取设计文件",
-			description: "按需读取当前 Design 文件，可读取完整文件，也可指定行或字符范围。",
-			promptSnippet: "读取 Design 文件内容",
-			parameters: designReadFileParams,
-			async execute(_toolCallId, params) {
-				const input = params as { path: string; startLine?: number; endLine?: number; startChar?: number; maxChars?: number };
-				const file = context.getSnapshot().files.find((candidate) => candidate.path === input.path);
-				if (!file) throw new Error(`Design 文件不存在：${input.path}`);
-				const maxChars = Math.min(2_000_000, Math.max(1, input.maxChars ?? 2_000_000));
-				if (input.startChar !== undefined && input.startLine !== undefined) throw new Error("Design 读取范围无效：startChar 与 startLine 只能二选一");
-				if (input.startChar === undefined && input.startLine === undefined) {
-					return toolResult({ path: file.path, language: file.language, hash: file.hash, totalChars: file.content.length, content: file.content, truncated: false });
-				}
-				if (input.startChar !== undefined) {
-					const startChar = Math.min(file.content.length, Math.max(0, input.startChar));
-					const selected = file.content.slice(startChar, startChar + maxChars);
-					return toolResult({ path: file.path, language: file.language, hash: file.hash, totalChars: file.content.length, startChar, endChar: startChar + selected.length, content: selected, truncated: startChar + selected.length < file.content.length });
-				}
-				const lines = file.content.split(/\r\n|\r|\n/);
-				const startLine = Math.max(1, input.startLine ?? 1);
-				const requestedEndLine = Math.min(lines.length, input.endLine ?? lines.length);
-				if (requestedEndLine < startLine) throw new Error("Design 读取范围无效：endLine 必须不小于 startLine");
-				const selected = lines.slice(startLine - 1, requestedEndLine).map((line, index) => `${startLine + index}|${line}`).join("\n");
-				const content = selected.length <= maxChars ? selected : `${selected.slice(0, maxChars)}\n[内容已截断，请继续读取后续范围]`;
-				return toolResult({ path: file.path, language: file.language, hash: file.hash, totalLines: lines.length, startLine, endLine: requestedEndLine, content, truncated: selected.length > maxChars });
+			name: "design_read_scene",
+			label: "读取设计场景",
+			description: "读取当前 Canvas 页面树、选中节点、设计资源和规范摘要，不读取 HTML/CSS/JavaScript 文件。",
+			promptSnippet: "读取 Canvas 场景摘要",
+			parameters: Type.Object({}),
+			async execute() {
+				const snapshot = context.getSnapshot();
+				return toolResult({ document: snapshot.document, assets: Object.keys((snapshot.document.canvas as { assets?: unknown } | undefined)?.assets ?? {}), message: "Canvas 场景已读取。" });
 			},
 		},
 		{
 			name: "design_check",
 			label: "检查设计",
-			description: "检查当前设计是否包含允许的页面文件。",
+			description: "检查 Canvas 场景的节点引用、布局、资源和字体。",
 			promptSnippet: "检查当前设计快照",
 			parameters: Type.Object({}),
 			async execute() {
 				const snapshot = context.getSnapshot();
-				return toolResult({ files: snapshot.files.map((file) => file.path), message: "设计快照可继续预览。" });
+			return toolResult({ scene: snapshot.document.canvas ?? null, message: "Canvas 场景检查完成。" });
 			},
 		},
 		{
@@ -219,21 +196,16 @@ export function createDesignToolDefinitions(context: DesignToolContext, options:
 	return tools;
 }
 
-export function isDesignPatchOperation(value: unknown): value is DesignPatchOperation {
+export function isDesignPatchOperation(value: unknown): value is CanvasDesignOperation {
 	if (!value || typeof value !== "object") return false;
-	const operation = value as Partial<DesignPatchOperation> & { search?: unknown; replacement?: unknown; content?: unknown };
-	if (typeof operation.path !== "string" || !operation.path.trim() || operation.path.includes("..") || operation.path.startsWith("/") || operation.path.includes("\\")) return false;
-	if (operation.op === "create_file") return typeof operation.content === "string" && ["html", "css", "javascript", "json", "image", "unknown"].includes((operation as { language?: unknown }).language as string);
-	if (operation.op === "replace_file") return typeof operation.content === "string";
-	if (operation.op === "replace_text") return typeof operation.search === "string" && typeof operation.replacement === "string";
-	if (operation.op === "insert_text") {
-		const position = (operation as { position?: unknown }).position;
-		const occurrence = (operation as { occurrence?: unknown }).occurrence;
-		return typeof operation.anchor === "string" && operation.anchor.length > 0 && typeof operation.text === "string" && (position === "before" || position === "after") && (occurrence === undefined || (typeof occurrence === "number" && Number.isInteger(occurrence) && occurrence >= 1 && occurrence <= 20));
+	const operation = value as Partial<CanvasDesignOperation> & { node?: unknown; changes?: unknown; text?: unknown; path?: unknown; nodeId?: unknown; parentId?: unknown; assetId?: unknown; index?: unknown };
+	if (["create_node", "update_node", "delete_node", "move_node", "update_text", "update_path", "attach_asset"].includes(operation.op as string)) {
+		if (["delete_node"].includes(operation.op as string)) return typeof operation.nodeId === "string";
+		if (operation.op === "create_node") return typeof operation.node === "object" && operation.node !== null && typeof operation.parentId === "string";
+		if (operation.op === "update_node") return typeof operation.nodeId === "string" && typeof operation.changes === "object" && operation.changes !== null;
+		if (operation.op === "move_node") return typeof operation.nodeId === "string" && typeof operation.parentId === "string" && typeof operation.index === "number" && Number.isInteger(operation.index) && operation.index >= 0;
+		if (operation.op === "attach_asset") return typeof operation.nodeId === "string" && typeof operation.assetId === "string";
+		return typeof operation.nodeId === "string" && typeof (operation.op === "update_text" ? operation.text : operation.path) === "object";
 	}
-	if (operation.op === "rename_file") {
-		const newPath = (operation as { newPath?: unknown }).newPath;
-		return typeof newPath === "string" && Boolean(newPath.trim()) && !newPath.includes("..") && !newPath.startsWith("/") && !newPath.includes("\\");
-	}
-	return operation.op === "delete_file";
+	return false;
 }

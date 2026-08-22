@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react';
 import { Brain, CaretRight, CheckCircle, FileMagnifyingGlass, ListChecks, NotePencil, TerminalWindow, Wrench, type Icon } from '@phosphor-icons/react';
 import { formatDuration, getUnreportedExecutionSteps, useWorkbenchStore, type ExecutionRun, type ExecutionStep } from '@/src/store/workbench';
 import { Button } from '@/src/components/ui/button';
-import { Hint } from '@/src/components/ui/tooltip';
 import styles from './ExecutionActivity.module.css';
 
 export function getExecutionActivityLabel(execution: ExecutionRun, isStreaming: boolean): string | null {
@@ -14,10 +13,8 @@ export function getExecutionActivityLabel(execution: ExecutionRun, isStreaming: 
 	// 仅显示当前仍在执行的真实工具；没有活跃工具时按模型增量阶段判断。
 	const activeTool = [...execution.steps].reverse().find((step) => step.status === 'running' || step.status === 'waiting');
 	if (activeTool) return describeExecutionActivity(activeTool);
-	const hasUnreportedTrace = Boolean(execution.thinking?.trim()) || getUnreportedExecutionSteps(execution).length > 0;
-	// 正文已经开始输出时仍保留尚未归档的思考/工具痕迹，避免工具刚结束就从界面消失。
-	// 纯正文回答没有执行痕迹时继续隐藏，避免每个普通回答都显示冗余状态。
-	if (execution.lastDeltaKind === 'text') return hasUnreportedTrace ? '执行过程' : null;
+	// 正文开始输出即进入回答阶段：不再显示“执行过程”等占位状态，未归档痕迹等批次归档后进入时间线。
+	if (execution.lastDeltaKind === 'text') return null;
 	// thinking 文本是本次任务的历史记录；只有最近事件仍是 thinking_delta 时才表示模型正在思考。
 	// 工具已结束但正文尚未到达时，模型正在根据工具结果组织下一轮请求；显式说明该等待，不能回退成旧思考或无文字的转圈。
 	if (execution.lastDeltaKind === 'tool') return '正在整理工具结果…';
@@ -238,8 +235,9 @@ export function ExecutionActivity({ isStreaming, execution: executionOverride }:
 	if (!label) return null;
 
 	const isPending = label === '正在整理工具结果…' || label === '正在准备…';
+	// 正文执行状态本身就是可见文字，不再包悬停提示，避免 hover 弹出与正文重复的 hint。
 	const activityLabel = (
-		<Hint content={label}><span className={`${styles.label} ${styles.running}`} role={isPending ? 'status' : undefined}>{label}</span></Hint>
+		<span className={`${styles.label} ${styles.running}`} role={isPending ? 'status' : undefined}>{label}</span>
 	);
 
 	return (

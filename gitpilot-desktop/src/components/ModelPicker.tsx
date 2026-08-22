@@ -43,7 +43,7 @@ export function getThinkingLevelLabel(level: ThinkingLevel, levels: readonly Thi
 	return isBinaryThinkingMode(levels) && level !== 'off' ? 'on' : level;
 }
 
-/** 平台模型能力已映射到 PI Model.input，只有明确包含 image 时才展示多模态标签。 */
+/** 平台模型能力已映射到 PI Model.input；判断模型是否支持图片输入（当前 UI 不再展示多模态标签）。 */
 export function isMultimodalModel(model: Pick<ModelInfo, 'input'>): boolean {
 	return model.input?.includes('image') ?? false;
 }
@@ -103,7 +103,7 @@ export function ModelPicker({ showThinkingLevel = true }: { showThinkingLevel?: 
 				<PopoverContent side="top" align="start" className={styles.modelPopover}>
 					<CommandRoot>
 					<CommandInput placeholder="搜索模型…" containerClassName={styles.search} className={styles.searchInput} style={{ outline: 'none', border: 'none', boxShadow: 'none' }} />
-						<CommandList className={styles.modelList}><CommandEmpty>{models.length === 0 ? '加载中…' : '没有匹配的模型'}</CommandEmpty>{models.map((m) => <CommandItem key={`${m.provider}:${m.id}`} value={`${m.name} ${m.provider}`} onSelect={() => { setModel(m.provider, m.id); setOpenModel(false); }} className={`${styles.modelItem} ${m.id === currentModel?.id ? styles.selected : ''}`}><span className={styles.modelCopy}><span className={styles.modelTitle}><span className={styles.modelTitleText}>{m.name}</span><span className={styles.modelBadges}>{isMultimodalModel(m) && <span className={styles.multimodalBadge}>多模态</span>}<span className={styles.billingBadge}>{getModelBillingLabel(m)}</span></span></span><small>{m.provider}</small></span></CommandItem>)}</CommandList>
+						<CommandList className={styles.modelList}><CommandEmpty>{models.length === 0 ? '加载中…' : '没有匹配的模型'}</CommandEmpty>{models.map((m) => <CommandItem key={`${m.provider}:${m.id}`} value={`${m.name} ${m.provider}`} onSelect={() => { setModel(m.provider, m.id); setOpenModel(false); }} className={`${styles.modelItem} ${m.id === currentModel?.id ? styles.selected : ''}`}><span className={styles.modelCopy}><span className={styles.modelTitle}><span className={styles.modelTitleText}>{m.name}</span><span className={styles.modelBadges}><span className={styles.billingBadge}>{getModelBillingLabel(m)}</span></span></span><small>{m.provider}</small></span></CommandItem>)}</CommandList>
 					</CommandRoot>
 				</PopoverContent>
 			</Popover>

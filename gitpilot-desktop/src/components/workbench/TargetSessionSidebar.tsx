@@ -12,6 +12,27 @@ import { buildProjectTree, type ProjectTreeNode } from '@/src/components/project
 import { ConversationHistorySearch } from '@/src/components/workbench/ConversationHistorySearch';
 import styles from './TargetSessionSidebar.module.css';
 
+/** 任务悬停提示的相对编辑时间：刚刚/N 分钟前/N 小时前/N 天前，超过 30 天回退具体日期。 */
+export function formatTaskEditedAgo(modified: string | undefined, now = Date.now()): string {
+	const timestamp = modified ? Date.parse(modified) : NaN;
+	if (!Number.isFinite(timestamp)) return '';
+	const elapsed = Math.max(0, now - timestamp);
+	if (elapsed < 60_000) return '刚刚编辑';
+	if (elapsed < 3_600_000) return `${Math.floor(elapsed / 60_000)} 分钟前编辑`;
+	if (elapsed < 86_400_000) return `${Math.floor(elapsed / 3_600_000)} 小时前编辑`;
+	if (elapsed < 30 * 86_400_000) return `${Math.floor(elapsed / 86_400_000)} 天前编辑`;
+	return `${new Date(timestamp).toLocaleDateString('zh-CN')} 编辑`;
+}
+
+/** 任务行悬停提示：第一行名称（进行中标注），第二行距离最后编辑的相对时间。 */
+function taskHintContent(label: string, isStreaming: boolean | undefined, modified: string | undefined, now = Date.now()) {
+	const editedAgo = formatTaskEditedAgo(modified, now);
+	return <span className={styles.taskHint}>
+		<span className={styles.taskHintTitle}>{label}{isStreaming ? '（进行中）' : ''}</span>
+		{editedAgo ? <span className={styles.taskHintMeta}>{editedAgo}</span> : null}
+	</span>;
+}
+
 interface ProjectTreeItemProps {
 	node: ProjectTreeNode;
 	depth: number;
@@ -37,7 +58,7 @@ function ProjectTreeItem({ node, depth, activeTaskPath, canCreateTask, onCreateT
 			<CollapsibleContent className={styles.projectContent}>
 			{node.tasks.length === 0 ? <div className={styles.emptyProject} style={{ paddingLeft: `${39 + depth * 14}px` }}>暂无工作空间任务</div> : <div className={styles.taskList}>{node.tasks.map((task) => {
 				const label = task.name || task.firstMessage || '未命名工作空间任务';
-					return <Hint key={task.path} content={task.isStreaming ? `${label}（进行中）` : label}><Button type="button" variant="ghost" size="sm" data-sidebar-menu-kind="project-task" data-session-path={task.path} data-session-cwd={task.cwd} aria-busy={task.isStreaming || undefined} onClick={() => onSelectTask(task.path)} className={cn(styles.taskRow, task.path === activeTaskPath ? styles.taskActive : '')} style={{ paddingLeft: `${31 + depth * 14}px` }}><span className={styles.label}>{label}</span>{task.isStreaming && <CircleNotch weight="bold" className={styles.taskLoading} aria-hidden="true" />}</Button></Hint>;
+					return <Hint key={task.path} content={taskHintContent(label, task.isStreaming, task.modified)} side="right"><Button type="button" variant="ghost" size="sm" data-sidebar-menu-kind="project-task" data-session-path={task.path} data-session-cwd={task.cwd} aria-busy={task.isStreaming || undefined} onClick={() => onSelectTask(task.path)} className={cn(styles.taskRow, task.path === activeTaskPath ? styles.taskActive : '')} style={{ paddingLeft: `${31 + depth * 14}px` }}><span className={styles.label}>{label}</span>{task.isStreaming && <CircleNotch weight="bold" className={styles.taskLoading} aria-hidden="true" />}</Button></Hint>;
 				})}</div>}
 			</CollapsibleContent>
 		</div>
@@ -92,7 +113,7 @@ export function TargetSessionSidebar() {
 			{projects.length === 0 ? <div className={styles.emptyState}>点「添加」选择工作空间目录</div> : projectTree.map((node) => <ProjectTreeItem key={node.project.path} node={node} depth={0} activeTaskPath={currentFile} canCreateTask={connection === 'ready'} onCreateTask={(path) => void newSession(path)} onSelectTask={(path) => void switchSession(path)} expanded={!collapsedPaths.has(node.project.path)} onExpandedChange={handleProjectExpandedChange} />)}
 			<Separator className={styles.separator} />
 			<div className={styles.sectionHeader}><span>任务</span><Hint content="添加任务"><Button type="button" variant="ghost" size="icon-sm" className={styles.sectionAction} onClick={() => void newStandaloneSession()} disabled={connection !== 'ready'} aria-label="添加任务"><PencilSimple weight="regular" /></Button></Hint></div>
-			<div className={styles.standaloneList}>{standaloneTasks.length === 0 ? <div className={styles.emptyTask}>暂无独立任务</div> : standaloneTasks.map((session) => { const active = session.path === currentFile; const label = session.name || session.firstMessage || '未命名任务'; return <Hint key={session.path} content={session.isStreaming ? `${label}（进行中）` : label}><Button type="button" variant="ghost" size="sm" data-sidebar-menu-kind="standalone-task" data-session-path={session.path} data-session-cwd={session.cwd} aria-busy={session.isStreaming || undefined} onClick={() => void switchSession(session.path)} className={cn(styles.taskRow, active ? styles.taskActive : '')}><span className={styles.label}>{label}</span>{session.isStreaming && <CircleNotch weight="bold" className={styles.taskLoading} aria-hidden="true" />}</Button></Hint>; })}</div>
+				<div className={styles.standaloneList}>{standaloneTasks.length === 0 ? <div className={styles.emptyTask}>暂无独立任务</div> : standaloneTasks.map((session) => { const active = session.path === currentFile; const label = session.name || session.firstMessage || '未命名任务'; return <Hint key={session.path} content={taskHintContent(label, session.isStreaming, session.modified)} side="right"><Button type="button" variant="ghost" size="sm" data-sidebar-menu-kind="standalone-task" data-session-path={session.path} data-session-cwd={session.cwd} aria-busy={session.isStreaming || undefined} onClick={() => void switchSession(session.path)} className={cn(styles.taskRow, active ? styles.taskActive : '')}><span className={styles.label}>{label}</span>{session.isStreaming && <CircleNotch weight="bold" className={styles.taskLoading} aria-hidden="true" />}</Button></Hint>; })}</div>
 			</div>
 		</ScrollArea>
 	</aside>;

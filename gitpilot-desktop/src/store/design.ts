@@ -1,8 +1,10 @@
 import { create } from 'zustand';
 import { isTauriEnv, onDesignEvent, rpc } from '@/src/rpc/bridge';
-import type { DesignAgentEvent, DesignPatch, DesignRpcFile, DesignRpcMessage, DesignRpcSnapshot, DesignRunRecoveryState, DesignStreamLine } from '@/src/rpc/types';
+import type { DesignAgentEvent, DesignDraftMetadata, DesignPatch, DesignRpcMessage, DesignRpcSnapshot, DesignRunRecoveryState, DesignStreamLine } from '@/src/rpc/types';
 import { createDefaultProjectGuidelines, createDemoSnapshot, DESIGN_TARGETS, DESIGN_VIEWPORT_PRESETS, type DesignDocument, type DesignExecution, type DesignExecutionStep, type DesignFileName, type DesignMessage, type DesignPlan, type DesignPreset, type DesignPreviewMode, type DesignProjectGuidelines, type DesignSnapshot, type DesignTarget, type DesignTodoItem, type DesignUploadRecord, type DesignViewport } from '@/src/design/design-types';
-import { synchronizeDesignPages } from '@/src/design/design-pages';
+import { applyCanvasOperations, getCanvasDocument, withCanvasDocument } from '@/src/design/canvas-document';
+import { designPresetCatalog } from '@/src/design/design-presets';
+import type { CanvasDesignDocument, CanvasDesignOperation, CanvasDesignTransaction, CanvasStroke, CanvasTransform } from '@/src/design/canvas-types';
 
 const STORAGE_KEY_PREFIX = 'gitpilot-desktop.design-snapshot';
 const STARTED_KEY_PREFIX = 'gitpilot-desktop.design-started';
@@ -14,9 +16,11 @@ const LEGACY_CURRENT_PROJECT_KEY = 'gitpilot-desktop.currentProject';
 const LEGACY_MIGRATED_KEY = 'gitpilot-desktop.design-project-migrated';
 const LEGACY_DESIGN_STORAGE_MIGRATED_KEY = 'gitpilot-desktop.design-storage-migrated.v2';
 const MISSING_DESIGN_WORKSPACE_ERROR = '当前工作空间还没有设计工作区';
+/** 场景检查视图的稳定名称；Design 不再把 HTML 入口当作活动文件。 */
+const CANVAS_SCENE_FILE = 'scene.json';
 const DESIGN_THINKING_MAX_CHARS = 12_000;
 const newId = () => `design-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-const WELCOME_MESSAGE: DesignMessage = { id: 'welcome', kind: 'assistant', text: '描述你想要的页面，我会把它变成适配手机和桌面的 HTML 原型。' };
+const WELCOME_MESSAGE: DesignMessage = { id: 'welcome', kind: 'assistant', text: '描述你想要的页面，我会把它变成可编辑的 CanvasKit 原生设计。' };
 
 export interface DesignProjectEntry {
 	name: string;
@@ -47,6 +51,7 @@ export interface DesignProjectHistoryEntry extends Omit<DesignProjectEntry, 'has
 interface PendingDesignPreset {
 	id: string;
 	guidelines: DesignProjectGuidelines;
+	scene?: CanvasDesignDocument;
 }
 
 function loadDesignProjects(): DesignProjectEntry[] {
@@ -125,6 +130,29 @@ type DesignBackgroundRun = {
 	isGenerating: boolean;
 };
 
+/**
+ * AI 运行中的草稿场景与正式场景分离。
+ * 业务意图：画布可以即时显示已接受 patch，但 revision、导出和恢复仍以 committed scene 为准。
+ */
+export interface DesignDraftState {
+	runId: string;
+	requestId: string;
+	baseRevisionId: string;
+	draftRevisionId: string;
+	scene: CanvasDesignDocument;
+	/** sidecar 已接受的 patch 批次数；用于发现丢失或乱序的 draft 事件。 */
+	operationCount: number;
+	lastSequence: number;
+	appliedOperationIds: string[];
+	pendingTransactions: CanvasDesignTransaction[];
+	highlightedNodeIds: string[];
+}
+
+export interface DesignTransientState {
+	transforms: Record<string, CanvasTransform>;
+	stroke?: { points: Array<{ x: number; y: number }>; style: CanvasStroke };
+}
+
 function fallbackSnapshot(): DesignSnapshot {
 	return createDemoSnapshot();
 }
@@ -149,6 +177,7 @@ interface DesignUiBucket {
 	zoom?: number;
 	previewMode?: DesignPreviewMode;
 	selectedElementId?: string | null;
+	selectedElementIds?: string[];
 	hasWorkspace?: boolean;
 	isProjectStarted?: boolean;
 	selectedPresetId?: string | null;
@@ -169,6 +198,12 @@ function loadBucket(path: string | null | undefined): Partial<DesignUiBucket> | 
 		if (!raw) return null;
 		const parsed = JSON.parse(raw) as Partial<DesignUiBucket>;
 		if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+		// 清理旧版本可能写入的预设 scene；完整 Canvas 正文必须来自 sidecar
+		// 或内置 Catalog，不能继续沿 localStorage 恢复。
+		if (parsed.pendingPreset && typeof parsed.pendingPreset === 'object' && 'scene' in parsed.pendingPreset) {
+			const { scene: _legacyScene, ...metadata } = parsed.pendingPreset;
+			parsed.pendingPreset = metadata;
+		}
 		return parsed;
 	} catch { return null; }
 }
@@ -179,9 +214,12 @@ function saveBucket(state: DesignBucketState): void {
 	try {
 		const bucket: DesignUiBucket = {
 			activePageId: state.activePageId, activeFile: state.activeFile, activeTab: state.activeTab,
-			target: state.target, viewport: state.viewport, zoom: state.zoom, previewMode: state.previewMode, selectedElementId: state.selectedElementId,
+			target: state.target, viewport: state.viewport, zoom: state.zoom, previewMode: state.previewMode,
 			hasWorkspace: state.hasWorkspace, isProjectStarted: state.isProjectStarted,
-			selectedPresetId: state.selectedPresetId, pendingPreset: state.pendingPreset,
+			selectedPresetId: state.selectedPresetId,
+			// 预设 scene 属于完整 Canvas 正文；localStorage 只保留可重新解析的
+			// preset id 与 guidelines，避免把场景或 draft patch 写入 UI bucket。
+			pendingPreset: state.pendingPreset ? { id: state.pendingPreset.id, guidelines: state.pendingPreset.guidelines } : null,
 			uploadRecords: state.uploadRecords,
 		};
 		localStorage.setItem(bucketStorageKey(state.projectPath), JSON.stringify(bucket));
@@ -203,7 +241,6 @@ function hasDesignUiBucketChanged(state: DesignBucketState, previous: DesignBuck
 		state.viewport.height !== previous.viewport.height ||
 		state.zoom !== previous.zoom ||
 		state.previewMode !== previous.previewMode ||
-		state.selectedElementId !== previous.selectedElementId ||
 		state.hasWorkspace !== previous.hasWorkspace ||
 		state.isProjectStarted !== previous.isProjectStarted ||
 		state.selectedPresetId !== previous.selectedPresetId ||
@@ -258,7 +295,7 @@ export function listDesignProjectHistory(projects: DesignProjectEntry[]): Design
 			...project,
 			hasWorkspace: true,
 			workspaceName: project.workspaceName ?? 'GitPilot Design',
-			activePageName: project.activePageName ?? '首页',
+			activePageName: project.activePageName ?? '无限画板',
 			pageCount: project.pageCount ?? 0,
 			fileCount: project.fileCount ?? 0,
 			revisionCount: project.revisionCount ?? 0,
@@ -284,14 +321,10 @@ function clearStarted(projectPath: string | null | undefined): void {
 
 function toDesignSnapshot(snapshot: DesignRpcSnapshot): DesignSnapshot {
 	const document = snapshot.document as unknown as DesignDocument;
-	const files = snapshot.files as DesignSnapshot['files'];
-	const pages = (document.pages ?? []).map((page) => {
-		if (page.fileIds?.length) return page;
-		const legacyFiles = page.files ?? [];
-		const ids = legacyFiles.map((file) => file.id ?? `${page.id}:${file.path}`);
-		return { ...page, entryFileId: page.entryFileId || ids[0] || '', fileIds: ids };
-	});
-	return { document: { ...document, pages: synchronizeDesignPages(pages, files) }, files, context: snapshot.context, guidelines: snapshot.guidelines ?? createDefaultProjectGuidelines() };
+	const canvas = (document as unknown as { canvas?: CanvasDesignDocument }).canvas;
+	if (!canvas) throw new Error('检测到旧 HTML/CSS/JS Design 工作区；该版本不支持迁移，请新建原生 Canvas 工作区');
+	const pages = canvas.pages.map((page) => ({ id: page.id, name: page.name, route: page.route, rootNodeId: page.rootNodeId, entryFileId: '', fileIds: [] }));
+	return { document: { ...document, pages, files: [], canvas }, files: [], context: snapshot.context, guidelines: snapshot.guidelines ?? createDefaultProjectGuidelines() };
 }
 
 function toDesignMessages(messages: DesignRpcMessage[] | undefined): DesignMessage[] {
@@ -462,6 +495,17 @@ function applyToolEvent(execution: DesignExecution, event: DesignAgentEvent): De
 
 export interface DesignState {
 	snapshot: DesignSnapshot;
+	/** 正式 revision 的 Canvas 场景；AI draft 不会覆盖它。 */
+	committedScene: CanvasDesignDocument;
+	/** 当前 active run 的增量场景；不存在时画布消费 committedScene。 */
+	draft: DesignDraftState | null;
+	/** design_open 发现的 active/orphaned draft 摘要，不携带完整操作。 */
+	draftMetadata: DesignDraftMetadata | null;
+	/** pointermove 期间的几何覆盖层，不进入 RPC、undo 或 revision。 */
+	transient: DesignTransientState | null;
+	/** AI 运行期间的结构性手工修改按 FIFO 暂存。 */
+	manualQueue: CanvasDesignTransaction[];
+	isResynchronizing: boolean;
 	projects: DesignProjectEntry[];
 	projectPath: string | null;
 	activeProjectKey: string;
@@ -475,6 +519,8 @@ export interface DesignState {
 	/** 当前预览容器的展示方式；按项目保存，恢复 Design 时保持用户上次选择。 */
 	previewMode: DesignPreviewMode;
 	selectedElementId: string | null;
+	/** 当前画布的多选集合；selectedElementId 是键盘/Inspector 操作的主节点。 */
+	selectedElementIds: string[];
 	messages: DesignMessage[];
 	pendingPlan: DesignPlan | null;
 	pendingClarification: DesignPendingClarification | null;
@@ -504,9 +550,10 @@ export interface DesignState {
 	/** 页面名称是 Design 快照元数据，通过 sidecar 修订保存，避免项目重载后丢失。 */
 	renamePage: (pageId: string, name: string) => Promise<void>;
 	setActiveFile: (file: DesignFileName) => void;
-	saveProjectGuidelines: (guidelines: DesignProjectGuidelines) => Promise<void>;
+	saveProjectGuidelines: (guidelines: DesignProjectGuidelines, canvas?: CanvasDesignDocument) => Promise<void>;
 	applyPreset: (preset: DesignPreset) => Promise<void>;
-	selectElement: (id: string | null) => void;
+	selectElement: (id: string | null, additive?: boolean) => void;
+	selectElements: (ids: string[]) => void;
 	addProject: () => Promise<void>;
 	/** 仅从 Design 项目索引移除目录，保留磁盘上的工作区文件。 */
 	removeProject: (path: string) => void;
@@ -526,27 +573,23 @@ export interface DesignState {
 	/** 仅在 UI 已确认后调用；Sidecar 会生成新的当前修订而非覆盖历史。 */
 	revertToRevision: (revisionId: string) => Promise<void>;
 	/** 仅在 UI 已确认后上传指定历史修订，当前设计内容保持不变。 */
-	uploadRevision: (payload: { revisionId: string; platformProjectId: number; title?: string; summary?: string }) => Promise<void>;
+	uploadRevision: (payload: { revisionId: string; platformProjectId: number; title?: string; summary?: string; previewPng: string }) => Promise<void>;
 	revert: () => void;
 	exportDesign: () => Promise<void>;
 	setError: (error: string | null) => void;
 	clearError: () => void;
 	startProject: (prompt: string) => Promise<void>;
 	resetProject: () => void;
-}
-
-/** 合并 patch 事件的增量文件，未改动文件保留当前引用，避免每次执行都复制完整项目。 */
-function updatePatchedSnapshot(snapshot: DesignSnapshot, changedFiles: DesignRpcFile[], removedPaths: string[], revisionId: string, summary: string, isDraft = false): DesignSnapshot {
-	const previousRevisionId = snapshot.document.revisions?.at(-1)?.id;
-	// Agent run 中的 patch 只是实时增量；正式 revision 由 design_run_settled 的完整快照一次写入。
-	const revisions = isDraft ? snapshot.document.revisions : [...(snapshot.document.revisions ?? []), { id: revisionId, prompt: summary, summary, createdAt: new Date().toISOString(), parentRevisionId: previousRevisionId, kind: 'patch' as const }];
-	const fileByPath = new Map(snapshot.files.map((file) => [file.path, file]));
-	for (const path of removedPaths) fileByPath.delete(path);
-	for (const file of changedFiles) fileByPath.set(file.path, file as DesignSnapshot['files'][number]);
-	const nextFiles = [...fileByPath.values()];
-	const pages = synchronizeDesignPages(snapshot.document.pages, nextFiles);
-	const fileMetadata = nextFiles.map(({ content: _content, ...file }) => file);
-	return { document: { ...snapshot.document, version: snapshot.document.version + 1, pages, files: fileMetadata, revisions }, files: nextFiles, context: snapshot.context, guidelines: snapshot.guidelines };
+	/** Canvas 场景是唯一视觉事实源；这些方法供画布编辑器和 Inspector 复用同一 operation 归约器。 */
+	getCanvasDocument: () => CanvasDesignDocument;
+	getRenderScene: () => CanvasDesignDocument;
+	/** 仅记录 pointer 期间的未提交几何，供画布/Inspector 共享；不会写入 snapshot 或 RPC。 */
+	setTransient: (transient: DesignTransientState | null) => void;
+	updateCanvasDocument: (document: CanvasDesignDocument) => void;
+	applyCanvasTransaction: (transaction: CanvasDesignTransaction) => Promise<void>;
+	recoverDraft: (action: 'keep' | 'discard') => Promise<void>;
+	undoCanvas: () => void;
+	redoCanvas: () => void;
 }
 
 export const useDesignStore = create<DesignState>((set, get) => {
@@ -578,6 +621,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
 	 * 这样流式事件、停止和重启都不会让当前气泡只存在于 WebView 内存。
 	 */
 	let messageSyncChain = Promise.resolve();
+	const canvasHistory: { past: CanvasDesignDocument[]; future: CanvasDesignDocument[] } = { past: [], future: [] };
 	const syncDesignMessages = (messages = get().messages): void => {
 		const projectPath = get().projectPath;
 		const designId = get().snapshot.document.id;
@@ -608,33 +652,80 @@ export const useDesignStore = create<DesignState>((set, get) => {
 			streamingAssistantId: null,
 			pendingClarification: null,
 			todos: [],
+			transient: null,
 		}));
 		try {
 			const projectPath = get().projectPath;
 			if (!projectPath) throw new Error('请先选择工作空间目录');
 			const response = await rpc.designPrompt({ projectPath, designId: get().snapshot.document.id, pageId: get().activePageId, prompt: text, baseRevisionId: get().snapshot.document.revisions.at(-1)?.id, targetProfiles: ['mobile', 'tablet', 'desktop'], uiMessageId });
 			if (!response.success || response.command !== 'design_prompt') throw new Error(response.success ? 'Design sidecar 未返回运行标识' : response.error);
-			set((state) => ({ execution: { ...state.execution, status: 'running', phase: 'thinking', requestId: response.data.requestId, runId: response.data.runId } }));
+			set((state) => ({
+				execution: { ...state.execution, status: 'running', phase: 'thinking', requestId: response.data.requestId, runId: response.data.runId },
+				draft: { runId: response.data.runId, requestId: response.data.requestId, baseRevisionId: state.snapshot.document.revisions.at(-1)?.id ?? '', draftRevisionId: `draft-${response.data.runId}`, scene: structuredClone(state.committedScene), operationCount: 0, lastSequence: 0, appliedOperationIds: [], pendingTransactions: [], highlightedNodeIds: [] },
+				draftMetadata: null,
+				isResynchronizing: false,
+			}));
 			syncDesignMessages();
 		} catch (error) {
 			set((state) => ({ execution: { ...state.execution, status: 'failed', phase: 'idle', endedAt: Date.now() }, isGenerating: false, error: error instanceof Error ? error.message : String(error), messages: [...state.messages, { id: newId(), kind: 'error', text: `生成失败：${error instanceof Error ? error.message : String(error)}` }] }));
 			syncDesignMessages();
 		}
 	};
+	let manualDrainInFlight = false;
+	/**
+	 * AI settle 后串行提交结构性手工事务。
+	 * 业务意图：每次提交都重新读取正式场景和 revision，避免排队期间使用过期基准；
+	 * 首个冲突停止队列并保留剩余项，交给用户重试或重新选择。
+	 */
+	const drainManualQueue = async (): Promise<boolean> => {
+		if (manualDrainInFlight) return false;
+		manualDrainInFlight = true;
+		try {
+			while (get().manualQueue.length > 0 && !get().isGenerating) {
+				const transaction = get().manualQueue[0];
+				const currentSnapshot = get().snapshot;
+				const current = get().committedScene;
+				try {
+					const next = applyCanvasOperations(current, transaction.operations as CanvasDesignOperation[]);
+					const baseRevisionId = currentSnapshot.document.revisions.at(-1)?.id ?? `rev-${current.revision}`;
+					const response = await rpc.designApplyPatch({ projectPath: get().projectPath ?? '', designId: currentSnapshot.document.id, pageId: next.entryPageId, baseRevisionId, patch: { baseRevisionId, operations: transaction.operations, summary: transaction.summary, operationId: transaction.transactionId } });
+					if (!response.success || response.command !== 'design_apply_patch') throw new Error(response.success ? '排队中的 Canvas 事务未返回快照' : response.error);
+					const snapshot = toDesignSnapshot(response.data.snapshot);
+					canvasHistory.past.push(structuredClone(current));
+					canvasHistory.future = [];
+					set((state) => ({ snapshot, committedScene: structuredClone(getCanvasDocument(snapshot)), manualQueue: state.manualQueue.slice(1), error: null }));
+				} catch (error) {
+					set({ error: error instanceof Error ? error.message : String(error) });
+					return false;
+				}
+			}
+			return true;
+		} finally {
+			manualDrainInFlight = false;
+		}
+	};
 	return {
 		snapshot: initialSnapshot,
+		committedScene: structuredClone(getCanvasDocument(initialSnapshot)),
+		draft: null,
+		draftMetadata: null,
+		transient: null,
+		manualQueue: [],
+		isResynchronizing: false,
 		projects: initialProjects,
 		projectPath: initialProjectPath,
 		activeProjectKey: projectKey(initialProjectPath),
 		backgroundRuns: {},
 		activePageId: initialPageId,
-		activeFile: savedBucket?.activeFile ?? initialSnapshot.files[0]?.path ?? 'index.html',
+		activeFile: savedBucket?.activeFile ?? CANVAS_SCENE_FILE,
 		activeTab: savedBucket?.activeTab ?? 'preview',
 		target: savedBucket?.target ?? 'desktop',
 		viewport: savedBucket?.viewport ?? { width: DESIGN_TARGETS.desktop.width, height: DESIGN_TARGETS.desktop.height },
 		zoom: savedBucket?.zoom ?? 100,
 		previewMode: savedBucket?.previewMode ?? 'original',
-		selectedElementId: savedBucket?.selectedElementId ?? null,
+		// 选中态只属于当前画布会话，重新进入时从空状态开始，避免旧句柄在新快照上显示选择框。
+		selectedElementId: null,
+		selectedElementIds: [],
 		messages: toDesignMessages(undefined),
 		pendingPlan: null,
 		pendingClarification: null,
@@ -658,7 +749,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
 		setViewport: (viewport) => set({ viewport }),
 		setZoom: (zoom) => set({ zoom }),
 		setPreviewMode: (previewMode) => set({ previewMode }),
-		setActivePage: (activePageId) => set({ activePageId, activeTab: 'preview', selectedElementId: null }),
+		setActivePage: (activePageId) => set({ activePageId, activeTab: 'preview', selectedElementId: null, selectedElementIds: [] }),
 		renamePage: async (pageId, name) => {
 			try {
 				const projectPath = get().projectPath;
@@ -669,21 +760,25 @@ export const useDesignStore = create<DesignState>((set, get) => {
 				const response = await rpc.designRenamePage({ projectPath, designId: get().snapshot.document.id, pageId, name: nextName, baseRevisionId: get().snapshot.document.revisions.at(-1)?.id ?? '' });
 				if (!response.success || response.command !== 'design_rename_page' || !response.data.snapshot) throw new Error(response.success ? 'Design 页面重命名未返回最新快照' : response.error);
 				const snapshot = toDesignSnapshot(response.data.snapshot);
-				set({ snapshot, error: null });
+				set({ snapshot, committedScene: structuredClone(getCanvasDocument(snapshot)), draft: null, draftMetadata: null, error: null });
 			} catch (error) {
 				set({ error: error instanceof Error ? error.message : String(error) });
 				throw error;
 			}
 		},
 		setActiveFile: (activeFile) => set({ activeFile }),
-		saveProjectGuidelines: async (guidelines) => {
+		saveProjectGuidelines: async (guidelines, canvas) => {
 			try {
 				const projectPath = get().projectPath;
 				if (!projectPath) throw new Error('请先选择工作空间目录');
-				const response = await rpc.designSaveGuidelines(projectPath, get().snapshot.document.id, guidelines);
+				// 没有场景变更时保持三参数协议，避免把 undefined 当成一次额外的持久化字段；
+				// 选择原生预设时才显式携带 CanvasDesignDocument。
+				const response = canvas
+					? await rpc.designSaveGuidelines(projectPath, get().snapshot.document.id, guidelines, canvas)
+					: await rpc.designSaveGuidelines(projectPath, get().snapshot.document.id, guidelines);
 				if (!response.success || response.command !== 'design_save_guidelines') throw new Error(response.success ? 'Design 规范未返回最新快照' : response.error);
 				const snapshot = toDesignSnapshot(response.data.snapshot);
-				set({ snapshot, error: null });
+				set({ snapshot, committedScene: structuredClone(getCanvasDocument(snapshot)), draft: null, draftMetadata: null, error: null });
 			} catch (error) {
 				set({ error: error instanceof Error ? error.message : String(error) });
 				throw error;
@@ -704,14 +799,71 @@ export const useDesignStore = create<DesignState>((set, get) => {
 				updatedAt: new Date().toISOString(),
 			};
 			if (!get().hasWorkspace) {
-				// 创建 workspace 前先按项目缓存选择，避免把预设的 index.html 误写入文件树。
-				set({ selectedPresetId: preset.id, pendingPreset: { id: preset.id, guidelines }, error: null });
+				// 创建 workspace 前先按项目缓存选择，避免把预设元数据误写入场景文件树。
+				set({ selectedPresetId: preset.id, pendingPreset: { id: preset.id, guidelines, scene: preset.scene }, error: null });
 				return;
 			}
-			await get().saveProjectGuidelines(guidelines);
+			await get().saveProjectGuidelines(guidelines, preset.scene ?? get().getCanvasDocument());
 			set({ selectedPresetId: preset.id, pendingPreset: null, error: null });
 		},
-		selectElement: (selectedElementId) => set({ selectedElementId }),
+		selectElement: (selectedElementId, additive = false) => set((state) => {
+			if (!selectedElementId) return { selectedElementId: null, selectedElementIds: [] };
+			if (!additive) return { selectedElementId, selectedElementIds: [selectedElementId] };
+			const selected = state.selectedElementIds.includes(selectedElementId)
+				? state.selectedElementIds.filter((id) => id !== selectedElementId)
+				: [...state.selectedElementIds, selectedElementId];
+			return { selectedElementIds: selected, selectedElementId: selected.at(-1) ?? null };
+		}),
+		selectElements: (ids) => set({ selectedElementIds: [...new Set(ids)], selectedElementId: ids.at(-1) ?? null }),
+		getCanvasDocument: () => get().draft?.scene ?? get().committedScene,
+		getRenderScene: () => get().draft?.scene ?? get().committedScene,
+		setTransient: (transient) => set({ transient }),
+		updateCanvasDocument: (canvas) => {
+			const current = get().draft?.scene ?? get().committedScene;
+			canvasHistory.past.push(structuredClone(current));
+			canvasHistory.future = [];
+			set((state) => ({ snapshot: withCanvasDocument(state.snapshot, canvas), committedScene: structuredClone(canvas), draft: null, draftMetadata: null, selectedElementId: null, selectedElementIds: [], error: null }));
+		},
+		applyCanvasTransaction: async (transaction) => {
+			try {
+				if (transaction.source === 'user' && get().isGenerating) {
+					set((state) => ({ manualQueue: [...state.manualQueue, structuredClone(transaction)], error: null }));
+					return;
+				}
+				const currentSnapshot = get().snapshot;
+				const current = get().draft?.scene ?? get().committedScene;
+				if (transaction.baseRevision !== current.revision) throw new Error(`Canvas revision 冲突：当前为 ${current.revision}，请求基于 ${transaction.baseRevision}`);
+				const next = applyCanvasOperations(current, transaction.operations as CanvasDesignOperation[]);
+				canvasHistory.past.push(structuredClone(current));
+				canvasHistory.future = [];
+				set({ snapshot: withCanvasDocument(currentSnapshot, next), committedScene: structuredClone(next), draft: null, error: null });
+				const projectPath = get().projectPath;
+				if (!projectPath) return;
+				const baseRevisionId = currentSnapshot.document.revisions.at(-1)?.id ?? `rev-${current.revision}`;
+				// sidecar 会校验 patch 内部的基准修订；外层字段只用于 RPC 命令路由，不能替代协议正文。
+				const response = await rpc.designApplyPatch({ projectPath, designId: get().snapshot.document.id, pageId: next.entryPageId, baseRevisionId, patch: { baseRevisionId, operations: transaction.operations, summary: transaction.summary, operationId: transaction.transactionId } });
+				if (!response.success || response.command !== 'design_apply_patch') throw new Error(response.success ? 'Canvas 事务未返回快照' : response.error);
+				const snapshot = toDesignSnapshot(response.data.snapshot);
+				set({ snapshot, committedScene: structuredClone(getCanvasDocument(snapshot)), draft: null, error: null });
+			} catch (error) {
+				set({ error: error instanceof Error ? error.message : String(error) });
+				throw error;
+			}
+		},
+		undoCanvas: () => {
+			const previous = canvasHistory.past.pop();
+			if (!previous) return;
+			const current = get().draft?.scene ?? get().committedScene;
+			canvasHistory.future.push(structuredClone(current));
+			set((state) => ({ snapshot: withCanvasDocument(state.snapshot, previous), committedScene: structuredClone(previous), draft: null, selectedElementId: null, selectedElementIds: [] }));
+		},
+		redoCanvas: () => {
+			const next = canvasHistory.future.pop();
+			if (!next) return;
+			const current = get().draft?.scene ?? get().committedScene;
+			canvasHistory.past.push(structuredClone(current));
+			set((state) => ({ snapshot: withCanvasDocument(state.snapshot, next), committedScene: structuredClone(next), draft: null, selectedElementId: null, selectedElementIds: [] }));
+		},
 		addProject: async () => {
 			if (!isTauriEnv()) return;
 			const { open } = await import('@tauri-apps/plugin-dialog');
@@ -769,13 +921,14 @@ export const useDesignStore = create<DesignState>((set, get) => {
 				activeProjectKey: projectKey(nextPath),
 				snapshot: cached,
 				activePageId: saved?.activePageId ?? cached.document.entryPageId,
-				activeFile: saved?.activeFile ?? cached.files[0]?.path ?? 'index.html',
+				activeFile: saved?.activeFile ?? CANVAS_SCENE_FILE,
 				activeTab: saved?.activeTab ?? 'preview',
 				target: saved?.target ?? 'desktop',
 				viewport: saved?.viewport ?? { width: DESIGN_TARGETS.desktop.width, height: DESIGN_TARGETS.desktop.height },
 				zoom: saved?.zoom ?? 100,
 				previewMode: saved?.previewMode ?? 'original',
-				selectedElementId: saved?.selectedElementId ?? null,
+				selectedElementId: null,
+				selectedElementIds: [],
 				messages: toDesignMessages(undefined),
 				pendingPlan: null,
 				queuedPrompts: [],
@@ -808,7 +961,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
 			saveDesignProjects(projects);
 			saveDesignProjectPath(nextPath);
 			saveStarted(nextPath);
-			set({ projects, backgroundRuns, snapshot: cached, projectPath: nextPath, activeProjectKey: projectKey(nextPath), activePageId: saved?.activePageId ?? cached.document.entryPageId, activeFile: saved?.activeFile ?? cached.files[0]?.path ?? 'index.html', activeTab: saved?.activeTab ?? 'preview', target: saved?.target ?? 'desktop', viewport: saved?.viewport ?? { width: DESIGN_TARGETS.desktop.width, height: DESIGN_TARGETS.desktop.height }, zoom: saved?.zoom ?? 100, previewMode: saved?.previewMode ?? 'original', selectedElementId: saved?.selectedElementId ?? null, messages: toDesignMessages(undefined), pendingPlan: null, queuedPrompts: [], streamingAssistantId: null, error: null, hasWorkspace: true, isProjectStarted: true, selectedPresetId: saved?.selectedPresetId ?? null, pendingPreset: saved?.pendingPreset ?? null, todos: [], uploadRecords: saved?.uploadRecords ?? [], ...recoveredBackground });
+			set({ projects, backgroundRuns, snapshot: cached, projectPath: nextPath, activeProjectKey: projectKey(nextPath), activePageId: saved?.activePageId ?? cached.document.entryPageId, activeFile: saved?.activeFile ?? CANVAS_SCENE_FILE, activeTab: saved?.activeTab ?? 'preview', target: saved?.target ?? 'desktop', viewport: saved?.viewport ?? { width: DESIGN_TARGETS.desktop.width, height: DESIGN_TARGETS.desktop.height }, zoom: saved?.zoom ?? 100, previewMode: saved?.previewMode ?? 'original', selectedElementId: null, selectedElementIds: [], messages: toDesignMessages(undefined), pendingPlan: null, queuedPrompts: [], streamingAssistantId: null, error: null, hasWorkspace: true, isProjectStarted: true, selectedPresetId: saved?.selectedPresetId ?? null, pendingPreset: saved?.pendingPreset ?? null, todos: [], uploadRecords: saved?.uploadRecords ?? [], ...recoveredBackground });
 			await get().hydrateSnapshot();
 		},
 		hydrateSnapshot: async () => {
@@ -818,7 +971,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
 			const cached = fallbackSnapshot();
 			if (!projectPath) {
 				if (generation !== hydrateGeneration) return;
-			set({ snapshot: cached, projectPath: null, activeProjectKey: projectKey(null), activePageId: cached.document.entryPageId, hasWorkspace: false, isProjectStarted: false, selectedPresetId: null, pendingPreset: null, pendingClarification: null, todos: [], uploadRecords: [], execution: initialExecution(), queuedPrompts: [], pendingApproval: null, isGenerating: false });
+				set({ snapshot: cached, committedScene: structuredClone(getCanvasDocument(cached)), draft: null, draftMetadata: null, transient: null, manualQueue: [], isResynchronizing: false, projectPath: null, activeProjectKey: projectKey(null), activePageId: cached.document.entryPageId, hasWorkspace: false, isProjectStarted: false, selectedElementId: null, selectedElementIds: [], selectedPresetId: null, pendingPreset: null, pendingClarification: null, todos: [], uploadRecords: [], execution: initialExecution(), queuedPrompts: [], pendingApproval: null, isGenerating: false });
 				return;
 			}
 			if (generation !== hydrateGeneration || get().projectPath !== projectPath) return;
@@ -826,7 +979,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
 			const hasWorkspace = get().hasWorkspace || hasCachedWorkspace(projectPath, saved);
 			const currentRun = get().projectPath === projectPath ? captureBackgroundRun(get()) : null;
 			const retainedRuntime = currentRun ?? recoverBackgroundExecution(get().backgroundRuns[projectKey(projectPath)]);
-			set({ snapshot: cached, projectPath, activeProjectKey: projectKey(projectPath), activePageId: saved?.activePageId ?? cached.document.entryPageId, activeFile: saved?.activeFile ?? cached.files[0]?.path ?? 'index.html', activeTab: saved?.activeTab ?? 'preview', target: saved?.target ?? 'desktop', viewport: saved?.viewport ?? { width: DESIGN_TARGETS.desktop.width, height: DESIGN_TARGETS.desktop.height }, zoom: saved?.zoom ?? 100, previewMode: saved?.previewMode ?? 'original', selectedElementId: saved?.selectedElementId ?? null, messages: toDesignMessages(undefined), pendingPlan: null, queuedPrompts: [], streamingAssistantId: null, error: null, hasWorkspace, isProjectStarted: previousStarted || saved?.isProjectStarted || readStarted(projectPath), selectedPresetId: saved?.selectedPresetId ?? null, pendingPreset: saved?.pendingPreset ?? null, todos: [], uploadRecords: saved?.uploadRecords ?? [], ...retainedRuntime });
+			set({ snapshot: cached, committedScene: structuredClone(getCanvasDocument(cached)), draft: null, draftMetadata: null, transient: null, manualQueue: [], isResynchronizing: false, projectPath, activeProjectKey: projectKey(projectPath), activePageId: saved?.activePageId ?? cached.document.entryPageId, activeFile: saved?.activeFile ?? CANVAS_SCENE_FILE, activeTab: saved?.activeTab ?? 'preview', target: saved?.target ?? 'desktop', viewport: saved?.viewport ?? { width: DESIGN_TARGETS.desktop.width, height: DESIGN_TARGETS.desktop.height }, zoom: saved?.zoom ?? 100, previewMode: saved?.previewMode ?? 'original', selectedElementId: null, selectedElementIds: [], messages: toDesignMessages(undefined), pendingPlan: null, queuedPrompts: [], streamingAssistantId: null, error: null, hasWorkspace, isProjectStarted: previousStarted || saved?.isProjectStarted || readStarted(projectPath), selectedPresetId: saved?.selectedPresetId ?? null, pendingPreset: saved?.pendingPreset ?? null, todos: [], uploadRecords: saved?.uploadRecords ?? [], ...retainedRuntime });
 			try {
 				const response = await rpc.designOpen(projectPath);
 				if (generation !== hydrateGeneration || get().projectPath !== projectPath) return;
@@ -840,7 +993,10 @@ export const useDesignStore = create<DesignState>((set, get) => {
 					// 兼容尚未支持 execution 的旧 sidecar：先使用按项目保留的运行态，
 					// 新 sidecar 返回的运行态则作为权威结果覆盖它。
 					const recovered = response.data.execution ? recoverDesignExecution(response.data.execution) : retainedRuntime;
-					set((state) => ({ projects, snapshot, projectPath, activeProjectKey: projectKey(projectPath), activePageId: saved?.activePageId && snapshot.document.pages.some((page) => page.id === saved.activePageId) ? saved.activePageId : snapshot.document.entryPageId, messages: toDesignMessages(response.data.messages), hasWorkspace: true, isProjectStarted: true, error: null, ...recovered, execution: { ...recovered.execution, startedAt: state.execution.startedAt } }));
+					const recoveredDraft = response.data.draft;
+					const recoveredDraftScene = response.data.draftSnapshot?.document.canvas ? getCanvasDocument(toDesignSnapshot(response.data.draftSnapshot)) : getCanvasDocument(snapshot);
+					const activeDraft = recoveredDraft?.status === 'active' && recovered.execution.runId && recovered.execution.requestId ? { runId: recovered.execution.runId, requestId: recovered.execution.requestId, baseRevisionId: recoveredDraft.baseRevisionId, draftRevisionId: recoveredDraft.draftRevisionId, scene: structuredClone(recoveredDraftScene), operationCount: recoveredDraft.operationCount, lastSequence: recoveredDraft.lastSequence, appliedOperationIds: [], pendingTransactions: [], highlightedNodeIds: [] } satisfies DesignDraftState : null;
+					set((state) => ({ projects, snapshot, committedScene: structuredClone(getCanvasDocument(snapshot)), draft: activeDraft, draftMetadata: recoveredDraft ?? null, transient: null, manualQueue: [], isResynchronizing: false, projectPath, activeProjectKey: projectKey(projectPath), activePageId: saved?.activePageId && snapshot.document.pages.some((page) => page.id === saved.activePageId) ? saved.activePageId : snapshot.document.entryPageId, messages: toDesignMessages(response.data.messages), hasWorkspace: true, isProjectStarted: true, error: null, ...recovered, execution: { ...recovered.execution, startedAt: state.execution.startedAt } }));
 				} else if (!response.success && response.command === 'design_open' && response.error === MISSING_DESIGN_WORKSPACE_ERROR) {
 					// 磁盘是 Design Workspace 的权威来源；缓存过期时必须回到入口，
 					// 否则预设选择会误走 design_save_guidelines 并显示“没有可保存规范”的错误。
@@ -877,10 +1033,17 @@ export const useDesignStore = create<DesignState>((set, get) => {
 			// 审批/澄清是"需要用户介入"的暂停信号，必须绕过终态守卫与序号守卫放行：
 			// 一旦因竞态被丢弃，用户永远看不到审批/澄清卡片，后端 Promise 永久挂起，导致死锁。
 			const isPauseEvent = line.type === 'design_approval_required' || line.type === 'design_clarification_required';
+			const isInterruptedSettlement = line.type === 'design_run_settled' && line.reason === 'interrupted';
+			if (line.projectId && state.snapshot.context?.projectId && line.projectId !== state.snapshot.context.projectId) return;
 			if (state.execution.requestId && line.requestId !== state.execution.requestId) return;
-			if (!isPauseEvent && (state.execution.status === 'stopped' || state.execution.status === 'failed' || state.execution.status === 'completed')) return;
+			if (state.execution.runId && line.runId && line.runId !== state.execution.runId) return;
+			const canAcceptInterruptedSettlement = isInterruptedSettlement && (state.execution.status === 'stopped' || state.execution.status === 'failed');
+			if (!isPauseEvent && !canAcceptInterruptedSettlement && (state.execution.status === 'stopped' || state.execution.status === 'failed' || state.execution.status === 'completed')) return;
 			if (!isPauseEvent && line.sequence <= state.execution.sequence) return;
-			if (!state.execution.requestId) set({ execution: { ...state.execution, requestId: line.requestId } });
+			// operationId 是 patch 的幂等键；重复批次连序号游标也不能推进，
+			// 否则下一条合法 patch 会被误判为丢失或乱序。
+			if (line.type === 'design_patch_applied' && state.draft?.appliedOperationIds.includes(line.operationId)) return;
+			if (!state.execution.requestId || (!state.execution.runId && line.runId)) set((current) => ({ execution: { ...current.execution, requestId: current.execution.requestId ?? line.requestId, runId: current.execution.runId ?? line.runId ?? null } }));
 			// 先记录所有已接收序号，包括没有可见 delta 的 tool-call/update，
 			// 这样乱序或重复事件不会在后续分支重新进入归约器。
 			set((current) => ({ execution: { ...current.execution, sequence: line.sequence } }));
@@ -920,9 +1083,28 @@ export const useDesignStore = create<DesignState>((set, get) => {
 				return;
 			}
 			if (line.type === 'design_patch_applied') {
-				if (get().snapshot.document.revisions.some((revision) => revision.id === line.revisionId)) return;
-				const snapshot = updatePatchedSnapshot(get().snapshot, line.changedFiles, line.removedPaths, line.revisionId, line.summary, line.isDraft === true);
-				set((current) => ({ snapshot, execution: { ...current.execution, status: 'running', phase: 'applying_patch' } }));
+				if (!line.transaction) return;
+				const current = get();
+				if (current.draft?.appliedOperationIds.includes(line.operationId)) return;
+				try {
+					if (line.transaction.transactionId !== line.operationId) throw new Error('Design patch operationId 与 transactionId 不一致');
+					const baseScene = current.draft?.scene ?? current.committedScene;
+					if (line.transaction.baseRevision !== baseScene.revision) throw new Error(`Design patch 基准场景冲突：当前为 ${baseScene.revision}，请求基于 ${line.transaction.baseRevision}`);
+					if (line.operationIndex !== undefined && (!Number.isInteger(line.operationIndex) || line.operationIndex !== (current.draft?.operationCount ?? 0) + 1)) throw new Error(`Design patch 批次序号断裂：当前为 ${current.draft?.operationCount ?? 0}，请求为 ${line.operationIndex}`);
+					if (line.draftRevisionId && current.draft?.draftRevisionId && line.draftRevisionId !== current.draft.draftRevisionId) throw new Error('Design patch draftRevisionId 不匹配当前运行');
+					const nextScene = applyCanvasOperations(baseScene, line.transaction.operations as CanvasDesignOperation[]);
+					const isDraft = line.isDraft !== false && (line.isDraft === true || current.isGenerating || Boolean(current.draft));
+					if (isDraft) {
+						const previousDraft = current.draft ?? { runId: line.runId ?? 'unknown', requestId: line.requestId, baseRevisionId: current.snapshot.document.revisions.at(-1)?.id ?? '', draftRevisionId: line.draftRevisionId ?? line.revisionId, scene: baseScene, operationCount: 0, lastSequence: 0, appliedOperationIds: [], pendingTransactions: [], highlightedNodeIds: [] };
+						const draft: DesignDraftState = { ...previousDraft, draftRevisionId: line.draftRevisionId ?? previousDraft.draftRevisionId, scene: nextScene, operationCount: line.operationIndex ?? previousDraft.operationCount + 1, lastSequence: line.sequence, appliedOperationIds: [...previousDraft.appliedOperationIds, line.operationId].slice(-512), pendingTransactions: [...previousDraft.pendingTransactions, line.transaction].slice(-128), highlightedNodeIds: [...new Set([...(previousDraft.highlightedNodeIds ?? []), ...(line.affectedNodeIds ?? [])])] };
+						set((state) => ({ draft, draftMetadata: null, snapshot: withCanvasDocument(state.snapshot, nextScene), execution: { ...state.execution, status: 'running', phase: 'applying_patch' }, isResynchronizing: false }));
+					} else {
+						set((state) => ({ snapshot: withCanvasDocument(state.snapshot, nextScene), committedScene: structuredClone(nextScene), draft: null, execution: { ...state.execution, status: 'running', phase: 'applying_patch' } }));
+					}
+				} catch (error) {
+					set({ isResynchronizing: true, error: `画布正在重新同步：${error instanceof Error ? error.message : String(error)}` });
+					void get().hydrateSnapshot();
+				}
 				return;
 			}
 			if (line.type === 'design_approval_required') {
@@ -942,15 +1124,20 @@ export const useDesignStore = create<DesignState>((set, get) => {
 					saveDesignProjects(projects);
 					set({ projects });
 				}
-				set((current) => ({ snapshot, todos: [], pendingClarification: null, pendingApproval: null, isGenerating: false, execution: { ...current.execution, status: 'completed', phase: 'idle', endedAt: Date.now() } }));
-				const next = get().queuedPrompts[0];
-				if (next) {
+				const interrupted = line.reason === 'interrupted';
+				set((current) => ({ snapshot, committedScene: structuredClone(getCanvasDocument(snapshot)), draft: null, draftMetadata: null, transient: null, todos: [], pendingClarification: null, pendingApproval: null, isGenerating: false, isResynchronizing: false, execution: { ...current.execution, status: interrupted ? 'stopped' : 'completed', phase: 'idle', endedAt: Date.now() } }));
+				// 先等待手工 FIFO 完整收口，再派发下一条 AI 需求；否则下一轮会把
+				// isGenerating 置回 true，导致 drainManualQueue 在首个 await 后提前停止。
+				void (async () => {
+					if (!await drainManualQueue() || interrupted) return;
+					const next = get().queuedPrompts[0];
+					if (!next) return;
 					set((current) => ({
 						queuedPrompts: current.queuedPrompts.slice(1),
 						messages: current.messages.map((message) => message.id === next.id && message.kind === 'user' ? { ...message, status: 'sent' } : message),
 					}));
 					void startPrompt(next.text, false, next.id);
-				}
+				})();
 				syncDesignMessages();
 			}
 		},
@@ -967,8 +1154,17 @@ export const useDesignStore = create<DesignState>((set, get) => {
 				const response = await rpc.designApplyPatch({ projectPath, designId: get().snapshot.document.id, pageId, baseRevisionId: patch.baseRevisionId, patch: patch as unknown as Record<string, unknown> });
 				if (!response.success || response.command !== 'design_apply_patch') throw new Error(response.success ? 'Design patch 未返回快照' : response.error);
 				const snapshot = toDesignSnapshot(response.data.snapshot);
-				set({ snapshot, error: null });
+				set({ snapshot, committedScene: structuredClone(getCanvasDocument(snapshot)), draft: null, draftMetadata: null, error: null });
 			} catch (error) { set({ error: error instanceof Error ? error.message : String(error) }); }
+		},
+		recoverDraft: async (action) => {
+			const metadata = get().draftMetadata;
+			const projectPath = get().projectPath;
+			if (!metadata || !projectPath) throw new Error('当前没有可恢复的 Design 草稿');
+			const response = await rpc.designRecoverDraft({ projectPath, designId: get().snapshot.document.id, runId: metadata.runId, action });
+			if (!response.success || response.command !== 'design_recover_draft') throw new Error(response.success ? 'Design 草稿恢复未返回快照' : response.error);
+			const snapshot = toDesignSnapshot(response.data.snapshot);
+			set({ snapshot, committedScene: structuredClone(getCanvasDocument(snapshot)), draft: null, draftMetadata: null, transient: null, isResynchronizing: false, error: null });
 		},
 		respondClarification: async (answer) => {
 			const clarification = get().pendingClarification;
@@ -1047,8 +1243,8 @@ export const useDesignStore = create<DesignState>((set, get) => {
 				if (!response.success || response.command !== 'design_revert') throw new Error(response.success ? 'Design 回滚未返回最新快照' : response.error);
 				const snapshot = toDesignSnapshot(response.data.snapshot);
 				const activePageId = snapshot.document.pages.some((page) => page.id === get().activePageId) ? get().activePageId : snapshot.document.entryPageId;
-				const activeFile = snapshot.files.some((file) => file.path === get().activeFile) ? get().activeFile : snapshot.files[0]?.path ?? 'index.html';
-				set((state) => ({ snapshot, activePageId, activeFile, activeTab: 'preview', selectedElementId: null, error: null, messages: [...state.messages, { id: newId(), kind: 'result', revisionId: snapshot.document.revisions.at(-1)?.id ?? revisionId, summary: `已从修订 ${revisionId} 创建新的当前版本。` }] }));
+				const activeFile = snapshot.files.some((file) => file.path === get().activeFile) ? get().activeFile : CANVAS_SCENE_FILE;
+				set((state) => ({ snapshot, committedScene: structuredClone(getCanvasDocument(snapshot)), draft: null, draftMetadata: null, activePageId, activeFile, activeTab: 'preview', selectedElementId: null, selectedElementIds: [], error: null, messages: [...state.messages, { id: newId(), kind: 'result', revisionId: snapshot.document.revisions.at(-1)?.id ?? revisionId, summary: `已从修订 ${revisionId} 创建新的当前版本。` }] }));
 				syncDesignMessages();
 			} catch (error) {
 				const message = error instanceof Error ? error.message : String(error);
@@ -1056,11 +1252,11 @@ export const useDesignStore = create<DesignState>((set, get) => {
 				throw error;
 			}
 		},
-		uploadRevision: async ({ revisionId, platformProjectId, title, summary }) => {
+		uploadRevision: async ({ revisionId, platformProjectId, title, summary, previewPng }) => {
 			try {
 				const projectPath = get().projectPath;
 				if (!projectPath) throw new Error('请先选择工作空间目录');
-				const response = await rpc.designUpload({ projectPath, designId: get().snapshot.document.id, revisionId, platformProjectId, title, summary });
+				const response = await rpc.designUpload({ projectPath, designId: get().snapshot.document.id, revisionId, platformProjectId, title, summary, previewPng });
 				if (!response.success || response.command !== 'design_upload') throw new Error(response.success ? 'Design 上传未返回远端版本' : response.error);
 				const record: DesignUploadRecord = { projectId: response.data.upload.projectId, revisionId: response.data.upload.revisionId, versionId: response.data.upload.versionId, versionNumber: response.data.upload.versionNumber, status: response.data.upload.status, uploadedAt: response.data.upload.createdAt };
 				set((state) => ({ uploadRecords: [...state.uploadRecords.filter((item) => !(item.projectId === record.projectId && item.revisionId === record.revisionId)), record], error: null }));
@@ -1105,6 +1301,9 @@ export const useDesignStore = create<DesignState>((set, get) => {
 				set({
 					projects,
 					snapshot,
+					committedScene: structuredClone(getCanvasDocument(snapshot)),
+					draft: null,
+					draftMetadata: null,
 					projectPath,
 					activeProjectKey: projectKey(projectPath),
 					activePageId: snapshot.document.entryPageId,
@@ -1118,7 +1317,8 @@ export const useDesignStore = create<DesignState>((set, get) => {
 				});
 				if (pendingPreset) {
 					// 规范落盘成功前不能发首条请求，否则 Agent 可能读取到刚创建的默认规范。
-					await get().saveProjectGuidelines({ ...pendingPreset.guidelines, updatedAt: new Date().toISOString() });
+					const catalogScene = designPresetCatalog.presets.find((preset) => preset.id === pendingPreset.id)?.scene;
+					await get().saveProjectGuidelines({ ...pendingPreset.guidelines, updatedAt: new Date().toISOString() }, pendingPreset.scene ?? catalogScene ?? get().getCanvasDocument());
 					set({ selectedPresetId: pendingPreset.id, pendingPreset: null, error: null });
 				}
 				// 工作区创建和预设保存完成后立即启动 Agent；需求澄清由 Agent 按需调用工具。
@@ -1130,7 +1330,7 @@ export const useDesignStore = create<DesignState>((set, get) => {
 		},
 		resetProject: () => {
 			try { localStorage.removeItem(projectCacheKey(STARTED_KEY_PREFIX, get().projectPath)); } catch {}
-			set({ isProjectStarted: false, hasWorkspace: get().hasWorkspace, error: null });
+			set({ isProjectStarted: false, hasWorkspace: get().hasWorkspace, selectedElementId: null, selectedElementIds: [], error: null });
 		},
 	};
 });

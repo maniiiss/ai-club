@@ -48,7 +48,7 @@ function SkillRow({
 			<div className={styles.skillIdentity}>
 				<div className={styles.skillGlyph} aria-hidden="true"><Sparkles size={14} /></div>
 				<div className={styles.skillCopy}>
-					<div className={styles.skillTitleLine}><strong>{skill.name}</strong><span className={`${styles.sourceBadge} ${skill.source === 'builtin' ? styles.sourceBadgeBuiltin : ''}`}>{sourceLabel(skill.source)}</span></div>
+					<div className={styles.skillTitleLine}><span className={styles.skillName}>{skill.name}</span><span className={`${styles.sourceBadge} ${skill.source === 'builtin' ? styles.sourceBadgeBuiltin : ''}`}>{sourceLabel(skill.source)}</span></div>
 					<p>{skill.description}</p>
 					<code title={skill.filePath}>{skill.filePath}</code>
 				</div>

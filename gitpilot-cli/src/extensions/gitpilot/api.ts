@@ -41,15 +41,15 @@ export interface CliProjectSummary {
 	owner?: string;
 }
 
-/** Design 版本上传结果；快照由 CLI 端受控读取后一次性提交到平台。 */
+/** Design 版本上传结果；CLI 端只提交 Canvas 场景和 CanvasKit 导出的 PNG。 */
 export interface CliDesignVersionUpload {
 	projectId: number;
 	designId: string;
 	revisionId: string;
 	name: string;
 	summary: string;
-	snapshot: unknown;
-	previewHtml: string;
+	scene: unknown;
+	previewPng: string;
 }
 
 export interface CliDesignVersionUploadResult {
@@ -203,8 +203,8 @@ export const uploadDesignVersion = (platformUrl: string, token: string, payload:
 			revisionId: payload.revisionId,
 			name: payload.name,
 			summary: payload.summary,
-			snapshot: payload.snapshot,
-			previewHtml: payload.previewHtml,
+			scene: payload.scene,
+			previewPng: payload.previewPng,
 		},
 		token,
 		timeoutMs: 60_000,

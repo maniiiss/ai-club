@@ -1,21 +1,21 @@
 .panel { display: flex; min-height: 0; flex: 1; flex-direction: column; background: var(--gp-surface); color: var(--gp-text); }
 .header { display: flex; min-height: 42px; align-items: center; justify-content: space-between; border-bottom: 0; padding: 0 9px 0 12px; }
-.headerTitle { display: flex; align-items: center; gap: 7px; color: var(--gp-text); font-size: calc(12px * var(--desktop-font-scale)); font-weight: 600; }
+.headerTitle { display: flex; align-items: center; gap: 7px; color: var(--gp-text); font-size: var(--text-xs); font-weight: 400; }
 .headerTitle svg { color: var(--gp-accent); }
-.headerTitle small { border-radius: 999px; background: var(--gp-accent-soft); padding: 1px 6px; color: var(--gp-text-muted); font: calc(9px * var(--desktop-font-scale))/1.4 var(--font-sans); }
+.headerTitle small { border-radius: 999px; background: var(--gp-accent-soft); padding: 1px 6px; color: var(--gp-text-muted); font: var(--text-xs)/1.4 var(--font-sans); }
 .headerActions { display: flex; align-items: center; }
 .headerActions button { color: var(--gp-text-muted); }
 .headerActions button:hover:not(:disabled) { color: var(--gp-accent); }
 .toolbar { border-bottom: 0; padding: 8px 10px; }
 .search { display: flex; min-width: 0; height: 29px; align-items: center; gap: 6px; border: 1px solid var(--gp-border); border-radius: 7px; background: var(--gp-panel-deep); padding: 0 7px; color: var(--gp-text-muted); }
-.search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--gp-text); font: calc(11px * var(--desktop-font-scale))/1.4 var(--font-sans); }
+.search input { min-width: 0; flex: 1; border: 0; outline: 0; background: transparent; color: var(--gp-text); font: var(--text-xs)/1.4 var(--font-sans); }
 .search input::placeholder { color: var(--gp-text-dim); }
 .clearSearch { display: grid; width: 18px; height: 18px; place-items: center; border: 0; border-radius: 4px; background: transparent; color: var(--gp-text-muted); }
 .clearSearch:hover { background: var(--gp-surface-hover); color: var(--gp-text); }
-.selectionBar { display: flex; min-height: 40px; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 0; background: color-mix(in srgb, var(--gp-accent) 7%, var(--gp-surface)); padding: 5px 9px 5px 12px; color: var(--gp-text-secondary); font-size: calc(10px * var(--desktop-font-scale)); }
+.selectionBar { display: flex; min-height: 40px; align-items: center; justify-content: space-between; gap: 8px; border-bottom: 0; background: color-mix(in srgb, var(--gp-accent) 7%, var(--gp-surface)); padding: 5px 9px 5px 12px; color: var(--gp-text-secondary); font-size: var(--text-xs); }
 .selectionBar > div { display: flex; align-items: center; gap: 2px; }
-.selectionBar button { height: 27px; font-size: calc(10px * var(--desktop-font-scale)); }
-.notice { border-bottom: 0; background: color-mix(in srgb, var(--gp-status-success) 10%, var(--gp-surface)); padding: 6px 12px; color: var(--gp-status-success); font-size: calc(10px * var(--desktop-font-scale)); }
+.selectionBar button { height: 27px; font-size: var(--text-xs); }
+.notice { border-bottom: 0; background: color-mix(in srgb, var(--gp-status-success) 10%, var(--gp-surface)); padding: 6px 12px; color: var(--gp-status-success); font-size: var(--text-xs); }
 .treeScroll { width: 100%; min-height: 0; flex: 1; align-self: stretch; padding: 7px 5px 12px 4px; }
 .treeScroll :global([data-radix-scroll-area-viewport]) { width: 100%; }
 .treeScroll :global([data-radix-scroll-area-viewport] > div) { display: block; width: 100%; min-width: 0; }
@@ -31,15 +31,24 @@
 .treeDisclosureExpanded { transform: rotate(90deg); }
 .treeIcon { display: grid; width: 17px; height: 18px; flex: 0 0 17px; place-items: center; color: var(--gp-text-muted); }
 .treeFolderIcon { color: var(--gp-warm); }
-.treeName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: calc(11px * var(--desktop-font-scale)); }
+.treeName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--text-xs); }
+/* Git 状态徽章：数据与右侧 Git 面板同源，仅作只读联动展示。 */
+.gitBadge { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto; margin-left: 5px; padding: 0 3px; border-radius: var(--radius-sm); font-size: var(--text-xs); font-weight: 400; font-family: var(--font-mono); }
+.gitBadgeModified { background: color-mix(in srgb, var(--gp-status-warning) 18%, transparent); color: var(--gp-status-warning); }
+.gitBadgeAdded { background: var(--gp-code-diff-add); color: var(--gp-status-success); }
+.gitBadgeDeleted { background: var(--gp-code-diff-del); color: var(--gp-status-error); }
+.gitBadgeRenamed { background: color-mix(in srgb, var(--gp-status-info, #4c8bf5) 18%, transparent); color: var(--gp-status-info, #4c8bf5); }
+.gitBadgeConflict { background: var(--gp-code-diff-del); color: var(--gp-status-error); }
+.gitBadgeUntracked { background: color-mix(in srgb, var(--gp-text-muted) 18%, transparent); color: var(--gp-text-muted); }
 .treeAction { width: 25px; height: 25px; flex: 0 0 25px; color: var(--gp-text-dim); opacity: 0; }
 .treeRow:hover .treeAction, .treeRowSelected .treeAction, .treeAction:focus-visible { opacity: 1; }
 .treeAction:hover { color: var(--gp-accent); }
 .empty { display: flex; min-height: 0; flex: 1; flex-direction: column; align-items: center; justify-content: center; gap: 7px; padding: 28px 24px; color: var(--gp-text-muted); text-align: center; }
 .empty svg { color: var(--gp-warm); }
-.empty strong { color: var(--gp-text-secondary); font-size: calc(12px * var(--desktop-font-scale)); font-weight: 600; }
-.empty span { max-width: 235px; font-size: calc(10px * var(--desktop-font-scale)); line-height: 1.55; }
+.emptyTitle { color: var(--gp-text-secondary); font-size: var(--text-xs); font-weight: 400; }
+.empty span { max-width: 235px; font-size: var(--text-xs); line-height: 1.55; }
 .empty button { margin-top: 5px; }
 .spin { animation: spin 900ms linear infinite; }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .treeRow { transition: none; } .spin { animation: none; } }
+.truncatedHint { border-bottom: 0; background: color-mix(in srgb, var(--gp-status-warning) 10%, var(--gp-surface)); padding: 6px 12px; color: var(--gp-status-warning); font-size: var(--text-xs); }
